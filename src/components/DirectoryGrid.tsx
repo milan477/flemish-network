@@ -1,0 +1,269 @@
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2 } from 'lucide-react';
+import { displayName, personInitials } from '../lib/supabase';
+import type { Person, Organization } from '../lib/supabase';
+
+interface DirectoryGridProps {
+  nameMatches: Person[];
+  aiResults: Person[];
+  organizations: Organization[];
+  loading: boolean;
+  aiLoading: boolean;
+  onNavigate: (page: string, id?: string) => void;
+  searchQuery?: string;
+  focusedCity: { city: string; state: string } | null;
+  onClearFocus: () => void;
+  onClearSearch?: () => void;
+  snippets?: Map<string, string>;
+  allPeople?: Person[];
+}
+
+function PersonCard({
+  person,
+  onNavigate,
+  snippet,
+}: {
+  person: Person;
+  onNavigate: (page: string, id?: string) => void;
+  snippet?: string;
+}) {
+  return (
+    <button
+      onClick={() => onNavigate('person', person.id)}
+      className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md border border-gray-100 text-left transition-all duration-200 hover:-translate-y-0.5"
+    >
+      <div className="flex items-start space-x-4">
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+          <span className="text-sm font-semibold text-blue-700">
+            {personInitials(person)}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-900 text-sm">
+            {displayName(person)}
+          </h3>
+          {person.current_position && (
+            <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">
+              {person.current_position}
+            </p>
+          )}
+          {person.location_city && (
+            <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
+              <MapPin className="w-3 h-3" />
+              <span>
+                {person.location_city}, {person.location_state}
+              </span>
+            </div>
+          )}
+          {snippet && (
+            <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
+              {snippet}
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export default function DirectoryGrid({
+  nameMatches,
+  aiResults,
+  organizations,
+  loading,
+  aiLoading,
+  onNavigate,
+  searchQuery,
+  focusedCity,
+  onClearFocus,
+  onClearSearch,
+  snippets,
+  allPeople,
+}: DirectoryGridProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-600" />
+      </div>
+    );
+  }
+
+  const isSearchMode = !!searchQuery;
+  const displayPeople = allPeople || [];
+
+  return (
+    <div className="space-y-8">
+      {focusedCity && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <MapPin className="w-4 h-4 text-yellow-700" />
+            <span className="text-sm font-medium text-yellow-800">
+              Showing contacts in {focusedCity.city}, {focusedCity.state}
+            </span>
+          </div>
+          <button
+            onClick={onClearFocus}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-yellow-100 rounded-lg text-sm text-yellow-700 border border-yellow-200 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Show All</span>
+          </button>
+        </div>
+      )}
+
+      {isSearchMode && (
+        <>
+          {nameMatches.length > 0 && (
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <Search className="w-4 h-4 text-sky-600" />
+                <h2 className="text-base font-semibold text-gray-900">
+                  Matching Names
+                </h2>
+                <span className="text-sm text-gray-400">({nameMatches.length})</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {nameMatches.map((person) => (
+                  <PersonCard key={person.id} person={person} onNavigate={onNavigate} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {nameMatches.length === 0 && !aiLoading && (
+            <p className="text-sm text-gray-500">
+              No people found matching the name &ldquo;{searchQuery}&rdquo;.
+            </p>
+          )}
+
+          {aiLoading && (
+            <div className="flex items-center space-x-3 py-6">
+              <Loader2 className="w-5 h-5 text-yellow-600 animate-spin" />
+              <span className="text-sm text-gray-600">
+                Running AI-enhanced search...
+              </span>
+            </div>
+          )}
+
+          {!aiLoading && aiResults.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-yellow-600" />
+                  <h2 className="text-base font-semibold text-gray-900">
+                    AI-Enhanced Results
+                  </h2>
+                  <span className="text-sm text-gray-400">({aiResults.length})</span>
+                </div>
+                {onClearSearch && (
+                  <button
+                    onClick={onClearSearch}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear search</span>
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {aiResults.map((person) => (
+                  <PersonCard
+                    key={person.id}
+                    person={person}
+                    onNavigate={onNavigate}
+                    snippet={snippets?.get(person.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!aiLoading && aiResults.length === 0 && nameMatches.length > 0 && onClearSearch && (
+            <div className="flex justify-end">
+              <button
+                onClick={onClearSearch}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Clear search</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {!isSearchMode && displayPeople.length > 0 && (
+        <div>
+          <div className="flex items-center space-x-2 mb-4">
+            <Users className="w-5 h-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">People</h2>
+            <span className="text-sm text-gray-400">({displayPeople.length})</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {displayPeople.map((person) => (
+              <PersonCard key={person.id} person={person} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {organizations.length > 0 && (
+        <div>
+          <div className="flex items-center space-x-2 mb-4">
+            <Building2 className="w-5 h-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900">Organizations</h2>
+            <span className="text-sm text-gray-400">({organizations.length})</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {organizations.map((org) => (
+              <button
+                key={org.id}
+                onClick={() => onNavigate('organization', org.id)}
+                className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md border border-gray-100 text-left transition-all duration-200 hover:-translate-y-0.5"
+              >
+                <div className="flex items-start space-x-4">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
+                    <Building2 className="w-6 h-6 text-green-700" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-900 text-sm">{org.name}</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">{org.type}</p>
+                    {org.location_city && (
+                      <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
+                        <MapPin className="w-3 h-3" />
+                        <span>
+                          {org.location_city}, {org.location_state}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isSearchMode && displayPeople.length === 0 && organizations.length === 0 && (
+        <div className="text-center py-20">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-gray-300" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+          <p className="text-gray-500 text-sm">Try adjusting your filters</p>
+        </div>
+      )}
+
+      {isSearchMode && !aiLoading && nameMatches.length === 0 && aiResults.length === 0 && (
+        <div className="text-center py-12">
+          <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Search className="w-7 h-7 text-gray-300" />
+          </div>
+          <h3 className="text-base font-medium text-gray-900 mb-1">No results</h3>
+          <p className="text-gray-500 text-sm">
+            No matches found for &ldquo;{searchQuery}&rdquo;
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
