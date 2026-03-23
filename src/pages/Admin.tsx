@@ -77,7 +77,7 @@ export default function Admin() {
   }, []);
 
   const loadData = useCallback(async () => {
-    const [peopleRes, orgsRes, sectorsRes, psRes] = await Promise.all([
+    const [peopleRes, orgsRes, , psRes] = await Promise.all([
       supabase.from('people').select('*'),
       supabase.from('organizations').select('id'),
       supabase.from('sectors').select('*'),

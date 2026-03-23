@@ -17,7 +17,7 @@ import {
   Loader2,
   Tag,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, parseTitleFromName, FLEMISH_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import { supabase, displayName, personInitials, FLEMISH_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 
 interface PersonProfileProps {

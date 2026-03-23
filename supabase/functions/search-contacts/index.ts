@@ -324,7 +324,7 @@ async function checkDuplicates(
     }
   }
 
-  let nameMap = new Map<string, string>();
+  const nameMap = new Map<string, string>();
   try {
     const { data: allPeopleNames } = await supabase
       .from("people")

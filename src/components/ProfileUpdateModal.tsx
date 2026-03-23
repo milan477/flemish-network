@@ -5,7 +5,6 @@ import {
   Check,
   Loader2,
   AlertCircle,
-  ArrowRight,
 } from 'lucide-react';
 import { supabase, displayName, type Person } from '../lib/supabase';
 
