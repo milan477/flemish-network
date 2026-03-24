@@ -137,22 +137,12 @@ Improve the manual data entry and edit experience for people profiles.
   ```sql
   data_source TEXT DEFAULT 'manual'        -- 'manual', 'csv_import', 'ai_agent', 'self_reported'
   last_verified_at TIMESTAMPTZ
-  consent_status TEXT DEFAULT 'not_contacted' -- 'not_contacted', 'consented', 'opted_out'
-  profile_completeness INTEGER DEFAULT 0   -- calculated 0-100
   ```
 - [ ] Add `data_source` and `last_verified_at` tracking:
   - Set `data_source` on creation (manual form → 'manual', CSV import → 'csv_import', AI agent → 'ai_agent')
-  - Set `last_verified_at` when a human reviews/edits a profile or approves a suggestion
-- [ ] Add profile completeness calculation (in `supabase.ts` or as a DB function):
-  - Score based on: has name (10), has position (10), has location (10), has bio (20), has email (10), has phone (5), has linkedin (5), has flemish_connection (10), has sector(s) (10), has photo (10)
-- [ ] Show completeness indicator on profile pages (progress bar or percentage)
+  - Set `last_verified_at` when a human reviews/edits a profile or approves a suggestion. Clearly document how this works in code comments because this is going to be used later on when making the agents that search for people online.
 - [ ] Show verification badge on profiles: "Verified [date]" or "Unverified" based on `last_verified_at`
-- [ ] Show data source on profile pages (small label: "Added via CSV import", "AI-discovered", etc.)
-- [ ] Add consent status management in Admin panel:
-  - List people by consent status
-  - Bulk-set consent status
-  - Filter to hide opted-out people from search/directory
-- [ ] Add "Stale profiles" section to Admin: profiles where `last_verified_at` is NULL or > 6 months ago
+- [ ] Show data source on profile pages (small logo: "Added via CSV import", "AI-discovered", "Manual")
 
 ---
 

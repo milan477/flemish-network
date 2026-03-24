@@ -1,23 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Library, Plus, Check, Loader2 } from 'lucide-react';
+import { Library, Plus, Check, Loader2, Minus } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
 
 interface AddToCollectionDropdownProps {
-  personId: string;
+  personIds: string[];
   onClose?: () => void;
+  onSuccess?: () => void;
 }
 
 export default function AddToCollectionDropdown({
-  personId,
+  personIds,
   onClose,
+  onSuccess,
 }: AddToCollectionDropdownProps) {
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [memberOf, setMemberOf] = useState<string[]>([]);
+  const [membershipCount, setMembershipCount] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [showCreateInline, setShowCreateInline] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isBulk = personIds.length > 1;
 
   useEffect(() => {
     fetchData();
@@ -29,7 +33,7 @@ export default function AddToCollectionDropdown({
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [personId]);
+  }, [JSON.stringify(personIds)]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -43,14 +47,19 @@ export default function AddToCollectionDropdown({
       if (collsError) throw collsError;
       setCollections(colls || []);
 
-      // Fetch which collections this person belongs to
+      // Fetch which collections these people belong to
       const { data: memberships, error: memError } = await supabase
         .from('collection_members')
-        .select('collection_id')
-        .eq('person_id', personId);
+        .select('collection_id, person_id')
+        .in('person_id', personIds);
       
       if (memError) throw memError;
-      setMemberOf(memberships?.map(m => m.collection_id) || []);
+      
+      const counts: Record<string, number> = {};
+      memberships?.forEach(m => {
+        counts[m.collection_id] = (counts[m.collection_id] || 0) + 1;
+      });
+      setMembershipCount(counts);
     } catch (err) {
       console.error('Error fetching collection data:', err);
     } finally {
@@ -60,29 +69,44 @@ export default function AddToCollectionDropdown({
 
   const toggleCollection = async (collectionId: string) => {
     setProcessingId(collectionId);
-    const isMember = memberOf.includes(collectionId);
+    const count = membershipCount[collectionId] || 0;
+    const allAreMembers = count === personIds.length;
 
     try {
-      if (isMember) {
+      if (allAreMembers) {
+        // Remove all
         const { error } = await supabase
           .from('collection_members')
           .delete()
           .eq('collection_id', collectionId)
-          .eq('person_id', personId);
+          .in('person_id', personIds);
         
         if (error) throw error;
-        setMemberOf(memberOf.filter(id => id !== collectionId));
+        setMembershipCount(prev => ({ ...prev, [collectionId]: 0 }));
       } else {
-        const { error } = await supabase
+        // Add those who aren't members
+        const { data: existing } = await supabase
           .from('collection_members')
-          .insert({
-            collection_id: collectionId,
-            person_id: personId
-          });
+          .select('person_id')
+          .eq('collection_id', collectionId)
+          .in('person_id', personIds);
         
-        if (error) throw error;
-        setMemberOf([...memberOf, collectionId]);
+        const existingIds = new Set(existing?.map(e => e.person_id) || []);
+        const toAdd = personIds.filter(id => !existingIds.has(id));
+
+        if (toAdd.length > 0) {
+          const { error } = await supabase
+            .from('collection_members')
+            .insert(toAdd.map(pid => ({
+              collection_id: collectionId,
+              person_id: pid
+            })));
+          
+          if (error) throw error;
+        }
+        setMembershipCount(prev => ({ ...prev, [collectionId]: personIds.length }));
       }
+      onSuccess?.();
     } catch (err) {
       console.error('Error toggling collection membership:', err);
     } finally {
@@ -104,20 +128,21 @@ export default function AddToCollectionDropdown({
       
       if (insertError) throw insertError;
 
-      // Add person to the new collection
+      // Add people to the new collection
       const { error: memError } = await supabase
         .from('collection_members')
-        .insert({
+        .insert(personIds.map(pid => ({
           collection_id: newColl.id,
-          person_id: personId
-        });
+          person_id: pid
+        })));
       
       if (memError) throw memError;
 
       setCollections(prev => [...prev, newColl].sort((a, b) => a.name.localeCompare(b.name)));
-      setMemberOf(prev => [...prev, newColl.id]);
+      setMembershipCount(prev => ({ ...prev, [newColl.id]: personIds.length }));
       setNewCollectionName('');
       setShowCreateInline(false);
+      onSuccess?.();
     } catch (err) {
       console.error('Error creating collection:', err);
     } finally {
@@ -134,7 +159,7 @@ export default function AddToCollectionDropdown({
       <div className="px-4 py-3 border-b border-gray-50 bg-gray-50/50">
         <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
           <Library className="w-3 h-3" />
-          Add to Collection
+          {isBulk ? `Add ${personIds.length} to Collection` : 'Add to Collection'}
         </h4>
       </div>
 
@@ -149,23 +174,38 @@ export default function AddToCollectionDropdown({
             <p className="text-sm text-gray-500 mb-3">No collections yet</p>
           </div>
         ) : (
-          collections.map(collection => (
-            <button
-              key={collection.id}
-              onClick={() => toggleCollection(collection.id)}
-              disabled={processingId === collection.id}
-              className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center justify-between group transition-colors"
-            >
-              <span className="text-sm text-gray-700 truncate">{collection.name}</span>
-              {processingId === collection.id ? (
-                <Loader2 className="w-4 h-4 text-gray-300 animate-spin" />
-              ) : memberOf.includes(collection.id) ? (
-                <Check className="w-4 h-4 text-green-500" />
-              ) : (
-                <Plus className="w-4 h-4 text-gray-300 group-hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-all" />
-              )}
-            </button>
-          ))
+          collections.map(collection => {
+            const count = membershipCount[collection.id] || 0;
+            const allIn = count === personIds.length;
+            const someIn = count > 0 && count < personIds.length;
+
+            return (
+              <button
+                key={collection.id}
+                onClick={() => toggleCollection(collection.id)}
+                disabled={processingId === collection.id}
+                className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center justify-between group transition-colors"
+              >
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm text-gray-700 truncate">{collection.name}</span>
+                  {isBulk && count > 0 && (
+                    <span className="text-[10px] text-gray-400">
+                      {count} of {personIds.length} added
+                    </span>
+                  )}
+                </div>
+                {processingId === collection.id ? (
+                  <Loader2 className="w-4 h-4 text-gray-300 animate-spin" />
+                ) : allIn ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : someIn ? (
+                  <Minus className="w-4 h-4 text-yellow-500" />
+                ) : (
+                  <Plus className="w-4 h-4 text-gray-300 group-hover:text-gray-400 opacity-0 group-hover:opacity-100 transition-all" />
+                )}
+              </button>
+            );
+          })
         )}
       </div>
 

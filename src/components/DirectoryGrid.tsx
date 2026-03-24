@@ -86,11 +86,40 @@ function PersonCard({
 
         {showCollections && (
           <AddToCollectionDropdown 
-            personId={person.id} 
+            personIds={[person.id]} 
             onClose={() => setShowCollections(false)} 
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function BulkAddButton({ people }: { people: Person[] }) {
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  if (people.length <= 1) return null;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+          showDropdown 
+            ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' 
+            : 'bg-white text-gray-600 border border-gray-200 hover:border-yellow-400 hover:text-yellow-600'
+        }`}
+      >
+        <Library className="w-4 h-4" />
+        <span>Add all {people.length} to collection</span>
+      </button>
+
+      {showDropdown && (
+        <AddToCollectionDropdown 
+          personIds={people.map(p => p.id)} 
+          onClose={() => setShowDropdown(false)} 
+        />
+      )}
     </div>
   );
 }
@@ -144,12 +173,15 @@ export default function DirectoryGrid({
         <>
           {nameMatches.length > 0 && (
             <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <Search className="w-4 h-4 text-sky-600" />
-                <h2 className="text-base font-semibold text-gray-900">
-                  Matching Names
-                </h2>
-                <span className="text-sm text-gray-400">({nameMatches.length})</span>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-2">
+                  <Search className="w-4 h-4 text-sky-600" />
+                  <h2 className="text-base font-semibold text-gray-900">
+                    Matching Names
+                  </h2>
+                  <span className="text-sm text-gray-400">({nameMatches.length})</span>
+                </div>
+                <BulkAddButton people={nameMatches} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {nameMatches.map((person) => (
@@ -184,15 +216,18 @@ export default function DirectoryGrid({
                   </h2>
                   <span className="text-sm text-gray-400">({aiResults.length})</span>
                 </div>
-                {onClearSearch && (
-                  <button
-                    onClick={onClearSearch}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Clear search</span>
-                  </button>
-                )}
+                <div className="flex items-center space-x-3">
+                  <BulkAddButton people={aiResults} />
+                  {onClearSearch && (
+                    <button
+                      onClick={onClearSearch}
+                      className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Clear search</span>
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {aiResults.map((person) => (
@@ -223,10 +258,13 @@ export default function DirectoryGrid({
 
       {!isSearchMode && displayPeople.length > 0 && (
         <div>
-          <div className="flex items-center space-x-2 mb-4">
-            <Users className="w-5 h-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">People</h2>
-            <span className="text-sm text-gray-400">({displayPeople.length})</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <Users className="w-5 h-5 text-gray-500" />
+              <h2 className="text-lg font-semibold text-gray-900">People</h2>
+              <span className="text-sm text-gray-400">({displayPeople.length})</span>
+            </div>
+            <BulkAddButton people={displayPeople} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {displayPeople.map((person) => (
