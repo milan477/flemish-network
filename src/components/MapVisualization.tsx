@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MapPin, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import type { MapCluster } from '../lib/supabase';
 import ClusterPopover from './ClusterPopover';
@@ -43,7 +43,6 @@ function MapController({ onMapClick }: { onMapClick: () => void }) {
 
 export default function MapVisualization({ clusters, loading, onViewInDirectory, onNavigate }: MapVisualizationProps) {
   const [selectedCluster, setSelectedCluster] = useState<MapCluster | null>(null);
-  const [popoverPos, setPopoverPos] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
 
@@ -51,13 +50,7 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     setSelectedCluster(null);
   }, [clusters]);
 
-  const handleClusterClick = useCallback((cluster: MapCluster, e: L.LeafletMouseEvent) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setPopoverPos({ 
-      x: e.originalEvent.clientX - rect.left, 
-      y: e.originalEvent.clientY - rect.top 
-    });
+  const handleClusterClick = useCallback((cluster: MapCluster) => {
     setSelectedCluster(cluster);
   }, []);
 
@@ -129,7 +122,6 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     <div
       ref={containerRef}
       className="absolute inset-0 select-none"
-      onClick={handleBackdropClick}
     >
       <style>{`
         @keyframes pulse-slow {
@@ -142,6 +134,21 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
         .custom-city-icon, .custom-merged-icon {
           background: none !important;
           border: none !important;
+        }
+        .leaflet-popup-content-wrapper {
+          padding: 0 !important;
+          overflow: hidden !important;
+          border-radius: 0.75rem !important;
+        }
+        .leaflet-popup-content {
+          margin: 0 !important;
+          width: 320px !important;
+        }
+        .leaflet-popup-tip-container {
+          display: none !important;
+        }
+        .leaflet-popup-close-button {
+          display: none !important;
         }
       `}</style>
       
@@ -177,26 +184,24 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
-                    handleClusterClick(cluster, e as any);
+                    handleClusterClick(cluster);
                   },
                 }}
-              />
+              >
+                {selectedCluster?.city === cluster.city && selectedCluster?.state === cluster.state && (
+                  <Popup position={[cluster.lat, cluster.lng]} offset={[0, -10]}>
+                    <ClusterPopover
+                      cluster={cluster}
+                      onClose={() => setSelectedCluster(null)}
+                      onViewInDirectory={onViewInDirectory}
+                      onNavigate={onNavigate}
+                    />
+                  </Popup>
+                )}
+              </Marker>
             ))}
           </MarkerClusterGroup>
         </MapContainer>
-
-        {/* Legend/Status */}
-        <div className="absolute top-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-100 overflow-hidden pointer-events-none transition-all duration-300">
-          <div className="px-4 py-3">
-            <div className="flex items-center space-x-2 mb-1">
-              <MapPin className="w-4 h-4 text-amber-600" />
-              <span className="font-semibold text-sm text-gray-900">Network Map</span>
-            </div>
-            <p className="text-xs text-gray-500">
-              {loading ? 'Refreshing map...' : `Showing ${clusters.length} locations`}
-            </p>
-          </div>
-        </div>
 
         {/* Custom Zoom Controls */}
         <div className="absolute bottom-6 right-6 z-[1000] flex flex-col items-center space-y-2">
@@ -243,17 +248,6 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
           </div>
         )}
       </div>
-
-      {selectedCluster && (
-        <ClusterPopover
-          cluster={selectedCluster}
-          position={popoverPos}
-          containerRef={containerRef}
-          onClose={() => setSelectedCluster(null)}
-          onViewInDirectory={onViewInDirectory}
-          onNavigate={onNavigate}
-        />
-      )}
     </div>
   );
 }

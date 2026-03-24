@@ -552,7 +552,7 @@ export default function Dashboard({
   return (
     <div className="flex h-[calc(100vh-64px)] overflow-hidden">
       <div className="flex-1 relative">
-        <div className="absolute top-4 left-4 right-4 z-40 pointer-events-none flex items-start justify-between">
+        <div className="absolute top-4 left-4 right-4 z-[2000] pointer-events-none flex items-start justify-between">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1 flex pointer-events-auto">
             <button
               onClick={() => {
@@ -561,23 +561,23 @@ export default function Dashboard({
               }}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 viewMode === 'map'
-                  ? 'bg-gray-900 text-white shadow-sm'
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <MapIcon className="w-4 h-4" />
-              <span>Map</span>
+              <span>Network Map</span>
             </button>
             <button
               onClick={() => setViewMode('list')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 viewMode === 'list'
-                  ? 'bg-gray-900 text-white shadow-sm'
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <List className="w-4 h-4" />
-              <span>List</span>
+              <span>Network List</span>
             </button>
           </div>
 

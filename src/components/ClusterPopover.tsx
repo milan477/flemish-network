@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
 import { X, MapPin, Users, Building2, ExternalLink } from 'lucide-react';
 import { displayName, personInitials } from '../lib/supabase';
 import type { MapCluster } from '../lib/supabase';
 
 interface ClusterPopoverProps {
   cluster: MapCluster;
-  position: { x: number; y: number };
-  containerRef: React.RefObject<HTMLDivElement>;
   onClose: () => void;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
@@ -14,52 +11,16 @@ interface ClusterPopoverProps {
 
 export default function ClusterPopover({
   cluster,
-  position,
-  containerRef,
   onClose,
   onViewInDirectory,
   onNavigate,
 }: ClusterPopoverProps) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [adjustedPos, setAdjustedPos] = useState(position);
-
-  useEffect(() => {
-    if (!popoverRef.current || !containerRef.current) return;
-
-    const container = containerRef.current.getBoundingClientRect();
-    const popover = popoverRef.current.getBoundingClientRect();
-    let x = position.x;
-    let y = position.y;
-
-    if (x + popover.width > container.width) {
-      x = container.width - popover.width - 16;
-    }
-    if (x < 16) x = 16;
-
-    if (y + popover.height > container.height) {
-      y = position.y - popover.height - 10;
-    }
-    if (y < 16) y = 16;
-
-    setAdjustedPos({ x, y });
-  }, [position, containerRef]);
-
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
-
   const totalCount = cluster.people.length + cluster.organizations.length;
   const allPersonIds = cluster.people.map((p) => p.id);
 
   return (
     <div
-      ref={popoverRef}
-      className="absolute z-50 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in duration-150"
-      style={{ left: adjustedPos.x, top: adjustedPos.y }}
+      className="w-80 bg-white rounded-xl overflow-hidden pointer-events-auto"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="bg-gradient-to-r from-yellow-50 to-amber-50 px-4 py-3 border-b border-gray-100">
