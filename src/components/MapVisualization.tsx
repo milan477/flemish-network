@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -138,14 +138,15 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
         <MapContainer
           center={INITIAL_CENTER}
           zoom={INITIAL_ZOOM}
+          maxZoom={18}
           style={{ height: '100%', width: '100%', background: '#f8fafc' }}
           zoomControl={false}
           attributionControl={false}
           ref={(map) => { mapRef.current = map; }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
           
           <MapController onMapClick={handleBackdropClick} />

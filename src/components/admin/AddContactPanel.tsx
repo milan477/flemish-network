@@ -48,6 +48,8 @@ interface ManualForm {
   occupation: string;
   location_city: string;
   location_state: string;
+  latitude?: number;
+  longitude?: number;
   bio: string;
   flemish_connection: string;
   phone: string;
@@ -66,6 +68,8 @@ const EMPTY_FORM: ManualForm = {
   occupation: '',
   location_city: '',
   location_state: '',
+  latitude: undefined,
+  longitude: undefined,
   bio: '',
   flemish_connection: '',
   phone: '',
@@ -350,6 +354,8 @@ function ManualAddForm({
         occupation: form.occupation || null,
         location_city: form.location_city || null,
         location_state: form.location_state || null,
+        latitude: form.latitude || null,
+        longitude: form.longitude || null,
         bio: form.bio || null,
         flemish_connection: flemishStr || null,
         phone: form.phone || null,
@@ -527,9 +533,14 @@ function ManualAddForm({
           <CitySearch
             value={form.location_city}
             state={form.location_state}
-            onChange={(city, state) => {
-              set('location_city', city);
-              set('location_state', state);
+            onChange={(city, state, lat, lng) => {
+              setForm(f => ({
+                ...f,
+                location_city: city,
+                location_state: state,
+                latitude: lat,
+                longitude: lng
+              }));
             }}
             placeholder="Search city..."
           />

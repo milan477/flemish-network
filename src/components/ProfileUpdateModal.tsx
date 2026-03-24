@@ -113,6 +113,12 @@ export default function ProfileUpdateModal({
       }
     }
 
+    // If location changed, clear coordinates to force re-geocoding
+    if ('location_city' in updates || 'location_state' in updates) {
+      updates.latitude = null;
+      updates.longitude = null;
+    }
+
     updates['updated_at'] = new Date().toISOString();
 
     const { error } = await supabase

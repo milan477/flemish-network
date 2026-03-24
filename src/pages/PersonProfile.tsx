@@ -156,6 +156,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       occupation: editForm.occupation || null,
       location_city: editForm.location_city || null,
       location_state: editForm.location_state || null,
+      latitude: editForm.latitude || null,
+      longitude: editForm.longitude || null,
       bio: editForm.bio || null,
       flemish_connection: flemishStr || null,
       phone: editForm.phone || null,
@@ -293,7 +295,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               </div>
               <div className="flex-1 min-w-0">
                 {editing ? (
-                  <EditHeader editForm={editForm} setField={setField} />
+                  <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} />
                 ) : (
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
@@ -433,9 +435,11 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
 function EditHeader({
   editForm,
   setField,
+  setEditForm,
 }: {
   editForm: Partial<Person>;
   setField: (f: string, v: string) => void;
+  setEditForm: React.Dispatch<React.SetStateAction<Partial<Person>>>;
 }) {
   return (
     <div className="space-y-3">
@@ -499,9 +503,14 @@ function EditHeader({
           <CitySearch
             value={editForm.location_city || ''}
             state={editForm.location_state || ''}
-            onChange={(city, state) => {
-              setField('location_city', city);
-              setField('location_state', state);
+            onChange={(city, state, lat, lng) => {
+              setEditForm(f => ({
+                ...f,
+                location_city: city,
+                location_state: state,
+                latitude: lat ?? undefined,
+                longitude: lng ?? undefined
+              }));
             }}
             placeholder="Search city..."
           />

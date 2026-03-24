@@ -38,12 +38,7 @@ export function lookupCity(
   const exact = cache.get(key);
   if (exact) return exact;
 
-  const cityLower = city.toLowerCase();
-  for (const [k, v] of cache) {
-    const [c] = k.split(',');
-    if (c.toLowerCase() === cityLower) return v;
-  }
-
+  // No fuzzy fallback by city name alone - it's too dangerous (e.g. Portland OR vs Portland ME)
   return null;
 }
 

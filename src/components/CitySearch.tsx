@@ -5,7 +5,7 @@ import { MapPin, Loader2, ChevronDown } from 'lucide-react';
 interface CitySearchProps {
   value: string;
   state: string;
-  onChange: (city: string, state: string) => void;
+  onChange: (city: string, state: string, lat?: number, lng?: number) => void;
   placeholder?: string;
   className?: string;
 }
@@ -13,6 +13,8 @@ interface CitySearchProps {
 interface LocationSuggestion {
   city: string;
   state: string;
+  latitude: number;
+  longitude: number;
 }
 
 export default function CitySearch({
@@ -52,7 +54,7 @@ export default function CitySearch({
       setLoading(true);
       const { data, error } = await supabase
         .from('locations')
-        .select('city, state')
+        .select('city, state, latitude, longitude')
         .ilike('city', `${query}%`)
         .order('city')
         .limit(10);
@@ -61,7 +63,7 @@ export default function CitySearch({
         // Dedup if multiple cities have same name
         const unique = data.reduce((acc: LocationSuggestion[], curr) => {
           if (!acc.find(i => i.city === curr.city && i.state === curr.state)) {
-            acc.push(curr);
+            acc.push(curr as LocationSuggestion);
           }
           return acc;
         }, []);
@@ -76,7 +78,7 @@ export default function CitySearch({
   const handleSelect = (s: LocationSuggestion) => {
     setQuery(s.city);
     setIsOpen(false);
-    onChange(s.city, s.state);
+    onChange(s.city, s.state, s.latitude, s.longitude);
   };
 
   return (
