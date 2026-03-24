@@ -96,17 +96,16 @@ function buildClusters(
     for (const person of people) {
       if (!person.location_city || !person.location_state) continue;
       
-      // Try to get coordinates from the person record itself first
-      let lat = person.latitude;
-      let lng = person.longitude;
+      // Try the global geocoding cache first - this is our "source of truth" for city positions
+      const coords = lookupCity(person.location_city, person.location_state);
       
-      // If not on record, check the global cache
+      let lat = coords?.lat;
+      let lng = coords?.lng;
+      
+      // Only fall back to person's record if we have no cached city coordinates
       if (lat == null || lng == null) {
-        const coords = lookupCity(person.location_city, person.location_state);
-        if (coords) {
-          lat = coords.lat;
-          lng = coords.lng;
-        }
+        lat = person.latitude;
+        lng = person.longitude;
       }
 
       if (lat == null || lng == null) continue;
@@ -130,15 +129,14 @@ function buildClusters(
     for (const org of organizations) {
       if (!org.location_city || !org.location_state) continue;
       
-      let lat = org.latitude;
-      let lng = org.longitude;
+      const coords = lookupCity(org.location_city, org.location_state);
+      
+      let lat = coords?.lat;
+      let lng = coords?.lng;
       
       if (lat == null || lng == null) {
-        const coords = lookupCity(org.location_city, org.location_state);
-        if (coords) {
-          lat = coords.lat;
-          lng = coords.lng;
-        }
+        lat = org.latitude;
+        lng = org.longitude;
       }
 
       if (lat == null || lng == null) continue;
@@ -448,7 +446,8 @@ export default function Dashboard({
 
       const needsGeocoding = allEntities.filter((e) => {
         if (!e.city || !e.state) return false;
-        if (e.lat != null && e.lng != null) return false;
+        // If we have a cached location for this city, we're good.
+        // If not, we NEED to geocode it, even if the entity has coordinates (they might be stale).
         return !lookupCity(e.city, e.state);
       });
 
