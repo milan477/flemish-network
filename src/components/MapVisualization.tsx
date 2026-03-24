@@ -135,6 +135,19 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
           background: none !important;
           border: none !important;
         }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #e2e8f0;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #cbd5e1;
+        }
         .leaflet-popup-content-wrapper {
           padding: 0 !important;
           overflow: hidden !important;
@@ -179,25 +192,25 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
                 key={`${cluster.city}-${cluster.state}`}
                 position={[cluster.lat, cluster.lng]}
                 icon={createCityIcon(cluster)}
-                // Store MapCluster in options for the cluster icon creator
                 {...({ mapCluster: cluster } as any)}
                 eventHandlers={{
-                  click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    handleClusterClick(cluster);
-                  },
+                  popupopen: () => setSelectedCluster(cluster),
+                  popupclose: () => setSelectedCluster(null),
                 }}
               >
-                {selectedCluster?.city === cluster.city && selectedCluster?.state === cluster.state && (
-                  <Popup position={[cluster.lat, cluster.lng]} offset={[0, -10]}>
-                    <ClusterPopover
-                      cluster={cluster}
-                      onClose={() => setSelectedCluster(null)}
-                      onViewInDirectory={onViewInDirectory}
-                      onNavigate={onNavigate}
-                    />
-                  </Popup>
-                )}
+                <Popup 
+                  position={[cluster.lat, cluster.lng]} 
+                  offset={[0, -5]}
+                  autoPanPadding={[100, 20]} // 100px padding at top to avoid search bar
+                  minWidth={320}
+                >
+                  <ClusterPopover
+                    cluster={cluster}
+                    onClose={() => mapRef.current?.closePopup()}
+                    onViewInDirectory={onViewInDirectory}
+                    onNavigate={onNavigate}
+                  />
+                </Popup>
               </Marker>
             ))}
           </MarkerClusterGroup>
