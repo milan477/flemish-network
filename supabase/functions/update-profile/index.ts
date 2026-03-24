@@ -11,6 +11,9 @@ const corsHeaders = {
 interface PersonData {
   id: string;
   name: string;
+  title?: string;
+  first_name?: string;
+  last_name?: string;
   current_position?: string;
   location_city?: string;
   location_state?: string;
@@ -94,6 +97,10 @@ async function extractSuggestionsWithAI(
     if (!Array.isArray(result.data.suggestions)) return [];
 
     const validFields = new Set([
+      "title",
+      "first_name",
+      "last_name",
+      "name",
       "current_position",
       "occupation",
       "email",
@@ -152,6 +159,9 @@ async function processOnePerson(
     const p: PersonData = {
       id: safeStr(person.id),
       name: safeStr(person.name),
+      title: safeStr(person.title),
+      first_name: safeStr(person.first_name),
+      last_name: safeStr(person.last_name),
       current_position: safeStr(person.current_position),
       location_city: safeStr(person.location_city),
       location_state: safeStr(person.location_state),

@@ -7,7 +7,7 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - **Frontend:** React 18 + TypeScript, Vite, Tailwind CSS, Lucide React (icons)
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)
 - **AI (all Google, two tiers):**
-  - **Gemini 2.0 Flash** (`gemini-2.0-flash`) — extraction, keyword generation, profile comparison
+  - **Gemini 1.5 Flash** (`gemini-1.5-flash`) — extraction, keyword generation, profile comparison
   - **Gemini Pro** (`gemini-2.5-pro-preview-05-06`) — reasoning, ranking, contact suggestions, briefing generation
   - **text-embedding-004** — profile embeddings for vector similarity search (768 dimensions)
 - **Vector Search:** pgvector extension in Supabase PostgreSQL

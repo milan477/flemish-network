@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export interface ParsedContact {
   name: string;
   current_position: string;
@@ -47,21 +49,18 @@ async function callAI<T>(
   task: string,
   context: Record<string, unknown>
 ): Promise<T> {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-agent`;
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ task, context }),
+  const { data, error } = await supabase.functions.invoke('ai-agent', {
+    body: { task, context },
   });
 
-  const result: AIResponse<T> = await resp.json();
+  if (error) {
+    throw new Error(`AI request failed: ${error.message}`);
+  }
 
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'AI request failed');
+  const result = data as AIResponse<T>;
+
+  if (!result || !result.success || !result.data) {
+    throw new Error(result?.error || 'AI request failed');
   }
 
   return result.data;
@@ -131,25 +130,17 @@ export interface SearchContactsResult {
 export async function searchContacts(
   query: string
 ): Promise<SearchContactsResult> {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search-contacts`;
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query }),
+  const { data, error } = await supabase.functions.invoke('search-contacts', {
+    body: { query },
   });
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(errText || 'Search request failed');
+  if (error) {
+    throw new Error(`Search request failed: ${error.message}`);
   }
 
-  const result: SearchContactsResult = await resp.json();
+  const result = data as SearchContactsResult;
 
-  if (!result.message && !result.contacts) {
+  if (!result || (!result.message && !result.contacts)) {
     throw new Error('Invalid search response');
   }
 

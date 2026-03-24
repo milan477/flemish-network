@@ -7,7 +7,7 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-3-flash-preview";
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   parse_contacts: `You are a data extraction assistant for a Flemish-American network directory that tracks people in the US with connections to Flanders (Belgium).
@@ -102,7 +102,7 @@ Given a person's current profile data and web search results about them, identif
 Rules:
 - Only suggest changes clearly supported by the search results
 - Compare search results against each current profile field
-- Field names must be exactly one of: current_position, occupation, email, linkedin_url, bio, phone, website_url, twitter_url, location_city, location_state
+- Field names must be exactly one of: title, first_name, last_name, name, current_position, occupation, email, linkedin_url, bio, phone, website_url, twitter_url, location_city, location_state
 - Do not suggest a change if the current value already matches what's in the search results
 - Be conservative: only suggest changes you are confident about
 - For bio, only suggest if current bio is empty or very short and search results provide substantial information
@@ -330,7 +330,7 @@ async function callGemini(
   schema: object,
   maxRetries = 2
 ): Promise<unknown> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
   let lastError = "";
 
@@ -338,7 +338,10 @@ async function callGemini(
     try {
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],

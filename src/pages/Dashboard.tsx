@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Map as MapIcon, List } from 'lucide-react';
+import { Map as MapIcon, List, X, Search as SearchIcon } from 'lucide-react';
 import {
   supabase,
   fuzzyMatch,
@@ -18,6 +18,7 @@ import {
 import MapVisualization from '../components/MapVisualization';
 import DirectoryGrid from '../components/DirectoryGrid';
 import FilterPanel from '../components/FilterPanel';
+import UnifiedSearchBar from '../components/UnifiedSearchBar';
 import { lookupCity, ensureLocationsLoaded, addToCache } from '../lib/locations';
 import { geocodeBatch } from '../lib/geocoding';
 import {
@@ -66,6 +67,9 @@ function generateSnippet(
     const allKw = [
       ...keywords.name,
       ...keywords.occupation,
+      ...keywords.sector,
+      ...keywords.location_city,
+      ...keywords.location_state,
       ...keywords.current_position,
       ...keywords.flemish_connection,
       ...keywords.bio,
@@ -165,8 +169,9 @@ export default function Dashboard({
   const [aiResults, setAiResults] = useState<Person[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [activeQuery, setActiveQuery] = useState('');
-  const [aiKeywords, setAiKeywords] = useState<SmartSearchKeywords | null>(null);
+
   const [snippets, setSnippets] = useState<Map<string, string>>(new Map());
+  const [focusTrigger, setFocusTrigger] = useState(0);
 
   const [activeFilters, setActiveFilters] = useState<ActiveAiFilter[]>([]);
   const [popularFilters, setPopularFilters] = useState<SavedFlemishFilter[]>([]);
@@ -185,6 +190,103 @@ export default function Dashboard({
       if (data) setPopularFilters(data as SavedFlemishFilter[]);
     })();
   }, []);
+
+  const handleClearSearchQuery = useCallback(() => {
+    setActiveQuery('');
+    setNameMatches([]);
+    setAiResults([]);
+    setSnippets(new Map());
+    onClearSearchInput();
+  }, [onClearSearchInput]);
+
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query) {
+      handleClearSearchQuery();
+      return;
+    }
+
+    // Direct navigation if from autocomplete
+    if (query.startsWith('id:')) {
+      const [, id, type] = query.split(':');
+      onNavigate(type, id);
+      return;
+    }
+
+    setActiveQuery(query);
+    setViewMode('list');
+    setNameMatches([]);
+    setAiResults([]);
+    setSnippets(new Map());
+
+    const words = query.trim().split(/\s+/);
+    // If it's more than 3 words or contains descriptive words, it's NL.
+    // "Dr Griet Vanholme" is 3 words, so it should still be isDirectSearch.
+    const isDirectSearch = words.length <= 4; 
+
+    setAiLoading(true);
+    onSearchingChange(true);
+
+    try {
+      if (isDirectSearch) {
+        // Improved fuzzy name match to handle "Dr." or titles
+        const searchTerms = query.toLowerCase().replace(/^dr\.?\s+/, '').split(' ');
+        const mainTerm = searchTerms[searchTerms.length - 1]; // Use last name as main term for better results
+
+        const { data: peopleMatches } = await supabase
+          .from('people')
+          .select('*')
+          .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
+          .limit(20);
+        
+        setNameMatches(peopleMatches as Person[] || []);
+      }
+
+      // Always run smart search for NL understanding and keyword extraction
+      const result = await smartSearch(query);
+
+      // Auto-apply filters based on extracted keywords
+      const nextFilters = { ...filters };
+      if (result.keywords.sector.length > 0) {
+        // Find existing sector that matches one of the keywords
+        const sectorKw = result.keywords.sector[0].toLowerCase();
+        const sectors = ["Artificial Intelligence", "Biotechnology", "Finance", "Culture & Arts", "Education", "Research"];
+        const matchedSector = sectors.find(s => s.toLowerCase().includes(sectorKw) || sectorKw.includes(s.toLowerCase()));
+        if (matchedSector) {
+          nextFilters.sector = matchedSector;
+        }
+      }
+      setFilters(nextFilters);
+
+      const { data: allPeople } = await supabase.from('people').select('*');
+      if (allPeople) {
+        const scored = (allPeople as Person[])
+          .map((p) => ({
+            person: p,
+            score: scorePersonAgainstKeywords(
+              p as unknown as Record<string, unknown>,
+              result.keywords
+            ),
+          }))
+          .filter((s) => s.score >= AI_SCORE_THRESHOLD)
+          .sort((a, b) => b.score - a.score);
+
+        const aiPeople = scored.map((s) => s.person);
+        setAiResults(aiPeople);
+
+        const newSnippets = new Map<string, string>();
+        for (const person of aiPeople) {
+          const snippet = generateSnippet(person, result.keywords);
+          if (snippet) newSnippets.set(person.id, snippet);
+        }
+        setSnippets(newSnippets);
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+    } finally {
+      setAiLoading(false);
+      onSearchingChange(false);
+    }
+  }, [filters, onSearchingChange, handleClearSearchQuery]);
 
   const loadData = useCallback(
     async (currentFilters: MapFilters, activeAiFilters: ActiveAiFilter[]) => {
@@ -259,6 +361,16 @@ export default function Dashboard({
       if (currentFilters.showOrganizations) {
         const { data } = await supabase.from('organizations').select('*');
         let rawOrgs = (data || []) as Organization[];
+
+        // Apply text search if query exists
+        if (activeQuery) {
+          const q = activeQuery.toLowerCase();
+          rawOrgs = rawOrgs.filter(o => 
+            o.name.toLowerCase().includes(q) || 
+            (o.description && o.description.toLowerCase().includes(q)) ||
+            (o.type && o.type.toLowerCase().includes(q))
+          );
+        }
 
         if (currentFilters.sector) {
           rawOrgs = rawOrgs.filter(
@@ -402,7 +514,7 @@ export default function Dashboard({
     setActiveQuery('');
     setNameMatches([]);
     setAiResults([]);
-    setAiKeywords(null);
+
     setSnippets(new Map());
     setActiveFilters([]);
 
@@ -422,66 +534,9 @@ export default function Dashboard({
     if (!searchCommand || searchCommand.timestamp <= lastSearchTimestamp.current) return;
     lastSearchTimestamp.current = searchCommand.timestamp;
     onConsumeSearchCommand();
-
-    const query = searchCommand.query;
-    setActiveQuery(query);
-    setViewMode('list');
-    setNameMatches([]);
-    setAiResults([]);
-    setAiKeywords(null);
-    setSnippets(new Map());
-
-    const namePromise = supabase
-      .from('people')
-      .select('*')
-      .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
-      .then(({ data }) => {
-        const results = data || [];
-        setNameMatches(results as Person[]);
-        return results as Person[];
-      });
-
-    setAiLoading(true);
-    onSearchingChange(true);
-
-    const aiPromise = smartSearch(query).then((result) => {
-      return { keywords: result.keywords };
-    }).catch(() => null);
-
-    Promise.all([namePromise, aiPromise]).then(async ([, aiResult]) => {
-      if (aiResult) {
-        setAiKeywords(aiResult.keywords);
-
-        const { data: allPeople } = await supabase.from('people').select('*');
-        if (allPeople) {
-          const nameMatchIds = new Set((await namePromise).map((p) => p.id));
-          const scored = (allPeople as Person[])
-            .filter((p) => !nameMatchIds.has(p.id))
-            .map((p) => ({
-              person: p,
-              score: scorePersonAgainstKeywords(
-                p as unknown as Record<string, unknown>,
-                aiResult.keywords
-              ),
-            }))
-            .filter((s) => s.score >= AI_SCORE_THRESHOLD)
-            .sort((a, b) => b.score - a.score);
-
-          const aiPeople = scored.map((s) => s.person);
-          setAiResults(aiPeople);
-
-          const newSnippets = new Map<string, string>();
-          for (const person of aiPeople) {
-            const snippet = generateSnippet(person, aiResult.keywords);
-            if (snippet) newSnippets.set(person.id, snippet);
-          }
-          setSnippets(newSnippets);
-        }
-      }
-      setAiLoading(false);
-      onSearchingChange(false);
-    });
-  }, [searchCommand, onConsumeSearchCommand, onSearchingChange]);
+    handleSearch(searchCommand.query);
+    setFocusTrigger((prev) => prev + 1);
+  }, [searchCommand, onConsumeSearchCommand, handleSearch]);
 
   const handleFiltersChange = useCallback((next: MapFilters) => {
     setFilters(next);
@@ -531,15 +586,6 @@ export default function Dashboard({
     });
   }, []);
 
-  const handleClearSearchQuery = useCallback(() => {
-    setActiveQuery('');
-    setNameMatches([]);
-    setAiResults([]);
-    setAiKeywords(null);
-    setSnippets(new Map());
-    onClearSearchInput();
-  }, [onClearSearchInput]);
-
   const handleRemoveSearchQueryFilter = useCallback(() => {
     handleClearSearchQuery();
   }, [handleClearSearchQuery]);
@@ -568,10 +614,10 @@ export default function Dashboard({
     : organizations;
 
   return (
-    <div className="flex h-[calc(100vh-64px)]">
-      <div className="flex-1 relative overflow-hidden">
-        <div className="absolute top-4 left-4 z-40">
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1 flex">
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+      <div className="flex-1 relative">
+        <div className="absolute top-4 left-4 right-4 z-40 pointer-events-none flex items-start justify-between">
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1 flex pointer-events-auto">
             <button
               onClick={() => {
                 setViewMode('map');
@@ -598,6 +644,70 @@ export default function Dashboard({
               <span>List</span>
             </button>
           </div>
+
+          <div className="flex-1 max-w-2xl mx-8 pointer-events-auto flex flex-col gap-2">
+            <UnifiedSearchBar
+              onSearch={handleSearch}
+              isSearching={aiLoading}
+              initialValue={activeQuery}
+              focusTrigger={focusTrigger}
+              className="flex-1 max-w-2xl"
+            />
+
+            
+            {/* Search Context Chips */}
+            {(isSearchActive || filters.sector || filters.occupation || filters.flemishConnections.length > 0) && (
+              <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                {activeQuery && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full text-xs font-medium shadow-sm">
+                    <SearchIcon className="w-3 h-3" />
+                    <span>Query: {activeQuery}</span>
+                    <button onClick={handleClearSearchQuery} className="hover:text-sky-900 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {filters.sector && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-full text-xs font-medium shadow-sm">
+                    <span>Sector: {filters.sector}</span>
+                    <button 
+                      onClick={() => setFilters({ ...filters, sector: '' })} 
+                      className="hover:text-yellow-900 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {filters.occupation && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium shadow-sm">
+                    <span>Type: {filters.occupation}</span>
+                    <button 
+                      onClick={() => setFilters({ ...filters, occupation: '' })} 
+                      className="hover:text-purple-900 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {filters.flemishConnections.map(fc => (
+                  <div key={fc} className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-xs font-medium shadow-sm">
+                    <span>Link: {fc}</span>
+                    <button 
+                      onClick={() => setFilters({ 
+                        ...filters, 
+                        flemishConnections: filters.flemishConnections.filter(c => c !== fc) 
+                      })} 
+                      className="hover:text-orange-900 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="w-20" /> {/* Spacer to balance Map/List toggle */}
         </div>
 
         {viewMode === 'map' ? (
@@ -609,7 +719,7 @@ export default function Dashboard({
           />
         ) : (
           <div className="h-full overflow-y-auto bg-gray-50">
-            <div className="max-w-6xl mx-auto px-6 pt-20 pb-8">
+            <div className="max-w-6xl mx-auto px-6 pt-24 pb-8">
               {isSearchActive ? (
                 <DirectoryGrid
                   nameMatches={nameMatches}
@@ -651,7 +761,6 @@ export default function Dashboard({
         activeAiFilters={activeFilters}
         onRemoveAiFilter={handleRemoveFilter}
         activeSearchQuery={activeQuery}
-        activeSearchKeywords={aiKeywords}
         onRemoveSearchQuery={handleRemoveSearchQueryFilter}
         popularFilters={popularFilters}
         onActivatePopularFilter={handleActivatePopularFilter}

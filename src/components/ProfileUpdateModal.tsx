@@ -21,6 +21,10 @@ interface ProfileUpdateModalProps {
 }
 
 const FIELD_LABELS: Record<string, string> = {
+  title: 'Title',
+  first_name: 'First Name',
+  last_name: 'Last Name',
+  name: 'Full Name',
   current_position: 'Position',
   bio: 'Bio',
   email: 'Email',
@@ -96,6 +100,17 @@ export default function ProfileUpdateModal({
     if (Object.keys(updates).length === 0) {
       onApplied();
       return;
+    }
+
+    // If title, first_name or last_name changed, recompute name
+    const title = 'title' in updates ? updates.title : person.title;
+    const first = 'first_name' in updates ? updates.first_name : person.first_name;
+    const last = 'last_name' in updates ? updates.last_name : person.last_name;
+    
+    if ('title' in updates || 'first_name' in updates || 'last_name' in updates) {
+      if (!('name' in updates)) {
+        updates.name = [title, first, last].filter(Boolean).join(' ') || person.name;
+      }
     }
 
     updates['updated_at'] = new Date().toISOString();

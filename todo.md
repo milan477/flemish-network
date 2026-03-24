@@ -16,20 +16,17 @@ See `CLAUDE.md` → "AI Strategy" for model tier assignments, embedding pipeline
 
 Consolidate three search experiences (nav search bar, Smart Search chat, filter panel search) into one.
 
-- [ ] Remove the large search bar from `Navigation.tsx` top ribbon
-- [ ] Remove the "Smart Search" chat section from `FilterPanel.tsx`
-- [ ] Add a new search bar to the right of Map/List toggle buttons in `Dashboard.tsx`
-  - Placeholder: "Search by name or describe what you're looking for..."
-  - Should take up most remaining width in that row
-- [ ] **Name/org search mode:** If input looks like a short proper noun (1-3 words, no descriptive language), do fuzzy text match against `people.name` and `organizations.name` and show results as a dropdown autocomplete below the search bar
-- [ ] **Natural language search mode:** If input is a longer descriptive query (4+ words or contains descriptive terms like "researchers in", "people who"):
-  - Call `smartSearch()` in `aiService.ts` (Gemini Flash, task `smart_search`) to extract structured keywords per profile field
-  - Auto-set the corresponding filters in `FilterPanel.tsx` so the user sees what was interpreted
-  - Use the returned keywords to score/rank people via `scorePersonAgainstKeywords()` (already in `aiService.ts`)
-  - Sort results by relevance score in list/map view
-- [ ] Show active search context as removable chips/tags below the search bar after NL query is processed (e.g., "Location: Boston", "Sector: AI", "Query: AI safety research")
-  - Removing a chip updates filters and re-runs search
-- [ ] Keep search bar accessible from all pages via `Navigation.tsx` (triggers navigation to dashboard with search)
+- [x] Remove the large search bar from `Navigation.tsx` top ribbon
+- [x] Remove the "Smart Search" chat section from `FilterPanel.tsx`
+- [x] Add a new search bar to the right of Map/List toggle buttons in `Dashboard.tsx`
+- [x] **Name/org search mode:** Autocomplete dropdown (1+ characters)
+- [x] **Natural language search mode:** AI-Enhanced keyword extraction and scoring
+- [x] Show active search context as removable chips/tags
+- [x] Keep search bar accessible via Navigation search icon (with auto-focus)
+- [x] **Profile Data Decomposition (Refactor):** 
+  - Ensure all records correctly split `name` into `title`, `first_name`, and `last_name` columns (fix existing "Dr." prefixes in names)
+  - Update UI to display titles/names consistently
+  - (Linked to migration `20260214030710_add_title_first_name_last_name.sql`)
 
 ### 2. Auto-Apply Filters & Deterministic Filter Parser — `feature/filter-simplify`
 **Files touched:** `FilterPanel.tsx`, `Dashboard.tsx`, `supabase.ts` (types), new `src/lib/filterParser.ts`, `aiService.ts` (remove `interpretFilters`), `supabase/functions/ai-agent/index.ts` (remove `interpret_filters` task)

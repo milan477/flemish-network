@@ -1,7 +1,5 @@
-import { useState } from 'react';
-import { Users, Building2, Filter, RotateCcw, X, Sparkles, Search } from 'lucide-react';
+import { Users, Building2, Filter, RotateCcw } from 'lucide-react';
 import type { MapFilters, ActiveAiFilter, SavedFlemishFilter } from '../lib/supabase';
-import type { SmartSearchKeywords } from '../lib/aiService';
 import { DEFAULT_MAP_FILTERS, OCCUPATION_OPTIONS, PREDEFINED_FILTERS } from '../lib/supabase';
 
 interface FilterPanelProps {
@@ -13,7 +11,6 @@ interface FilterPanelProps {
   activeAiFilters: ActiveAiFilter[];
   onRemoveAiFilter: (id: string) => void;
   activeSearchQuery: string;
-  activeSearchKeywords: SmartSearchKeywords | null;
   onRemoveSearchQuery: () => void;
   popularFilters: SavedFlemishFilter[];
   onActivatePopularFilter: (filter: SavedFlemishFilter) => Promise<void>;
@@ -22,42 +19,6 @@ interface FilterPanelProps {
 
 const SELECT_CLS =
   'w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all';
-
-function AiKeywordTooltip({ keywords }: { keywords: Record<string, string[]> }) {
-  const entries = Object.entries(keywords).filter(([, v]) => v.length > 0);
-  if (entries.length === 0) return null;
-
-  return (
-    <div className="absolute bottom-full left-0 mb-1.5 w-56 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl z-50 pointer-events-none">
-      <div className="text-[10px] font-semibold uppercase text-gray-400 mb-1.5">AI Keywords</div>
-      {entries.map(([field, kws]) => (
-        <div key={field} className="mb-1 last:mb-0">
-          <span className="text-gray-400">{field}:</span>{' '}
-          <span className="text-gray-200">{kws.join(', ')}</span>
-        </div>
-      ))}
-      <div className="absolute bottom-0 left-4 translate-y-1/2 w-2 h-2 bg-gray-900 rotate-45" />
-    </div>
-  );
-}
-
-function SearchQueryTooltip({ keywords }: { keywords: SmartSearchKeywords }) {
-  const entries = Object.entries(keywords).filter(([, v]) => v.length > 0);
-  if (entries.length === 0) return null;
-
-  return (
-    <div className="absolute bottom-full left-0 mb-1.5 w-56 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl z-50 pointer-events-none">
-      <div className="text-[10px] font-semibold uppercase text-gray-400 mb-1.5">AI Analysis</div>
-      {entries.map(([field, kws]) => (
-        <div key={field} className="mb-1 last:mb-0">
-          <span className="text-gray-400">{field}:</span>{' '}
-          <span className="text-gray-200">{kws.join(', ')}</span>
-        </div>
-      ))}
-      <div className="absolute bottom-0 left-4 translate-y-1/2 w-2 h-2 bg-gray-900 rotate-45" />
-    </div>
-  );
-}
 
 export default function FilterPanel({
   filters,
@@ -68,14 +29,11 @@ export default function FilterPanel({
   activeAiFilters,
   onRemoveAiFilter,
   activeSearchQuery,
-  activeSearchKeywords,
   onRemoveSearchQuery,
   popularFilters,
   onActivatePopularFilter,
   onActivatePredefined,
 }: FilterPanelProps) {
-  const [hoveredFilterId, setHoveredFilterId] = useState<string | null>(null);
-  const [hoveredSearchQuery, setHoveredSearchQuery] = useState(false);
 
   const handleReset = () => {
     onFiltersChange({ ...DEFAULT_MAP_FILTERS });
@@ -131,68 +89,6 @@ export default function FilterPanel({
 
       {showPanel && (
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          {(activeSearchQuery || activeAiFilters.length > 0) && (
-            <div>
-              <label className="text-sm font-medium text-gray-900 mb-2 block">
-                Active Filters
-              </label>
-              <div className="space-y-1.5">
-                {activeSearchQuery && (
-                  <div
-                    className="relative"
-                    onMouseEnter={() => setHoveredSearchQuery(true)}
-                    onMouseLeave={() => setHoveredSearchQuery(false)}
-                  >
-                    {hoveredSearchQuery && activeSearchKeywords && (
-                      <SearchQueryTooltip keywords={activeSearchKeywords} />
-                    )}
-                    <div className="flex items-center justify-between px-2.5 py-2 bg-sky-50 border border-sky-200 rounded-lg group">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <Search className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
-                        <span className="text-xs font-medium text-sky-800 truncate">
-                          {activeSearchQuery}
-                        </span>
-                      </div>
-                      <button
-                        onClick={onRemoveSearchQuery}
-                        className="p-0.5 text-sky-400 hover:text-sky-600 transition-colors flex-shrink-0"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {activeAiFilters.map((af) => (
-                  <div
-                    key={af.id}
-                    className="relative"
-                    onMouseEnter={() => setHoveredFilterId(af.id)}
-                    onMouseLeave={() => setHoveredFilterId(null)}
-                  >
-                    {hoveredFilterId === af.id && (
-                      <AiKeywordTooltip keywords={af.keywords} />
-                    )}
-                    <div className="flex items-center justify-between px-2.5 py-2 bg-yellow-50 border border-yellow-200 rounded-lg group">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <Sparkles className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />
-                        <span className="text-xs font-medium text-yellow-800 truncate">
-                          {af.query}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => onRemoveAiFilter(af.id)}
-                        className="p-0.5 text-yellow-400 hover:text-yellow-600 transition-colors flex-shrink-0"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div>
             <label className="text-sm font-medium text-gray-900 mb-3 block">Show</label>
             <div className="space-y-2">
@@ -308,7 +204,7 @@ export default function FilterPanel({
                           : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                       }`}
                     >
-                      <Sparkles className="w-3 h-3" />
+                      <Building2 className="w-3 h-3" />
                       {pf.original_query}
                     </button>
                   );

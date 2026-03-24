@@ -37,12 +37,12 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     setSelectedCluster(null);
   }, [clusters]);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      e.preventDefault();
-      const container = containerRef.current;
-      if (!container) return;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
       const rect = container.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -51,14 +51,16 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
       const newZoom = clamp(zoom + delta * zoom, MIN_ZOOM, MAX_ZOOM);
       const ratio = newZoom / zoom;
 
-      setPan({
-        x: mouseX - (mouseX - pan.x) * ratio,
-        y: mouseY - (mouseY - pan.y) * ratio,
-      });
+      setPan((p) => ({
+        x: mouseX - (mouseX - p.x) * ratio,
+        y: mouseY - (mouseY - p.y) * ratio,
+      }));
       setZoom(newZoom);
-    },
-    [zoom, pan]
-  );
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
+  }, [zoom, pan]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -138,7 +140,6 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
       className="absolute inset-0 select-none"
       style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
       onClick={handleBackdropClick}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
