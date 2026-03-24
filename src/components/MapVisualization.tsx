@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -30,51 +30,36 @@ const INITIAL_ZOOM = 4;
 
 function MapController({ onMapClick }: { onMapClick: () => void }) {
   const map = useMap();
-  
   useEffect(() => {
     map.on('click', onMapClick);
-    return () => {
-      map.off('click', onMapClick);
-    };
+    return () => { map.off('click', onMapClick); };
   }, [map, onMapClick]);
-
   return null;
 }
 
 export default function MapVisualization({ clusters, loading, onViewInDirectory, onNavigate }: MapVisualizationProps) {
-  const [selectedCluster, setSelectedCluster] = useState<MapCluster | null>(null);
+  const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
-    setSelectedCluster(null);
+    setSelectedCityKey(null);
   }, [clusters]);
 
-  const handleClusterClick = useCallback((cluster: MapCluster) => {
-    setSelectedCluster(cluster);
-  }, []);
-
   const handleBackdropClick = useCallback(() => {
-    setSelectedCluster(null);
+    setSelectedCityKey(null);
   }, []);
 
-  const zoomIn = () => {
-    mapRef.current?.zoomIn();
-  };
-
-  const zoomOut = () => {
-    mapRef.current?.zoomOut();
-  };
-
-  const resetView = () => {
-    mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM);
-  };
+  const zoomIn = () => { mapRef.current?.zoomIn(); };
+  const zoomOut = () => { mapRef.current?.zoomOut(); };
+  const resetView = () => { mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM); };
 
   // Custom icon for a single city cluster
-  const createCityIcon = (cluster: MapCluster) => {
+  const createCityIcon = useCallback((cluster: MapCluster) => {
+    const key = `${cluster.city}-${cluster.state}`;
     const count = cluster.people.length + cluster.organizations.length;
     const size = Math.max(Math.sqrt(count) * 12, 32);
-    const isSelected = selectedCluster?.city === cluster.city && selectedCluster?.state === cluster.state;
+    const isSelected = selectedCityKey === key;
     
     return L.divIcon({
       html: `
@@ -88,14 +73,13 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
-  };
+  }, [selectedCityKey]);
 
   // Custom icon for merged clusters (multiple cities)
-  const createClusterIcon = (cluster: L.MarkerCluster) => {
+  const createClusterIcon = useCallback((cluster: L.MarkerCluster) => {
     const markers = cluster.getAllChildMarkers();
     let totalCount = 0;
     
-    // Sum up the people+orgs from our MapCluster markers
     markers.forEach(m => {
       const mc = (m.options as any).mapCluster as MapCluster;
       if (mc) {
@@ -116,13 +100,10 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
-  };
+  }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 select-none"
-    >
+    <div ref={containerRef} className="absolute inset-0 select-none">
       <style>{`
         @keyframes pulse-slow {
           0%, 100% { transform: scale(1); opacity: 0.9; }
@@ -135,34 +116,22 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
           background: none !important;
           border: none !important;
         }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #cbd5e1;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+        
         .leaflet-popup-content-wrapper {
           padding: 0 !important;
-          overflow: hidden !important;
-          border-radius: 0.75rem !important;
+          background: transparent !important;
+          box-shadow: none !important;
         }
         .leaflet-popup-content {
           margin: 0 !important;
-          width: 320px !important;
+          width: auto !important;
         }
-        .leaflet-popup-tip-container {
-          display: none !important;
-        }
-        .leaflet-popup-close-button {
-          display: none !important;
-        }
+        .leaflet-popup-tip-container { display: none !important; }
+        .leaflet-popup-close-button { display: none !important; }
       `}</style>
       
       <div className="w-full h-full bg-slate-50 relative overflow-hidden">
@@ -187,32 +156,36 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
             showCoverageOnHover={false}
             maxClusterRadius={40}
           >
-            {clusters.map((cluster) => (
-              <Marker
-                key={`${cluster.city}-${cluster.state}`}
-                position={[cluster.lat, cluster.lng]}
-                icon={createCityIcon(cluster)}
-                {...({ mapCluster: cluster } as any)}
-                eventHandlers={{
-                  popupopen: () => setSelectedCluster(cluster),
-                  popupclose: () => setSelectedCluster(null),
-                }}
-              >
-                <Popup 
-                  position={[cluster.lat, cluster.lng]} 
-                  offset={[0, -5]}
-                  autoPanPadding={[100, 20]} // 100px padding at top to avoid search bar
-                  minWidth={320}
+            {clusters.map((cluster) => {
+              const key = `${cluster.city}-${cluster.state}`;
+              return (
+                <Marker
+                  key={key}
+                  position={[cluster.lat, cluster.lng]}
+                  icon={createCityIcon(cluster)}
+                  {...({ mapCluster: cluster } as any)}
+                  eventHandlers={{
+                    popupopen: () => setSelectedCityKey(key),
+                    popupclose: () => setSelectedCityKey(null),
+                  }}
                 >
-                  <ClusterPopover
-                    cluster={cluster}
-                    onClose={() => mapRef.current?.closePopup()}
-                    onViewInDirectory={onViewInDirectory}
-                    onNavigate={onNavigate}
-                  />
-                </Popup>
-              </Marker>
-            ))}
+                  <Popup 
+                    offset={[0, -12]}
+                    autoPanPaddingTopLeft={[40, 140]} // 140px clearance from top
+                    autoPanPaddingBottomRight={[40, 40]}
+                    minWidth={320}
+                    autoPan={true}
+                  >
+                    <ClusterPopover
+                      cluster={cluster}
+                      onClose={() => mapRef.current?.closePopup()}
+                      onViewInDirectory={onViewInDirectory}
+                      onNavigate={onNavigate}
+                    />
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MarkerClusterGroup>
         </MapContainer>
 
