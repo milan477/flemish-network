@@ -7,19 +7,20 @@ import {
   Network,
   Linkedin,
   Globe,
-  Twitter,
   Mail,
   Phone,
   Pencil,
   Save,
   X,
+  Plus,
   RotateCw,
   Loader2,
   Tag,
   ChevronDown,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, US_STATES, MAJOR_CITIES, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
+import CitySearch from '../components/CitySearch';
 
 interface PersonProfileProps {
   personId: string;
@@ -29,6 +30,17 @@ interface PersonProfileProps {
 interface PersonSector {
   sector_id: string;
   sectors: { name: string } | null;
+}
+
+function ensureProtocol(url: string): string {
+  if (!url || !url.trim()) return '';
+  const trimmed = url.trim();
+  // If it's just an @username, leave it (or maybe prefix with x.com/ later?)
+  // For now, only prefix if it doesn't look like an absolute URL
+  if (!/^https?:\/\//i.test(trimmed) && trimmed.includes('.')) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
 
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
@@ -41,6 +53,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [editForm, setEditForm] = useState<Partial<Person>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
   const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
+  const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
@@ -53,6 +66,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     ]);
 
     const personData = personRes.data;
+    console.log('loadPerson result for:', personId, personData);
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
     setConnections(connRes.data || []);
@@ -73,11 +87,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   }, [personId]);
 
   useEffect(() => {
+    console.log('PersonProfile useEffect: loading for', personId);
     loadPerson();
-  }, [loadPerson]);
+  }, [loadPerson, personId]);
 
   const startEditing = () => {
     if (!person) return;
+    console.log('startEditing for:', person.id, person.name);
     setEditForm({
       name: person.name,
       title: person.title || '',
@@ -100,6 +116,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       ? person.flemish_connection.split(',').map((s: string) => s.trim()).filter(Boolean)
       : [];
     setEditFlemishConnections(flemish);
+    setRemovedFlemishConnections([]);
     setEditing(true);
   };
 
@@ -108,11 +125,16 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setEditForm({});
     setEditSectorIds([]);
     setEditFlemishConnections([]);
+    setRemovedFlemishConnections([]);
   };
 
   const saveEdits = async () => {
-    if (!person) return;
+    if (!person) {
+      console.warn('saveEdits: no person in state');
+      return;
+    }
     setSaving(true);
+    console.log('saveEdits starting. person.id:', person.id, 'prop personId:', personId);
 
     const first = (editForm.first_name || '').trim();
     const last = (editForm.last_name || '').trim();
@@ -121,29 +143,43 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
 
     const flemishStr = editFlemishConnections.join(', ');
 
-    const { error: updateErr } = await supabase
-      .from('people')
-      .update({
-        name: computedName,
-        title: title || null,
-        first_name: first || null,
-        last_name: last || null,
-        current_position: editForm.current_position || null,
-        occupation: editForm.occupation || null,
-        location_city: editForm.location_city || null,
-        location_state: editForm.location_state || null,
-        bio: editForm.bio || null,
-        flemish_connection: flemishStr || null,
-        phone: editForm.phone || null,
-        email: editForm.email || null,
-        linkedin_url: editForm.linkedin_url || null,
-        website_url: editForm.website_url || null,
-        twitter_url: editForm.twitter_url || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', person.id);
+    const linkedin = ensureProtocol(editForm.linkedin_url || '');
+    const twitter = ensureProtocol(editForm.twitter_url || '');
+    const website = ensureProtocol(editForm.website_url || '');
 
-    if (!updateErr) {
+    const updatePayload = {
+      name: computedName,
+      title: title, // DB has NOT NULL DEFAULT ''
+      first_name: first, // DB has NOT NULL DEFAULT ''
+      last_name: last, // DB has NOT NULL DEFAULT ''
+      current_position: editForm.current_position || null,
+      occupation: editForm.occupation || null,
+      location_city: editForm.location_city || null,
+      location_state: editForm.location_state || null,
+      bio: editForm.bio || null,
+      flemish_connection: flemishStr || null,
+      phone: editForm.phone || null,
+      email: editForm.email || null,
+      linkedin_url: linkedin || null,
+      website_url: website || null,
+      twitter_url: twitter || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: updatedPerson, error: updateErr } = await supabase
+      .from('people')
+      .update(updatePayload)
+      .eq('id', person.id)
+      .select('*')
+      .maybeSingle();
+
+    if (updateErr) {
+      console.error('Supabase update error:', updateErr);
+      alert(`Error saving: ${updateErr.message}`);
+    } else {
+      if (updatedPerson) {
+        setPerson(updatedPerson as Person);
+      }
       const currentIds = personSectors.map((s) => s.id);
       const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
       const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
@@ -167,7 +203,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
 
     setSaving(false);
     setEditing(false);
-    await loadPerson();
   };
 
   const toggleEditSector = (id: string) => {
@@ -177,9 +212,16 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   };
 
   const toggleEditFlemish = (option: string) => {
-    setEditFlemishConnections((prev) =>
-      prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]
-    );
+    setEditFlemishConnections((prev) => {
+      const exists = prev.includes(option);
+      if (exists) {
+        setRemovedFlemishConnections(r => [...new Set([...r, option])]);
+        return prev.filter((s) => s !== option);
+      } else {
+        setRemovedFlemishConnections(r => r.filter(i => i !== option));
+        return [...prev, option];
+      }
+    });
   };
 
   const setField = (field: string, value: string) => {
@@ -190,7 +232,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       if (field === 'bio') {
         const lowerBio = value.toLowerCase();
         const detected = FLEMISH_OPTIONS.filter(opt => 
-          lowerBio.includes(opt.toLowerCase()) && !editFlemishConnections.includes(opt)
+          lowerBio.includes(opt.toLowerCase()) && 
+          !editFlemishConnections.includes(opt) &&
+          !removedFlemishConnections.includes(opt)
         );
         if (detected.length > 0) {
           setEditFlemishConnections(prev => [...new Set([...prev, ...detected])]);
@@ -452,33 +496,15 @@ function EditHeader({
         </div>
         <div className="flex items-center space-x-2 sm:col-span-2 lg:col-span-1">
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <div className="flex flex-1 gap-2">
-            <div className="flex-[3] relative">
-              <input
-                value={editForm.location_city || ''}
-                onChange={(e) => setField('location_city', e.target.value)}
-                className={INPUT_CLS}
-                placeholder="City"
-                list="edit-city-suggestions"
-              />
-              <datalist id="edit-city-suggestions">
-                {MAJOR_CITIES.map(city => <option key={city} value={city} />)}
-              </datalist>
-            </div>
-            <div className="flex-[2] relative">
-              <select
-                value={editForm.location_state || ''}
-                onChange={(e) => setField('location_state', e.target.value)}
-                className={`${INPUT_CLS} appearance-none pr-8`}
-              >
-                <option value="">State</option>
-                {US_STATES.map((s) => (
-                  <option key={s.code} value={s.code}>{s.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            </div>
-          </div>
+          <CitySearch
+            value={editForm.location_city || ''}
+            state={editForm.location_state || ''}
+            onChange={(city, state) => {
+              setField('location_city', city);
+              setField('location_state', state);
+            }}
+            placeholder="Search city..."
+          />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -513,12 +539,15 @@ function EditHeader({
           />
         </div>
         <div className="flex items-center space-x-2">
-          <Twitter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <svg className="w-4 h-4 text-gray-400 flex-shrink-0 fill-current" viewBox="0 0 24 24">
+            <title>Twitter (X)</title>
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
           <input
             value={editForm.twitter_url || ''}
             onChange={(e) => setField('twitter_url', e.target.value)}
             className={INPUT_CLS}
-            placeholder="Twitter URL"
+            placeholder="Twitter (X) URL"
           />
         </div>
         <div className="flex items-center space-x-2">
@@ -553,9 +582,12 @@ function SocialLinks({ person }: { person: Person }) {
           href={person.twitter_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#1DA1F2] hover:border-[#1DA1F2] transition-colors"
+          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-900 transition-colors"
         >
-          <Twitter className="w-5 h-5" />
+          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <title>Twitter (X)</title>
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
         </a>
       )}
       {person.website_url && (
@@ -589,6 +621,18 @@ function EditBody({
   editFlemishConnections: string[];
   toggleEditFlemish: (opt: string) => void;
 }) {
+  const [customFlemish, setCustomFlemish] = useState('');
+
+  const handleAddCustom = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if ('key' in e && e.key !== 'Enter') return;
+    e.preventDefault();
+    const val = customFlemish.trim();
+    if (val && !editFlemishConnections.includes(val)) {
+      toggleEditFlemish(val);
+      setCustomFlemish('');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -603,7 +647,7 @@ function EditBody({
       </div>
       <div>
         <label className="text-sm font-medium text-gray-700 mb-2 block">Flemish Connection</label>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 mb-3">
           {FLEMISH_OPTIONS.map((opt) => (
             <button
               key={opt}
@@ -618,6 +662,35 @@ function EditBody({
               {opt}
             </button>
           ))}
+          {/* Custom tags not in FLEMISH_OPTIONS */}
+          {editFlemishConnections.filter(opt => !FLEMISH_OPTIONS.includes(opt)).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggleEditFlemish(opt)}
+              className="text-sm px-4 py-1.5 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 ring-1 ring-amber-300 flex items-center space-x-1"
+            >
+              <span>{opt}</span>
+              <X className="w-3 h-3" />
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center space-x-2 max-w-xs">
+          <input
+            type="text"
+            value={customFlemish}
+            onChange={(e) => setCustomFlemish(e.target.value)}
+            onKeyDown={handleAddCustom}
+            placeholder="Add custom connection..."
+            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+          />
+          <button
+            type="button"
+            onClick={handleAddCustom}
+            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
       </div>
       <div>
@@ -652,11 +725,6 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Research: { bg: 'bg-cyan-50', text: 'text-cyan-700' },
 };
 
-function matchFlemishOptions(text: string): string[] {
-  const lower = text.toLowerCase();
-  return FLEMISH_OPTIONS.filter((opt) => lower.includes(opt.toLowerCase()));
-}
-
 function ViewBody({
   person,
   personSectors,
@@ -681,25 +749,22 @@ function ViewBody({
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
           <div className="flex flex-wrap gap-2">
-            {(() => {
-              const matched = matchFlemishOptions(person.flemish_connection!);
-              if (matched.length === 0) {
-                return <p className="text-gray-700">{person.flemish_connection}</p>;
-              }
-              
-              // If there are specific matched tags, show them as tags.
-              // We also want to show any extra text that might be in flemish_connection
-              // but for now, the UI usually just has the tags.
-              return matched.map(m => (
+            {person.flemish_connection.split(',').map(s => s.trim()).filter(Boolean).map((m, idx) => {
+              const isStandard = FLEMISH_OPTIONS.includes(m);
+              return (
                 <button
-                  key={m}
+                  key={`${m}-${idx}`}
                   onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [m] })}
-                  className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:ring-2 hover:ring-blue-300 transition-all cursor-pointer"
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer hover:ring-2 ${
+                    isStandard 
+                      ? 'bg-blue-50 text-blue-700 hover:ring-blue-300' 
+                      : 'bg-amber-50 text-amber-700 hover:ring-amber-300 border border-amber-100'
+                  }`}
                 >
                   {m}
                 </button>
-              ));
-            })()}
+              );
+            })}
           </div>
         </div>
       )}

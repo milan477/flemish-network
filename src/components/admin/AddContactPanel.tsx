@@ -15,10 +15,12 @@ import {
   Briefcase,
   Users,
   ChevronDown,
+  X,
 } from 'lucide-react';
-import { supabase, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, US_STATES, MAJOR_CITIES, type Sector, type Person } from '../../lib/supabase';
+import { supabase, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Sector, type Person } from '../../lib/supabase';
 import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
+import CitySearch from '../CitySearch';
 
 interface AddContactPanelProps {
   sectors: Sector[];
@@ -52,6 +54,7 @@ interface ManualForm {
   email: string;
   linkedin_url: string;
   website_url: string;
+  twitter_url: string;
   sectorIds: string[];
 }
 
@@ -69,8 +72,18 @@ const EMPTY_FORM: ManualForm = {
   email: '',
   linkedin_url: '',
   website_url: '',
+  twitter_url: '',
   sectorIds: [],
 };
+
+function ensureProtocol(url: string): string {
+  if (!url || !url.trim()) return '';
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
 
 export default function AddContactPanel({
   sectors,
@@ -255,6 +268,8 @@ function ManualAddForm({
   const [dupeMatch, setDupeMatch] = useState<DuplicateMatch | null>(null);
   const [dupeChecking, setDupeChecking] = useState(false);
   const [flemishConnections, setFlemishConnections] = useState<string[]>([]);
+  const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
+  const [customFlemish, setCustomFlemish] = useState('');
 
   const checkDuplicate = async () => {
     const first = form.firstName.trim().toLowerCase();
@@ -320,6 +335,10 @@ function ManualAddForm({
     const fullName = [form.title, first, last].filter(Boolean).join(' ');
     const flemishStr = flemishConnections.join(', ');
 
+    const linkedin = ensureProtocol(form.linkedin_url || '');
+    const website = ensureProtocol(form.website_url || '');
+    const twitter = ensureProtocol(form.twitter_url || '');
+
     const { data: person, error: insertErr } = await supabase
       .from('people')
       .insert({
@@ -335,8 +354,9 @@ function ManualAddForm({
         flemish_connection: flemishStr || null,
         phone: form.phone || null,
         email: form.email || null,
-        linkedin_url: form.linkedin_url || null,
-        website_url: form.website_url || null,
+        linkedin_url: linkedin || null,
+        website_url: website || null,
+        twitter_url: twitter || null,
       })
       .select('*')
       .maybeSingle();
@@ -362,6 +382,7 @@ function ManualAddForm({
     onPersonAdded(person as Person);
     setForm(EMPTY_FORM);
     setFlemishConnections([]);
+    setRemovedFlemishConnections([]);
     onContactAdded();
     setTimeout(() => setSuccess(false), 5000);
   };
@@ -376,9 +397,26 @@ function ManualAddForm({
   };
 
   const toggleFlemish = (option: string) => {
-    setFlemishConnections((prev) =>
-      prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]
-    );
+    setFlemishConnections((prev) => {
+      const exists = prev.includes(option);
+      if (exists) {
+        setRemovedFlemishConnections(r => [...new Set([...r, option])]);
+        return prev.filter((s) => s !== option);
+      } else {
+        setRemovedFlemishConnections(r => r.filter(i => i !== option));
+        return [...prev, option];
+      }
+    });
+  };
+
+  const handleAddCustomFlemish = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if ('key' in e && e.key !== 'Enter') return;
+    e.preventDefault();
+    const val = customFlemish.trim();
+    if (val && !flemishConnections.includes(val)) {
+      toggleFlemish(val);
+      setCustomFlemish('');
+    }
   };
 
   const set = (field: keyof ManualForm, value: string) => {
@@ -389,7 +427,9 @@ function ManualAddForm({
       if (field === 'bio') {
         const lowerBio = value.toLowerCase();
         const detected = FLEMISH_OPTIONS.filter(opt => 
-          lowerBio.includes(opt.toLowerCase()) && !flemishConnections.includes(opt)
+          lowerBio.includes(opt.toLowerCase()) && 
+          !flemishConnections.includes(opt) &&
+          !removedFlemishConnections.includes(opt)
         );
         if (detected.length > 0) {
           setFlemishConnections(prev => [...new Set([...prev, ...detected])]);
@@ -478,39 +518,21 @@ function ManualAddForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="sm:col-span-2">
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            City
-          </label>
-          <input
+      <div className="flex flex-col space-y-1">
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          City & State
+        </label>
+        <div className="flex items-center space-x-2">
+          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <CitySearch
             value={form.location_city}
-            onChange={(e) => set('location_city', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="Boston"
-            list="manual-city-suggestions"
+            state={form.location_state}
+            onChange={(city, state) => {
+              set('location_city', city);
+              set('location_state', state);
+            }}
+            placeholder="Search city..."
           />
-          <datalist id="manual-city-suggestions">
-            {MAJOR_CITIES.map(city => <option key={city} value={city} />)}
-          </datalist>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            State
-          </label>
-          <div className="relative">
-            <select
-              value={form.location_state}
-              onChange={(e) => set('location_state', e.target.value)}
-              className={`${INPUT_CLS} appearance-none pr-8`}
-            >
-              <option value="">State</option>
-              {US_STATES.map((s) => (
-                <option key={s.code} value={s.code}>{s.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
         </div>
       </div>
 
@@ -554,7 +576,7 @@ function ManualAddForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
             <Globe className="w-3 h-3 text-gray-400" />
@@ -565,6 +587,21 @@ function ManualAddForm({
             onChange={(e) => set('website_url', e.target.value)}
             className={INPUT_CLS}
             placeholder="jandevries.com"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
+            <svg className="w-3 h-3 text-gray-400 fill-current" viewBox="0 0 24 24">
+              <title>Twitter (X)</title>
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            <span>Twitter (X)</span>
+          </label>
+          <input
+            value={form.twitter_url}
+            onChange={(e) => set('twitter_url', e.target.value)}
+            className={INPUT_CLS}
+            placeholder="x.com/jandevries"
           />
         </div>
       </div>
@@ -586,7 +623,7 @@ function ManualAddForm({
         <label className="block text-xs font-medium text-gray-600 mb-1.5">
           Flemish Connection
         </label>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 mb-3">
           {FLEMISH_OPTIONS.map((opt) => (
             <button
               key={opt}
@@ -601,6 +638,35 @@ function ManualAddForm({
               {opt}
             </button>
           ))}
+          {/* Custom tags */}
+          {flemishConnections.filter(opt => !FLEMISH_OPTIONS.includes(opt)).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggleFlemish(opt)}
+              className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 ring-1 ring-amber-300 flex items-center space-x-1"
+            >
+              <span>{opt}</span>
+              <X className="w-3 h-3" />
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center space-x-2 max-w-xs">
+          <input
+            type="text"
+            value={customFlemish}
+            onChange={(e) => setCustomFlemish(e.target.value)}
+            onKeyDown={handleAddCustomFlemish}
+            placeholder="Add custom connection..."
+            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+          />
+          <button
+            type="button"
+            onClick={handleAddCustomFlemish}
+            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 

@@ -10,10 +10,8 @@ import {
   type FilterPreset,
   type SearchCommand,
   type ActiveAiFilter,
-  type SavedFlemishFilter,
   DEFAULT_MAP_FILTERS,
   OCCUPATION_CATEGORY_KEYWORDS,
-  PREDEFINED_FILTER_FIELDS,
 } from '../lib/supabase';
 import MapVisualization from '../components/MapVisualization';
 import DirectoryGrid from '../components/DirectoryGrid';
@@ -175,22 +173,9 @@ export default function Dashboard({
   const [focusTrigger, setFocusTrigger] = useState(0);
 
   const [activeFilters, setActiveFilters] = useState<ActiveAiFilter[]>([]);
-  const [popularFilters, setPopularFilters] = useState<SavedFlemishFilter[]>([]);
 
   const loadIdRef = useRef(0);
   const lastSearchTimestamp = useRef(0);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('saved_flemish_filters')
-        .select('*')
-        .gte('usage_count', 1)
-        .order('usage_count', { ascending: false })
-        .limit(20);
-      if (data) setPopularFilters(data as SavedFlemishFilter[]);
-    })();
-  }, []);
 
   const handleClearSearchQuery = useCallback(() => {
     setActiveQuery('');
@@ -535,46 +520,6 @@ export default function Dashboard({
 
   const handleRemoveFilter = useCallback((filterId: string) => {
     setActiveFilters((prev) => prev.filter((f) => f.id !== filterId));
-  }, []);
-
-  const handleActivatePopularFilter = useCallback(async (saved: SavedFlemishFilter) => {
-    const af: ActiveAiFilter = {
-      id: saved.id,
-      query: saved.original_query,
-      keywords: saved.keywords,
-      fields: saved.target_fields.length > 0 ? saved.target_fields : [...PREDEFINED_FILTER_FIELDS],
-    };
-    setActiveFilters((prev) => {
-      if (prev.some((f) => f.id === af.id)) return prev;
-      return [...prev, af];
-    });
-
-    await supabase
-      .from('saved_flemish_filters')
-      .update({ usage_count: saved.usage_count + 1 })
-      .eq('id', saved.id);
-
-    setPopularFilters((prev) =>
-      prev.map((f) => f.id === saved.id ? { ...f, usage_count: f.usage_count + 1 } : f)
-    );
-  }, []);
-
-  const handleActivatePredefined = useCallback((name: string) => {
-    const lower = name.toLowerCase();
-    const keywords: Record<string, string[]> = {};
-    for (const field of PREDEFINED_FILTER_FIELDS) {
-      keywords[field] = [lower];
-    }
-    const af: ActiveAiFilter = {
-      id: `predefined-${name}`,
-      query: name,
-      keywords,
-      fields: [...PREDEFINED_FILTER_FIELDS],
-    };
-    setActiveFilters((prev) => {
-      if (prev.some((f) => f.id === af.id)) return prev;
-      return [...prev, af];
-    });
   }, []);
 
   const handleRemoveSearchQueryFilter = useCallback(() => {

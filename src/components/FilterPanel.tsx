@@ -1,5 +1,5 @@
-import { Users, Building2, Filter, RotateCcw, Check, CheckSquare, Square } from 'lucide-react';
-import type { MapFilters, ActiveAiFilter, SavedFlemishFilter } from '../lib/supabase';
+import { Users, Building2, Filter, RotateCcw } from 'lucide-react';
+import type { MapFilters, ActiveAiFilter } from '../lib/supabase';
 import { DEFAULT_MAP_FILTERS, OCCUPATION_OPTIONS, FLEMISH_OPTIONS } from '../lib/supabase';
 
 interface FilterPanelProps {

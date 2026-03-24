@@ -34,7 +34,7 @@ const FIELD_LABELS: Record<string, string> = {
   bio: 'Bio',
   phone: 'Phone',
   website_url: 'Website',
-  twitter_url: 'Twitter',
+  twitter_url: 'Twitter (X)',
   location_city: 'City',
   location_state: 'State',
 };
