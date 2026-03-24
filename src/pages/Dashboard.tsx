@@ -85,16 +85,6 @@ function generateSnippet(
   return '';
 }
 
-function resolveCoords(
-  city: string,
-  state: string,
-  lat?: number | null,
-  lng?: number | null
-): { lat: number; lng: number } | null {
-  if (lat != null && lng != null) return { lat: Number(lat), lng: Number(lng) };
-  return lookupCity(city, state);
-}
-
 function buildClusters(
   people: Person[],
   organizations: Organization[],
@@ -105,15 +95,29 @@ function buildClusters(
   if (filters.showPeople) {
     for (const person of people) {
       if (!person.location_city || !person.location_state) continue;
-      const coords = resolveCoords(person.location_city, person.location_state, person.latitude, person.longitude);
-      if (!coords) continue;
+      
+      // Try to get coordinates from the person record itself first
+      let lat = person.latitude;
+      let lng = person.longitude;
+      
+      // If not on record, check the global cache
+      if (lat == null || lng == null) {
+        const coords = lookupCity(person.location_city, person.location_state);
+        if (coords) {
+          lat = coords.lat;
+          lng = coords.lng;
+        }
+      }
+
+      if (lat == null || lng == null) continue;
+
       const key = `${person.location_city}|${person.location_state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
           city: person.location_city,
           state: person.location_state,
-          lat: coords.lat,
-          lng: coords.lng,
+          lat: Number(lat),
+          lng: Number(lng),
           people: [],
           organizations: [],
         });
@@ -125,15 +129,27 @@ function buildClusters(
   if (filters.showOrganizations) {
     for (const org of organizations) {
       if (!org.location_city || !org.location_state) continue;
-      const coords = resolveCoords(org.location_city, org.location_state, org.latitude, org.longitude);
-      if (!coords) continue;
+      
+      let lat = org.latitude;
+      let lng = org.longitude;
+      
+      if (lat == null || lng == null) {
+        const coords = lookupCity(org.location_city, org.location_state);
+        if (coords) {
+          lat = coords.lat;
+          lng = coords.lng;
+        }
+      }
+
+      if (lat == null || lng == null) continue;
+
       const key = `${org.location_city}|${org.location_state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
           city: org.location_city,
           state: org.location_state,
-          lat: coords.lat,
-          lng: coords.lng,
+          lat: Number(lat),
+          lng: Number(lng),
           people: [],
           organizations: [],
         });
@@ -449,21 +465,17 @@ export default function Dashboard({
           for (const [key, coords] of geocoded) {
             const [c, s] = key.split(',');
             addToCache(c, s, coords.lat, coords.lng);
+            
+            // Proactively save to DB so other users benefit
+            supabase.from('locations').upsert({
+              city: c,
+              state: s,
+              latitude: coords.lat,
+              longitude: coords.lng
+            }).then();
           }
 
-          for (const entity of needsGeocoding) {
-            const key = `${entity.city},${entity.state}`;
-            const coords = geocoded.get(key);
-            if (!coords) continue;
-            if (entity.table === 'people') {
-              const p = peopleData.find((pp) => pp.id === entity.id);
-              if (p) { p.latitude = coords.lat; p.longitude = coords.lng; }
-            } else {
-              const o = orgsData.find((oo) => oo.id === entity.id);
-              if (o) { o.latitude = coords.lat; o.longitude = coords.lng; }
-            }
-          }
-
+          // Force rebuild with new coordinates
           const updatedClusters = buildClusters(peopleData, orgsData, currentFilters);
           setClusters(updatedClusters);
           setStats((prev) => ({
