@@ -38,7 +38,7 @@ src/
 │   └── AddContact.tsx          # Manual contact creation
 ├── components/                 # Reusable UI components
 │   ├── Navigation.tsx          # Top nav bar with search
-│   ├── MapVisualization.tsx    # Interactive US map with clusters
+│   ├── MapVisualization.tsx    # Interactive OpenStreetMap with clusters
 │   ├── FilterPanel.tsx         # Right sidebar filters
 │   ├── DirectoryGrid.tsx       # Contact list view
 │   ├── PlanForm.tsx            # Event creation form
@@ -53,8 +53,7 @@ src/
 │   ├── plannerUtils.ts         # Event type configs, action templates
 │   ├── csvParser.ts            # CSV import with field mapping + dedup
 │   ├── geocoding.ts            # Batch geocoding via edge function
-│   ├── locations.ts            # Location coordinate cache
-│   └── usMapData.ts            # US state SVG paths + Mercator projection
+│   └── locations.ts            # Location coordinate cache
 supabase/
 ├── migrations/                 # Sequential SQL migrations (timestamp-prefixed)
 └── functions/                  # Deno edge functions
