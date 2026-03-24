@@ -1,9 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { MapPin, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
-import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import type { MapCluster } from '../lib/supabase';
 import ClusterPopover from './ClusterPopover';
 import L from 'leaflet';
+
+// Leaflet styles for clustering (not included in default leaflet.css)
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 // Fix for default Leaflet icons in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -23,7 +28,7 @@ interface MapVisualizationProps {
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
 
-function MapController({ clusters, onMapClick }: { clusters: MapCluster[], onMapClick: () => void }) {
+function MapController({ onMapClick }: { onMapClick: () => void }) {
   const map = useMap();
   
   useEffect(() => {
@@ -46,20 +51,19 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     setSelectedCluster(null);
   }, [clusters]);
 
-  const handleClusterClick = (cluster: MapCluster, e: L.LeafletMouseEvent) => {
+  const handleClusterClick = useCallback((cluster: MapCluster, e: L.LeafletMouseEvent) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    // Use originalEvent for screen coordinates
     setPopoverPos({ 
       x: e.originalEvent.clientX - rect.left, 
       y: e.originalEvent.clientY - rect.top 
     });
     setSelectedCluster(cluster);
-  };
+  }, []);
 
-  const handleBackdropClick = () => {
+  const handleBackdropClick = useCallback(() => {
     setSelectedCluster(null);
-  };
+  }, []);
 
   const zoomIn = () => {
     mapRef.current?.zoomIn();
@@ -73,12 +77,74 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM);
   };
 
+  // Custom icon for a single city cluster
+  const createCityIcon = (cluster: MapCluster) => {
+    const count = cluster.people.length + cluster.organizations.length;
+    const size = Math.max(Math.sqrt(count) * 12, 32);
+    const isSelected = selectedCluster?.city === cluster.city && selectedCluster?.state === cluster.state;
+    
+    return L.divIcon({
+      html: `
+        <div class="relative flex items-center justify-center group" style="width: ${size}px; height: ${size}px;">
+          <div class="absolute inset-0 rounded-full transition-all duration-300 ${isSelected ? 'bg-amber-600 scale-110 shadow-lg' : 'bg-yellow-400 group-hover:bg-yellow-500 shadow-md'}" style="opacity: 0.9;"></div>
+          <div class="absolute inset-0 rounded-full border-2 ${isSelected ? 'border-amber-700' : 'border-yellow-600'}" style="opacity: 0.5;"></div>
+          <span class="relative z-10 text-xs font-bold ${isSelected ? 'text-white' : 'text-gray-900'} pointer-events-none">${count}</span>
+        </div>
+      `,
+      className: 'custom-city-icon',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  };
+
+  // Custom icon for merged clusters (multiple cities)
+  const createClusterIcon = (cluster: L.MarkerCluster) => {
+    const markers = cluster.getAllChildMarkers();
+    let totalCount = 0;
+    
+    // Sum up the people+orgs from our MapCluster markers
+    markers.forEach(m => {
+      const mc = (m.options as any).mapCluster as MapCluster;
+      if (mc) {
+        totalCount += mc.people.length + mc.organizations.length;
+      }
+    });
+
+    const size = Math.max(Math.sqrt(totalCount) * 10, 40);
+    
+    return L.divIcon({
+      html: `
+        <div class="relative flex items-center justify-center group" style="width: ${size}px; height: ${size}px;">
+          <div class="absolute inset-0 rounded-full bg-amber-500 shadow-lg border-2 border-amber-600 animate-pulse-slow"></div>
+          <span class="relative z-10 text-xs font-bold text-white pointer-events-none">${totalCount}</span>
+        </div>
+      `,
+      className: 'custom-merged-icon',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  };
+
   return (
     <div
       ref={containerRef}
       className="absolute inset-0 select-none"
       onClick={handleBackdropClick}
     >
+      <style>{`
+        @keyframes pulse-slow {
+          0%, 100% { transform: scale(1); opacity: 0.9; }
+          50% { transform: scale(1.05); opacity: 1; }
+        }
+        .animate-pulse-slow {
+          animation: pulse-slow 3s infinite ease-in-out;
+        }
+        .custom-city-icon, .custom-merged-icon {
+          background: none !important;
+          border: none !important;
+        }
+      `}</style>
+      
       <div className="w-full h-full bg-slate-50 relative overflow-hidden">
         <MapContainer
           center={INITIAL_CENTER}
@@ -93,44 +159,37 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           
-          <MapController clusters={clusters} onMapClick={handleBackdropClick} />
+          <MapController onMapClick={handleBackdropClick} />
 
-          {clusters.map((cluster) => {
-            const count = cluster.people.length + cluster.organizations.length;
-            // Radius calculation: base size + logarithmic growth for count
-            const radius = Math.max(Math.sqrt(count) * 6, 8);
-            const isSelected = selectedCluster?.city === cluster.city && selectedCluster?.state === cluster.state;
-
-            return (
-              <CircleMarker
+          <MarkerClusterGroup
+            chunkedLoading
+            iconCreateFunction={createClusterIcon}
+            showCoverageOnHover={false}
+            maxClusterRadius={40}
+          >
+            {clusters.map((cluster) => (
+              <Marker
                 key={`${cluster.city}-${cluster.state}`}
-                center={[cluster.lat, cluster.lng]}
-                radius={radius}
-                pathOptions={{
-                  fillColor: isSelected ? '#D97706' : '#FACC15',
-                  color: isSelected ? '#B45309' : '#EAB308',
-                  weight: 2,
-                  fillOpacity: 0.7,
-                }}
+                position={[cluster.lat, cluster.lng]}
+                icon={createCityIcon(cluster)}
+                // Store MapCluster in options for the cluster icon creator
+                {...({ mapCluster: cluster } as any)}
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
-                    handleClusterClick(cluster, e);
+                    handleClusterClick(cluster, e as any);
                   },
                 }}
-              >
-                {/* We could use Leaflet Tooltip here if we wanted labels on hover, 
-                    but the user specifically asked to remove the permanent labels. */}
-              </CircleMarker>
-            );
-          })}
+              />
+            ))}
+          </MarkerClusterGroup>
         </MapContainer>
 
         {/* Legend/Status */}
-        <div className="absolute top-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-100 overflow-hidden pointer-events-none">
+        <div className="absolute top-4 left-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-gray-100 overflow-hidden pointer-events-none transition-all duration-300">
           <div className="px-4 py-3">
             <div className="flex items-center space-x-2 mb-1">
-              <MapPin className="w-4 h-4 text-yellow-600" />
+              <MapPin className="w-4 h-4 text-amber-600" />
               <span className="font-semibold text-sm text-gray-900">Network Map</span>
             </div>
             <p className="text-xs text-gray-500">
@@ -170,7 +229,7 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
         {loading && clusters.length === 0 && (
           <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
              <div className="bg-white px-6 py-3 rounded-full shadow-xl flex items-center space-x-3 border border-gray-100">
-                <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
                 <span className="text-sm font-medium text-gray-700">Loading map data...</span>
              </div>
           </div>
