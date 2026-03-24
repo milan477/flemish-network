@@ -1,4 +1,4 @@
-import { User, MapPin, Calendar, Shield, Plus, Search } from 'lucide-react';
+import { User, MapPin, Library, Shield, Plus, Search } from 'lucide-react';
 
 interface NavigationProps {
   currentPage: string;
@@ -16,7 +16,7 @@ export default function Navigation({
 }: NavigationProps) {
   const navItems = [
     { id: 'dashboard', label: 'Network', icon: MapPin },
-    { id: 'planner', label: 'Missions', icon: Calendar },
+    { id: 'collections', label: 'Collections', icon: Library },
     { id: 'admin', label: 'Stats', icon: Shield },
   ];
 

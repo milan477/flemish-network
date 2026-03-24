@@ -3,8 +3,6 @@
 Tasks are scoped for parallel development on feature branches. Each section is one branch.
 Dependencies between branches are noted where they exist.
 
-See `CLAUDE.md` → "AI Strategy" for model tier assignments, embedding pipeline, and web search budget.
-
 ---
 
 ## P0 — Core UX & Must-Haves
@@ -86,32 +84,32 @@ Improve the manual data entry and edit experience for people profiles.
 **Does NOT touch:** Map, Admin, FilterPanel, edge functions
 **Note:** AI-powered features (suggest people, search similar) are built in `feature/embeddings` (task 6). This task builds the CRUD, manual add/remove, and UI only.
 
-- [ ] Create new migration:
+- [x] Create new migration:
   ```sql
   collections (id uuid PK, name TEXT NOT NULL, description TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())
   collection_members (id uuid PK, collection_id uuid FK REFERENCES collections(id) ON DELETE CASCADE, person_id uuid FK REFERENCES people(id) ON DELETE CASCADE, notes TEXT, added_at TIMESTAMPTZ DEFAULT now())
   ```
   With RLS policies for public read/write (same pattern as existing tables).
-- [ ] Remove "Missions" tab from `Navigation.tsx`, replace with "Collections"
-- [ ] Remove all Planner-related components and `plannerUtils.ts`:
+- [x] Remove "Missions" tab from `Navigation.tsx`, replace with "Collections"
+- [x] Remove all Planner-related components and `plannerUtils.ts`:
   - Delete `pages/Planner.tsx`, `components/PlanForm.tsx`, `components/PlanDetail.tsx`, `components/PlannerChatbot.tsx`, `lib/plannerUtils.ts`
   - Remove their imports and route handling from `App.tsx`
-- [ ] Build `Collections.tsx` page:
+- [x] Build `Collections.tsx` page:
   - Header: "Collections" with subtitle "Save and organize groups of contacts"
   - "+ New Collection" button (opens `CollectionModal.tsx`: name input + optional description textarea + Save/Cancel)
   - Grid of collection cards showing: name, description (truncated), member count, created date, up to 3 member avatar circles
   - Click card → navigates to collection detail view (either inline or via page state)
-- [ ] Build `CollectionDetail.tsx`:
+- [x] Build `CollectionDetail.tsx`:
   - Collection name (editable inline) and description
   - Member list: each row shows person name, position, location, and a remove button (X icon)
   - Per-member notes field (editable text, saved to `collection_members.notes`)
   - "Back to Collections" link
   - Placeholder area for future "Find similar people" button (added in task 6)
-- [ ] Add bookmark/folder icon on person cards in `DirectoryGrid.tsx` and `PersonProfile.tsx`
+- [x] Add bookmark/folder icon on person cards in `DirectoryGrid.tsx` and `PersonProfile.tsx`
   - Click opens dropdown: list of all collections with checkboxes to add/remove this person
   - "Create new collection" option at bottom of dropdown
-- [ ] Update `App.tsx` routing: add `'collections'` and `'collection-detail'` to `Page` union, render appropriate component
-- [ ] Clean up: remove `plan_suggested_people`, `plan_actions`, `plans` references from any remaining frontend code (but do NOT drop DB tables in migration — just stop using them)
+- [x] Update `App.tsx` routing: add `'collections'` and `'collection-detail'` to `Page` union, render appropriate component
+- [x] Clean up: remove `plan_suggested_people`, `plan_actions`, `plans` references from any remaining frontend code (but do NOT drop DB tables in migration — just stop using them)
 
 ### 4. Export & Briefing Documents — `feature/export`
 **Files touched:** New `lib/exportService.ts`, `DirectoryGrid.tsx`, `CollectionDetail.tsx` (if collections branch merged), `PersonProfile.tsx`

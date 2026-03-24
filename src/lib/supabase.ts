@@ -105,6 +105,24 @@ export interface Connection {
   created_at: string;
 }
 
+export interface Collection {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  member_count?: number;
+}
+
+export interface CollectionMember {
+  id: string;
+  collection_id: string;
+  person_id: string;
+  notes?: string;
+  added_at: string;
+  person?: Person;
+}
+
 export interface MapFilters {
   showPeople: boolean;
   showOrganizations: boolean;

@@ -1,6 +1,8 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2 } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library } from 'lucide-react';
+import { useState } from 'react';
 import { displayName, personInitials } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
+import AddToCollectionDropdown from './AddToCollectionDropdown';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -26,42 +28,70 @@ function PersonCard({
   onNavigate: (page: string, id?: string) => void;
   snippet?: string;
 }) {
+  const [showCollections, setShowCollections] = useState(false);
+
   return (
-    <button
-      onClick={() => onNavigate('person', person.id)}
-      className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md border border-gray-100 text-left transition-all duration-200 hover:-translate-y-0.5"
-    >
-      <div className="flex items-start space-x-4">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-          <span className="text-sm font-semibold text-blue-700">
-            {personInitials(person)}
-          </span>
+    <div className={`relative group/card bg-white rounded-xl shadow-sm hover:shadow-md border border-gray-100 transition-all duration-200 hover:-translate-y-0.5 ${showCollections ? 'z-30' : 'z-0'}`}>
+      <button
+        onClick={() => onNavigate('person', person.id)}
+        className="w-full p-5 text-left h-full"
+      >
+        <div className="flex items-start space-x-4">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+            <span className="text-sm font-semibold text-blue-700">
+              {personInitials(person)}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0 pr-6">
+            <h3 className="font-semibold text-gray-900 text-sm truncate">
+              {displayName(person)}
+            </h3>
+            {person.current_position && (
+              <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">
+                {person.current_position}
+              </p>
+            )}
+            {person.location_city && (
+              <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
+                <MapPin className="w-3 h-3" />
+                <span>
+                  {person.location_city}, {person.location_state}
+                </span>
+              </div>
+            )}
+            {snippet && (
+              <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
+                {snippet}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-gray-900 text-sm">
-            {displayName(person)}
-          </h3>
-          {person.current_position && (
-            <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">
-              {person.current_position}
-            </p>
-          )}
-          {person.location_city && (
-            <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
-              <MapPin className="w-3 h-3" />
-              <span>
-                {person.location_city}, {person.location_state}
-              </span>
-            </div>
-          )}
-          {snippet && (
-            <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
-              {snippet}
-            </p>
-          )}
-        </div>
+      </button>
+
+      <div className="absolute top-4 right-4 z-10">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowCollections(!showCollections);
+          }}
+          className={`p-1.5 rounded-lg transition-all ${
+            showCollections 
+              ? 'bg-yellow-100 text-yellow-600' 
+              : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50 group-hover/card:text-gray-400'
+          }`}
+          title="Add to collection"
+        >
+          <Library className="w-4 h-4" />
+        </button>
+
+        {showCollections && (
+          <AddToCollectionDropdown 
+            personId={person.id} 
+            onClose={() => setShowCollections(false)} 
+          />
+        )}
       </div>
-    </button>
+    </div>
   );
 }
 

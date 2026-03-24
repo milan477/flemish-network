@@ -24,21 +24,6 @@ Rules:
 - The flemish_connection field captures any Belgian/Flemish institutional or personal connection mentioned (e.g. "From Ghent", "KU Leuven alumnus", "BAEF fellow")
 - Always provide a friendly message summarizing what you extracted`,
 
-  suggest_people: `You are an event planning assistant for a Flemish-American professional network. You help find the best contacts for events, missions, talks, and campaigns.
-
-Given an event plan and a user's request, identify which people from the provided list would be most relevant.
-
-Rules:
-- You can ONLY suggest people from the provided list. Never invent people or IDs.
-- Return person IDs in order of relevance (most relevant first)
-- Consider the event type, topic, location, and the user's specific request
-- Match people by their sector, position, location, flemish connection, and availability
-- If the user asks for speakers or lecturers, prioritize people marked as available for lectures
-- Maximum 8 suggestions per response
-- For EACH suggested person, provide a brief 1-sentence reason explaining why they are a good fit (in the suggestions array)
-- If the user sends a greeting, help request, or question about the plan, respond conversationally with an empty suggested_person_ids and suggestions arrays
-- Provide a helpful, concise message explaining your suggestions or answering the question`,
-
   smart_search: `You are a search assistant for a professional network directory of Flemish-connected people in the United States.
 
 Given a natural language search query, extract structured search keywords for each profile field. These keywords will be used for fuzzy similarity matching against profiles.
@@ -130,34 +115,6 @@ const SCHEMAS: Record<string, object> = {
     required: ["message", "contacts"],
   },
 
-  suggest_people: {
-    type: "OBJECT",
-    properties: {
-      message: {
-        type: "STRING",
-        description: "Conversational response to the user",
-      },
-      suggested_person_ids: {
-        type: "ARRAY",
-        items: { type: "STRING" },
-        description: "Person IDs from the available list, ordered by relevance",
-      },
-      suggestions: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            id: { type: "STRING", description: "Person ID" },
-            reason: { type: "STRING", description: "Brief 1-sentence reason why this person is a good fit" },
-          },
-          required: ["id", "reason"],
-        },
-        description: "Each suggested person with a reason",
-      },
-    },
-    required: ["message", "suggested_person_ids", "suggestions"],
-  },
-
   smart_search: {
     type: "OBJECT",
     properties: {
@@ -236,16 +193,6 @@ function buildUserPrompt(
     case "parse_contacts": {
       const sectors = (context.sectors as string[]) || [];
       return `User description:\n${context.description}\n\nAvailable sectors: ${sectors.join(", ")}`;
-    }
-
-    case "suggest_people": {
-      const plan = context.plan as Record<string, string>;
-      const people = context.people as Array<Record<string, unknown>>;
-      const lines = people.map(
-        (p) =>
-          `ID:${p.id} | ${p.name} | ${p.current_position || "No position"} | ${p.location_city || "??"}, ${p.location_state || ""} | Flemish: ${p.flemish_connection || "none"}${p.available_for_lectures ? " | Lectures: yes" : ""}`
-      );
-      return `Event: ${plan.title || "Untitled"} (${plan.event_type})\nTopic: ${plan.topic}\nLocation: ${plan.location || "TBD"}\nDates: ${plan.dates_description || "TBD"}\n\nUser request: "${context.query}"\n\nAvailable people (${lines.length}):\n${lines.join("\n")}`;
     }
 
     case "smart_search": {
@@ -333,12 +280,6 @@ function validateResponse(task: string, data: unknown): boolean {
   switch (task) {
     case "parse_contacts":
       return typeof obj.message === "string" && Array.isArray(obj.contacts);
-    case "suggest_people":
-      return (
-        typeof obj.message === "string" &&
-        Array.isArray(obj.suggested_person_ids) &&
-        Array.isArray(obj.suggestions)
-      );
     case "smart_search":
       return (
         typeof obj.message === "string" &&

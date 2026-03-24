@@ -3,12 +3,12 @@ import Navigation from './components/Navigation';
 import Dashboard from './pages/Dashboard';
 import PersonProfile from './pages/PersonProfile';
 import OrganizationProfile from './pages/OrganizationProfile';
-import Planner from './pages/Planner';
+import Collections from './pages/Collections';
 import Admin from './pages/Admin';
 import AddContact from './pages/AddContact';
 import type { FilterPreset, SearchCommand } from './lib/supabase';
 
-type Page = 'dashboard' | 'person' | 'organization' | 'planner' | 'admin' | 'add-contact';
+type Page = 'dashboard' | 'person' | 'organization' | 'collections' | 'collection-detail' | 'admin' | 'add-contact';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -21,8 +21,8 @@ function App() {
   const handleNavigate = useCallback((page: string, id?: string, preset?: FilterPreset) => {
     if (page === 'directory' || page === 'search') {
       setCurrentPage('dashboard');
-    } else if (page === 'missions') {
-      setCurrentPage('planner');
+    } else if (page === 'missions' || page === 'planner') {
+      setCurrentPage('collections');
     } else {
       setCurrentPage(page as Page);
     }
@@ -82,7 +82,13 @@ function App() {
         />
       )}
 
-      {currentPage === 'planner' && <Planner onNavigate={handleNavigate} />}
+      {(currentPage === 'collections' || currentPage === 'collection-detail') && (
+        <Collections
+          collectionId={selectedId}
+          onNavigate={handleNavigate}
+          showDetail={currentPage === 'collection-detail'}
+        />
+      )}
 
       {currentPage === 'admin' && <Admin />}
 

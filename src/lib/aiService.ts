@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { type Person } from './supabase';
 
 export interface ParsedContact {
   name: string;
@@ -14,17 +15,6 @@ export interface ParsedContact {
 export interface ParseContactsResult {
   message: string;
   contacts: ParsedContact[];
-}
-
-export interface SuggestedPersonEntry {
-  id: string;
-  reason: string;
-}
-
-export interface SuggestPeopleResult {
-  message: string;
-  suggested_person_ids: string[];
-  suggestions?: SuggestedPersonEntry[];
 }
 
 interface AIResponse<T> {
@@ -161,7 +151,7 @@ export async function smartSearch(
 export const AI_SCORE_THRESHOLD = 0.08;
 
 export function scorePersonAgainstKeywords(
-  person: Record<string, unknown>,
+  person: Record<string, any>,
   keywords: SmartSearchKeywords
 ): number {
   let score = 0;
@@ -180,7 +170,7 @@ export function scorePersonAgainstKeywords(
 
   for (const { key, personField, weight } of fields) {
     const kws = keywords[key];
-    if (kws.length === 0) continue;
+    if (!kws || kws.length === 0) continue;
 
     totalWeight += weight;
     const val = String(person[personField] || '').toLowerCase();
@@ -198,7 +188,7 @@ export function scorePersonAgainstKeywords(
 }
 
 export function scorePersonAgainstFilter(
-  person: Record<string, unknown>,
+  person: Record<string, any>,
   keywords: Record<string, string[]>,
   fields: readonly string[]
 ): boolean {
@@ -244,40 +234,23 @@ export async function flemishSearch(
   return result;
 }
 
-export async function suggestPeople(
-  query: string,
-  plan: Record<string, unknown>,
-  people: Array<Record<string, unknown>>
-): Promise<SuggestPeopleResult> {
-  const trimmedPeople = people.map((p) => ({
-    id: p.id,
-    name: p.name,
-    current_position: p.current_position || '',
-    location_city: p.location_city || '',
-    location_state: p.location_state || '',
-    flemish_connection: p.flemish_connection || '',
-    available_for_lectures: p.available_for_lectures || false,
-    bio: typeof p.bio === 'string' ? p.bio.slice(0, 200) : '',
-  }));
+export async function suggestPeople(query: string): Promise<{ person: Person; reason: string; score: number }[]> {
+  try {
+    const res = await smartSearch(query);
+    const { data: people, error } = await supabase.from('people').select('*').limit(200);
+    if (error || !people) throw error || new Error('No people found');
 
-  const result = await callAI<SuggestPeopleResult>('suggest_people', {
-    query,
-    plan,
-    people: trimmedPeople,
-  });
-
-  if (!result.message || !Array.isArray(result.suggested_person_ids)) {
-    throw new Error('Invalid suggest_people response');
+    return (people || [])
+      .map((p: any) => ({
+        person: p as Person,
+        score: scorePersonAgainstKeywords(p, res.keywords),
+        reason: res.message,
+      }))
+      .filter((item) => item.score > 0.05)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+  } catch (err) {
+    console.error('Error in suggestPeople:', err);
+    return [];
   }
-
-  const validIds = new Set(people.map((p) => p.id as string));
-  result.suggested_person_ids = result.suggested_person_ids.filter((id) =>
-    validIds.has(id)
-  );
-
-  if (result.suggestions) {
-    result.suggestions = result.suggestions.filter((s) => validIds.has(s.id));
-  }
-
-  return result;
 }

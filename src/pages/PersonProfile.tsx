@@ -17,10 +17,12 @@ import {
   Loader2,
   Tag,
   ChevronDown,
+  Library,
 } from 'lucide-react';
 import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
+import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 
 interface PersonProfileProps {
   personId: string;
@@ -56,6 +58,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showCollections, setShowCollections] = useState(false);
 
   const loadPerson = useCallback(async () => {
     const [personRes, sectorsRes, allSectorsRes, connRes] = await Promise.all([
@@ -317,6 +320,25 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                         <RotateCw className="w-4 h-4" />
                         <span>AI Update</span>
                       </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowCollections(!showCollections)}
+                          className={`px-5 py-2 font-medium rounded-lg transition-colors flex items-center space-x-2 ${
+                            showCollections 
+                              ? 'bg-yellow-100 text-yellow-700' 
+                              : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+                          }`}
+                        >
+                          <Library className="w-4 h-4" />
+                          <span>Add to Collection</span>
+                        </button>
+                        {showCollections && (
+                          <AddToCollectionDropdown 
+                            personId={personId} 
+                            onClose={() => setShowCollections(false)} 
+                          />
+                        )}
+                      </div>
                       {person.email && (
                         <a
                           href={`mailto:${person.email}`}
