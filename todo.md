@@ -133,16 +133,16 @@ Improve the manual data entry and edit experience for people profiles.
 **Files touched:** New migration, `PersonProfile.tsx`, `Admin.tsx`, `supabase.ts` (types), `DirectoryGrid.tsx`
 **Does NOT touch:** Map, Navigation, filters, edge functions, search
 
-- [ ] Create migration adding fields to `people`:
+- [x] Create migration adding fields to `people`:
   ```sql
   data_source TEXT DEFAULT 'manual'        -- 'manual', 'csv_import', 'ai_agent', 'self_reported'
   last_verified_at TIMESTAMPTZ
   ```
-- [ ] Add `data_source` and `last_verified_at` tracking:
+- [x] Add `data_source` and `last_verified_at` tracking:
   - Set `data_source` on creation (manual form → 'manual', CSV import → 'csv_import', AI agent → 'ai_agent')
   - Set `last_verified_at` when a human reviews/edits a profile or approves a suggestion. Clearly document how this works in code comments because this is going to be used later on when making the agents that search for people online.
-- [ ] Show verification badge on profiles: "Verified [date]" or "Unverified" based on `last_verified_at`
-- [ ] Show data source on profile pages (small logo: "Added via CSV import", "AI-discovered", "Manual")
+- [x] Show verification badge on profiles: "Verified [date]" or "Unverified" based on `last_verified_at`
+- [x] Show data source on profile pages (small logo: "Added via CSV import", "AI-discovered", "Manual")
 
 ---
 

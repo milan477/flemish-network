@@ -1,4 +1,4 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { displayName, personInitials } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
@@ -43,9 +43,20 @@ function PersonCard({
             </span>
           </div>
           <div className="flex-1 min-w-0 pr-6">
-            <h3 className="font-semibold text-gray-900 text-sm truncate">
-              {displayName(person)}
-            </h3>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <h3 className="font-semibold text-gray-900 text-sm truncate">
+                {displayName(person)}
+              </h3>
+              {person.last_verified_at ? (
+                <span title="Verified contact">
+                  <ShieldCheck className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                </span>
+              ) : (
+                <span title="Unverified contact">
+                  <ShieldAlert className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+                </span>
+              )}
+            </div>
             {person.current_position && (
               <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">
                 {person.current_position}

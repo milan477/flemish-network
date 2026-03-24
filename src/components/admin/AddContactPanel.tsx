@@ -363,6 +363,8 @@ function ManualAddForm({
         linkedin_url: linkedin || null,
         website_url: website || null,
         twitter_url: twitter || null,
+        data_source: 'manual',
+        last_verified_at: new Date().toISOString(),
       })
       .select('*')
       .maybeSingle();

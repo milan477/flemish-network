@@ -18,6 +18,9 @@ import {
   Tag,
   ChevronDown,
   Library,
+  ShieldCheck,
+  ShieldAlert,
+  Database,
 } from 'lucide-react';
 import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
@@ -168,6 +171,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       linkedin_url: linkedin || null,
       website_url: website || null,
       twitter_url: twitter || null,
+      last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
@@ -334,7 +338,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                         </button>
                         {showCollections && (
                           <AddToCollectionDropdown 
-                            personId={personId} 
+                            personIds={[personId]} 
                             onClose={() => setShowCollections(false)} 
                           />
                         )}
@@ -414,9 +418,40 @@ const INPUT_CLS =
   'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent';
 
 function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page: string, id?: string, preset?: FilterPreset) => void }) {
+  const verifiedDate = person.last_verified_at ? new Date(person.last_verified_at).toLocaleDateString() : null;
+  const sourceLabels: Record<string, string> = {
+    manual: 'Added manually',
+    csv_import: 'Added via CSV import',
+    ai_agent: 'AI-discovered',
+    self_reported: 'Self-reported',
+  };
+
   return (
     <>
-      <h1 className="text-3xl font-semibold text-gray-900 mb-2">{displayName(person)}</h1>
+      <div className="flex items-center gap-3 mb-2">
+        <h1 className="text-3xl font-semibold text-gray-900">{displayName(person)}</h1>
+        {verifiedDate ? (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-700 rounded-lg text-xs font-medium border border-green-100" title={`Verified on ${verifiedDate}`}>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Verified</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium border border-gray-100" title="Not yet verified by a human">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Unverified</span>
+          </div>
+        )}
+      </div>
+      
+      {person.data_source && (
+        <div className="flex items-center gap-1.5 text-gray-400 mb-4">
+          <Database className="w-3.5 h-3.5" />
+          <span className="text-[11px] font-medium uppercase tracking-wider">
+            {sourceLabels[person.data_source] || person.data_source}
+          </span>
+        </div>
+      )}
+
       {person.current_position && (
         <div className="flex items-center space-x-2 text-gray-600 mb-1">
           <Briefcase className="w-5 h-5" />

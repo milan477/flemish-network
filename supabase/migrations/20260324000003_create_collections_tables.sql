@@ -46,44 +46,52 @@ ALTER TABLE collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_members ENABLE ROW LEVEL SECURITY;
 
 -- Collections Policies
+DROP POLICY IF EXISTS "Allow public read access on collections" ON collections;
 CREATE POLICY "Allow public read access on collections"
   ON collections FOR SELECT
   TO anon, authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert access on collections" ON collections;
 CREATE POLICY "Allow public insert access on collections"
   ON collections FOR INSERT
   TO anon, authenticated
   WITH CHECK (name IS NOT NULL AND length(trim(name)) > 0);
 
+DROP POLICY IF EXISTS "Allow public update access on collections" ON collections;
 CREATE POLICY "Allow public update access on collections"
   ON collections FOR UPDATE
   TO anon, authenticated
   USING (true)
   WITH CHECK (name IS NOT NULL AND length(trim(name)) > 0);
 
+DROP POLICY IF EXISTS "Allow public delete access on collections" ON collections;
 CREATE POLICY "Allow public delete access on collections"
   ON collections FOR DELETE
   TO anon, authenticated
   USING (true);
 
 -- Collection Members Policies
+DROP POLICY IF EXISTS "Allow public read access on collection_members" ON collection_members;
 CREATE POLICY "Allow public read access on collection_members"
   ON collection_members FOR SELECT
   TO anon, authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow public insert access on collection_members" ON collection_members;
 CREATE POLICY "Allow public insert access on collection_members"
   ON collection_members FOR INSERT
   TO anon, authenticated
   WITH CHECK (collection_id IS NOT NULL AND person_id IS NOT NULL);
 
+DROP POLICY IF EXISTS "Allow public update access on collection_members" ON collection_members;
 CREATE POLICY "Allow public update access on collection_members"
   ON collection_members FOR UPDATE
   TO anon, authenticated
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public delete access on collection_members" ON collection_members;
 CREATE POLICY "Allow public delete access on collection_members"
   ON collection_members FOR DELETE
   TO anon, authenticated

@@ -49,6 +49,7 @@ async function addContactToDb(
       email_verified: hasEmail ? false : null,
       linkedin_url: contact.linkedin_url || null,
       website_url: contact.website_url || null,
+      data_source: 'ai_agent',
     })
     .select('id')
     .maybeSingle();

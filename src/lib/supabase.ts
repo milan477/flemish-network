@@ -28,6 +28,8 @@ export interface Person {
   email?: string;
   email_verified?: boolean;
   preferred_contact?: string;
+  data_source?: string;
+  last_verified_at?: string;
   created_at: string;
   updated_at: string;
 }

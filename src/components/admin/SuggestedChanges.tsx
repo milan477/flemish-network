@@ -73,6 +73,7 @@ export default function SuggestedChanges({
       .from('people')
       .update({
         [suggestion.field_name]: suggestion.suggested_value,
+        last_verified_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', suggestion.person_id);

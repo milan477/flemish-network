@@ -119,6 +119,7 @@ export default function ProfileUpdateModal({
       updates.longitude = null;
     }
 
+    updates['last_verified_at'] = new Date().toISOString();
     updates['updated_at'] = new Date().toISOString();
 
     const { error } = await supabase

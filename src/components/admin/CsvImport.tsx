@@ -197,6 +197,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           phone: row.phone || null,
           linkedin_url: row.linkedin_url || null,
           website_url: row.website_url || null,
+          data_source: 'csv_import',
         })
         .select('id')
         .maybeSingle();

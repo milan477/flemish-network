@@ -186,7 +186,10 @@ export default function Admin() {
     async (personId: string) => {
       await supabase
         .from('people')
-        .update({ updated_at: new Date().toISOString() })
+        .update({ 
+          last_verified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', personId);
       setNoUpdateIds((prev) => {
         const next = new Set(prev);
