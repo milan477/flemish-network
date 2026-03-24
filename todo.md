@@ -32,17 +32,17 @@ Consolidate three search experiences (nav search bar, Smart Search chat, filter 
 **Files touched:** `FilterPanel.tsx`, `Dashboard.tsx`, `supabase.ts` (types), new `src/lib/filterParser.ts`, `aiService.ts` (remove `interpretFilters`), `supabase/functions/ai-agent/index.ts` (remove `interpret_filters` task)
 **Does NOT touch:** Navigation, Map, Admin, profiles
 
-- [ ] Remove the "Apply Filters" button from `FilterPanel.tsx`
-- [ ] Make all filters auto-apply: on any change (toggle, select, deselect), immediately re-filter and update map/list
-- [ ] Show a brief loading spinner during re-filter if needed
-- [ ] Simplify Occupation dropdown to four career-stage categories only:
+- [x] Remove the "Apply Filters" button from `FilterPanel.tsx`
+- [x] Make all filters auto-apply: on any change (toggle, select, deselect), immediately re-filter and update map/list
+- [x] Show a brief loading spinner during re-filter if needed
+- [x] Simplify Occupation dropdown to four career-stage categories only:
   - Student, Academic/Researcher, Professional, Executive/Leadership
-- [ ] Change Flemish Connection from single text input to multi-select dropdown/tag input
+- [x] Change Flemish Connection from single text input to multi-select dropdown/tag input
   - List all available Flemish connections from the database as options
   - Allow selecting MULTIPLE connections (OR logic — show people matching ANY selected)
-- [ ] Keep "Available for lectures" checkbox, also auto-applying
+- [x] Keep "Available for lectures" checkbox, also auto-applying
 - [ ] Update live stats at bottom of filter sidebar (People, Organizations, Cities count) on every filter change
-- [ ] **Replace `interpret_filters` LLM task with deterministic filter parser:**
+- [x] **Replace `interpret_filters` LLM task with deterministic filter parser:**
   - Create `src/lib/filterParser.ts` exporting `parseFiltersFromQuery(query: string, currentFilters: object): FilterResult`
   - Return type is identical to the current `FilterResult` in `aiService.ts` (has `message` string and `filters` object)
   - Keyword matching logic — scan the query string (case-insensitive) for:
@@ -58,6 +58,26 @@ Consolidate three search experiences (nav search bar, Smart Search chat, filter 
   - Remove `interpretFilters()` function and `FilterResult` type from `aiService.ts` (move `FilterResult` type to `filterParser.ts`)
   - Remove `interpret_filters` entry from `supabase/functions/ai-agent/index.ts`: delete from `SYSTEM_PROMPTS`, `SCHEMAS`, the `case "interpret_filters"` in `buildUserPrompt()`, and the `case "interpret_filters"` in `validateResponse()`
   - Update all callers of `interpretFilters()` to import and use `parseFiltersFromQuery()` from `filterParser.ts`
+
+### 23. Profile Form UX Enhancements — `feature/form-ux`
+**Files touched:** `PersonProfile.tsx`, `AddContactPanel.tsx`, `supabase.ts`
+**Does NOT touch:** Map, Search, Admin (except `AddContactPanel`), edge functions
+
+Improve the manual data entry and edit experience for people profiles.
+
+- [x] **Occupation Dropdown:**
+  - Replace `input` + `datalist` with a proper `select` (dropdown) in `PersonProfile.tsx` and `AddContactPanel.tsx`
+  - Use `OCCUPATION_OPTIONS` from `supabase.ts` as the only allowed values
+- [x] **Location Enhancements:**
+  - Increase city text box size in `PersonProfile.tsx` and `AddContactPanel.tsx`
+  - Replace state text input with a `select` dropdown containing all 50 US states (full names)
+  - Integrate a city selector/autocomplete (e.g., using `MAJOR_CITIES` from `filterParser.ts` or a new library)
+- [x] **Flemish Connection Selector:**
+  - Change "Flemish Connection" from a text input to a tag-based selector (multi-select similar to Sectors)
+  - Use `FLEMISH_OPTIONS` from `supabase.ts`
+  - **Auto-inference:** When "About" (bio) text changes, automatically scan for Flemish Connection keywords and pre-select matching tags
+- [x] **Data Model Alignment:**
+  - Update `people` table or `supabase.ts` types if Flemish Connection needs to be a multi-select field (array of strings) instead of a single string
 
 ### 3. Collections (Replace Missions/Planner) — `feature/collections`
 **Files touched:** New `pages/Collections.tsx`, new `components/CollectionDetail.tsx`, new `components/CollectionModal.tsx`, `App.tsx`, `Navigation.tsx`, `DirectoryGrid.tsx`, `PersonProfile.tsx`, `supabase.ts` (types)

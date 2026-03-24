@@ -110,22 +110,24 @@ export interface MapFilters {
   showOrganizations: boolean;
   sector: string;
   occupation: string;
+  city: string;
+  state: string;
   flemishConnections: string[];
   availableForLectures: boolean;
 }
 
 export const OCCUPATION_OPTIONS = [
   'Student',
-  'Academic / Researcher',
+  'Academic/Researcher',
   'Professional',
-  'Executive / Leadership',
+  'Executive/Leadership',
 ] as const;
 
 export const OCCUPATION_CATEGORY_KEYWORDS: Record<string, string[]> = {
   'Student': ['student', 'graduate', 'intern', 'phd candidate'],
-  'Academic / Researcher': ['professor', 'researcher', 'scientist', 'academic', 'postdoc', 'lecturer'],
+  'Academic/Researcher': ['professor', 'researcher', 'scientist', 'academic', 'postdoc', 'lecturer'],
   'Professional': ['engineer', 'consultant', 'manager', 'developer', 'creative', 'finance', 'healthcare'],
-  'Executive / Leadership': ['executive', 'director', 'entrepreneur', 'government', 'ceo', 'cto', 'president'],
+  'Executive/Leadership': ['executive', 'director', 'entrepreneur', 'government', 'ceo', 'cto', 'president'],
 };
 
 export const FLEMISH_OPTIONS = [
@@ -136,12 +138,73 @@ export const FLEMISH_OPTIONS = [
   'BAEF',
   'imec',
   'Fayat',
-  'Oostende',
-  'Antwerpen',
-  'Brugge',
-  'Gent',
-  'Hasselt',
-  'Mechelen',
+];
+
+export const US_STATES = [
+  { code: 'AL', name: 'Alabama' },
+  { code: 'AK', name: 'Alaska' },
+  { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' },
+  { code: 'CA', name: 'California' },
+  { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' },
+  { code: 'DE', name: 'Delaware' },
+  { code: 'FL', name: 'Florida' },
+  { code: 'GA', name: 'Georgia' },
+  { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' },
+  { code: 'IL', name: 'Illinois' },
+  { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' },
+  { code: 'KS', name: 'Kansas' },
+  { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' },
+  { code: 'ME', name: 'Maine' },
+  { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' },
+  { code: 'MI', name: 'Michigan' },
+  { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' },
+  { code: 'MO', name: 'Missouri' },
+  { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' },
+  { code: 'NV', name: 'Nevada' },
+  { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' },
+  { code: 'NM', name: 'New Mexico' },
+  { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' },
+  { code: 'ND', name: 'North Dakota' },
+  { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' },
+  { code: 'OR', name: 'Oregon' },
+  { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' },
+  { code: 'SC', name: 'South Carolina' },
+  { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' },
+  { code: 'TX', name: 'Texas' },
+  { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' },
+  { code: 'VA', name: 'Virginia' },
+  { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' },
+  { code: 'WI', name: 'Wisconsin' },
+  { code: 'WY', name: 'Wyoming' },
+  { code: 'DC', name: 'District of Columbia' },
+];
+
+export const MAJOR_CITIES = [
+  'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix',
+  'Philadelphia', 'San Antonio', 'San Diego', 'Dallas', 'San Jose',
+  'Austin', 'Jacksonville', 'San Francisco', 'Columbus', 'Fort Worth',
+  'Indianapolis', 'Charlotte', 'Seattle', 'Denver', 'Washington',
+  'Boston', 'El Paso', 'Detroit', 'Nashville', 'Portland',
+  'Memphis', 'Oklahoma City', 'Las Vegas', 'Louisville', 'Baltimore',
+  'Milwaukee', 'Albuquerque', 'Tucson', 'Fresno', 'Sacramento',
+  'Mesa', 'Kansas City', 'Atlanta', 'Long Beach', 'Colorado Springs',
+  'Raleigh', 'Miami', 'Virginia Beach', 'Omaha', 'Oakland',
+  'Minneapolis', 'Tulsa', 'Arlington', 'New Orleans', 'Wichita',
 ];
 
 export interface FilterPreset {
@@ -190,7 +253,7 @@ export function fuzzyMatch(needle: string, haystack: string): boolean {
   const h = haystack.toLowerCase().trim();
   if (h.includes(n) || n.includes(h)) return true;
   const nWords = n.split(/\s+/);
-  return nWords.every((w) => h.includes(w));
+  return nWords.some((w) => h.includes(w));
 }
 
 export interface MapCluster {
@@ -215,6 +278,8 @@ export const DEFAULT_MAP_FILTERS: MapFilters = {
   showOrganizations: true,
   sector: '',
   occupation: '',
+  city: '',
+  state: '',
   flemishConnections: [],
   availableForLectures: false,
 };

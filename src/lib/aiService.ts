@@ -16,18 +16,6 @@ export interface ParseContactsResult {
   contacts: ParsedContact[];
 }
 
-export interface FilterResult {
-  message: string;
-  filters: {
-    sector: string;
-    occupation: string;
-    flemishConnection: string;
-    showPeople: boolean;
-    showOrganizations: boolean;
-    availableForLectures: boolean;
-  };
-}
-
 export interface SuggestedPersonEntry {
   id: string;
   reason: string;
@@ -82,22 +70,6 @@ export async function parseContacts(
     if (typeof c.name !== 'string' || !c.name) {
       throw new Error('Contact missing required name field');
     }
-  }
-
-  return result;
-}
-
-export async function interpretFilters(
-  query: string,
-  currentFilters: Record<string, unknown>
-): Promise<FilterResult> {
-  const result = await callAI<FilterResult>('interpret_filters', {
-    query,
-    currentFilters,
-  });
-
-  if (!result.message || !result.filters) {
-    throw new Error('Invalid interpret_filters response');
   }
 
   return result;

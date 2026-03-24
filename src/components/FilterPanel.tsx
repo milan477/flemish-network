@@ -1,6 +1,6 @@
-import { Users, Building2, Filter, RotateCcw } from 'lucide-react';
+import { Users, Building2, Filter, RotateCcw, Check, CheckSquare, Square } from 'lucide-react';
 import type { MapFilters, ActiveAiFilter, SavedFlemishFilter } from '../lib/supabase';
-import { DEFAULT_MAP_FILTERS, OCCUPATION_OPTIONS, PREDEFINED_FILTERS } from '../lib/supabase';
+import { DEFAULT_MAP_FILTERS, OCCUPATION_OPTIONS, FLEMISH_OPTIONS } from '../lib/supabase';
 
 interface FilterPanelProps {
   filters: MapFilters;
@@ -12,9 +12,6 @@ interface FilterPanelProps {
   onRemoveAiFilter: (id: string) => void;
   activeSearchQuery: string;
   onRemoveSearchQuery: () => void;
-  popularFilters: SavedFlemishFilter[];
-  onActivatePopularFilter: (filter: SavedFlemishFilter) => Promise<void>;
-  onActivatePredefined: (name: string) => void;
 }
 
 const SELECT_CLS =
@@ -30,9 +27,6 @@ export default function FilterPanel({
   onRemoveAiFilter,
   activeSearchQuery,
   onRemoveSearchQuery,
-  popularFilters,
-  onActivatePopularFilter,
-  onActivatePredefined,
 }: FilterPanelProps) {
 
   const handleReset = () => {
@@ -55,13 +49,6 @@ export default function FilterPanel({
   ].filter(Boolean).length;
 
   const hasActiveFilters = activeFilterCount > 0;
-
-  const shownPopularFilters = popularFilters.filter((f) => f.usage_count > 2).slice(0, 8);
-
-  const activeAiIds = new Set(activeAiFilters.map((f) => f.id));
-  const activePredefinedNames = new Set(
-    activeAiFilters.filter((f) => f.id.startsWith('predefined-')).map((f) => f.query)
-  );
 
   return (
     <div
@@ -158,59 +145,31 @@ export default function FilterPanel({
 
           <div>
             <label className="text-sm font-medium text-gray-900 mb-2 block">
-              Popular Filters
+              Flemish Connection
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {PREDEFINED_FILTERS.map((name) => {
-                const isActive = activePredefinedNames.has(name);
+              {FLEMISH_OPTIONS.map((opt) => {
+                const isActive = filters.flemishConnections.includes(opt);
                 return (
                   <button
-                    key={name}
+                    key={opt}
                     onClick={() => {
-                      if (isActive) {
-                        onRemoveAiFilter(`predefined-${name}`);
-                      } else {
-                        onActivatePredefined(name);
-                      }
+                      const next = isActive
+                        ? filters.flemishConnections.filter((c) => c !== opt)
+                        : [...filters.flemishConnections, opt];
+                      onFiltersChange({ ...filters, flemishConnections: next });
                     }}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition-all ${
                       isActive
                         ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-transparent'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
                     }`}
                   >
-                    {name}
+                    {opt}
                   </button>
                 );
               })}
             </div>
-            {shownPopularFilters.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-gray-100">
-                {shownPopularFilters.map((pf) => {
-                  const isActive = activeAiIds.has(pf.id);
-                  return (
-                    <button
-                      key={pf.id}
-                      onClick={() => {
-                        if (isActive) {
-                          onRemoveAiFilter(pf.id);
-                        } else {
-                          onActivatePopularFilter(pf);
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${
-                        isActive
-                          ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
-                      }`}
-                    >
-                      <Building2 className="w-3 h-3" />
-                      {pf.original_query}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           {hasActiveFilters && (

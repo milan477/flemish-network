@@ -16,7 +16,7 @@ import {
   Users,
   ChevronDown,
 } from 'lucide-react';
-import { supabase, type Sector, type Person } from '../../lib/supabase';
+import { supabase, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, US_STATES, MAJOR_CITIES, type Sector, type Person } from '../../lib/supabase';
 import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
 
@@ -254,6 +254,7 @@ function ManualAddForm({
   const [error, setError] = useState('');
   const [dupeMatch, setDupeMatch] = useState<DuplicateMatch | null>(null);
   const [dupeChecking, setDupeChecking] = useState(false);
+  const [flemishConnections, setFlemishConnections] = useState<string[]>([]);
 
   const checkDuplicate = async () => {
     const first = form.firstName.trim().toLowerCase();
@@ -317,6 +318,7 @@ function ManualAddForm({
     const first = form.firstName.trim();
     const last = form.lastName.trim();
     const fullName = [form.title, first, last].filter(Boolean).join(' ');
+    const flemishStr = flemishConnections.join(', ');
 
     const { data: person, error: insertErr } = await supabase
       .from('people')
@@ -330,7 +332,7 @@ function ManualAddForm({
         location_city: form.location_city || null,
         location_state: form.location_state || null,
         bio: form.bio || null,
-        flemish_connection: form.flemish_connection || null,
+        flemish_connection: flemishStr || null,
         phone: form.phone || null,
         email: form.email || null,
         linkedin_url: form.linkedin_url || null,
@@ -359,6 +361,7 @@ function ManualAddForm({
     setDupeMatch(null);
     onPersonAdded(person as Person);
     setForm(EMPTY_FORM);
+    setFlemishConnections([]);
     onContactAdded();
     setTimeout(() => setSuccess(false), 5000);
   };
@@ -372,8 +375,30 @@ function ManualAddForm({
     }));
   };
 
-  const set = (field: keyof ManualForm, value: string) =>
-    setForm((f) => ({ ...f, [field]: value }));
+  const toggleFlemish = (option: string) => {
+    setFlemishConnections((prev) =>
+      prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]
+    );
+  };
+
+  const set = (field: keyof ManualForm, value: string) => {
+    setForm((f) => {
+      const next = { ...f, [field]: value };
+      
+      // Auto-inference for Flemish Connection from Bio
+      if (field === 'bio') {
+        const lowerBio = value.toLowerCase();
+        const detected = FLEMISH_OPTIONS.filter(opt => 
+          lowerBio.includes(opt.toLowerCase()) && !flemishConnections.includes(opt)
+        );
+        if (detected.length > 0) {
+          setFlemishConnections(prev => [...new Set([...prev, ...detected])]);
+        }
+      }
+      
+      return next;
+    });
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -421,7 +446,7 @@ function ManualAddForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Position / Title
@@ -437,42 +462,24 @@ function ManualAddForm({
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Occupation
           </label>
-          <input
-            value={form.occupation}
-            onChange={(e) => set('occupation', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="e.g. Researcher, Creative"
-            list="manual-occupation-suggestions"
-          />
-          <datalist id="manual-occupation-suggestions">
-            <option value="Professor" />
-            <option value="Researcher" />
-            <option value="Engineer" />
-            <option value="Executive" />
-            <option value="Government" />
-            <option value="Creative" />
-            <option value="Finance" />
-            <option value="Entrepreneur" />
-            <option value="Healthcare" />
-            <option value="Manager" />
-            <option value="Consultant" />
-          </datalist>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Flemish Connection
-          </label>
-          <input
-            value={form.flemish_connection}
-            onChange={(e) => set('flemish_connection', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="PhD from KU Leuven"
-          />
+          <div className="relative">
+            <select
+              value={form.occupation}
+              onChange={(e) => set('occupation', e.target.value)}
+              className={`${INPUT_CLS} appearance-none pr-8`}
+            >
+              <option value="">Select Occupation</option>
+              {OCCUPATION_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="col-span-1 sm:col-span-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">
             City
           </label>
@@ -481,20 +488,33 @@ function ManualAddForm({
             onChange={(e) => set('location_city', e.target.value)}
             className={INPUT_CLS}
             placeholder="Boston"
+            list="manual-city-suggestions"
           />
+          <datalist id="manual-city-suggestions">
+            {MAJOR_CITIES.map(city => <option key={city} value={city} />)}
+          </datalist>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
             State
           </label>
-          <input
-            value={form.location_state}
-            onChange={(e) => set('location_state', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="MA"
-            maxLength={2}
-          />
+          <div className="relative">
+            <select
+              value={form.location_state}
+              onChange={(e) => set('location_state', e.target.value)}
+              className={`${INPUT_CLS} appearance-none pr-8`}
+            >
+              <option value="">State</option>
+              {US_STATES.map((s) => (
+                <option key={s.code} value={s.code}>{s.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
             <Phone className="w-3 h-3 text-gray-400" />
@@ -507,9 +527,6 @@ function ManualAddForm({
             placeholder="+1 555 123 4567"
           />
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
             <Mail className="w-3 h-3 text-gray-400" />
@@ -535,6 +552,9 @@ function ManualAddForm({
             placeholder="linkedin.com/in/jandevries"
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
             <Globe className="w-3 h-3 text-gray-400" />
@@ -557,9 +577,31 @@ function ManualAddForm({
           value={form.bio}
           onChange={(e) => set('bio', e.target.value)}
           className={`${INPUT_CLS} resize-none`}
-          rows={2}
+          rows={3}
           placeholder="Brief description..."
         />
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1.5">
+          Flemish Connection
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {FLEMISH_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggleFlemish(opt)}
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                flemishConnections.includes(opt)
+                  ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div>
@@ -583,7 +625,6 @@ function ManualAddForm({
           ))}
         </div>
       </div>
-
       {dupeMatch && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
           <div className="flex items-center gap-2 mb-2">

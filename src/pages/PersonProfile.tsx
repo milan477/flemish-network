@@ -16,8 +16,9 @@ import {
   RotateCw,
   Loader2,
   Tag,
+  ChevronDown,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, US_STATES, MAJOR_CITIES, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 
 interface PersonProfileProps {
@@ -39,6 +40,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Person>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
+  const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
@@ -50,7 +52,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       supabase.from('connections').select('id').or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`).limit(50),
     ]);
 
-    setPerson(personRes.data);
+    const personData = personRes.data;
+    setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
     setConnections(connRes.data || []);
 
@@ -58,6 +61,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .filter((r) => r.sectors?.name)
       .map((r) => ({ id: r.sector_id, name: r.sectors!.name }));
     setPersonSectors(ps);
+
+    if (personData) {
+      const flemish = personData.flemish_connection
+        ? personData.flemish_connection.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
+      setEditFlemishConnections(flemish);
+    }
 
     setLoading(false);
   }, [personId]);
@@ -86,6 +96,10 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       twitter_url: person.twitter_url || '',
     });
     setEditSectorIds(personSectors.map((s) => s.id));
+    const flemish = person.flemish_connection
+      ? person.flemish_connection.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : [];
+    setEditFlemishConnections(flemish);
     setEditing(true);
   };
 
@@ -93,6 +107,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setEditing(false);
     setEditForm({});
     setEditSectorIds([]);
+    setEditFlemishConnections([]);
   };
 
   const saveEdits = async () => {
@@ -103,6 +118,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     const last = (editForm.last_name || '').trim();
     const title = (editForm.title || '').trim();
     const computedName = [title, first, last].filter(Boolean).join(' ') || editForm.name || person.name;
+
+    const flemishStr = editFlemishConnections.join(', ');
 
     const { error: updateErr } = await supabase
       .from('people')
@@ -116,7 +133,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
         location_city: editForm.location_city || null,
         location_state: editForm.location_state || null,
         bio: editForm.bio || null,
-        flemish_connection: editForm.flemish_connection || null,
+        flemish_connection: flemishStr || null,
         phone: editForm.phone || null,
         email: editForm.email || null,
         linkedin_url: editForm.linkedin_url || null,
@@ -159,8 +176,29 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     );
   };
 
+  const toggleEditFlemish = (option: string) => {
+    setEditFlemishConnections((prev) =>
+      prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]
+    );
+  };
+
   const setField = (field: string, value: string) => {
-    setEditForm((f) => ({ ...f, [field]: value }));
+    setEditForm((f) => {
+      const next = { ...f, [field]: value };
+      
+      // Auto-inference for Flemish Connection from Bio
+      if (field === 'bio') {
+        const lowerBio = value.toLowerCase();
+        const detected = FLEMISH_OPTIONS.filter(opt => 
+          lowerBio.includes(opt.toLowerCase()) && !editFlemishConnections.includes(opt)
+        );
+        if (detected.length > 0) {
+          setEditFlemishConnections(prev => [...new Set([...prev, ...detected])]);
+        }
+      }
+      
+      return next;
+    });
   };
 
   const handleUpdateApplied = () => {
@@ -279,6 +317,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               allSectors={allSectors}
               editSectorIds={editSectorIds}
               toggleEditSector={toggleEditSector}
+              editFlemishConnections={editFlemishConnections}
+              toggleEditFlemish={toggleEditFlemish}
             />
           ) : (
             <ViewBody
@@ -384,7 +424,7 @@ function EditHeader({
           placeholder="Last name"
         />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="flex items-center space-x-2">
           <Briefcase className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <input
@@ -396,42 +436,49 @@ function EditHeader({
         </div>
         <div className="flex items-center space-x-2">
           <Tag className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <input
-            value={editForm.occupation || ''}
-            onChange={(e) => setField('occupation', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="Occupation (e.g. Researcher)"
-            list="occupation-suggestions"
-          />
-          <datalist id="occupation-suggestions">
-            <option value="Professor" />
-            <option value="Researcher" />
-            <option value="Engineer" />
-            <option value="Executive" />
-            <option value="Government" />
-            <option value="Creative" />
-            <option value="Finance" />
-            <option value="Entrepreneur" />
-            <option value="Healthcare" />
-            <option value="Manager" />
-            <option value="Consultant" />
-          </datalist>
+          <div className="relative flex-1">
+            <select
+              value={editForm.occupation || ''}
+              onChange={(e) => setField('occupation', e.target.value)}
+              className={`${INPUT_CLS} appearance-none pr-8`}
+            >
+              <option value="">Select Occupation</option>
+              {OCCUPATION_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 sm:col-span-2 lg:col-span-1">
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <input
-            value={editForm.location_city || ''}
-            onChange={(e) => setField('location_city', e.target.value)}
-            className={`${INPUT_CLS} flex-1`}
-            placeholder="City"
-          />
-          <input
-            value={editForm.location_state || ''}
-            onChange={(e) => setField('location_state', e.target.value)}
-            className={`${INPUT_CLS} w-20`}
-            placeholder="State"
-            maxLength={2}
-          />
+          <div className="flex flex-1 gap-2">
+            <div className="flex-[3] relative">
+              <input
+                value={editForm.location_city || ''}
+                onChange={(e) => setField('location_city', e.target.value)}
+                className={INPUT_CLS}
+                placeholder="City"
+                list="edit-city-suggestions"
+              />
+              <datalist id="edit-city-suggestions">
+                {MAJOR_CITIES.map(city => <option key={city} value={city} />)}
+              </datalist>
+            </div>
+            <div className="flex-[2] relative">
+              <select
+                value={editForm.location_state || ''}
+                onChange={(e) => setField('location_state', e.target.value)}
+                className={`${INPUT_CLS} appearance-none pr-8`}
+              >
+                <option value="">State</option>
+                {US_STATES.map((s) => (
+                  <option key={s.code} value={s.code}>{s.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -531,12 +578,16 @@ function EditBody({
   allSectors,
   editSectorIds,
   toggleEditSector,
+  editFlemishConnections,
+  toggleEditFlemish,
 }: {
   editForm: Partial<Person>;
   setField: (f: string, v: string) => void;
   allSectors: Sector[];
   editSectorIds: string[];
   toggleEditSector: (id: string) => void;
+  editFlemishConnections: string[];
+  toggleEditFlemish: (opt: string) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -546,18 +597,28 @@ function EditBody({
           value={editForm.bio || ''}
           onChange={(e) => setField('bio', e.target.value)}
           className={`${INPUT_CLS} resize-none`}
-          rows={3}
+          rows={4}
           placeholder="Bio..."
         />
       </div>
       <div>
         <label className="text-sm font-medium text-gray-700 mb-2 block">Flemish Connection</label>
-        <input
-          value={editForm.flemish_connection || ''}
-          onChange={(e) => setField('flemish_connection', e.target.value)}
-          className={INPUT_CLS}
-          placeholder="e.g. PhD from KU Leuven"
-        />
+        <div className="flex flex-wrap gap-2">
+          {FLEMISH_OPTIONS.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggleEditFlemish(opt)}
+              className={`text-sm px-4 py-1.5 rounded-full font-medium transition-colors ${
+                editFlemishConnections.includes(opt)
+                  ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
       </div>
       <div>
         <label className="text-sm font-medium text-gray-700 mb-2 block">Sectors</label>
@@ -591,9 +652,9 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Research: { bg: 'bg-cyan-50', text: 'text-cyan-700' },
 };
 
-function matchFlemishOption(text: string): string | null {
+function matchFlemishOptions(text: string): string[] {
   const lower = text.toLowerCase();
-  return FLEMISH_OPTIONS.find((opt) => lower.includes(opt.toLowerCase())) || null;
+  return FLEMISH_OPTIONS.filter((opt) => lower.includes(opt.toLowerCase()));
 }
 
 function ViewBody({
@@ -612,26 +673,34 @@ function ViewBody({
       {person.bio && (
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">About</h2>
-          <p className="text-gray-700 leading-relaxed">{person.bio}</p>
+          <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{person.bio}</p>
         </div>
       )}
 
       {person.flemish_connection && (
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
-          {(() => {
-            const matched = matchFlemishOption(person.flemish_connection!);
-            return matched ? (
-              <button
-                onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [matched] })}
-                className="text-gray-700 hover:text-yellow-700 transition-colors hover:underline text-left"
-              >
-                {person.flemish_connection}
-              </button>
-            ) : (
-              <p className="text-gray-700">{person.flemish_connection}</p>
-            );
-          })()}
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              const matched = matchFlemishOptions(person.flemish_connection!);
+              if (matched.length === 0) {
+                return <p className="text-gray-700">{person.flemish_connection}</p>;
+              }
+              
+              // If there are specific matched tags, show them as tags.
+              // We also want to show any extra text that might be in flemish_connection
+              // but for now, the UI usually just has the tags.
+              return matched.map(m => (
+                <button
+                  key={m}
+                  onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [m] })}
+                  className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:ring-2 hover:ring-blue-300 transition-all cursor-pointer"
+                >
+                  {m}
+                </button>
+              ));
+            })()}
+          </div>
         </div>
       )}
 

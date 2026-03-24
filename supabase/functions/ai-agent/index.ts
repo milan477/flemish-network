@@ -24,24 +24,6 @@ Rules:
 - The flemish_connection field captures any Belgian/Flemish institutional or personal connection mentioned (e.g. "From Ghent", "KU Leuven alumnus", "BAEF fellow")
 - Always provide a friendly message summarizing what you extracted`,
 
-  interpret_filters: `You are a search assistant for a network map showing Flemish-connected people and organizations across the United States.
-
-Given a natural language query, determine which map filters to apply.
-
-Available sectors: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research
-Available Flemish connections: KU Leuven, UGent, VUB, UAntwerp, BAEF, imec, Fayat
-
-Filter fields:
-- sector: one of the available sectors exactly as written, or empty string for no sector filter
-- flemishConnection: one of the available connections exactly as written, or empty string for no connection filter
-- showPeople: boolean (default true)
-- showOrganizations: boolean (default true)
-- availableForLectures: boolean (default false)
-
-If the user asks to reset, clear, or show all, return all defaults (empty strings, both shown, lectures false).
-If you cannot determine any specific filters from the query, return unchanged filters and explain what you can help with in the message.
-Always provide a brief message explaining what filters were applied.`,
-
   suggest_people: `You are an event planning assistant for a Flemish-American professional network. You help find the best contacts for events, missions, talks, and campaigns.
 
 Given an event plan and a user's request, identify which people from the provided list would be most relevant.
@@ -146,34 +128,6 @@ const SCHEMAS: Record<string, object> = {
       },
     },
     required: ["message", "contacts"],
-  },
-
-  interpret_filters: {
-    type: "OBJECT",
-    properties: {
-      message: {
-        type: "STRING",
-        description: "Description of filters being applied",
-      },
-      filters: {
-        type: "OBJECT",
-        properties: {
-          sector: { type: "STRING" },
-          flemishConnection: { type: "STRING" },
-          showPeople: { type: "BOOLEAN" },
-          showOrganizations: { type: "BOOLEAN" },
-          availableForLectures: { type: "BOOLEAN" },
-        },
-        required: [
-          "sector",
-          "flemishConnection",
-          "showPeople",
-          "showOrganizations",
-          "availableForLectures",
-        ],
-      },
-    },
-    required: ["message", "filters"],
   },
 
   suggest_people: {
@@ -284,10 +238,6 @@ function buildUserPrompt(
       return `User description:\n${context.description}\n\nAvailable sectors: ${sectors.join(", ")}`;
     }
 
-    case "interpret_filters": {
-      return `User query: "${context.query}"\n\nCurrent filters: ${JSON.stringify(context.currentFilters)}`;
-    }
-
     case "suggest_people": {
       const plan = context.plan as Record<string, string>;
       const people = context.people as Array<Record<string, unknown>>;
@@ -383,8 +333,6 @@ function validateResponse(task: string, data: unknown): boolean {
   switch (task) {
     case "parse_contacts":
       return typeof obj.message === "string" && Array.isArray(obj.contacts);
-    case "interpret_filters":
-      return typeof obj.message === "string" && typeof obj.filters === "object";
     case "suggest_people":
       return (
         typeof obj.message === "string" &&

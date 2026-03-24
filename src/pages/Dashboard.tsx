@@ -21,6 +21,7 @@ import FilterPanel from '../components/FilterPanel';
 import UnifiedSearchBar from '../components/UnifiedSearchBar';
 import { lookupCity, ensureLocationsLoaded, addToCache } from '../lib/locations';
 import { geocodeBatch } from '../lib/geocoding';
+import { parseFiltersFromQuery } from '../lib/filterParser';
 import {
   smartSearch,
   scorePersonAgainstKeywords,
@@ -244,18 +245,9 @@ export default function Dashboard({
       // Always run smart search for NL understanding and keyword extraction
       const result = await smartSearch(query);
 
-      // Auto-apply filters based on extracted keywords
-      const nextFilters = { ...filters };
-      if (result.keywords.sector.length > 0) {
-        // Find existing sector that matches one of the keywords
-        const sectorKw = result.keywords.sector[0].toLowerCase();
-        const sectors = ["Artificial Intelligence", "Biotechnology", "Finance", "Culture & Arts", "Education", "Research"];
-        const matchedSector = sectors.find(s => s.toLowerCase().includes(sectorKw) || sectorKw.includes(s.toLowerCase()));
-        if (matchedSector) {
-          nextFilters.sector = matchedSector;
-        }
-      }
-      setFilters(nextFilters);
+      // Apply deterministic filters from query
+      const parsed = parseFiltersFromQuery(query, filters);
+      setFilters(parsed.filters);
 
       const { data: allPeople } = await supabase.from('people').select('*');
       if (allPeople) {
@@ -332,11 +324,10 @@ export default function Dashboard({
         }
 
         if (currentFilters.flemishConnections.length > 0) {
-          q = q.or(
-            currentFilters.flemishConnections
-              .map((fc) => `flemish_connection.ilike.%${fc}%`)
-              .join(',')
-          );
+          const orFilter = currentFilters.flemishConnections
+            .map((fc) => `flemish_connection.ilike.%${fc}%`)
+            .join(',');
+          q = q.or(orFilter);
         }
 
         if (currentFilters.availableForLectures) {
@@ -762,9 +753,6 @@ export default function Dashboard({
         onRemoveAiFilter={handleRemoveFilter}
         activeSearchQuery={activeQuery}
         onRemoveSearchQuery={handleRemoveSearchQueryFilter}
-        popularFilters={popularFilters}
-        onActivatePopularFilter={handleActivatePopularFilter}
-        onActivatePredefined={handleActivatePredefined}
       />
     </div>
   );
