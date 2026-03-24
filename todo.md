@@ -115,19 +115,19 @@ Improve the manual data entry and edit experience for people profiles.
 **Files touched:** New `lib/exportService.ts`, `DirectoryGrid.tsx`, `CollectionDetail.tsx` (if collections branch merged), `PersonProfile.tsx`
 **Does NOT touch:** Map, Admin, Navigation, filters, edge functions, database
 
-- [ ] Create `lib/exportService.ts` with export utilities
-- [ ] **Export filtered results as CSV/Excel:**
-  - Add "Export" button to `DirectoryGrid.tsx` header
-  - Export all currently visible/filtered people with columns: Name, Position, Organization, Location, Sector(s), Flemish Connection, Email, Phone, LinkedIn
-- [ ] **Export collection as PDF briefing document:**
-  - Add "Export Briefing" button to collection detail view
-  - Generate a formatted document with:
-    - Collection name and description as header
-    - For each person: photo placeholder, name, title, position, location, bio summary, contact info, Flemish connection
-  - Use browser print/PDF (`window.print()` with print-specific CSS) or a client-side PDF library (jsPDF)
-- [ ] **Print-friendly profile pages:**
-  - Add print stylesheet to `PersonProfile.tsx` (hide nav, sidebar, action buttons)
-  - Add "Print" button to profile page
+- [x] Create `lib/exportService.ts` with export utilities
+- [x] **Export filtered results as CSV/Excel:**
+  - [x] Add "Export" button to `DirectoryGrid.tsx` header
+  - [x] Export all currently visible/filtered people with columns: Name, Position, Organization, Location, Sector(s), Flemish Connection, Email, Phone, LinkedIn
+- [x] **Export collection as PDF briefing document:**
+  - [x] Add "Export Briefing" button to collection detail view
+  - [x] Generate a formatted document with:
+    - [x] Collection name and description as header
+    - [x] For each person: photo placeholder, name, title, position, location, bio summary, contact info, Flemish connection
+  - [x] Use browser print/PDF (`window.print()` with print-specific CSS) or a client-side PDF library (jsPDF)
+- [x] **Print-friendly profile pages:**
+  - [x] Add print stylesheet to `PersonProfile.tsx` (hide nav, sidebar, action buttons)
+  - [x] Add "Print" button to profile page
 
 ### 5. Data Quality & Privacy Fields — `feature/data-quality`
 **Files touched:** New migration, `PersonProfile.tsx`, `Admin.tsx`, `supabase.ts` (types), `DirectoryGrid.tsx`

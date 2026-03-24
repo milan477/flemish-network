@@ -1,3 +1,132 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  /* Hide non-printable elements */
+  nav, 
+  aside, 
+  button, 
+  .no-print {
+    display: none !important;
+  }
+
+  /* Reset layout for printing */
+  body {
+    background-color: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 12pt;
+    color: black !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-page-break {
+    page-break-after: always;
+  }
+
+  .print-no-break {
+    page-break-inside: avoid;
+  }
+
+  /* Container for the briefing */
+  .briefing-container {
+    padding: 20mm;
+    max-width: 100%;
+  }
+
+  .briefing-header {
+    margin-bottom: 20pt;
+    border-bottom: 2pt solid #fbbf24;
+    padding-bottom: 10pt;
+  }
+
+  .briefing-title {
+    font-size: 24pt;
+    font-weight: bold;
+    margin-bottom: 5pt;
+  }
+
+  .briefing-description {
+    font-size: 12pt;
+    color: #4b5563;
+    line-height: 1.5;
+  }
+
+  .person-entry {
+    margin-bottom: 20pt;
+    padding-bottom: 15pt;
+    border-bottom: 0.5pt solid #e5e7eb;
+    page-break-inside: avoid;
+    display: flex;
+    gap: 15pt;
+  }
+
+  .person-photo {
+    width: 60pt;
+    height: 60pt;
+    background-color: #fef3c7;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18pt;
+    font-weight: bold;
+    color: #b45309;
+    flex-shrink: 0;
+  }
+
+  .person-details {
+    flex: 1;
+  }
+
+  .person-name {
+    font-size: 16pt;
+    font-weight: bold;
+    margin-bottom: 2pt;
+  }
+
+  .person-position {
+    font-size: 11pt;
+    font-weight: 500;
+    margin-bottom: 2pt;
+  }
+
+  .person-location {
+    font-size: 10pt;
+    color: #6b7280;
+    margin-bottom: 8pt;
+  }
+
+  .person-bio {
+    font-size: 10pt;
+    line-height: 1.4;
+    margin-bottom: 8pt;
+  }
+
+  .person-contact {
+    font-size: 9pt;
+    color: #374151;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10pt;
+  }
+
+  .flemish-link {
+    display: inline-block;
+    padding: 2pt 6pt;
+    background-color: #eff6ff;
+    color: #1e40af;
+    font-size: 9pt;
+    border-radius: 4pt;
+    font-weight: 500;
+    margin-top: 5pt;
+  }
+}
+
+.print-only {
+  display: none;
+}

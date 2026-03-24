@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Database,
+  Printer,
 } from 'lucide-react';
 import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
@@ -259,6 +260,10 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     loadPerson();
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-64px)]">
@@ -287,7 +292,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <button
         onClick={() => onNavigate('directory')}
-        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors no-print"
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to directory</span>
@@ -307,7 +312,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 mt-4">
+                <div className="flex flex-wrap items-center gap-3 mt-4 no-print">
                   {!editing && (
                     <>
                       <button
@@ -352,6 +357,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           <span>Email</span>
                         </a>
                       )}
+                      <button
+                        onClick={handlePrint}
+                        className="px-5 py-2 bg-white hover:bg-gray-50 text-gray-600 font-medium border border-gray-200 rounded-lg transition-colors flex items-center space-x-2"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Print</span>
+                      </button>
                     </>
                   )}
                   {editing && (
@@ -376,7 +388,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                 </div>
 
                 {!editing && (
-                  <SocialLinks person={person} />
+                  <div className="no-print">
+                    <SocialLinks person={person} />
+                  </div>
                 )}
               </div>
             </div>
@@ -431,12 +445,12 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
       <div className="flex items-center gap-3 mb-2">
         <h1 className="text-3xl font-semibold text-gray-900">{displayName(person)}</h1>
         {verifiedDate ? (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-700 rounded-lg text-xs font-medium border border-green-100" title={`Verified on ${verifiedDate}`}>
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-700 rounded-lg text-xs font-medium border border-green-100 no-print" title={`Verified on ${verifiedDate}`}>
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Verified</span>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium border border-gray-100" title="Not yet verified by a human">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium border border-gray-100 no-print" title="Not yet verified by a human">
             <ShieldAlert className="w-3.5 h-3.5" />
             <span>Unverified</span>
           </div>
@@ -444,7 +458,7 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
       </div>
       
       {person.data_source && (
-        <div className="flex items-center gap-1.5 text-gray-400 mb-4">
+        <div className="flex items-center gap-1.5 text-gray-400 mb-4 no-print">
           <Database className="w-3.5 h-3.5" />
           <span className="text-[11px] font-medium uppercase tracking-wider">
             {sourceLabels[person.data_source] || person.data_source}
@@ -454,13 +468,13 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
 
       {person.current_position && (
         <div className="flex items-center space-x-2 text-gray-600 mb-1">
-          <Briefcase className="w-5 h-5" />
+          <Briefcase className="w-5 h-5 no-print" />
           <span className="text-lg">{person.current_position}</span>
         </div>
       )}
       {person.occupation && (
         <div className="flex items-center space-x-2 text-gray-500 mb-1">
-          <Tag className="w-4 h-4" />
+          <Tag className="w-4 h-4 no-print" />
           <span className="text-sm font-medium">{person.occupation}</span>
         </div>
       )}
@@ -469,19 +483,19 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
           onClick={() => onNavigate('dashboard', undefined, { focusCity: { city: person.location_city!, state: person.location_state || '' } })}
           className="flex items-center space-x-2 text-gray-600 hover:text-yellow-700 mb-1 transition-colors group"
         >
-          <MapPin className="w-5 h-5" />
+          <MapPin className="w-5 h-5 no-print" />
           <span className="group-hover:underline">{person.location_city}{person.location_state && `, ${person.location_state}`}</span>
         </button>
       )}
       {person.phone && (
         <div className="flex items-center space-x-2 text-gray-500 mb-1">
-          <Phone className="w-4 h-4" />
+          <Phone className="w-4 h-4 no-print" />
           <span className="text-sm">{person.phone}</span>
         </div>
       )}
       {person.email && (
         <div className="flex items-center space-x-2 text-gray-500">
-          <Mail className="w-4 h-4" />
+          <Mail className="w-4 h-4 no-print" />
           <span className="text-sm">{person.email}</span>
         </div>
       )}

@@ -10,6 +10,9 @@ import {
   FileText,
   Save,
   Pencil,
+  Download,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import {
   supabase,
@@ -141,6 +144,10 @@ export default function CollectionDetail({
     }
   };
 
+  const handlePrintBriefing = () => {
+    window.print();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -167,7 +174,86 @@ export default function CollectionDetail({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      {/* Printable Briefing Document */}
+      <div className="print-only briefing-container">
+        <div className="briefing-header">
+          <h1 className="briefing-title">{collection.name}</h1>
+          {collection.description && (
+            <p className="briefing-description">{collection.description}</p>
+          )}
+          <div className="text-xs text-gray-400 mt-4">
+            Generated on {new Date().toLocaleDateString()} • {members.length} members
+          </div>
+        </div>
+
+        <div className="space-y-8">
+          {members.map((member) => {
+            if (!member.person) return null;
+            const p = member.person;
+            const initials = personInitials(p);
+            return (
+              <div key={member.id} className="person-entry">
+                <div className="person-photo">
+                  {p.profile_photo_url ? (
+                    <img
+                      src={p.profile_photo_url}
+                      alt={p.name}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <span>{initials}</span>
+                  )}
+                </div>
+                <div className="person-details">
+                  <h2 className="person-name">{displayName(p)}</h2>
+                  {p.current_position && <p className="person-position">{p.current_position}</p>}
+                  {(p.location_city || p.location_state) && (
+                    <p className="person-location">
+                      {[p.location_city, p.location_state].filter(Boolean).join(', ')}
+                    </p>
+                  )}
+                  {p.bio && <p className="person-bio">{p.bio}</p>}
+                  {member.notes && (
+                    <div className="mb-4 p-3 bg-gray-50 border-l-2 border-yellow-400 italic text-sm">
+                      <span className="font-bold text-gray-400 uppercase text-[10px] block mb-1">Collection Notes</span>
+                      {member.notes}
+                    </div>
+                  )}
+                  <div className="person-contact">
+                    {p.email && (
+                      <div className="flex items-center gap-1">
+                        <Mail className="w-3 h-3" />
+                        <span>{p.email}</span>
+                      </div>
+                    )}
+                    {p.phone && (
+                      <div className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        <span>{p.phone}</span>
+                      </div>
+                    )}
+                    {p.linkedin_url && (
+                      <div className="flex items-center gap-1">
+                        <ExternalLink className="w-3 h-3" />
+                        <span>LinkedIn</span>
+                      </div>
+                    )}
+                  </div>
+                  {p.flemish_connection && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {p.flemish_connection.split(',').map(f => f.trim()).filter(Boolean).map(f => (
+                        <span key={f} className="flemish-link">{f}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 no-print">
         <div>
           <button
             onClick={onBack}
@@ -195,6 +281,13 @@ export default function CollectionDetail({
 
         <div className="flex items-center gap-3">
           <button
+            onClick={handlePrintBriefing}
+            className="flex items-center px-4 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-lg transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export Briefing
+          </button>
+          <button
             onClick={handleDeleteCollection}
             className="flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
           >
@@ -204,7 +297,7 @@ export default function CollectionDetail({
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden no-print">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             Members ({members.length})

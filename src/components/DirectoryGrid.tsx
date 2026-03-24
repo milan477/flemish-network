@@ -1,8 +1,9 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Download } from 'lucide-react';
 import { useState } from 'react';
-import { displayName, personInitials } from '../lib/supabase';
+import { supabase, displayName, personInitials } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
 import AddToCollectionDropdown from './AddToCollectionDropdown';
+import { exportToCsv } from '../lib/exportService';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -149,6 +150,8 @@ export default function DirectoryGrid({
   snippets,
   allPeople,
 }: DirectoryGridProps) {
+  const [exporting, setExporting] = useState(false);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -159,6 +162,32 @@ export default function DirectoryGrid({
 
   const isSearchMode = !!searchQuery;
   const displayPeople = allPeople || [];
+
+  const handleExport = async (peopleToExport: Person[]) => {
+    if (peopleToExport.length === 0) return;
+    setExporting(true);
+    try {
+      // Fetch sectors for these people
+      const { data: sectorRows } = await supabase
+        .from('person_sectors')
+        .select('person_id, sectors(name)')
+        .in('person_id', peopleToExport.map(p => p.id));
+
+      const sectorsMap: Record<string, string[]> = {};
+      if (sectorRows) {
+        sectorRows.forEach((row: any) => {
+          if (!sectorsMap[row.person_id]) sectorsMap[row.person_id] = [];
+          if (row.sectors?.name) sectorsMap[row.person_id].push(row.sectors.name);
+        });
+      }
+
+      await exportToCsv(peopleToExport, sectorsMap);
+    } catch (err) {
+      console.error('Export error:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -192,7 +221,17 @@ export default function DirectoryGrid({
                   </h2>
                   <span className="text-sm text-gray-400">({nameMatches.length})</span>
                 </div>
-                <BulkAddButton people={nameMatches} />
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => handleExport(nameMatches)}
+                    disabled={exporting}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-white text-gray-600 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    <span>Export</span>
+                  </button>
+                  <BulkAddButton people={nameMatches} />
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {nameMatches.map((person) => (
@@ -228,6 +267,14 @@ export default function DirectoryGrid({
                   <span className="text-sm text-gray-400">({aiResults.length})</span>
                 </div>
                 <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => handleExport(aiResults)}
+                    disabled={exporting}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-white text-gray-600 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    <span>Export</span>
+                  </button>
                   <BulkAddButton people={aiResults} />
                   {onClearSearch && (
                     <button
@@ -275,7 +322,17 @@ export default function DirectoryGrid({
               <h2 className="text-lg font-semibold text-gray-900">People</h2>
               <span className="text-sm text-gray-400">({displayPeople.length})</span>
             </div>
-            <BulkAddButton people={displayPeople} />
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => handleExport(displayPeople)}
+                disabled={exporting}
+                className="flex items-center space-x-2 px-3 py-1.5 bg-white text-gray-600 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50"
+              >
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>Export</span>
+              </button>
+              <BulkAddButton people={displayPeople} />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {displayPeople.map((person) => (
