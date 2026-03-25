@@ -41,8 +41,7 @@ async function addContactToDb(
       last_name: parsed.lastName || null,
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
-      location_city: contact.location_city || null,
-      location_state: contact.location_state || null,
+      location_id: contact.location_id || null,
       bio: contact.bio || null,
       flemish_connection: contact.flemish_connection || null,
       email: contact.email || null,
@@ -237,8 +236,7 @@ export default function AdminChatbot({
     if (!contact.existing_person_id) return;
     setLoadingCompare(true);
     const { data } = await supabase
-      .from('people')
-      .select('*')
+      .from('people').select('*, locations(*)')
       .eq('id', contact.existing_person_id)
       .maybeSingle();
     setLoadingCompare(false);

@@ -225,10 +225,10 @@ export default function CollectionModal({
                                   <span className="truncate max-w-[150px]">{person.current_position}</span>
                                 </div>
                               )}
-                              {person.location_city && (
+                              {person.locations?.city && (
                                 <div className="flex items-center">
                                   <MapPin className="w-3 h-3 mr-1" />
-                                  <span>{person.location_city}, {person.location_state}</span>
+                                  <span>{person.locations?.city}, {person.locations?.state}</span>
                                 </div>
                               )}
                             </div>

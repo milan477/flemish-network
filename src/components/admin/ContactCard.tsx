@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import type { SearchedContact } from '../../lib/aiService';
 
+import CitySearch from '../CitySearch';
+
 export interface DiscoveredContact extends SearchedContact {
   id: string;
 }
@@ -43,7 +45,7 @@ export function ContactCardEdit({
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<DiscoveredContact>({ ...contact });
-  const set = (field: string, value: string) =>
+  const set = (field: string, value: string | null) =>
     setForm((f) => ({ ...f, [field]: value }));
 
   return (
@@ -56,13 +58,13 @@ export function ContactCardEdit({
       />
       <div className="grid grid-cols-2 gap-2">
         <input
-          value={form.current_position}
+          value={form.current_position || ''}
           onChange={(e) => set('current_position', e.target.value)}
           className={INPUT_CLS}
           placeholder="Position"
         />
         <input
-          value={form.occupation}
+          value={form.occupation || ''}
           onChange={(e) => set('occupation', e.target.value)}
           className={INPUT_CLS}
           placeholder="Occupation (e.g. Researcher)"
@@ -79,48 +81,50 @@ export function ContactCardEdit({
           <option value="Consultant" />
         </datalist>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <input
-          value={form.location_city}
-          onChange={(e) => set('location_city', e.target.value)}
-          className={INPUT_CLS}
-          placeholder="City"
-        />
-        <input
-          value={form.location_state}
-          onChange={(e) => set('location_state', e.target.value)}
-          className={INPUT_CLS}
-          placeholder="State"
-        />
-        <input
-          value={form.flemish_connection}
-          onChange={(e) => set('flemish_connection', e.target.value)}
-          className={INPUT_CLS}
-          placeholder="Flemish connection"
+      <div className="grid grid-cols-1 gap-2">
+        <CitySearch
+          value={form.location_id || ''}
+          cityStateDisplay={form.locations ? `${form.locations.city}, ${form.locations.state}` : ''}
+          onChange={(id, city, state, lat, lng) => {
+            setForm(f => ({
+              ...f,
+              location_id: id,
+              locations: id ? { id, city, state, latitude: lat || 0, longitude: lng || 0 } : undefined
+            }));
+          }}
+          className="!flex-none"
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input
-          value={form.email}
+          value={form.flemish_connection || ''}
+          onChange={(e) => set('flemish_connection', e.target.value)}
+          className={INPUT_CLS}
+          placeholder="Flemish connection"
+        />
+        <input
+          value={form.email || ''}
           onChange={(e) => set('email', e.target.value)}
           className={INPUT_CLS}
           placeholder="Email"
         />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <input
-          value={form.linkedin_url}
+          value={form.linkedin_url || ''}
           onChange={(e) => set('linkedin_url', e.target.value)}
           className={INPUT_CLS}
           placeholder="LinkedIn URL"
         />
+        <input
+          value={form.website_url || ''}
+          onChange={(e) => set('website_url', e.target.value)}
+          className={INPUT_CLS}
+          placeholder="Website URL"
+        />
       </div>
-      <input
-        value={form.website_url}
-        onChange={(e) => set('website_url', e.target.value)}
-        className={INPUT_CLS}
-        placeholder="Website URL"
-      />
       <textarea
-        value={form.bio}
+        value={form.bio || ''}
         onChange={(e) => set('bio', e.target.value)}
         className={`${INPUT_CLS} resize-none`}
         rows={2}
@@ -199,10 +203,10 @@ export default function ContactCard({
           )}
 
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-            {contact.location_city && (
+            {contact.locations?.city && (
               <span className="text-xs text-gray-400">
-                {contact.location_city}
-                {contact.location_state && `, ${contact.location_state}`}
+                {contact.locations?.city}
+                {contact.locations?.state && `, ${contact.locations?.state}`}
               </span>
             )}
             {contact.flemish_connection && (

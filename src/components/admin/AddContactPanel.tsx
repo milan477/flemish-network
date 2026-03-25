@@ -46,10 +46,8 @@ interface ManualForm {
   lastName: string;
   current_position: string;
   occupation: string;
-  location_city: string;
-  location_state: string;
-  latitude?: number;
-  longitude?: number;
+  location_id: string;
+  location_display?: string;
   bio: string;
   flemish_connection: string;
   phone: string;
@@ -66,10 +64,8 @@ const EMPTY_FORM: ManualForm = {
   lastName: '',
   current_position: '',
   occupation: '',
-  location_city: '',
-  location_state: '',
-  latitude: undefined,
-  longitude: undefined,
+  location_id: '',
+  location_display: '',
   bio: '',
   flemish_connection: '',
   phone: '',
@@ -202,11 +198,11 @@ function PersonPreview({ person }: { person: Person }) {
             <span className="truncate">{person.occupation}</span>
           </div>
         )}
-        {(person.location_city || person.location_state) && (
+        {(person.locations?.city || person.locations?.state) && (
           <div className="flex items-center gap-2 text-gray-600">
             <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
             <span className="truncate">
-              {[person.location_city, person.location_state].filter(Boolean).join(', ')}
+              {[person.locations?.city, person.locations?.state].filter(Boolean).join(', ')}
             </span>
           </div>
         )}
@@ -283,8 +279,7 @@ function ManualAddForm({
     if (!first) return null;
 
     const { data: allPeople } = await supabase
-      .from('people')
-      .select('id, name, first_name, last_name, email');
+      .from('people').select('id, name, first_name, last_name, email, location_id, locations(*)');
 
     if (!allPeople) return null;
 
@@ -352,10 +347,7 @@ function ManualAddForm({
         last_name: last || null,
         current_position: form.current_position || null,
         occupation: form.occupation || null,
-        location_city: form.location_city || null,
-        location_state: form.location_state || null,
-        latitude: form.latitude || null,
-        longitude: form.longitude || null,
+        location_id: form.location_id || null,
         bio: form.bio || null,
         flemish_connection: flemishStr || null,
         phone: form.phone || null,
@@ -366,7 +358,7 @@ function ManualAddForm({
         data_source: 'manual',
         last_verified_at: new Date().toISOString(),
       })
-      .select('*')
+      .select('*, locations(*)')
       .maybeSingle();
 
     if (insertErr || !person) {
@@ -533,15 +525,13 @@ function ManualAddForm({
         <div className="flex items-center space-x-2">
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <CitySearch
-            value={form.location_city}
-            state={form.location_state}
-            onChange={(city, state, lat, lng) => {
+            value={form.location_id}
+            cityStateDisplay={form.location_display}
+            onChange={(id, city, state) => {
               setForm(f => ({
                 ...f,
-                location_city: city,
-                location_state: state,
-                latitude: lat,
-                longitude: lng
+                location_id: id,
+                location_display: id ? `${city}, ${state}` : ''
               }));
             }}
             placeholder="Search city..."

@@ -65,7 +65,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
 
   const loadPerson = useCallback(async () => {
     const [personRes, sectorsRes, allSectorsRes, connRes] = await Promise.all([
-      supabase.from('people').select('*').eq('id', personId).maybeSingle(),
+      supabase.from('people').select('*, locations(*)').eq('id', personId).maybeSingle(),
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
       supabase.from('sectors').select('*'),
       supabase.from('connections').select('id').or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`).limit(50),
@@ -107,8 +107,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       last_name: person.last_name || '',
       current_position: person.current_position || '',
       occupation: person.occupation || '',
-      location_city: person.location_city || '',
-      location_state: person.location_state || '',
+      location_id: person.location_id || '',
+      location_display: person.locations ? `${person.locations.city}, ${person.locations.state}` : '',
       bio: person.bio || '',
       flemish_connection: person.flemish_connection || '',
       phone: person.phone || '',
@@ -160,10 +160,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       last_name: last, // DB has NOT NULL DEFAULT ''
       current_position: editForm.current_position || null,
       occupation: editForm.occupation || null,
-      location_city: editForm.location_city || null,
-      location_state: editForm.location_state || null,
-      latitude: editForm.latitude || null,
-      longitude: editForm.longitude || null,
+      location_id: editForm.location_id || null,
       bio: editForm.bio || null,
       flemish_connection: flemishStr || null,
       phone: editForm.phone || null,
@@ -179,20 +176,29 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .from('people')
       .update(updatePayload)
       .eq('id', person.id)
-      .select('*')
+      .select('*, locations(*)')
       .maybeSingle();
 
     if (updateErr) {
       console.error('Supabase update error:', updateErr);
       alert(`Error saving: ${updateErr.message}`);
-    } else {
-      if (updatedPerson) {
-        setPerson(updatedPerson as Person);
-      }
-      const currentIds = personSectors.map((s) => s.id);
-      const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
-      const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
+      setSaving(false);
+      return;
+    } 
+    
+    if (!updatedPerson) {
+      console.warn('Update successful but no data returned. This might be due to RLS policies.');
+      alert('The update was not applied. You might not have permission to edit this profile.');
+      setSaving(false);
+      return;
+    }
 
+    setPerson(updatedPerson as Person);
+    const currentIds = personSectors.map((s) => s.id);
+    const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
+    const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
+
+    try {
       if (toRemove.length > 0) {
         for (const sid of toRemove) {
           await supabase
@@ -204,14 +210,20 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       }
 
       if (toAdd.length > 0) {
-        await supabase
+        const { error: insertErr } = await supabase
           .from('person_sectors')
           .insert(toAdd.map((sid) => ({ person_id: person.id, sector_id: sid })));
+        if (insertErr) throw insertErr;
       }
+      
+      setEditing(false);
+    } catch (err: any) {
+      console.error('Error updating sectors:', err);
+      alert(`Profile info saved, but error updating sectors: ${err.message}`);
+      setEditing(false);
     }
 
     setSaving(false);
-    setEditing(false);
   };
 
   const toggleEditSector = (id: string) => {
@@ -464,13 +476,13 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
           <span className="text-sm font-medium">{person.occupation}</span>
         </div>
       )}
-      {person.location_city && (
+      {person.locations?.city && (
         <button
-          onClick={() => onNavigate('dashboard', undefined, { focusCity: { city: person.location_city!, state: person.location_state || '' } })}
+          onClick={() => onNavigate('dashboard', undefined, { focusCity: { city: person.locations?.city!, state: person.locations?.state || '' } })}
           className="flex items-center space-x-2 text-gray-600 hover:text-yellow-700 mb-1 transition-colors group"
         >
           <MapPin className="w-5 h-5" />
-          <span className="group-hover:underline">{person.location_city}{person.location_state && `, ${person.location_state}`}</span>
+          <span className="group-hover:underline">{person.locations?.city}{person.locations?.state && `, ${person.locations?.state}`}</span>
         </button>
       )}
       {person.phone && (
@@ -558,15 +570,13 @@ function EditHeader({
         <div className="flex items-center space-x-2 sm:col-span-2 lg:col-span-1">
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <CitySearch
-            value={editForm.location_city || ''}
-            state={editForm.location_state || ''}
-            onChange={(city, state, lat, lng) => {
+            value={editForm.location_id || ''}
+            cityStateDisplay={editForm.location_display || ''}
+            onChange={(id, city, state) => {
               setEditForm(f => ({
                 ...f,
-                location_city: city,
-                location_state: state,
-                latitude: lat ?? undefined,
-                longitude: lng ?? undefined
+                location_id: id,
+                location_display: id ? `${city}, ${state}` : ''
               }));
             }}
             placeholder="Search city..."

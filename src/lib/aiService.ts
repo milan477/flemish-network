@@ -161,8 +161,8 @@ export function scorePersonAgainstKeywords(
     { key: 'name', personField: 'name', weight: 3 },
     { key: 'occupation', personField: 'occupation', weight: 2 },
     { key: 'sector', personField: 'sectors_text', weight: 2 },
-    { key: 'location_city', personField: 'location_city', weight: 1.5 },
-    { key: 'location_state', personField: 'location_state', weight: 1 },
+    { key: 'location_city', personField: 'locations.city', weight: 1.5 },
+    { key: 'location_state', personField: 'locations.state', weight: 1 },
     { key: 'current_position', personField: 'current_position', weight: 2 },
     { key: 'flemish_connection', personField: 'flemish_connection', weight: 2 },
     { key: 'bio', personField: 'bio', weight: 1 },
@@ -173,7 +173,15 @@ export function scorePersonAgainstKeywords(
     if (!kws || kws.length === 0) continue;
 
     totalWeight += weight;
-    const val = String(person[personField] || '').toLowerCase();
+    
+    let val = '';
+    if (personField.includes('.')) {
+      const [parent, child] = personField.split('.');
+      val = String(person[parent]?.[child] || '').toLowerCase();
+    } else {
+      val = String(person[personField] || '').toLowerCase();
+    }
+    
     if (!val) continue;
 
     let fieldHits = 0;
@@ -237,7 +245,7 @@ export async function flemishSearch(
 export async function suggestPeople(query: string): Promise<{ person: Person; reason: string; score: number }[]> {
   try {
     const res = await smartSearch(query);
-    const { data: people, error } = await supabase.from('people').select('*').limit(200);
+    const { data: people, error } = await supabase.from('people').select('*, locations(*)').limit(200);
     if (error || !people) throw error || new Error('No people found');
 
     return (people || [])

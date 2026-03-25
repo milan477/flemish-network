@@ -113,12 +113,6 @@ export default function ProfileUpdateModal({
       }
     }
 
-    // If location changed, clear coordinates to force re-geocoding
-    if ('location_city' in updates || 'location_state' in updates) {
-      updates.latitude = null;
-      updates.longitude = null;
-    }
-
     updates['last_verified_at'] = new Date().toISOString();
     updates['updated_at'] = new Date().toISOString();
 

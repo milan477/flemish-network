@@ -278,13 +278,13 @@ export default function CollectionDetail({
                               </span>
                             </div>
                           )}
-                          {(person.location_city || person.location_state) && (
+                          {(person.locations?.city || person.locations?.state) && (
                             <div className="flex items-center">
                               <MapPin className="w-3.5 h-3.5 mr-1.5 text-gray-400 flex-shrink-0" />
                               <span className="truncate">
                                 {[
-                                  person.location_city,
-                                  person.location_state,
+                                  person.locations?.city,
+                                  person.locations?.state,
                                 ].filter(Boolean).join(', ')}
                               </span>
                             </div>

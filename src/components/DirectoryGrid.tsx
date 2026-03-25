@@ -62,11 +62,11 @@ function PersonCard({
                 {person.current_position}
               </p>
             )}
-            {person.location_city && (
+            {person.locations?.city && (
               <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
                 <MapPin className="w-3 h-3" />
                 <span>
-                  {person.location_city}, {person.location_state}
+                  {person.locations?.city}, {person.locations?.state}
                 </span>
               </div>
             )}
@@ -306,11 +306,11 @@ export default function DirectoryGrid({
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 text-sm">{org.name}</h3>
                     <p className="text-xs text-gray-600 mt-0.5">{org.type}</p>
-                    {org.location_city && (
+                    {org.locations?.city && (
                       <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
                         <MapPin className="w-3 h-3" />
                         <span>
-                          {org.location_city}, {org.location_state}
+                          {org.locations?.city}, {org.locations?.state}
                         </span>
                       </div>
                     )}

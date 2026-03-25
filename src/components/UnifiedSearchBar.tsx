@@ -59,15 +59,13 @@ export default function UnifiedSearchBar({
     debounceRef.current = setTimeout(async () => {
       // Search people
       const { data: people } = await supabase
-        .from('people')
-        .select('id, name, first_name, last_name, title, current_position')
+        .from('people').select('id, name, first_name, last_name, title, current_position, location_id, locations(*)')
         .or(`name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
         .limit(4);
 
       // Search organizations
       const { data: orgs } = await supabase
-        .from('organizations')
-        .select('id, name, type')
+        .from('organizations').select('id, name, type, location_id, locations(*)')
         .ilike('name', `%${q}%`)
         .limit(3);
 

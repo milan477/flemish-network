@@ -94,27 +94,27 @@ function buildClusters(
 
   if (filters.showPeople) {
     for (const person of people) {
-      if (!person.location_city || !person.location_state) continue;
+      if (!person.locations?.city || !person.locations?.state) continue;
       
       // Try the global geocoding cache first - this is our "source of truth" for city positions
-      const coords = lookupCity(person.location_city, person.location_state);
+      const coords = lookupCity(person.locations?.city, person.locations?.state);
       
       let lat = coords?.lat;
       let lng = coords?.lng;
       
       // Only fall back to person's record if we have no cached city coordinates
       if (lat == null || lng == null) {
-        lat = person.latitude;
-        lng = person.longitude;
+        lat = person.locations?.latitude;
+        lng = person.locations?.longitude;
       }
 
       if (lat == null || lng == null) continue;
 
-      const key = `${person.location_city}|${person.location_state}`;
+      const key = `${person.locations?.city}|${person.locations?.state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
-          city: person.location_city,
-          state: person.location_state,
+          city: person.locations?.city,
+          state: person.locations?.state,
           lat: Number(lat),
           lng: Number(lng),
           people: [],
@@ -127,25 +127,25 @@ function buildClusters(
 
   if (filters.showOrganizations) {
     for (const org of organizations) {
-      if (!org.location_city || !org.location_state) continue;
+      if (!org.locations?.city || !org.locations?.state) continue;
       
-      const coords = lookupCity(org.location_city, org.location_state);
+      const coords = lookupCity(org.locations?.city, org.locations?.state);
       
       let lat = coords?.lat;
       let lng = coords?.lng;
       
       if (lat == null || lng == null) {
-        lat = org.latitude;
-        lng = org.longitude;
+        lat = org.locations?.latitude;
+        lng = org.locations?.longitude;
       }
 
       if (lat == null || lng == null) continue;
 
-      const key = `${org.location_city}|${org.location_state}`;
+      const key = `${org.locations?.city}|${org.locations?.state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
-          city: org.location_city,
-          state: org.location_state,
+          city: org.locations?.city,
+          state: org.locations?.state,
           lat: Number(lat),
           lng: Number(lng),
           people: [],
@@ -233,8 +233,7 @@ export default function Dashboard({
         const mainTerm = searchTerms[searchTerms.length - 1]; // Use last name as main term for better results
 
         const { data: peopleMatches } = await supabase
-          .from('people')
-          .select('*')
+          .from('people').select('*, locations(*)')
           .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
           .limit(20);
         
@@ -248,7 +247,7 @@ export default function Dashboard({
       const parsed = parseFiltersFromQuery(query, filters);
       setFilters(parsed.filters);
 
-      const { data: allPeople } = await supabase.from('people').select('*');
+      const { data: allPeople } = await supabase.from('people').select('*, locations(*)');
       if (allPeople) {
         const scored = (allPeople as Person[])
           .map((p) => ({
@@ -290,7 +289,7 @@ export default function Dashboard({
       let orgsData: Organization[] = [];
 
       if (currentFilters.showPeople) {
-        let q = supabase.from('people').select('*');
+        let q = supabase.from('people').select('*, locations(*)');
 
         if (currentFilters.sector) {
           const { data: sectorRows } = await supabase
@@ -337,7 +336,7 @@ export default function Dashboard({
         peopleData = data || [];
 
         if (currentFilters.flemishConnections.length > 0 && peopleData.length === 0) {
-          const { data: allPeople } = await supabase.from('people').select('*');
+          const { data: allPeople } = await supabase.from('people').select('*, locations(*)');
           if (allPeople) {
             peopleData = (allPeople as Person[]).filter((p) =>
               currentFilters.flemishConnections.some((fc) =>
@@ -349,7 +348,7 @@ export default function Dashboard({
       }
 
       if (currentFilters.showOrganizations) {
-        const { data } = await supabase.from('organizations').select('*');
+        const { data } = await supabase.from('organizations').select('*, locations(*)');
         let rawOrgs = (data || []) as Organization[];
 
         // Apply text search if query exists
@@ -429,18 +428,18 @@ export default function Dashboard({
         ...peopleData.map((p) => ({
           id: p.id,
           table: 'people' as const,
-          city: p.location_city,
-          state: p.location_state,
-          lat: p.latitude,
-          lng: p.longitude,
+          city: p.locations?.city,
+          state: p.locations?.state,
+          lat: p.locations?.latitude,
+          lng: p.locations?.longitude,
         })),
         ...orgsData.map((o) => ({
           id: o.id,
           table: 'organizations' as const,
-          city: o.location_city,
-          state: o.location_state,
-          lat: o.latitude,
-          lng: o.longitude,
+          city: o.locations?.city,
+          state: o.locations?.state,
+          lat: o.locations?.latitude,
+          lng: o.locations?.longitude,
         })),
       ];
 
@@ -547,16 +546,16 @@ export default function Dashboard({
   const displayedPeople = focusedCity
     ? people.filter(
         (p) =>
-          p.location_city === focusedCity.city &&
-          p.location_state === focusedCity.state
+          p.locations?.city === focusedCity.city &&
+          p.locations?.state === focusedCity.state
       )
     : people;
 
   const displayedOrgs = focusedCity
     ? organizations.filter(
         (o) =>
-          o.location_city === focusedCity.city &&
-          o.location_state === focusedCity.state
+          o.locations?.city === focusedCity.city &&
+          o.locations?.state === focusedCity.state
       )
     : organizations;
 

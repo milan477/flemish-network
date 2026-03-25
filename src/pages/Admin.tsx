@@ -59,8 +59,7 @@ export default function Admin() {
 
     const personIds = [...new Set(data.map((s) => s.person_id))];
     const { data: peopleData } = await supabase
-      .from('people')
-      .select('id, name')
+      .from('people').select('id, name, location_id, locations(*)')
       .in('id', personIds);
 
     const nameMap: Record<string, string> = {};
@@ -78,8 +77,8 @@ export default function Admin() {
 
   const loadData = useCallback(async () => {
     const [peopleRes, orgsRes, , psRes] = await Promise.all([
-      supabase.from('people').select('*'),
-      supabase.from('organizations').select('id'),
+      supabase.from('people').select('*, locations(*)'),
+      supabase.from('organizations').select('id, location_id, locations(*)'),
       supabase.from('sectors').select('*'),
       supabase.from('person_sectors').select('sector_id, sectors(name)'),
     ]);
@@ -106,8 +105,8 @@ export default function Admin() {
 
     const locMap: Record<string, number> = {};
     allPeople.forEach((p) => {
-      if (p.location_city) {
-        const key = `${p.location_city}|${p.location_state || ''}`;
+      if (p.locations?.city) {
+        const key = `${p.locations?.city}|${p.locations?.state || ''}`;
         locMap[key] = (locMap[key] || 0) + 1;
       }
     });
@@ -206,10 +205,10 @@ export default function Admin() {
   }, [loadData, loadSuggestions]);
 
   const cityCount = new Set(
-    people.filter((p) => p.location_city).map((p) => p.location_city)
+    people.filter((p) => p.locations?.city).map((p) => p.locations?.city)
   ).size;
   const stateCount = new Set(
-    people.filter((p) => p.location_state).map((p) => p.location_state)
+    people.filter((p) => p.locations?.state).map((p) => p.locations?.state)
   ).size;
   const maxSectorCount = sectorCounts[0]?.count || 1;
   const pendingSuggestionCount = suggestions.filter(

@@ -172,8 +172,8 @@ export default function StaleContactsBar({
                     </p>
                     <p className="text-xs text-gray-500 truncate">
                       {person.current_position || 'No position'}
-                      {person.location_city &&
-                        ` · ${person.location_city}, ${person.location_state}`}
+                      {person.locations?.city &&
+                        ` · ${person.locations?.city}, ${person.locations?.state}`}
                     </p>
                     {hasNoUpdates && (
                       <p className="text-xs text-green-600 mt-0.5 font-medium">

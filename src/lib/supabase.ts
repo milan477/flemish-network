@@ -13,10 +13,8 @@ export interface Person {
   last_name?: string;
   current_position?: string;
   organization_id?: string;
-  location_city?: string;
-  location_state?: string;
-  latitude?: number;
-  longitude?: number;
+  location_id?: string;
+  locations?: { id: string; city: string; state: string; latitude: number; longitude: number; };
   occupation?: string;
   bio?: string;
   profile_photo_url?: string;
@@ -75,10 +73,9 @@ export interface Organization {
   type: string;
   description?: string;
   logo_url?: string;
-  location_city?: string;
-  location_state?: string;
-  latitude?: number;
-  longitude?: number;
+  website_url?: string;
+  location_id?: string;
+  locations?: { id: string; city: string; state: string; latitude: number; longitude: number; };
   flemish_link?: string;
   created_at: string;
   updated_at: string;

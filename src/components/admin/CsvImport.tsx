@@ -50,8 +50,7 @@ function confidenceLabel(score: number): {
 
 async function checkDuplicates(rows: MappedRow[]): Promise<DupeInfo[]> {
   const { data: allPeople } = await supabase
-    .from('people')
-    .select('id, first_name, last_name, name, email');
+    .from('people').select('id, first_name, last_name, name, email, location_id, locations(*)');
 
   if (!allPeople || allPeople.length === 0) return [];
 
@@ -173,12 +172,20 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
     let failed = 0;
     const dupeIdxSet = new Set(dupes.map((d) => d.rowIdx));
 
+    const { data: allLocations } = await supabase.from('locations').select('id, city, state');
+    const locMap = new Map<string, string>();
+    (allLocations || []).forEach(l => locMap.set(`${l.city.toLowerCase()}|${l.state.toLowerCase()}`, l.id));
+
     for (let i = 0; i < validRows.length; i++) {
       if (dupeIdxSet.has(i)) continue;
       const row = validRows[i];
       const first = (row.first_name || '').trim();
       const last = (row.last_name || '').trim();
       const fullName = [row.title, first, last].filter(Boolean).join(' ');
+
+      const city = (row.location_city || '').trim().toLowerCase();
+      const state = (row.location_state || '').trim().toLowerCase();
+      const locationId = locMap.get(`${city}|${state}`);
 
       const { data: person } = await supabase
         .from('people')
@@ -189,8 +196,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           last_name: last || null,
           current_position: row.current_position || null,
           occupation: row.occupation || null,
-          location_city: row.location_city || null,
-          location_state: row.location_state || null,
+          location_id: locationId || null,
           bio: row.bio || null,
           flemish_connection: row.flemish_connection || null,
           email: row.email || null,

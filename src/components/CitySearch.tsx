@@ -3,14 +3,15 @@ import { supabase } from '../lib/supabase';
 import { MapPin, Loader2, ChevronDown } from 'lucide-react';
 
 interface CitySearchProps {
-  value: string;
-  state: string;
-  onChange: (city: string, state: string, lat?: number, lng?: number) => void;
+  value: string; // The currently selected location ID
+  cityStateDisplay?: string; // Optional display string e.g. "Las Vegas, NV"
+  onChange: (locationId: string, city: string, state: string, lat?: number, lng?: number) => void;
   placeholder?: string;
   className?: string;
 }
 
 interface LocationSuggestion {
+  id: string;
   city: string;
   state: string;
   latitude: number;
@@ -19,20 +20,23 @@ interface LocationSuggestion {
 
 export default function CitySearch({
   value,
-  state: _state,
+  cityStateDisplay,
   onChange,
   placeholder = "Search city...",
   className = ""
 }: CitySearchProps) {
-  const [query, setQuery] = useState(value);
+  const [query, setQuery] = useState(cityStateDisplay || '');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  // Sync incoming display string if query is empty
   useEffect(() => {
-    setQuery(value);
-  }, [value]);
+    if (cityStateDisplay && !query) {
+      setQuery(cityStateDisplay);
+    }
+  }, [cityStateDisplay]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -54,7 +58,7 @@ export default function CitySearch({
       setLoading(true);
       const { data, error } = await supabase
         .from('locations')
-        .select('city, state, latitude, longitude')
+        .select('id, city, state, latitude, longitude')
         .ilike('city', `${query}%`)
         .order('city')
         .limit(10);
@@ -76,9 +80,9 @@ export default function CitySearch({
   }, [query, isOpen]);
 
   const handleSelect = (s: LocationSuggestion) => {
-    setQuery(s.city);
+    setQuery(`${s.city}, ${s.state}`);
     setIsOpen(false);
-    onChange(s.city, s.state, s.latitude, s.longitude);
+    onChange(s.id, s.city, s.state, s.latitude, s.longitude);
   };
 
   return (
@@ -90,7 +94,7 @@ export default function CitySearch({
           onChange={(e) => {
             setQuery(e.target.value);
             setIsOpen(true);
-            if (e.target.value === '') onChange('', '');
+            if (e.target.value === '') onChange('', '', '');
           }}
           onFocus={() => setIsOpen(true)}
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
@@ -107,9 +111,9 @@ export default function CitySearch({
           {loading && suggestions.length === 0 && (
             <div className="px-4 py-3 text-xs text-gray-400">Searching...</div>
           )}
-          {suggestions.map((s, idx) => (
+          {suggestions.map((s) => (
             <button
-              key={`${s.city}-${s.state}-${idx}`}
+              key={s.id}
               onClick={() => handleSelect(s)}
               className="w-full text-left px-4 py-2 text-sm hover:bg-yellow-50 flex items-center justify-between group"
             >
