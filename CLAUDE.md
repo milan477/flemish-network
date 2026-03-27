@@ -184,6 +184,7 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - `agent_runs`, `api_quotas`, `web_search_cache` tables (planned)
 - Agent scheduler / orchestrator (planned)
 - Discovery, verification, connection agents (planned)
+- Apify integration for LinkedIn scraping (API key in `.env`, no code yet) — planned for Discovery Agent (LinkedIn people search) and Verification Agent (LinkedIn profile scrape + photo extraction)
 - Brave Search integration (API key configured but no code uses it)
 - Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used, model is hardcoded
 
@@ -227,6 +228,7 @@ Edge functions (set in Supabase dashboard):
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
 - `TAVILY_API_KEY` (required for web search in search-contacts and update-profile)
 - `BRAVE_API_KEY` (configured but not yet used in code)
+- `APIFY_TOKEN` (configured in `.env`, not yet used in code — planned for LinkedIn scraping in Discovery/Verification agents, $5/mo free tier)
 
 ## Deploying Edge Functions
 ```bash
@@ -237,7 +239,7 @@ supabase functions deploy ai-agent --project-ref <your-project-ref>
 supabase functions deploy --project-ref <your-project-ref>
 
 # Set secrets (required per function)
-supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... --project-ref <your-project-ref>
+supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... APIFY_TOKEN=... --project-ref <your-project-ref>
 ```
 Edge functions require the Supabase CLI (`npm i -g supabase`). The project ref is in the Supabase dashboard URL.
 

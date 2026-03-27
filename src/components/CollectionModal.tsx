@@ -43,8 +43,8 @@ export default function CollectionModal({
       // Auto-select top matches (score > 0.2)
       const topIds = new Set(results.filter(r => r.score > 0.2).map(r => r.person.id));
       setSelectedPersonIds(topIds);
-    } catch (err) {
-      console.error('Error getting suggestions:', err);
+    } catch {
+      // suggestion failed
     } finally {
       setIsLoadingSuggestions(false);
     }
@@ -103,7 +103,6 @@ export default function CollectionModal({
       onSave(savedCollection);
       onClose();
     } catch (err: any) {
-      console.error('Error saving collection:', err);
       setError(err.message || 'Failed to save collection');
       setIsSaving(false);
     }

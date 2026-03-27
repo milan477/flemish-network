@@ -65,8 +65,8 @@ export default function CollectionDetail({
 
       if (memError) throw memError;
       setMembers(memData || []);
-    } catch (err) {
-      console.error('Error fetching collection details:', err);
+    } catch {
+      // fetch failed
     } finally {
       setLoading(false);
     }
@@ -83,9 +83,8 @@ export default function CollectionDetail({
 
       if (error) throw error;
       setMembers(members.filter((m) => m.id !== memberId));
-    } catch (err) {
-      console.error('Error removing member:', err);
-      alert('Failed to remove member');
+    } catch {
+      // remove failed
     }
   };
 
@@ -110,9 +109,8 @@ export default function CollectionDetail({
         )
       );
       setEditingNotes(null);
-    } catch (err) {
-      console.error('Error saving notes:', err);
-      alert('Failed to save notes');
+    } catch {
+      // save failed
     } finally {
       setIsSavingNotes(false);
     }
@@ -135,9 +133,8 @@ export default function CollectionDetail({
 
       if (error) throw error;
       onBack();
-    } catch (err) {
-      console.error('Error deleting collection:', err);
-      alert('Failed to delete collection');
+    } catch {
+      // delete failed
     }
   };
 

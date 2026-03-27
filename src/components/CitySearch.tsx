@@ -19,7 +19,7 @@ interface LocationSuggestion {
 }
 
 export default function CitySearch({
-  value,
+  value: _value,
   cityStateDisplay,
   onChange,
   placeholder = "Search city...",

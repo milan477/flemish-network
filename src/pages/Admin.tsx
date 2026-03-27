@@ -167,11 +167,9 @@ export default function Admin() {
               return next;
             });
           }
-        } else {
-          console.error('AI check failed:', await resp.text());
         }
-      } catch (err) {
-        console.error('AI check error:', err);
+      } catch {
+        // AI check failed
       }
 
       setAiLoading(false);

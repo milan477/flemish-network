@@ -270,8 +270,8 @@ export default function Dashboard({
         }
         setSnippets(newSnippets);
       }
-    } catch (err) {
-      console.error('Search error:', err);
+    } catch {
+      // search failed
     } finally {
       setAiLoading(false);
       onSearchingChange(false);

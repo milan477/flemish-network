@@ -59,7 +59,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
   const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
   const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
+  const [editLocationDisplay, setEditLocationDisplay] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
 
@@ -72,7 +74,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     ]);
 
     const personData = personRes.data;
-    console.log('loadPerson result for:', personId, personData);
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
     setConnections(connRes.data || []);
@@ -93,13 +94,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   }, [personId]);
 
   useEffect(() => {
-    console.log('PersonProfile useEffect: loading for', personId);
     loadPerson();
   }, [loadPerson, personId]);
 
   const startEditing = () => {
     if (!person) return;
-    console.log('startEditing for:', person.id, person.name);
+    setEditLocationDisplay(person.locations ? `${person.locations.city}, ${person.locations.state}` : '');
     setEditForm({
       name: person.name,
       title: person.title || '',
@@ -108,7 +108,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_position: person.current_position || '',
       occupation: person.occupation || '',
       location_id: person.location_id || '',
-      location_display: person.locations ? `${person.locations.city}, ${person.locations.state}` : '',
       bio: person.bio || '',
       flemish_connection: person.flemish_connection || '',
       phone: person.phone || '',
@@ -135,12 +134,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   };
 
   const saveEdits = async () => {
-    if (!person) {
-      console.warn('saveEdits: no person in state');
-      return;
-    }
+    if (!person) return;
     setSaving(true);
-    console.log('saveEdits starting. person.id:', person.id, 'prop personId:', personId);
 
     const first = (editForm.first_name || '').trim();
     const last = (editForm.last_name || '').trim();
@@ -180,18 +175,17 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .maybeSingle();
 
     if (updateErr) {
-      console.error('Supabase update error:', updateErr);
-      alert(`Error saving: ${updateErr.message}`);
-      setSaving(false);
-      return;
-    } 
-    
-    if (!updatedPerson) {
-      console.warn('Update successful but no data returned. This might be due to RLS policies.');
-      alert('The update was not applied. You might not have permission to edit this profile.');
+      setSaveError(`Error saving: ${updateErr.message}`);
       setSaving(false);
       return;
     }
+
+    if (!updatedPerson) {
+      setSaveError('The update was not applied. You might not have permission to edit this profile.');
+      setSaving(false);
+      return;
+    }
+    setSaveError(null);
 
     setPerson(updatedPerson as Person);
     const currentIds = personSectors.map((s) => s.id);
@@ -218,8 +212,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       
       setEditing(false);
     } catch (err: any) {
-      console.error('Error updating sectors:', err);
-      alert(`Profile info saved, but error updating sectors: ${err.message}`);
+      setSaveError(`Profile info saved, but error updating sectors: ${err.message}`);
       setEditing(false);
     }
 
@@ -314,7 +307,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               </div>
               <div className="flex-1 min-w-0">
                 {editing ? (
-                  <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} />
+                  <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} editLocationDisplay={editLocationDisplay} setEditLocationDisplay={setEditLocationDisplay} />
                 ) : (
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
@@ -386,6 +379,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                     </div>
                   )}
                 </div>
+                {saveError && (
+                  <div className="mt-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+                    <span>{saveError}</span>
+                    <button onClick={() => setSaveError(null)} className="ml-2 text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
 
                 {!editing && (
                   <SocialLinks person={person} />
@@ -505,10 +504,14 @@ function EditHeader({
   editForm,
   setField,
   setEditForm,
+  editLocationDisplay,
+  setEditLocationDisplay,
 }: {
   editForm: Partial<Person>;
   setField: (f: string, v: string) => void;
   setEditForm: React.Dispatch<React.SetStateAction<Partial<Person>>>;
+  editLocationDisplay: string;
+  setEditLocationDisplay: React.Dispatch<React.SetStateAction<string>>;
 }) {
   return (
     <div className="space-y-3">
@@ -571,13 +574,10 @@ function EditHeader({
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <CitySearch
             value={editForm.location_id || ''}
-            cityStateDisplay={editForm.location_display || ''}
+            cityStateDisplay={editLocationDisplay}
             onChange={(id, city, state) => {
-              setEditForm(f => ({
-                ...f,
-                location_id: id,
-                location_display: id ? `${city}, ${state}` : ''
-              }));
+              setEditForm(f => ({ ...f, location_id: id }));
+              setEditLocationDisplay(id ? `${city}, ${state}` : '');
             }}
             placeholder="Search city..."
           />

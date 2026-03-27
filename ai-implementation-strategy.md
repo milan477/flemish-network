@@ -28,6 +28,7 @@ This document is the definitive technical blueprint for all AI and agent feature
 - Agent infrastructure (agent_runs, api_quotas, web_search_cache tables)
 - Discovery, verification, and connection agents
 - Brave Search integration (key exists, no code)
+- Apify integration (key exists in .env, no code) — LinkedIn scraping, Google SERP scraping
 - Model env vars (all models are hardcoded)
 - Agent orchestrator / scheduler
 
@@ -249,9 +250,20 @@ Implementation: Replace `const GEMINI_MODEL = "gemini-3-flash-preview"` with:
 const GEMINI_MODEL = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
 ```
 
+### 1.5 Additional Env Vars for External Services
+
+| Env Var | Used by | Purpose |
+|---|---|---|
+| `APIFY_TOKEN` | Shared Apify module, Discovery Agent, Verification Agent | Apify API authentication ($5/mo free tier) |
+| `BRAVE_API_KEY` | Shared web search module | Brave Search fallback (2000/mo free) |
+
+Both keys are already configured in `.env`. Code integration needed.
+
 ---
 
 ## Phase 2: Agent Infrastructure
+
+> **Architecture note — "Vibe Prospecting" pattern:** The agent system follows the "vibe prospecting" pattern: describe intent in natural language → AI decomposes into search queries → web scrapers + LinkedIn scrapers gather raw data → LLM extracts structured contacts → dedup + enrichment → human review. Apify (LinkedIn data) + Tavily/Brave (web data) + Gemini (extraction/ranking) form the three pillars of this pipeline.
 
 ### 2.1 Database: Agent Run Tracking
 
@@ -338,9 +350,66 @@ Headers: { "Accept": "application/json", "Accept-Encoding": "gzip", "X-Subscript
 **Error handling:**
 - API timeout (10s): try fallback provider
 - API error: log, try fallback provider
-- Both providers failed: return empty results
+- All providers failed: return empty results
 
-### 2.3 Agent Scheduler Edge Function
+### 2.3 Shared Apify Module
+
+**File:** `supabase/functions/_shared/apifyClient.ts`
+
+**Purpose:** Wrapper for Apify REST API calls. Used by Discovery Agent (LinkedIn search), Verification Agent (LinkedIn profile scrape), and profile enrichment.
+
+**Env var:** `APIFY_TOKEN` (already in `.env`)
+
+**Core function: `runApifyActor(actorId, input, options?)`**
+```typescript
+interface ApifyOptions {
+  sync?: boolean;       // true = wait for results (up to 300s), false = start and return runId
+  timeoutSecs?: number; // max wait time for sync mode (default 120)
+}
+
+interface ApifyResult<T> {
+  items: T[];
+  runId: string;
+  status: 'SUCCEEDED' | 'FAILED' | 'RUNNING';
+}
+```
+
+**Sync mode (for fast scrapes, <5 min):**
+```
+POST https://api.apify.com/v2/acts/{actorId}/run-sync-get-dataset-items?token={APIFY_TOKEN}
+Headers: { "Content-Type": "application/json" }
+Body: { ...actor input... }
+```
+
+**Async mode (for large batches):**
+```
+POST https://api.apify.com/v2/acts/{actorId}/runs?token={APIFY_TOKEN}
+Body: { ...actor input... }
+→ Returns { data: { id: runId, defaultDatasetId } }
+
+GET https://api.apify.com/v2/actor-runs/{runId}?token={APIFY_TOKEN}
+→ Poll until status === 'SUCCEEDED'
+
+GET https://api.apify.com/v2/datasets/{datasetId}/items?token={APIFY_TOKEN}&format=json
+→ Returns result items
+```
+
+**Key actors used:**
+
+| Actor ID | Purpose | Cost | Used by |
+|---|---|---|---|
+| `supreme_coder/linkedin-profile-scraper` | Scrape full LinkedIn profile by URL | ~$3/1k profiles | Verification Agent, profile enrichment |
+| `harvestapi/linkedin-profile-search` | Search LinkedIn people by keyword/location/company | ~$0.10/page + $0.004/profile | Discovery Agent |
+| `apify/google-search-scraper` | Google SERP results (alternative to Tavily/Brave) | ~$0.005/search | Web search fallback |
+
+**Quota tracking:** Apify uses credit-based billing ($5/mo free). Track spend via Apify API: `GET /v2/users/me/usage` or simply count calls in `api_quotas` table with `provider: 'apify'` and a conservative per-call cost estimate.
+
+**Error handling:**
+- Actor not found or insufficient credits: return `{ error: 'apify_quota_exhausted' }`
+- Sync timeout (>120s): return partial results if available, or fall back to web search
+- Rate limit (429): back off 60s, retry once
+
+### 2.4 Agent Scheduler Edge Function
 
 **File:** `supabase/functions/agent-scheduler/index.ts`
 
@@ -412,13 +481,25 @@ When admin approves: INSERT into `people`, then DELETE from `discovered_contacts
 **Option B: Make person_id nullable**
 `ALTER TABLE profile_suggestions ALTER COLUMN person_id DROP NOT NULL;` — simpler but muddies the table's purpose (updates vs new contacts in same table).
 
-**Pipeline (using Option A):**
+**Pipeline (using Option A) — dual-channel: web search + LinkedIn search:**
+
+**Channel 1: Web search (existing approach)**
 1. Call `searchWeb(query + " flemish belgian professional")` via shared module
 2. Feed results to Gemini Flash (reuse `search-contacts` extraction logic) to extract contacts
+
+**Channel 2: LinkedIn search via Apify (new)**
+1. Call `runApifyActor('harvestapi/linkedin-profile-search', { keywords: query, location: 'United States', limit: 20 })` via shared Apify module
+2. LinkedIn search returns structured data directly (name, position, company, location, LinkedIn URL, profile photo) — no LLM extraction needed
+3. Map LinkedIn fields to `discovered_contacts` schema
+
+**Merge + dedup (both channels):**
 3. Dedup against `people` table: email (exact), LinkedIn URL (normalized), name (case-insensitive)
 4. Dedup against `discovered_contacts` table (same checks — avoid re-discovering)
-5. For non-duplicates: insert into `discovered_contacts` with `status: 'pending'`
-6. Return `{ profiles_found, duplicates_skipped, suggestions_created }`
+5. Cross-dedup between channel 1 and channel 2 results (LinkedIn URL match)
+6. For non-duplicates: insert into `discovered_contacts` with `status: 'pending'`
+7. Return `{ profiles_found, duplicates_skipped, suggestions_created, sources: { web_search, linkedin } }`
+
+**Channel selection:** If `APIFY_TOKEN` is set and Apify credits available, run both channels. If Apify unavailable, fall back to web search only. LinkedIn channel is preferred for structured data quality (no LLM hallucination risk).
 
 **Predefined queries** (stored as constants, triggered individually or in sequence):
 ```
@@ -432,10 +513,22 @@ When admin approves: INSERT into `people`, then DELETE from `discovered_contacts
 "imec alumni working in the United States"
 ```
 
+**LinkedIn-specific queries** (use Apify LinkedIn search actor with these keywords + location filter "United States"):
+```
+"KU Leuven" (school filter)
+"UGent" OR "Ghent University" (school filter)
+"VUB" OR "Vrije Universiteit Brussel" (school filter)
+"imec" (company filter)
+"Barco" (company filter)
+"Umicore" (company filter)
+"BAEF fellow" (keyword)
+```
+
 **Constraints:**
 - Respects web search quota via shared module
+- Respects Apify credit budget ($5/mo free tier — ~$0.10/LinkedIn search page)
 - If quota exhausted mid-run: stop, return partial results
-- Maximum 3 web searches per invocation (to limit cost)
+- Maximum 3 web searches + 2 LinkedIn searches per invocation (to limit cost)
 
 ### 3.2 Verification Agent
 
@@ -451,16 +544,25 @@ When admin approves: INSERT into `people`, then DELETE from `discovered_contacts
 }
 ```
 
-**Pipeline:**
+**Pipeline (LinkedIn-first, web search fallback):**
 1. Query: `SELECT * FROM people WHERE last_verified_at IS NULL OR last_verified_at < now() - interval '{max_age_months} months' ORDER BY last_verified_at ASC NULLS FIRST LIMIT batch_size`
 2. For each person:
+   **Path A — LinkedIn (preferred, if `linkedin_url` exists and Apify available):**
+   a. Call `runApifyActor('supreme_coder/linkedin-profile-scraper', { profileUrls: [person.linkedin_url] })` — sync mode, ~$0.003/profile
+   b. Compare scraped fields (current_position, company, location, bio, profile_photo_url) directly against stored `people` data — deterministic diff, no LLM needed
+   c. If differences found: insert into `profile_suggestions` with `source: 'linkedin_scrape'`
+   d. If profile photo found and `profile_photo_url IS NULL`: add suggestion for photo URL
+   e. If no differences: update `last_verified_at = now()`
+   **Path B — Web search (fallback, if no LinkedIn URL or Apify unavailable):**
    a. Build query: `"{name} {current_position} {location.city}"` (NO "flemish belgian" — verifying existing info)
    b. Call `searchWeb(query)` — if quota exhausted, stop
    c. If results found: call `ai-agent` with `check_profile` task
    d. If suggestions returned: insert into `profile_suggestions` with `status: 'pending'`
    e. If no suggestions (profile matches): update `last_verified_at = now()`
    f. If no search results: skip (don't mark as verified)
-3. Return `{ profiles_checked, suggestions_created, profiles_verified, skipped_no_results, quota_exhausted }`
+3. Return `{ profiles_checked, suggestions_created, profiles_verified, skipped_no_results, quota_exhausted, by_source: { linkedin, web_search } }`
+
+**Why LinkedIn-first:** LinkedIn profile scraping returns structured fields that map directly to `people` table columns. No LLM extraction needed, no hallucination risk, and the data is more current than general web search results. Cost: ~$3/1000 profiles vs. ~$0 for web search but with LLM extraction costs.
 
 **Edge cases:**
 - Person appears to have left US: create suggestion with `field_name: '_status'`, `suggested_value: 'may_have_left_us'`
@@ -524,8 +626,19 @@ Agents are triggered manually from the admin panel initially. Future: pg_cron or
 | text-embedding-004 | Free tier | $0 |
 | Tavily | Free tier (1000/mo) | $0 |
 | Brave Search | Free tier (2000/mo) | $0 |
+| Apify | Free tier ($5/mo credits) | $0-5 |
 | Supabase | Free tier | $0 |
-| **Total** | | **$2-5/month** |
+| **Total** | | **$2-10/month** |
+
+**Apify credit breakdown (within $5 free tier):**
+| Activity | Volume | Actor | Est. cost |
+|---|---|---|---|
+| Discovery LinkedIn searches | ~20 searches/mo | `harvestapi/linkedin-profile-search` | ~$2.00 |
+| Verification LinkedIn scrapes | ~100 profiles/mo | `supreme_coder/linkedin-profile-scraper` | ~$0.30 |
+| Profile photo enrichment | ~50 profiles/mo | (same as verification) | ~$0.15 |
+| **Apify subtotal** | | | **~$2.50/mo** |
+
+The $5 free tier comfortably covers this. LinkedIn people search at higher volume would require paid plan ($49/mo).
 
 ---
 
@@ -542,7 +655,7 @@ Agents are triggered manually from the admin panel initially. Future: pg_cron or
    - "Run Verification" → calls agent-scheduler with default batch_size=10
    - "Run Connection Discovery" → calls agent-scheduler
    - "Backfill Embeddings" → calls generate-embeddings with `{ backfill: true }`
-3. **API Quota Bars:** Tavily (calls_used / 1000), Brave (calls_used / 2000) for current month
+3. **API Quota Bars:** Tavily (calls_used / 1000), Brave (calls_used / 2000), Apify ($spent / $5.00 credits) for current month
 4. **Pending Actions Count:** number of `profile_suggestions` with `status = 'pending'`
 
 ### 5.2 Integration with Admin.tsx
@@ -571,6 +684,9 @@ Add "Agents" tab to existing admin tab bar. Render `AgentDashboard.tsx` when sel
 | Gemini rate limit (429) | HTTP 429 response | Backoff 60s, retry once. If still 429, mark run as failed. |
 | Tavily quota exhausted | `api_quotas.calls_used >= calls_limit` | Auto-switch to Brave. If Brave also exhausted, skip web search, return partial results. |
 | Brave API error | Non-200 response | Fall back to Tavily if available. Otherwise skip. |
+| Apify credits exhausted | API returns 402 or usage check shows $0 remaining | Skip LinkedIn channel, fall back to web search only. Discovery/verification agents degrade gracefully. |
+| Apify actor timeout | Sync call exceeds 120s | Return partial results if available. For large batches, switch to async mode (start run, poll for completion). |
+| LinkedIn profile not found | Apify actor returns empty for a URL | Skip person, fall back to web search for that individual. Don't mark as verified. |
 | Embedding dimension mismatch | `embedding.values.length !== 768` | Log error, skip person, continue batch. |
 | Agent run zombie | `heartbeat_at` older than 2 minutes | Scheduler marks as failed on next invocation. |
 | Supabase edge function cold start | First invocation slow | No action needed — subsequent calls are fast. |
@@ -587,10 +703,11 @@ This is the exact sequence. Each phase depends on the previous.
 1. **Phase 1A:** Model env var refactor (update ai-agent, search-contacts)
 2. **Phase 1B:** Embedding migration + generate-embeddings edge function + admin backfill button
 3. **Phase 1C:** suggest-people edge function + collection "Find similar" UI
-4. **Phase 2:** Agent infra migration (agent_runs, api_quotas, web_search_cache) + shared webSearch module + agent-scheduler
-5. **Phase 3A:** Discovery agent
-6. **Phase 3B:** Verification agent
-7. **Phase 3C:** Connection discovery agent
-8. **Phase 5:** Agent dashboard in admin panel
+4. **Phase 2A:** Agent infra migration (agent_runs, api_quotas, web_search_cache) + shared webSearch module + agent-scheduler
+5. **Phase 2B:** Shared Apify module (`_shared/apifyClient.ts`) — can be built alongside or after 2A
+6. **Phase 3A:** Discovery agent (dual-channel: web search + LinkedIn via Apify)
+7. **Phase 3B:** Verification agent (LinkedIn-first via Apify, web search fallback)
+8. **Phase 3C:** Connection discovery agent
+9. **Phase 5:** Agent dashboard in admin panel (include Apify credit tracking)
 
-Phases 1A, 1B can run in parallel. Everything else is sequential.
+Phases 1A, 1B can run in parallel. Phase 2B (Apify module) can be built alongside Phase 2A. Everything else is sequential.

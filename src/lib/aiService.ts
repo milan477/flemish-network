@@ -257,8 +257,7 @@ export async function suggestPeople(query: string): Promise<{ person: Person; re
       .filter((item) => item.score > 0.05)
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-  } catch (err) {
-    console.error('Error in suggestPeople:', err);
+  } catch {
     return [];
   }
 }

@@ -26,6 +26,9 @@ export interface Person {
   email?: string;
   email_verified?: boolean;
   preferred_contact?: string;
+  available_for_lectures?: boolean;
+  open_to_mentorship?: boolean;
+  welcomes_visits?: boolean;
   data_source?: string;
   last_verified_at?: string;
   created_at: string;

@@ -54,37 +54,37 @@ These are done and merged into main. Listed for reference only.
 **Effort:** Small (< 1 hour)
 
 12 TypeScript errors currently block `npm run typecheck`:
-- [ ] `DiscoveredContact` type in AdminChatbot/ContactCard uses `location_id` and `locations` — but discovered contacts from web search have inline `location_city`/`location_state`. Fix: keep DiscoveredContact type with inline fields, don't try to use the locations FK pattern.
-- [ ] `PersonProfile.tsx` references `location_display` which doesn't exist on `Partial<Person>`. Fix: use proper location fields or a local state variable.
-- [ ] `CitySearch.tsx` has unused `value` variable. Fix: remove or use it.
-- [ ] `Person` interface in `supabase.ts` is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields (exist in DB, used in Dashboard queries). Fix: add them.
+- [x] `DiscoveredContact` type in AdminChatbot/ContactCard uses `location_id` and `locations` — but discovered contacts from web search have inline `location_city`/`location_state`. Fix: keep DiscoveredContact type with inline fields, don't try to use the locations FK pattern.
+- [x] `PersonProfile.tsx` references `location_display` which doesn't exist on `Partial<Person>`. Fix: use proper location fields or a local state variable.
+- [x] `CitySearch.tsx` has unused `value` variable. Fix: remove or use it.
+- [x] `Person` interface in `supabase.ts` is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields (exist in DB, used in Dashboard queries). Fix: add them.
 
 ### 0b. Fix Broken Edge Functions
 **Scope:** `supabase/functions/geocode/index.ts`, `supabase/functions/update-profile/index.ts`
 **Effort:** Small (< 1 hour)
 
 Both functions reference columns that were dropped in the location refactor migration:
-- [ ] **`geocode`:** Lines 110-121 try to `UPDATE people SET latitude = ..., longitude = ... WHERE location_city = ...` — these columns don't exist anymore. Fix: the geocode function should just cache into `locations` table. Remove the people/organizations update logic (linking is now done via `location_id` FK).
-- [ ] **`update-profile`:** Lines 166-170 read `person.location_city` and `person.location_state` from `people.*` — these columns were dropped. Fix: join `locations` table via `location_id` and use `locations.city`/`locations.state`.
+- [x] **`geocode`:** Lines 110-121 try to `UPDATE people SET latitude = ..., longitude = ... WHERE location_city = ...` — these columns don't exist anymore. Fix: the geocode function should just cache into `locations` table. Remove the people/organizations update logic (linking is now done via `location_id` FK).
+- [x] **`update-profile`:** Lines 166-170 read `person.location_city` and `person.location_state` from `people.*` — these columns were dropped. Fix: join `locations` table via `location_id` and use `locations.city`/`locations.state`.
 
 ### 0c. Remove console.log/alert from Production Code
 **Scope:** 9 frontend files
 **Effort:** Small (< 1 hour)
 
-- [ ] **25 console.log/error/warn calls** across PersonProfile.tsx (8), CollectionDetail.tsx (4), OrganizationProfile.tsx (3), AddToCollectionDropdown.tsx (3), Admin.tsx (2), CollectionModal.tsx (2), aiService.ts (1), Collections.tsx (1), Dashboard.tsx (1). Remove or replace with a lightweight logger that can be silenced in production.
-- [ ] **9 alert() calls** in PersonProfile.tsx (3), OrganizationProfile.tsx (3), CollectionDetail.tsx (3). Replace with a toast/snackbar notification component (e.g., react-hot-toast or a custom Tailwind toast).
+- [x] **25 console.log/error/warn calls** across PersonProfile.tsx (8), CollectionDetail.tsx (4), OrganizationProfile.tsx (3), AddToCollectionDropdown.tsx (3), Admin.tsx (2), CollectionModal.tsx (2), aiService.ts (1), Collections.tsx (1), Dashboard.tsx (1). Remove or replace with a lightweight logger that can be silenced in production.
+- [x] **9 alert() calls** in PersonProfile.tsx (3), OrganizationProfile.tsx (3), CollectionDetail.tsx (3). Replace with a toast/snackbar notification component (e.g., react-hot-toast or a custom Tailwind toast).
 
 ### 0d. Fix search-contacts Dedup Performance
 **Scope:** `supabase/functions/search-contacts/index.ts`
 **Effort:** Small (< 0.5 hour)
 
-- [ ] Currently fetches ALL `people` rows (`SELECT name, email, linkedin_url FROM people`) to check for duplicates. Replace with targeted per-contact lookups: `WHERE email = $1 OR linkedin_url = $2 OR LOWER(name) = LOWER($3)`.
+- [x] Currently fetches ALL `people` rows (`SELECT name, email, linkedin_url FROM people`) to check for duplicates. Replace with targeted per-contact lookups: `WHERE email = $1 OR linkedin_url = $2 OR LOWER(name) = LOWER($3)`.
 
 ### 0e. Fix @types in Wrong Dependency Section
 **Scope:** `package.json`
 **Effort:** Trivial
 
-- [ ] Move `@types/leaflet` and `@types/leaflet.markercluster` from `dependencies` to `devDependencies`.
+- [x] Move `@types/leaflet` and `@types/leaflet.markercluster` from `dependencies` to `devDependencies`.
 
 ---
 
@@ -135,7 +135,7 @@ Both functions reference columns that were dropped in the location refactor migr
 Currently `profile_photo_url` is a text field with no automatic population.
 
 - [ ] **Gravatar fallback:** For people with an email, generate Gravatar URL: `https://gravatar.com/avatar/{md5(email.trim().toLowerCase())}?d=404&s=200`. Display if 200 response, else show initials.
-- [ ] **LinkedIn photo (manual):** If LinkedIn URL exists and no photo URL, show LinkedIn icon with "Photo from LinkedIn" tooltip. (LinkedIn doesn't allow scraping — manual paste of photo URL in edit mode.)
+- [ ] **LinkedIn photo (via Apify):** For contacts with `linkedin_url` and no photo, the Verification Agent's LinkedIn scrape (Task 9) automatically suggests `profile_photo_url` from LinkedIn profile data. Manual paste in edit mode as fallback.
 - [ ] **Upload support:** Add image upload to PersonProfile.tsx edit mode. Store in Supabase Storage bucket (`profile-photos`). Save public URL to `profile_photo_url`.
 - [ ] **Display priority:** profile_photo_url (uploaded) > Gravatar (if email exists) > initials circle
 
@@ -166,8 +166,9 @@ Current CSV import works but needs improvements for bulk population.
 
 - [ ] **Migration:** Create `agent_runs`, `api_quotas`, `web_search_cache` tables (see strategy Phase 2.1)
 - [ ] **Shared web search module:** `supabase/functions/_shared/webSearch.ts` with Tavily/Brave cascading, quota tracking, 30-day caching, TTL cleanup of expired cache entries (see strategy Phase 2.2)
-- [ ] **Agent scheduler edge function:** `supabase/functions/agent-scheduler/index.ts` — dispatches to agents, manages run lifecycle, zombie detection, purges `web_search_cache` entries older than 30 days on each invocation (see strategy Phase 2.3)
-- [ ] **Admin Agent Dashboard:** `components/admin/AgentDashboard.tsx` — run history table, manual trigger buttons, API quota bars, pending suggestions count. Add "Agents" tab to Admin.tsx.
+- [ ] **Shared Apify module:** `supabase/functions/_shared/apifyClient.ts` — wrapper for Apify REST API. Sync/async actor execution, credit tracking. Used by Discovery Agent (LinkedIn search) and Verification Agent (LinkedIn profile scrape). Env var: `APIFY_TOKEN`. (see strategy Phase 2.3)
+- [ ] **Agent scheduler edge function:** `supabase/functions/agent-scheduler/index.ts` — dispatches to agents, manages run lifecycle, zombie detection, purges `web_search_cache` entries older than 30 days on each invocation (see strategy Phase 2.4)
+- [ ] **Admin Agent Dashboard:** `components/admin/AgentDashboard.tsx` — run history table, manual trigger buttons, API quota bars (Tavily, Brave, Apify credits), pending suggestions count. Add "Agents" tab to Admin.tsx.
 
 ### 8. Discovery Agent
 **Scope:** New edge function, new migration (`discovered_contacts` table)
@@ -176,17 +177,17 @@ Current CSV import works but needs improvements for bulk population.
 
 - [ ] **Migration:** Create `discovered_contacts` staging table (see strategy Phase 3.1). Required because `profile_suggestions.person_id` is NOT NULL — can't store new contacts there.
 - [ ] **Admin UI:** Add "Discovered Contacts" tab in Admin.tsx to review/approve/reject. On approve: create `people` row, delete from `discovered_contacts`. Reuse existing ContactCard component.
-- [ ] `supabase/functions/agent-discovery/index.ts` — web search + Gemini extraction + dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
-- [ ] 8 predefined discovery queries (BAEF, KU Leuven, UGent, VUB, UAntwerp, Flemish entrepreneurs, Belgian researchers, imec)
-- [ ] Max 3 web searches per invocation (cost control)
+- [ ] `supabase/functions/agent-discovery/index.ts` — dual-channel discovery: web search (Tavily/Brave) + LinkedIn search (Apify `harvestapi/linkedin-profile-search`). Gemini extraction for web results, structured mapping for LinkedIn results. Dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
+- [ ] 8 predefined web search queries + 7 LinkedIn-specific queries (university/company filters via Apify)
+- [ ] Max 3 web searches + 2 LinkedIn searches per invocation (cost control). Graceful fallback if Apify credits exhausted.
 
 ### 9. Verification Agent
 **Scope:** New edge function
 **Depends on:** Task 7 (agent infrastructure)
 **Effort:** Medium (1-2 days)
 
-- [ ] `supabase/functions/agent-verify/index.ts` — find stale profiles, web search, compare via check_profile, create suggestions or mark verified (see strategy Phase 3.2)
-- [ ] Handle edge cases: person left US, career change
+- [ ] `supabase/functions/agent-verify/index.ts` — LinkedIn-first verification: for contacts with `linkedin_url`, scrape via Apify (`supreme_coder/linkedin-profile-scraper`) and deterministically diff against stored data (no LLM needed). Falls back to web search + `check_profile` LLM if no LinkedIn URL or Apify unavailable. Auto-suggests profile photos from LinkedIn. (see strategy Phase 3.2)
+- [ ] Handle edge cases: person left US, career change, LinkedIn profile not found
 
 ### 10. Connection Discovery Agent
 **Scope:** New edge function
@@ -397,10 +398,11 @@ No tests exist currently.
 
 2 → 3. Suggest-people (needs embeddings)
 2 → 11. Hybrid search (needs embeddings)
-3+7 merged → 7. Agent infrastructure
-7 → 8. Discovery agent
-7 → 9. Verification agent
+3+7 merged → 7. Agent infrastructure (includes Apify module)
+7 → 8. Discovery agent (uses Apify LinkedIn search + web search)
+7 → 9. Verification agent (uses Apify LinkedIn scrape + web search fallback)
 7 → 10. Connection agent
+9 → 5. Profile photos (verification agent auto-suggests LinkedIn photos)
 10 → 21. Network visualization
 20 → 23. Notifications
 ```
