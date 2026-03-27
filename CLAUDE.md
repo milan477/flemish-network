@@ -4,130 +4,218 @@
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
 ## Tech Stack
-- **Frontend:** React 18 + TypeScript, Vite, Tailwind CSS, Lucide React (icons)
+- **Frontend:** React 18 + TypeScript, Vite 5, Tailwind CSS 3, Lucide React (icons)
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)
-- **AI (all Google, two tiers):**
-  - **Gemini 1.5 Flash** (`gemini-1.5-flash`) — extraction, keyword generation, profile comparison
-  - **Gemini Pro** (`gemini-2.5-pro-preview-05-06`) — reasoning, ranking, contact suggestions, briefing generation
-  - **text-embedding-004** — profile embeddings for vector similarity search (768 dimensions)
-- **Vector Search:** pgvector extension in Supabase PostgreSQL
-- **Web Search:** Tavily API (free tier, 1000 calls/mo) + Brave Search API (free tier, 2000 calls/mo)
-- **Geocoding:** Nominatim / OpenStreetMap (cached in `locations` table)
+- **Map:** Leaflet + react-leaflet + react-leaflet-cluster (marker clustering)
+- **AI:** Google Gemini (`gemini-3-flash-preview`, hardcoded in edge functions)
+- **Web Search:** Tavily API (free tier, 1000 calls/mo). Brave Search API key configured but not yet integrated.
+- **Geocoding:** Nominatim / OpenStreetMap (cached in `locations` table via `geocode` edge function)
 - **No router library** — routing is manual via `useState<Page>` in `App.tsx`
 
 ## Commands
 ```bash
-npm run dev          # Start dev server
-npm run build        # Production build
+npm run dev          # Start Vite dev server (port 5173)
+npm run build        # Production build (outputs to dist/)
 npm run preview      # Preview production build
 npm run lint         # ESLint
-npm run typecheck    # TypeScript type checking (tsc --noEmit)
+npm run typecheck    # TypeScript type checking (tsc --noEmit -p tsconfig.app.json)
 ```
 
-## Project Structure
+## Project Structure (actual, as of 2026-03-25)
 ```
 src/
-├── App.tsx                     # Manual client-side routing via page state
-├── main.tsx                    # Entry point
-├── pages/                      # Top-level page components
-│   ├── Dashboard.tsx           # Main view: map + directory + search
-│   ├── Planner.tsx             # Mission/event planner (being replaced by Collections)
-│   ├── Admin.tsx               # Stats dashboard + admin tools
-│   ├── PersonProfile.tsx       # Individual contact detail/edit
-│   ├── OrganizationProfile.tsx # Organization detail
-│   └── AddContact.tsx          # Manual contact creation
-├── components/                 # Reusable UI components
-│   ├── Navigation.tsx          # Top nav bar with search
-│   ├── MapVisualization.tsx    # Interactive OpenStreetMap with clusters
-│   ├── FilterPanel.tsx         # Right sidebar filters
-│   ├── DirectoryGrid.tsx       # Contact list view
-│   ├── PlanForm.tsx            # Event creation form
-│   ├── PlanDetail.tsx          # Event detail view
-│   ├── PlannerChatbot.tsx      # AI chat for planning
-│   ├── ClusterPopover.tsx      # Map cluster click popup
-│   ├── ProfileUpdateModal.tsx  # AI profile suggestion review
-│   └── admin/                  # Admin sub-components
-├── lib/                        # Utilities and services
-│   ├── supabase.ts             # DB client, types, helpers (Person, Organization, etc.)
-│   ├── aiService.ts            # AI API wrapper + scoring functions
-│   ├── plannerUtils.ts         # Event type configs, action templates
-│   ├── csvParser.ts            # CSV import with field mapping + dedup
-│   ├── geocoding.ts            # Batch geocoding via edge function
-│   └── locations.ts            # Location coordinate cache
+├── App.tsx                          # Manual routing via Page union type + conditional renders
+├── main.tsx                         # Entry point
+├── pages/
+│   ├── Dashboard.tsx                # Main view: map + directory grid + unified search + filter panel
+│   ├── Collections.tsx              # Collection list + detail view (handles both pages)
+│   ├── Admin.tsx                    # Stats dashboard + admin tools (tabbed: Overview, Suggestions, Contacts, Occupations, Stale, Duplicates)
+│   ├── PersonProfile.tsx            # Individual contact detail/edit with AI enrichment
+│   ├── OrganizationProfile.tsx      # Organization detail/edit
+│   └── AddContact.tsx               # Manual contact creation form
+├── components/
+│   ├── Navigation.tsx               # Top nav bar (Dashboard, Collections, Admin links + search input)
+│   ├── UnifiedSearchBar.tsx         # Combined name-autocomplete + NL AI search bar
+│   ├── MapVisualization.tsx         # Leaflet map with marker clusters
+│   ├── FilterPanel.tsx              # Right sidebar: sector, occupation, state, city, flemish connection, lectures toggle
+│   ├── DirectoryGrid.tsx            # Contact card grid with sorting and collection bookmark buttons
+│   ├── ClusterPopover.tsx           # Popup when clicking map marker clusters
+│   ├── CollectionDetail.tsx         # Collection detail: member list, notes, add/remove
+│   ├── CollectionModal.tsx          # Create/edit collection dialog
+│   ├── AddToCollectionDropdown.tsx  # Dropdown to add a person to collections
+│   ├── CitySearch.tsx               # City autocomplete using locations table
+│   ├── ProfileUpdateModal.tsx       # Review/approve AI-suggested profile changes
+│   └── admin/
+│       ├── AddContactPanel.tsx      # Admin quick-add contact form
+│       ├── AdminChatbot.tsx         # AI chatbot for admin (search contacts, parse contacts)
+│       ├── ContactCard.tsx          # Card component for admin contact results
+│       ├── CsvImport.tsx            # CSV file import with column mapping + dedup
+│       ├── DuplicateCompare.tsx     # Side-by-side duplicate contact comparison
+│       ├── OccupationOverview.tsx   # Occupation distribution stats
+│       ├── StaleContactsBar.tsx     # Contacts needing verification
+│       └── SuggestedChanges.tsx     # Review AI profile suggestions (approve/reject)
+├── lib/
+│   ├── supabase.ts                  # Supabase client + all TS types (Person, Organization, Collection, etc.) + constants (OCCUPATION_OPTIONS, FLEMISH_OPTIONS, US_STATES, MAJOR_CITIES)
+│   ├── aiService.ts                 # AI API wrappers: parseContacts, searchContacts, smartSearch, flemishSearch, suggestPeople, scoring functions
+│   ├── filterParser.ts              # Deterministic NL→filter parsing (no LLM): sector aliases, states, cities, occupations, flemish connections
+│   ├── csvParser.ts                 # CSV import: field mapping, validation, dedup checking
+│   ├── geocoding.ts                 # Batch geocoding via edge function
+│   └── locations.ts                 # Location coordinate helpers
 supabase/
-├── migrations/                 # Sequential SQL migrations (timestamp-prefixed)
-└── functions/                  # Deno edge functions
-    ├── ai-agent/               # Gemini orchestration (5 task types, see AI Strategy)
-    ├── generate-embeddings/    # Profile embedding generation via text-embedding-004
-    ├── suggest-people/         # Embedding pre-filter + Gemini Pro ranking
-    ├── search-contacts/        # Web search for new contacts
-    ├── geocode/                # Nominatim geocoding + DB caching
-    └── update-profile/         # AI profile enrichment
+├── migrations/                      # 23 sequential SQL migrations (see Database Schema below)
+└── functions/                       # 4 deployed Deno edge functions
+    ├── ai-agent/                    # Gemini orchestration (4 tasks: parse_contacts, smart_search, flemish_search, check_profile)
+    ├── search-contacts/             # Tavily web search + Gemini extraction + dedup check
+    ├── update-profile/              # Web search a person + generate profile suggestions via check_profile
+    └── geocode/                     # Nominatim geocoding + locations table caching
+scripts/
+└── batch_replace.cjs                # One-time migration helper (location column refactor)
+public/
+├── cities.json                      # US cities dataset (JSON)
+└── us_cities.csv                    # US cities dataset (CSV, used for location imports)
 ```
 
+## Page Routing
+Pages are switched via `currentPage` state in `App.tsx`. The `Page` type union is:
+```typescript
+type Page = 'dashboard' | 'person' | 'organization' | 'collections' | 'collection-detail' | 'admin' | 'add-contact';
+```
+Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'directory'`, `'search'`, `'missions'`, `'planner'`) are aliased to their replacements.
+
 ## Architecture Decisions
-- **No React Router:** Pages are switched via `currentPage` state in `App.tsx`. Navigation is handled by `onNavigate` callbacks. When adding new pages, add a new `Page` union member and conditional render in `App.tsx`.
-- **No state management library:** All state via React hooks. Props passed down from App.tsx.
-- **No auth yet:** Single-tenant with Supabase anon key. RLS allows public read, selective write.
-- **AI via edge functions:** LLM calls go through `supabase/functions/ai-agent/` (Flash or Pro depending on task). Embeddings go through `generate-embeddings/`. Suggest-people has its own edge function (`suggest-people/`) that combines embedding pre-filter + Gemini Pro ranking. Filter interpretation is deterministic (no LLM) via `src/lib/filterParser.ts`.
-- **Embeddings & vector search:** Profile embeddings (768-dim, text-embedding-004) stored in `people.embedding`. Used for `suggest-people` pre-filtering and collection "search similar". pgvector extension in PostgreSQL.
-- **Types in supabase.ts:** All database entity types (Person, Organization, etc.) and shared types live in `src/lib/supabase.ts`.
+- **No React Router:** Pages switched via `currentPage` state in `App.tsx` with `onNavigate` callbacks.
+- **No state management library:** All state via React hooks. Props drilled down from App.tsx.
+- **No auth:** Single-tenant with Supabase anon key. RLS allows public read, selective write. All write operations are open.
+- **AI via edge functions:** All LLM calls go through Supabase Edge Functions. The `ai-agent` function handles 4 structured task types. `search-contacts` does its own Tavily + Gemini pipeline. `update-profile` orchestrates web search + `check_profile` for enrichment.
+- **Locations as separate table:** `people` and `organizations` have `location_id` FK to `locations` table. Old inline `location_city`/`location_state`/`latitude`/`longitude` columns were dropped. Queries use `.select('*, locations(*)')` to join.
+- **Types in supabase.ts:** All database entity types (Person, Organization, Collection, etc.), constants, and shared interfaces live in `src/lib/supabase.ts`.
+- **Filter parser is deterministic:** `src/lib/filterParser.ts` handles NL-to-filter conversion with keyword matching — no LLM call needed.
 
-## AI Strategy
+## Database Schema (current state after all 23 migrations)
 
-### Model Tiers (all Google — single provider)
+### Core Tables
+| Table | Key Columns | Notes |
+|---|---|---|
+| `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `occupation`, `bio`, `profile_photo_url`, `flemish_connection`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. No inline location columns (use locations FK). |
+| `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `flemish_link`, `created_at`, `updated_at` | No inline location columns. |
+| `locations` | `id`, `city`, `state`, `latitude`, `longitude` | UNIQUE(city, state). Populated from us_cities.csv import. |
+| `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
+| `expertise_tags` | `id`, `name` (unique) | Tags for specific skills |
+| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair |
 
-| Tier | Model ID | Use Cases | Approx Cost |
+### Junction Tables
+| Table | Keys |
+|---|---|
+| `person_sectors` | `(person_id, sector_id)` PK |
+| `organization_sectors` | `(organization_id, sector_id)` PK |
+| `person_expertise` | `(person_id, expertise_id)` PK |
+
+### Collections
+| Table | Key Columns |
+|---|---|
+| `collections` | `id`, `name`, `description`, `created_at`, `updated_at` |
+| `collection_members` | `id`, `collection_id` (FK), `person_id` (FK), `notes`, `added_at`. UNIQUE(collection_id, person_id) |
+
+### AI & Suggestions
+| Table | Key Columns |
+|---|---|
+| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status` (pending/approved/rejected) |
+| `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
+
+### Legacy (still in DB, no longer used in frontend)
+| Table | Status |
+|---|---|
+| `plans`, `plan_actions`, `plan_suggested_people` | Planner feature removed. Tables remain but are unused. |
+
+### RLS Summary
+- All tables: SELECT allowed for `anon, authenticated`
+- `people`, `organizations`: INSERT/UPDATE allowed for `anon, authenticated` (added in later migrations)
+- `collections`, `collection_members`: Full CRUD for `anon, authenticated`
+- `profile_suggestions`: SELECT, UPDATE (status changes), DELETE for `anon, authenticated`. INSERT via service role only.
+- `locations`: SELECT and INSERT for `anon, authenticated`
+
+## AI Pipeline (what actually exists)
+
+### Model
+All edge functions use `gemini-3-flash-preview` hardcoded. No env var override exists yet. No Pro model is used.
+
+### Edge Function: `ai-agent`
+Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured output (JSON schema).
+
+| Task | Purpose | Input Context | Output Schema |
 |---|---|---|---|
-| Flash | `gemini-2.0-flash` | `parse_contacts`, `smart_search`, `flemish_search`, `check_profile`, `search-contacts` extraction | ~$0.10/1M input tokens |
-| Pro | `gemini-2.5-pro-preview-05-06` | `suggest-people` ranking, briefing generation (future) | ~$1.25/1M input tokens |
-| Embedding | `text-embedding-004` | Profile embeddings for vector search (768 dimensions) | Free tier |
-| No LLM | `src/lib/filterParser.ts` | `interpret_filters` replaced with deterministic keyword matching | $0 |
+| `parse_contacts` | Extract contacts from free text | `{ description, sectors }` | `{ message, contacts[] }` |
+| `smart_search` | NL query → keyword arrays for 8 profile fields | `{ query }` | `{ message, keywords: { name[], occupation[], sector[], location_city[], location_state[], current_position[], flemish_connection[], bio[] } }` |
+| `flemish_search` | NL query → Flemish-specific keywords | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
+| `check_profile` | Compare person data vs web results, suggest updates | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
 
-Model IDs are configured via `GEMINI_FLASH_MODEL` and `GEMINI_PRO_MODEL` env vars so they can be updated when newer versions release.
+### Edge Function: `search-contacts`
+1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results)
+2. Feeds search results to Gemini for structured extraction
+3. Dedup checks against `people` table (email, LinkedIn URL, name)
+4. Returns `{ message, contacts[] }` with `is_duplicate` flags
 
-### Task Details
+### Edge Function: `update-profile`
+1. Takes `{ personId }` or `{ personIds }` → fetches person from DB
+2. Searches Tavily for `"{name} {position} {city} flemish belgian"`
+3. Calls `ai-agent` with `check_profile` task
+4. Inserts resulting suggestions into `profile_suggestions` table
 
-- **`parse_contacts`** (Flash): Extract structured contact data from free-text user input.
-- **`smart_search`** (Flash): Convert NL search query to structured keywords across all profile fields.
-- **`flemish_search`** (Flash): Extract Flemish connection keywords from NL query. May merge into `smart_search` in the future.
-- **`check_profile`** (Flash): Compare web search results against stored profile, suggest field updates.
-- **`search-contacts`** (Flash): Extract structured contacts from web search results.
-- **`suggest-people`** (Pro, via own edge function): Rank embedding-pre-filtered candidates (max 50) for a collection. Needs reasoning about relevance.
-- **`interpret_filters`** (NO LLM): Deterministic keyword matching in `src/lib/filterParser.ts`. Maps sector names/aliases, US state codes/names, city names, occupation keywords, and Flemish connection names to filter values.
+### Edge Function: `geocode`
+1. Takes `{ pairs: [{ city, state }] }` (max 25)
+2. Checks `locations` table cache first
+3. Falls back to Nominatim API (1.1s delay between requests for rate limiting)
+4. Caches results in `locations` table
 
-### Embedding Pipeline
+### Frontend AI Functions (in `aiService.ts`)
+- `parseContacts(description, sectors)` → calls `ai-agent` parse_contacts
+- `searchContacts(query)` → calls `search-contacts` edge function
+- `smartSearch(query)` → calls `ai-agent` smart_search
+- `flemishSearch(query)` → calls `ai-agent` flemish_search
+- `suggestPeople(query)` → uses `smartSearch` + scores all people client-side (no embeddings yet)
+- `scorePersonAgainstKeywords(person, keywords)` → weighted field matching
+- `scorePersonAgainstFilter(person, keywords, fields)` → boolean match
 
-1. Profile text = `"{name} | {current_position} | {bio} | {sectors comma-joined} | {flemish_connection} | {location_city}, {location_state}"`.
-2. Embedded via text-embedding-004 → 768-dim vector stored in `people.embedding`.
-3. Generated on profile create/update (fire-and-forget call to `generate-embeddings` edge function).
-4. Queried via `match_people(query_embedding, match_count)` SQL function (cosine distance, pgvector).
-5. Used for: `suggest-people` pre-filter (top 50 → Gemini Pro), collection "search similar" (pure vector similarity, no LLM).
+### What Does NOT Exist Yet
+- `generate-embeddings` edge function (planned)
+- `suggest-people` edge function (planned)
+- pgvector / `people.embedding` column (planned)
+- `match_people` SQL function (planned)
+- `agent_runs`, `api_quotas`, `web_search_cache` tables (planned)
+- Agent scheduler / orchestrator (planned)
+- Discovery, verification, connection agents (planned)
+- Brave Search integration (API key configured but no code uses it)
+- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used, model is hardcoded
 
-### Web Search Budget
-
-- **Tavily** free tier: 1000 searches/month. Primary provider for interactive searches and on-demand enrichment.
-- **Brave Search API** free tier: 2000 searches/month. Overflow/fallback for batch agent operations.
-- Agent scheduler checks `api_quotas` table before choosing provider. Results cached 30 days to avoid re-searching.
-- Target budget: ~$20/month ceiling. Expected: $2-5/month LLM + free-tier web search + free-tier Supabase.
+### Known Bugs
+- **`geocode` edge function broken:** References `people.latitude`, `people.longitude`, `people.location_city`, `people.location_state` — all dropped in location refactor migration. Needs rewrite to use `locations` table via `location_id`.
+- **`update-profile` edge function partially broken:** `processOnePerson()` reads `person.location_city` and `person.location_state` from `people.*` query — those columns no longer exist. The search query will be incomplete.
+- **12 TypeScript errors:** `DiscoveredContact` type doesn't have `location_id`/`locations` (it uses inline city/state from web search). `PersonProfile.tsx` uses non-existent `location_display` property. `CitySearch.tsx` has an unused variable.
+- **Person interface incomplete:** `src/lib/supabase.ts` Person interface is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields that exist in the DB.
+- **Build size warning:** JS bundle is 688kb (192kb gzipped), above Vite's 500kb warning threshold.
+- **25 console.log/error/warn calls in production code:** Across 9 frontend files. Should use a proper logger or remove.
+- **9 alert() calls as error handling:** In PersonProfile, OrganizationProfile, CollectionDetail. Should replace with toast/snackbar UI.
+- **`search-contacts` dedup loads ALL people:** Fetches entire `people` table to check for duplicates by name. Will degrade as DB grows. Should use targeted queries (e.g., `WHERE name ILIKE $1`).
+- **Dashboard NL search loads ALL people:** `suggestPeople()` in `aiService.ts` fetches up to 200 people then scores client-side. No server-side filtering. Will not scale.
+- **`profile_suggestions.person_id` is NOT NULL:** The Discovery Agent design (Phase 3.1 in AI strategy) inserts discovered NEW contacts into `profile_suggestions` — but new contacts have no `people` row yet, so the FK constraint will reject the insert. Design blocker for discovery agent.
+- **`@types/leaflet` and `@types/leaflet.markercluster` in dependencies:** Should be in devDependencies in `package.json`.
 
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.
 - Tailwind for all styling. No CSS files, no CSS-in-JS.
 - Functional components only. No class components.
 - Named exports for components, default export for pages.
-- Edge functions use Deno APIs and imports from `https://esm.sh/`.
+- Edge functions use `jsr:` and `npm:` imports (NOT `https://esm.sh/`).
+- Edge function CORS pattern: all functions include `corsHeaders` object and OPTIONS handler.
 
 ## Database Conventions
-- Migrations are in `supabase/migrations/` with timestamp prefixes.
-- Table names are snake_case plural (e.g., `people`, `plan_actions`).
+- Migrations are in `supabase/migrations/` with timestamp prefixes (format: `YYYYMMDDHHMMSS_description.sql`).
+- Table names are snake_case plural (e.g., `people`, `collections`).
 - All tables have `id uuid DEFAULT gen_random_uuid() PRIMARY KEY`.
 - All tables have `created_at timestamptz DEFAULT now()`.
 - Junction tables use composite primary keys (e.g., `person_sectors(person_id, sector_id)`).
 - RLS is enabled on all tables. Add policies in migrations.
-
-## Branch Naming
-Use feature branches: `feature/<short-description>` (e.g., `feature/unified-search`, `feature/collections`).
+- Location data is stored in the `locations` table, referenced via `location_id` FK.
 
 ## Environment Variables
 Frontend (in `.env`):
@@ -135,15 +223,27 @@ Frontend (in `.env`):
 - `VITE_SUPABASE_ANON_KEY`
 
 Edge functions (set in Supabase dashboard):
-- `GEMINI_API_KEY`
-- `GEMINI_FLASH_MODEL` (default: `gemini-2.0-flash`)
-- `GEMINI_PRO_MODEL` (default: `gemini-2.5-pro-preview-05-06`)
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-- `TAVILY_API_KEY`
-- `BRAVE_API_KEY`
+- `GEMINI_API_KEY` (required for all AI features)
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
+- `TAVILY_API_KEY` (required for web search in search-contacts and update-profile)
+- `BRAVE_API_KEY` (configured but not yet used in code)
+
+## Deploying Edge Functions
+```bash
+# Deploy a single function
+supabase functions deploy ai-agent --project-ref <your-project-ref>
+
+# Deploy all functions
+supabase functions deploy --project-ref <your-project-ref>
+
+# Set secrets (required per function)
+supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... --project-ref <your-project-ref>
+```
+Edge functions require the Supabase CLI (`npm i -g supabase`). The project ref is in the Supabase dashboard URL.
 
 ## Key Domain Concepts
-- **Flemish Connection:** A person's tie to Flanders — could be a university (KU Leuven, UGent, VUB, UAntwerp), fellowship (BAEF, Fayat), organization (imec), or city.
-- **Sectors:** Broad fields (AI, Biotech, Finance, Culture & Arts, Education, Research). A person can belong to multiple sectors.
-- **Occupation:** Career stage category (Student, Academic/Researcher, Professional, Executive/Leadership). Different from sector.
-- **Collections (replacing Missions/Plans):** Named groups of contacts for a specific purpose (e.g., "Contacts for LA Trade Mission"). Lightweight — no event types, no action items.
+- **Flemish Connection:** A person's tie to Flanders — could be a university (KU Leuven, UGent, VUB, UAntwerp), fellowship (BAEF, Fayat), organization (imec), or city. Stored as single text field on `people`.
+- **Sectors:** Broad fields (Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research). Stored in `sectors` table, linked via `person_sectors` junction.
+- **Occupation:** Career stage category (Student, Academic/Researcher, Professional, Executive/Leadership). Single text field on `people`.
+- **Collections:** Named groups of contacts for a specific purpose (e.g., "Contacts for LA Trade Mission"). Replaced the old Missions/Planner system.
+- **Profile Suggestions:** AI-generated field update proposals stored in `profile_suggestions`, reviewed via admin panel (approve/reject).
