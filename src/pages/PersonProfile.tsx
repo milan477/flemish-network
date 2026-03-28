@@ -21,12 +21,17 @@ import {
   ShieldCheck,
   ShieldAlert,
   Database,
+  Printer,
+  Camera,
+  Trash2,
+  Link,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import { supabase, displayName, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { generateEmbedding } from '../lib/aiService';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 
 interface PersonProfileProps {
   personId: string;
@@ -116,6 +121,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       linkedin_url: person.linkedin_url || '',
       website_url: person.website_url || '',
       twitter_url: person.twitter_url || '',
+      profile_photo_url: person.profile_photo_url || '',
     });
     setEditSectorIds(personSectors.map((s) => s.id));
     const flemish = person.flemish_connection
@@ -164,6 +170,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       linkedin_url: linkedin || null,
       website_url: website || null,
       twitter_url: twitter || null,
+      profile_photo_url: editForm.profile_photo_url || null,
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -290,13 +297,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     );
   }
 
-  const initials = personInitials(person);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <button
         onClick={() => onNavigate('directory')}
         className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        data-print-hide
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to directory</span>
@@ -306,9 +313,15 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
         <div className="p-8">
           <div className="flex items-start justify-between mb-8">
             <div className="flex items-start space-x-6 flex-1">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                <span className="text-3xl font-semibold text-blue-700">{initials}</span>
-              </div>
+              {editing ? (
+                <EditableAvatar
+                  person={person}
+                  editForm={editForm}
+                  setField={setField}
+                />
+              ) : (
+                <ProfileAvatar person={person} size="lg" />
+              )}
               <div className="flex-1 min-w-0">
                 {editing ? (
                   <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} editLocationDisplay={editLocationDisplay} setEditLocationDisplay={setEditLocationDisplay} />
@@ -316,7 +329,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 mt-4">
+                <div className="flex flex-wrap items-center gap-3 mt-4" data-print-hide>
                   {!editing && (
                     <>
                       <button
@@ -361,6 +374,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           <span>Email</span>
                         </a>
                       )}
+                      <button
+                        onClick={() => window.print()}
+                        className="px-5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium rounded-lg transition-colors flex items-center space-x-2 border border-gray-200"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Print</span>
+                      </button>
                     </>
                   )}
                   {editing && (
@@ -501,6 +521,105 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
         </div>
       )}
     </>
+  );
+}
+
+function EditableAvatar({
+  person,
+  editForm,
+  setField,
+}: {
+  person: Person;
+  editForm: Partial<Person>;
+  setField: (field: string, value: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
+  const previewPerson = {
+    ...person,
+    profile_photo_url: editForm.profile_photo_url || person.profile_photo_url,
+    email: editForm.email || person.email,
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 5 * 1024 * 1024) return; // 5MB limit
+
+    setUploading(true);
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${person.id}/${Date.now()}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('profile-photos')
+      .upload(path, file, { upsert: true });
+
+    if (!error) {
+      const { data: urlData } = supabase.storage
+        .from('profile-photos')
+        .getPublicUrl(path);
+      setField('profile_photo_url', urlData.publicUrl);
+    }
+    setUploading(false);
+  };
+
+  const handleRemovePhoto = () => {
+    setField('profile_photo_url', '');
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative group">
+        <ProfileAvatar person={previewPerson} size="lg" />
+        <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+          {uploading ? (
+            <Loader2 className="w-6 h-6 text-white animate-spin" />
+          ) : (
+            <Camera className="w-6 h-6 text-white" />
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileUpload}
+            disabled={uploading}
+          />
+        </label>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setShowUrlInput(!showUrlInput)}
+          className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
+          title="Paste image URL"
+        >
+          <Link className="w-3 h-3" />
+          URL
+        </button>
+        {(editForm.profile_photo_url || person.profile_photo_url) && (
+          <button
+            type="button"
+            onClick={handleRemovePhoto}
+            className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-0.5"
+            title="Remove photo"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+      {showUrlInput && (
+        <input
+          type="url"
+          placeholder="Paste image URL..."
+          value={editForm.profile_photo_url || ''}
+          onChange={(e) => setField('profile_photo_url', e.target.value)}
+          className="w-28 text-[10px] px-2 py-1 border border-gray-200 rounded text-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+        />
+      )}
+    </div>
   );
 }
 

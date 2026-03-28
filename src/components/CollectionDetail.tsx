@@ -13,16 +13,19 @@ import {
   Sparkles,
   Loader2,
   Plus,
+  Printer,
+  Download,
 } from 'lucide-react';
 import {
   supabase,
   type Collection,
   type CollectionMember,
   displayName,
-  personInitials,
 } from '../lib/supabase';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiService';
+import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -67,7 +70,7 @@ export default function CollectionDetail({
       // Fetch members with person data
       const { data: memData, error: memError } = await supabase
         .from('collection_members')
-        .select('*, person:people(*)')
+        .select('*, person:people(*, locations(*))')
         .eq('collection_id', collectionId)
         .order('added_at', { ascending: false });
 
@@ -246,6 +249,33 @@ export default function CollectionDetail({
         </div>
 
         <div className="flex items-center gap-3">
+          {members.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  const people = members.filter((m) => m.person).map((m) => m.person!);
+                  exportPeopleToCsv(people, `${collection.name.replace(/\s+/g, '-').toLowerCase()}.csv`);
+                }}
+                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export CSV
+              </button>
+              <button
+                onClick={() => {
+                  printCollectionBriefing(
+                    collection.name,
+                    collection.description,
+                    members.filter((m) => m.person).map((m) => ({ person: m.person!, notes: m.notes }))
+                  );
+                }}
+                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Export Briefing
+              </button>
+            </>
+          )}
           <button
             onClick={handleDeleteCollection}
             className="flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
@@ -360,26 +390,13 @@ export default function CollectionDetail({
             {members.map((member) => {
               if (!member.person) return null;
               const person = member.person;
-              const initials = personInitials(person);
 
               return (
                 <div key={member.id} className="p-6 hover:bg-gray-50/50 transition-colors">
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     {/* Person Info Section - Fixed width on LG to align notes */}
                     <div className="flex items-start gap-4 lg:w-72 xl:w-80 flex-shrink-0">
-                      {person.profile_photo_url ? (
-                        <img
-                          src={person.profile_photo_url}
-                          alt={person.name}
-                          className="w-12 h-12 rounded-full object-cover border border-gray-100 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-yellow-50 flex items-center justify-center border border-yellow-100 flex-shrink-0">
-                          <span className="text-yellow-700 font-semibold text-sm">
-                            {initials}
-                          </span>
-                        </div>
-                      )}
+                      <ProfileAvatar person={person} size="md" />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="text-lg font-bold text-gray-900 truncate">

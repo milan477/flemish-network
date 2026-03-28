@@ -123,10 +123,10 @@ Both functions reference columns that were dropped in the location refactor migr
 ### 4. Export & Briefing Documents
 **Scope:** New `lib/exportService.ts`, DirectoryGrid.tsx, CollectionDetail.tsx, PersonProfile.tsx
 **Effort:** Medium (1-2 days)
-
-- [ ] **CSV export of filtered results:** "Export" button on DirectoryGrid header. Columns: Title, First Name, Last Name, Position, Organization, About, City, State, Sector(s), Flemish Connections, Email, Phone, LinkedIn, website, X url
-- [ ] **Collection PDF briefing:** "Export Briefing" button on CollectionDetail. For each member: photo placeholder, name, title, position, location, bio, contact info, flemish connection. Use `window.print()` with print CSS or jsPDF.
-- [ ] **Print-friendly profiles:** Print stylesheet for PersonProfile.tsx (hide nav, sidebar, action buttons). "Print" button.
+keep in mind that sector(s) and flemish connections are multi-valued and need to be aggregated properly in exports. For the PDF briefing, keep in mind that the export formats should be clean and professional, suitable for sharing with external stakeholders or for internal briefings.
+- [x] **CSV export of filtered results:** "Export" button on DirectoryGrid header. Columns: Title, First Name, Last Name, Position, Organization, About, City, State, Sector(s), Flemish Connections, Email, Phone, LinkedIn, website, X url
+- [x] **Collection PDF briefing:** "Export Briefing" button on CollectionDetail. For each member: photo placeholder, name, title, position, location, bio, contact info, flemish connection. Use `window.print()` with print CSS or jsPDF.
+- [x] **Print-friendly profiles:** Print stylesheet for PersonProfile.tsx (hide nav, sidebar, action buttons). "Print" button.
 
 ### 5. Profile Pictures (Automatic)
 **Scope:** PersonProfile.tsx, AddContact.tsx, DirectoryGrid.tsx, new utility
@@ -134,10 +134,10 @@ Both functions reference columns that were dropped in the location refactor migr
 
 Currently `profile_photo_url` is a text field with no automatic population.
 
-- [ ] **Gravatar fallback:** For people with an email, generate Gravatar URL: `https://gravatar.com/avatar/{md5(email.trim().toLowerCase())}?d=404&s=200`. Display if 200 response, else show initials.
+- [x] **Gravatar fallback:** ProfileAvatar component uses SHA-256 hash of email for Gravatar URL with `?d=404` fallback. Falls back to initials if Gravatar returns 404.
 - [ ] **LinkedIn photo (via Apify):** For contacts with `linkedin_url` and no photo, the Verification Agent's LinkedIn scrape (Task 9) automatically suggests `profile_photo_url` from LinkedIn profile data. Manual paste in edit mode as fallback.
-- [ ] **Upload support:** Add image upload to PersonProfile.tsx edit mode. Store in Supabase Storage bucket (`profile-photos`). Save public URL to `profile_photo_url`.
-- [ ] **Display priority:** profile_photo_url (uploaded) > Gravatar (if email exists) > initials circle
+- [x] **Upload support:** PersonProfile.tsx edit mode has photo upload (Supabase Storage `profile-photos` bucket) + URL paste field. 5MB limit, stores public URL to `profile_photo_url`.
+- [x] **Display priority:** ProfileAvatar component implements: profile_photo_url > Gravatar (if email exists) > initials circle. Used across DirectoryGrid, PersonProfile, CollectionDetail, ClusterPopover, OrganizationProfile, CollectionModal.
 
 ### 6. Improve Database Population Pipeline
 **Scope:** CsvImport.tsx, new import features

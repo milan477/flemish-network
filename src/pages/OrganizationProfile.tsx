@@ -13,8 +13,9 @@ import {
   Globe,
   Plus,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, type Organization, type Person, type Sector } from '../lib/supabase';
+import { supabase, displayName, FLEMISH_OPTIONS, type Organization, type Person, type Sector } from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 
 interface OrganizationProfileProps {
   organizationId: string;
@@ -526,11 +527,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                     className="bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition-colors text-left border border-gray-200"
                   >
                     <div className="flex items-start space-x-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                        <span className="text-lg font-semibold text-blue-700">
-                          {personInitials(person)}
-                        </span>
-                      </div>
+                      <ProfileAvatar person={person} size="md" />
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-gray-900 mb-1">{displayName(person)}</h3>
                         {person.current_position && (

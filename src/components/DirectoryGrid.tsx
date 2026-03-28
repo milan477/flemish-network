@@ -1,8 +1,10 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Download } from 'lucide-react';
 import { useState } from 'react';
-import { displayName, personInitials } from '../lib/supabase';
+import { displayName } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
 import AddToCollectionDropdown from './AddToCollectionDropdown';
+import { exportPeopleToCsv } from '../lib/exportService';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -37,11 +39,7 @@ function PersonCard({
         className="w-full p-5 text-left h-full"
       >
         <div className="flex items-start space-x-4">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-semibold text-blue-700">
-              {personInitials(person)}
-            </span>
-          </div>
+          <ProfileAvatar person={person} size="md" />
           <div className="flex-1 min-w-0 pr-6">
             <div className="flex items-center gap-1.5 mb-0.5">
               <h3 className="font-semibold text-gray-900 text-sm truncate">
@@ -103,6 +101,32 @@ function PersonCard({
         )}
       </div>
     </div>
+  );
+}
+
+function ExportCsvButton({ people }: { people: Person[] }) {
+  const [exporting, setExporting] = useState(false);
+
+  if (people.length === 0) return null;
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportPeopleToCsv(people);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleExport}
+      disabled={exporting}
+      className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 hover:border-gray-400 hover:text-gray-800 transition-colors disabled:opacity-50"
+    >
+      {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+      <span>Export CSV</span>
+    </button>
   );
 }
 
@@ -192,7 +216,10 @@ export default function DirectoryGrid({
                   </h2>
                   <span className="text-sm text-gray-400">({nameMatches.length})</span>
                 </div>
-                <BulkAddButton people={nameMatches} />
+                <div className="flex items-center space-x-3">
+                  <ExportCsvButton people={nameMatches} />
+                  <BulkAddButton people={nameMatches} />
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {nameMatches.map((person) => (
@@ -228,6 +255,7 @@ export default function DirectoryGrid({
                   <span className="text-sm text-gray-400">({aiResults.length})</span>
                 </div>
                 <div className="flex items-center space-x-3">
+                  <ExportCsvButton people={aiResults} />
                   <BulkAddButton people={aiResults} />
                   {onClearSearch && (
                     <button
@@ -275,7 +303,10 @@ export default function DirectoryGrid({
               <h2 className="text-lg font-semibold text-gray-900">People</h2>
               <span className="text-sm text-gray-400">({displayPeople.length})</span>
             </div>
-            <BulkAddButton people={displayPeople} />
+            <div className="flex items-center space-x-3">
+              <ExportCsvButton people={displayPeople} />
+              <BulkAddButton people={displayPeople} />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {displayPeople.map((person) => (

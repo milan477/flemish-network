@@ -204,6 +204,8 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - **Smoke-test after deploying.** After deploying edge functions or migrations, make a quick curl/API call to verify things work. Fix issues immediately if they don't.
 - **Run the full loop:** code → typecheck → build → deploy → test. The user expects changes to be live and verified, not just written to disk.
 - **Provide manual testing steps for the UI.** After deploying, tell the user exactly how to verify the changes in the browser: which page to go to, which button to click, what they should see. Be specific (e.g., "Go to Admin → scroll to Embedding Search Index → click Generate Embeddings → you should see a progress bar fill up").
+- **Document any new environment variables or secrets.** If your code relies on a new env var (e.g., `GEMINI_FLASH_MODEL`), set a default in the code and also tell the user to add it to their `.env` file.
+- **Update documentation.** Update this CLAUDE.md file with any new architectural decisions, conventions, or important notes related to your changes. Update a todo item in `todo.md` if the change is related to an existing task, and mark it as done.
 
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.
