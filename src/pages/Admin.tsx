@@ -6,6 +6,8 @@ import {
   Clock,
   Sparkles,
   Loader2,
+  Bot,
+  LayoutDashboard,
 } from 'lucide-react';
 import { supabase, type Person } from '../lib/supabase';
 import OccupationOverview from '../components/admin/OccupationOverview';
@@ -13,6 +15,7 @@ import StaleContactsBar from '../components/admin/StaleContactsBar';
 import SuggestedChanges, {
   type ProfileSuggestion,
 } from '../components/admin/SuggestedChanges';
+import AgentDashboard from '../components/admin/AgentDashboard';
 
 interface SectorCount {
   name: string;
@@ -35,7 +38,10 @@ const SECTOR_COLORS: Record<string, string> = {
   Research: 'bg-cyan-500',
 };
 
+type AdminTab = 'overview' | 'agents';
+
 export default function Admin() {
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [sectorCounts, setSectorCounts] = useState<SectorCount[]>([]);
@@ -274,14 +280,44 @@ export default function Admin() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-          Admin Dashboard
-        </h1>
-        <p className="text-gray-600">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-3xl font-semibold text-gray-900">
+            Admin Dashboard
+          </h1>
+        </div>
+        <p className="text-gray-600 mb-4">
           Monitor network statistics and manage contacts
         </p>
+
+        <div className="flex gap-1 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'overview'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('agents')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'agents'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Bot className="w-4 h-4" />
+            Agents
+          </button>
+        </div>
       </div>
 
+      {activeTab === 'agents' && <AgentDashboard />}
+
+      {activeTab === 'overview' && <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           icon={Users}
@@ -457,6 +493,7 @@ export default function Admin() {
           </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }

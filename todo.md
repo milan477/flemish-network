@@ -166,11 +166,11 @@ Current CSV import works but needs improvements for bulk population.
 **Depends on:** Tasks 1-3 (AI infrastructure) should be stable
 **Effort:** Large (2-3 days)
 
-- [ ] **Migration:** Create `agent_runs`, `api_quotas`, `web_search_cache` tables (see strategy Phase 2.1)
-- [ ] **Shared web search module:** `supabase/functions/_shared/webSearch.ts` with Tavily/Brave cascading, quota tracking, 30-day caching, TTL cleanup of expired cache entries (see strategy Phase 2.2)
-- [ ] **Shared Apify module:** `supabase/functions/_shared/apifyClient.ts` — wrapper for Apify REST API. Sync/async actor execution, credit tracking. Used by Discovery Agent (LinkedIn search) and Verification Agent (LinkedIn profile scrape). Env var: `APIFY_TOKEN`. (see strategy Phase 2.3)
-- [ ] **Agent scheduler edge function:** `supabase/functions/agent-scheduler/index.ts` — dispatches to agents, manages run lifecycle, zombie detection, purges `web_search_cache` entries older than 30 days on each invocation (see strategy Phase 2.4)
-- [ ] **Admin Agent Dashboard:** `components/admin/AgentDashboard.tsx` — run history table, manual trigger buttons, API quota bars (Tavily, Brave, Apify credits), pending suggestions count. Add "Agents" tab to Admin.tsx.
+- [x] **Migration:** Create `agent_runs`, `api_quotas`, `web_search_cache` tables (see strategy Phase 2.1)
+- [x] **Shared web search module:** `supabase/functions/_shared/webSearch.ts` with Tavily/Brave cascading, quota tracking, 30-day caching, TTL cleanup of expired cache entries (see strategy Phase 2.2)
+- [x] **Shared Apify module:** `supabase/functions/_shared/apifyClient.ts` — wrapper for Apify REST API. Sync/async actor execution, credit tracking. Used by Discovery Agent (LinkedIn search) and Verification Agent (LinkedIn profile scrape). Env var: `APIFY_TOKEN`. (see strategy Phase 2.3)
+- [x] **Agent scheduler edge function:** `supabase/functions/agent-scheduler/index.ts` — dispatches to agents, manages run lifecycle, zombie detection, purges `web_search_cache` entries older than 30 days on each invocation (see strategy Phase 2.4)
+- [x] **Admin Agent Dashboard:** `components/admin/AgentDashboard.tsx` — run history table, manual trigger buttons, API quota bars (Tavily, Brave, Apify credits), pending suggestions count. Add "Agents" tab to Admin.tsx.
 
 ### 8. Discovery Agent
 **Scope:** New edge function, new migration (`discovered_contacts` table)
