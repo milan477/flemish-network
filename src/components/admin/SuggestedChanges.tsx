@@ -31,12 +31,14 @@ const FIELD_LABELS: Record<string, string> = {
   occupation: 'Occupation',
   email: 'Email',
   linkedin_url: 'LinkedIn',
+  profile_photo_url: 'Profile Photo',
   bio: 'Bio',
   phone: 'Phone',
   website_url: 'Website',
   twitter_url: 'Twitter (X)',
   location_city: 'City',
   location_state: 'State',
+  _status: 'Status Flag',
 };
 
 export default function SuggestedChanges({
@@ -69,13 +71,23 @@ export default function SuggestedChanges({
   const approveSuggestion = async (suggestion: ProfileSuggestion) => {
     setProcessingIds((prev) => new Set([...prev, suggestion.id]));
 
+    const advisoryField = suggestion.field_name.startsWith('_');
+    const now = new Date().toISOString();
+
     await supabase
       .from('people')
-      .update({
-        [suggestion.field_name]: suggestion.suggested_value,
-        last_verified_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(
+        advisoryField
+          ? {
+              last_verified_at: now,
+              updated_at: now,
+            }
+          : {
+              [suggestion.field_name]: suggestion.suggested_value,
+              last_verified_at: now,
+              updated_at: now,
+            }
+      )
       .eq('id', suggestion.person_id);
 
     await supabase

@@ -300,7 +300,7 @@ export default function AgentDashboard() {
           </div>
 
           <button
-            onClick={() => triggerAgent('verification', { batch_size: 10 })}
+            onClick={() => triggerAgent('verification', { batch_size: 5 })}
             disabled={triggerLoading === 'verification'}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
           >

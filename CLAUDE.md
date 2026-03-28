@@ -3,6 +3,11 @@
 ## What This Is
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
+## Recent Notes (2026-03-28)
+- `supabase/functions/agent-verify/index.ts` now exists. It verifies stale profiles in a LinkedIn-first flow: Apify scrape when `linkedin_url` is present, deterministic field diffing for position/location/bio/photo, then web search + the same Gemini `check_profile` schema locally when LinkedIn is unavailable or missing. The operational default is a 5-profile batch to stay inside the edge timeout.
+- Verification can create advisory `profile_suggestions` rows with `field_name = '_status'` and `suggested_value = 'may_have_left_us'` when LinkedIn indicates the person is no longer US-based. These are review-only flags; approving them should not try to write an unknown column onto `people`.
+- LinkedIn verification also suggests `profile_photo_url` when the profile has no stored photo and Apify returns one.
+
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript, Vite 5, Tailwind CSS 3, Lucide React (icons)
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)

@@ -1,6 +1,6 @@
 # Flemish Network Platform — TODO
 
-Updated 2026-03-25. Reflects actual codebase state. Checked items are merged and working.
+Updated 2026-03-28. Reflects actual codebase state. Checked items are merged and working.
 
 ---
 
@@ -135,7 +135,7 @@ keep in mind that sector(s) and flemish connections are multi-valued and need to
 Currently `profile_photo_url` is a text field with no automatic population.
 
 - [x] **Gravatar fallback:** ProfileAvatar component uses SHA-256 hash of email for Gravatar URL with `?d=404` fallback. Falls back to initials if Gravatar returns 404.
-- [ ] **LinkedIn photo (via Apify):** For contacts with `linkedin_url` and no photo, the Verification Agent's LinkedIn scrape (Task 9) automatically suggests `profile_photo_url` from LinkedIn profile data. Manual paste in edit mode as fallback.
+- [x] **LinkedIn photo (via Apify):** For contacts with `linkedin_url` and no photo, the Verification Agent's LinkedIn scrape (Task 9) automatically suggests `profile_photo_url` from LinkedIn profile data. Manual paste in edit mode as fallback.
 - [x] **Upload support:** PersonProfile.tsx edit mode has photo upload (Supabase Storage `profile-photos` bucket) + URL paste field. 5MB limit, stores public URL to `profile_photo_url`.
 - [x] **Display priority:** ProfileAvatar component implements: profile_photo_url > Gravatar (if email exists) > initials circle. Used across DirectoryGrid, PersonProfile, CollectionDetail, ClusterPopover, OrganizationProfile, CollectionModal.
 
@@ -188,8 +188,8 @@ Current CSV import works but needs improvements for bulk population.
 **Depends on:** Task 7 (agent infrastructure)
 **Effort:** Medium (1-2 days)
 
-- [ ] `supabase/functions/agent-verify/index.ts` — LinkedIn-first verification: for contacts with `linkedin_url`, scrape via Apify (`supreme_coder/linkedin-profile-scraper`) and deterministically diff against stored data (no LLM needed). Falls back to web search + `check_profile` LLM if no LinkedIn URL or Apify unavailable. Auto-suggests profile photos from LinkedIn. (see strategy Phase 3.2)
-- [ ] Handle edge cases: person left US, career change, LinkedIn profile not found
+- [x] `supabase/functions/agent-verify/index.ts` — LinkedIn-first verification: for contacts with `linkedin_url`, scrape via Apify (`supreme_coder/linkedin-profile-scraper`) and deterministically diff against stored data (no LLM needed). Falls back to web search + `check_profile` LLM if no LinkedIn URL or Apify unavailable. Auto-suggests profile photos from LinkedIn. (see strategy Phase 3.2)
+- [x] Handle edge cases: person left US, career change, LinkedIn profile not found
 
 ### 10. Connection Discovery Agent
 **Scope:** New edge function
