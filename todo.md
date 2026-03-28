@@ -177,11 +177,11 @@ Current CSV import works but needs improvements for bulk population.
 **Depends on:** Task 7 (agent infrastructure)
 **Effort:** Medium (1-2 days)
 
-- [ ] **Migration:** Create `discovered_contacts` staging table (see strategy Phase 3.1). Required because `profile_suggestions.person_id` is NOT NULL — can't store new contacts there.
-- [ ] **Admin UI:** Add "Discovered Contacts" tab in Admin.tsx to review/approve/reject. On approve: create `people` row, delete from `discovered_contacts`. Reuse existing ContactCard component.
-- [ ] `supabase/functions/agent-discovery/index.ts` — dual-channel discovery: web search (Tavily/Brave) + LinkedIn search (Apify `harvestapi/linkedin-profile-search`). Gemini extraction for web results, structured mapping for LinkedIn results. Dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
-- [ ] 8 predefined web search queries + 7 LinkedIn-specific queries (university/company filters via Apify)
-- [ ] Max 3 web searches + 2 LinkedIn searches per invocation (cost control). Graceful fallback if Apify credits exhausted.
+- [x] **Migration:** Create `discovered_contacts` staging table (see strategy Phase 3.1). Required because `profile_suggestions.person_id` is NOT NULL — can't store new contacts there.
+- [x] **Admin UI:** Add "Discovered Contacts" tab in Admin.tsx to review/approve/reject. On approve: create `people` row, delete from `discovered_contacts`. DiscoveredContactsPanel component with approve/reject per-contact and bulk actions.
+- [x] `supabase/functions/agent-discovery/index.ts` — dual-channel discovery: web search (Tavily/Brave) + LinkedIn search (Apify `harvestapi/linkedin-profile-search`). Gemini extraction for web results, structured mapping for LinkedIn results. Dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
+- [x] 8 predefined web search queries + 7 LinkedIn-specific queries (university/company filters via Apify)
+- [x] Max 3 web searches + 2 LinkedIn searches per invocation (cost control). Graceful fallback if Apify credits exhausted.
 
 ### 9. Verification Agent
 **Scope:** New edge function

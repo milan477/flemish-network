@@ -83,87 +83,36 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", runId);
 
-    // 3. Dispatch to the agent edge function
+    // 3. Fire-and-forget: dispatch to the agent edge function
+    // The agent function self-reports its completion/failure to agent_runs via run_id.
+    // We return immediately so the scheduler doesn't hit the 60s Supabase limit.
     const functionName = AGENT_FUNCTIONS[agentType];
-    try {
-      const agentResp = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ ...params, run_id: runId }),
-      });
-
-      if (!agentResp.ok) {
-        const errorText = await agentResp.text();
-        // 4b. Agent function failed
-        await supabase
-          .from("agent_runs")
-          .update({
-            status: "failed",
-            completed_at: new Date().toISOString(),
-            error_message: `Agent function returned ${agentResp.status}: ${errorText.slice(0, 500)}`,
-          })
-          .eq("id", runId);
-
-        return new Response(
-          JSON.stringify({
-            run_id: runId,
-            status: "failed",
-            error: `Agent function failed: ${agentResp.status}`,
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const agentResult = await agentResp.json();
-
-      // 4a. Success: update run with results
-      const costEstimate = estimateCost(agentResult, agentType);
-      await supabase
-        .from("agent_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          results: agentResult,
-          llm_calls_made: agentResult.llm_calls_made || 0,
-          llm_model_used: agentResult.llm_model_used || null,
-          web_searches_made: agentResult.web_searches_made || 0,
-          web_search_provider: agentResult.web_search_provider || null,
-          cost_estimate_usd: costEstimate,
-        })
-        .eq("id", runId);
-
-      return new Response(
-        JSON.stringify({
-          run_id: runId,
-          status: "completed",
-          results: agentResult,
-          cost_estimate_usd: costEstimate,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    } catch (err) {
-      // Network or other dispatch error
-      await supabase
+    fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({ ...params, run_id: runId }),
+    }).catch(() => {
+      // If the fetch itself fails (DNS, etc.), mark run as failed
+      supabase
         .from("agent_runs")
         .update({
           status: "failed",
           completed_at: new Date().toISOString(),
-          error_message: err instanceof Error ? err.message : "Unknown dispatch error",
+          error_message: "Failed to dispatch to agent function",
         })
         .eq("id", runId);
+    });
 
-      return new Response(
-        JSON.stringify({
-          run_id: runId,
-          status: "failed",
-          error: err instanceof Error ? err.message : "Unknown error",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    return new Response(
+      JSON.stringify({
+        run_id: runId,
+        status: "running",
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (err) {
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "Internal error" }),

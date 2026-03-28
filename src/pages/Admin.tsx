@@ -16,6 +16,7 @@ import SuggestedChanges, {
   type ProfileSuggestion,
 } from '../components/admin/SuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
+import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 
 interface SectorCount {
   name: string;
@@ -38,7 +39,7 @@ const SECTOR_COLORS: Record<string, string> = {
   Research: 'bg-cyan-500',
 };
 
-type AdminTab = 'overview' | 'agents';
+type AdminTab = 'overview' | 'agents' | 'discovered';
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -312,10 +313,23 @@ export default function Admin() {
             <Bot className="w-4 h-4" />
             Agents
           </button>
+          <button
+            onClick={() => setActiveTab('discovered')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'discovered'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Discovered
+          </button>
         </div>
       </div>
 
       {activeTab === 'agents' && <AgentDashboard />}
+
+      {activeTab === 'discovered' && <DiscoveredContactsPanel />}
 
       {activeTab === 'overview' && <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

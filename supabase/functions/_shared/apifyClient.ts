@@ -39,13 +39,28 @@ async function runSync<T>(
   token: string,
   timeoutSecs: number
 ): Promise<ApifyResult<T>> {
-  const url = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}&timeout=${timeoutSecs}`;
+  const encodedActorId = actorId.replace("/", "~");
+  const url = `https://api.apify.com/v2/acts/${encodedActorId}/run-sync-get-dataset-items?token=${token}&timeout=${timeoutSecs}`;
 
-  const resp = await fetchWithRetry(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const controller = new AbortController();
+  const fetchTimeout = setTimeout(() => controller.abort(), (timeoutSecs + 5) * 1000);
+
+  let resp: Response;
+  try {
+    resp = await fetchWithRetry(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(fetchTimeout);
+    if ((err as Error).name === "AbortError") {
+      throw new ApifyError(`Apify sync timed out after ${timeoutSecs}s`, "actor_timeout");
+    }
+    throw err;
+  }
+  clearTimeout(fetchTimeout);
 
   if (resp.status === 402) {
     throw new ApifyError("Apify credits exhausted", "apify_quota_exhausted");
@@ -72,7 +87,8 @@ async function runAsync<T>(
   timeoutSecs: number
 ): Promise<ApifyResult<T>> {
   // Start the run
-  const startUrl = `https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`;
+  const encodedActorId = actorId.replace("/", "~");
+  const startUrl = `https://api.apify.com/v2/acts/${encodedActorId}/runs?token=${token}`;
   const startResp = await fetchWithRetry(startUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -132,9 +148,9 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= retries; attempt++) {
     lastResp = await fetch(url, init);
     if (lastResp.status !== 429) return lastResp;
-    // Rate limited: back off 60s, retry once
+    // Rate limited: back off 5s, retry once
     if (attempt < retries) {
-      await new Promise((r) => setTimeout(r, 60000));
+      await new Promise((r) => setTimeout(r, 5000));
     }
   }
   return lastResp!;
@@ -159,7 +175,12 @@ export async function getApifyUsage(): Promise<{
   if (!token) return { available: false, error: "APIFY_TOKEN not configured" };
 
   try {
-    const resp = await fetch(`https://api.apify.com/v2/users/me?token=${token}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(`https://api.apify.com/v2/users/me?token=${token}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
     if (!resp.ok) return { available: false, error: `API ${resp.status}` };
     // If user endpoint responds, token is valid and account is accessible
     return { available: true };

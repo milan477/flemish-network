@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Loader2,
   CheckCircle2,
@@ -8,6 +8,8 @@ import {
   ShieldCheck,
   Link2,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -55,6 +57,8 @@ export default function AgentDashboard() {
   const [triggerLoading, setTriggerLoading] = useState<string | null>(null);
   const [discoveryQuery, setDiscoveryQuery] = useState('');
   const [showQueryInput, setShowQueryInput] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
     const [runsRes, quotasRes, suggestionsRes] = await Promise.all([
@@ -73,7 +77,32 @@ export default function AgentDashboard() {
         .eq('status', 'pending'),
     ]);
 
-    setRuns((runsRes.data || []) as AgentRun[]);
+    const fetchedRuns = (runsRes.data || []) as AgentRun[];
+
+    // Client-side zombie detection: mark runs stuck as "running" for >3 minutes as failed
+    const threeMinAgo = Date.now() - 3 * 60 * 1000;
+    for (const run of fetchedRuns) {
+      if (
+        (run.status === 'running' || run.status === 'pending') &&
+        run.started_at &&
+        new Date(run.started_at).getTime() < threeMinAgo
+      ) {
+        await supabase
+          .from('agent_runs')
+          .update({
+            status: 'failed',
+            completed_at: new Date().toISOString(),
+            error_message: 'Timed out — no response from agent function',
+          })
+          .eq('id', run.id)
+          .eq('status', run.status); // prevent race condition
+        run.status = 'failed';
+        run.error_message = 'Timed out — no response from agent function';
+        run.completed_at = new Date().toISOString();
+      }
+    }
+
+    setRuns(fetchedRuns);
     setQuotas((quotasRes.data || []) as ApiQuota[]);
     setPendingSuggestions(suggestionsRes.count || 0);
     setLoading(false);
@@ -83,15 +112,63 @@ export default function AgentDashboard() {
     loadData();
   }, [loadData]);
 
+  // Poll every 5s while any run is still "running" or "pending", and tick `now` every 1s for live timer
+  useEffect(() => {
+    const hasActiveRuns = runs.some((r) => r.status === 'running' || r.status === 'pending');
+    if (!hasActiveRuns) return;
+    const pollInterval = setInterval(loadData, 5000);
+    const tickInterval = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(tickInterval);
+    };
+  }, [runs, loadData]);
+
+  const AGENT_FUNCTIONS: Record<string, string> = {
+    discovery: 'agent-discovery',
+    verification: 'agent-verify',
+    connection: 'agent-connections',
+  };
+
   const triggerAgent = useCallback(
     async (agentType: string, params?: Record<string, unknown>) => {
       setTriggerLoading(agentType);
       try {
-        const resp = await supabase.functions.invoke('agent-scheduler', {
-          body: { agent_type: agentType, params: params || {} },
-        });
+        // 1. Create agent_runs row directly (no scheduler middleman)
+        const { data: run, error: insertError } = await supabase
+          .from('agent_runs')
+          .insert({
+            agent_type: agentType,
+            status: 'running',
+            params: params || {},
+            started_at: new Date().toISOString(),
+            heartbeat_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
 
-        if (resp.error) throw resp.error;
+        if (insertError || !run) throw new Error(insertError?.message || 'Failed to create run');
+
+        // 2. Call the agent function directly — don't await the response
+        //    The agent self-reports completion/failure via run_id
+        const functionName = AGENT_FUNCTIONS[agentType];
+        if (functionName) {
+          supabase.functions
+            .invoke(functionName, {
+              body: { ...params, run_id: run.id },
+            })
+            .catch(() => {
+              // If function invocation fails, mark run as failed
+              supabase
+                .from('agent_runs')
+                .update({
+                  status: 'failed',
+                  completed_at: new Date().toISOString(),
+                  error_message: 'Failed to invoke agent function',
+                })
+                .eq('id', run.id);
+            });
+        }
       } catch {
         // trigger failed
       }
@@ -108,6 +185,21 @@ export default function AgentDashboard() {
     setShowQueryInput(false);
   }, [discoveryQuery, triggerAgent]);
 
+  const cancelRun = useCallback(
+    async (runId: string) => {
+      await supabase
+        .from('agent_runs')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          error_message: 'Cancelled by user',
+        })
+        .eq('id', runId);
+      await loadData();
+    },
+    [loadData]
+  );
+
   const getQuota = (provider: string): ApiQuota | undefined =>
     quotas.find((q) => q.provider === provider);
 
@@ -122,12 +214,13 @@ export default function AgentDashboard() {
     });
   };
 
-  const formatDuration = (start: string | null, end: string | null) => {
-    if (!start || !end) return '—';
-    const ms = new Date(end).getTime() - new Date(start).getTime();
+  const formatDuration = (start: string | null, end: string | null, isRunning?: boolean) => {
+    if (!start) return '—';
+    const endMs = end ? new Date(end).getTime() : (isRunning ? now : Date.now());
+    const ms = endMs - new Date(start).getTime();
     if (ms < 1000) return '<1s';
     if (ms < 60000) return `${Math.round(ms / 1000)}s`;
-    return `${Math.round(ms / 60000)}m`;
+    return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   };
 
   const summarizeResults = (run: AgentRun): string => {
@@ -319,11 +412,22 @@ export default function AgentDashboard() {
                   const style = STATUS_STYLES[run.status] || STATUS_STYLES.pending;
                   const StatusIcon = style.icon;
                   const agent = AGENT_LABELS[run.agent_type];
+                  const isExpanded = expandedRunId === run.id;
+                  const hasSteps = run.results && Array.isArray(run.results.steps);
 
                   return (
-                    <tr key={run.id} className="hover:bg-gray-50/50">
+                    <React.Fragment key={run.id}>
+                    <tr
+                      className={`hover:bg-gray-50/50 ${hasSteps ? 'cursor-pointer' : ''}`}
+                      onClick={() => hasSteps && setExpandedRunId(isExpanded ? null : run.id)}
+                    >
                       <td className="py-2.5 px-4">
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-gray-900 flex items-center gap-1.5">
+                          {hasSteps && (
+                            isExpanded
+                              ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                              : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                          )}
                           {agent?.label || run.agent_type}
                         </span>
                       </td>
@@ -341,7 +445,21 @@ export default function AgentDashboard() {
                         {formatDate(run.started_at)}
                       </td>
                       <td className="py-2.5 px-4 text-gray-500">
-                        {formatDuration(run.started_at, run.completed_at)}
+                        <span className="flex items-center gap-1.5">
+                          {formatDuration(run.started_at, run.completed_at, run.status === 'running' || run.status === 'pending')}
+                          {(run.status === 'running' || run.status === 'pending') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelRun(run.id);
+                              }}
+                              className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 font-medium"
+                              title="Cancel this run"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </span>
                       </td>
                       <td className="py-2.5 px-4 text-gray-600">
                         {run.error_message ? (
@@ -357,6 +475,18 @@ export default function AgentDashboard() {
                         {run.cost_estimate_usd > 0 ? `$${run.cost_estimate_usd.toFixed(4)}` : '—'}
                       </td>
                     </tr>
+                    {isExpanded && hasSteps && (
+                      <tr>
+                        <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
+                          <RunStepsDetail
+                            steps={run.results!.steps as StepLog[]}
+                            params={run.params}
+                            errors={run.results!.errors as string[] | undefined}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -400,4 +530,136 @@ function QuotaBar({
       </div>
     </div>
   );
+}
+
+interface StepLog {
+  step: string;
+  timestamp: string;
+  elapsed: string;
+  status: 'ok' | 'error' | 'skipped';
+  detail: Record<string, unknown>;
+}
+
+const STEP_LABELS: Record<string, string> = {
+  web_search: 'Web Search',
+  llm_extraction: 'LLM Extraction',
+  linkedin_search: 'LinkedIn Search',
+  cross_dedup: 'Cross-Channel Dedup',
+  db_dedup: 'Database Dedup',
+  insert: 'Insert Contacts',
+};
+
+const STEP_STATUS_STYLE: Record<string, string> = {
+  ok: 'bg-green-100 text-green-700',
+  error: 'bg-red-100 text-red-700',
+  skipped: 'bg-gray-100 text-gray-500',
+};
+
+function RunStepsDetail({
+  steps,
+  params,
+  errors,
+}: {
+  steps: StepLog[];
+  params: Record<string, unknown> | null;
+  errors?: string[];
+}) {
+  const [expandedStep, setExpandedStep] = useState<number | null>(null);
+
+  return (
+    <div className="pt-3 space-y-2">
+      {/* Input params */}
+      {params && (
+        <div className="text-xs text-gray-500 mb-3">
+          <span className="font-medium text-gray-700">Input: </span>
+          {Object.entries(params).map(([k, v]) => (
+            <span key={k} className="mr-3">
+              <span className="text-gray-400">{k}=</span>
+              <span className="text-gray-700">{JSON.stringify(v)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Steps timeline */}
+      <div className="space-y-1">
+        {steps.map((step, i) => {
+          const isOpen = expandedStep === i;
+          return (
+            <div key={i} className="bg-white rounded-lg border border-gray-100">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpandedStep(isOpen ? null : i);
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 rounded-lg"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-mono w-10">
+                    {step.elapsed}
+                  </span>
+                  <span className="text-xs font-medium text-gray-900">
+                    {STEP_LABELS[step.step] || step.step}
+                  </span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${STEP_STATUS_STYLE[step.status] || ''}`}
+                  >
+                    {step.status}
+                  </span>
+                  {/* Quick summary */}
+                  <span className="text-[11px] text-gray-400">
+                    {renderStepSummary(step)}
+                  </span>
+                </div>
+                {isOpen ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                )}
+              </button>
+              {isOpen && (
+                <div className="px-3 pb-3 border-t border-gray-50">
+                  <pre className="text-[11px] text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">
+                    {JSON.stringify(step.detail, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Errors */}
+      {errors && errors.length > 0 && (
+        <div className="bg-red-50 rounded-lg p-3 mt-2">
+          <p className="text-xs font-medium text-red-700 mb-1">Errors</p>
+          {errors.map((err, i) => (
+            <p key={i} className="text-[11px] text-red-600">{err}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderStepSummary(step: StepLog): string {
+  const d = step.detail;
+  switch (step.step) {
+    case 'web_search':
+      return `${d.provider} · ${d.results_count} results${d.cached ? ' (cached)' : ''}`;
+    case 'llm_extraction':
+      return `${d.extracted_count} extracted · ${d.us_filtered_count} US · ${(d.non_us_removed as unknown[])?.length || 0} filtered out`;
+    case 'linkedin_search':
+      if (step.status === 'ok')
+        return `${d.raw_results} raw · ${d.us_filtered_count} US`;
+      return typeof d.reason === 'string' ? d.reason : '';
+    case 'cross_dedup':
+      return `${d.before} → ${d.after} (${d.removed} merged)`;
+    case 'db_dedup':
+      return `${d.duplicates_found} dupes · ${d.new_contacts} new`;
+    case 'insert':
+      return `${d.inserted}/${d.attempted} inserted`;
+    default:
+      return '';
+  }
 }

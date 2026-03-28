@@ -4,6 +4,7 @@ export interface WebSearchResult {
   title: string;
   content: string;
   url: string;
+  raw_content?: string;
 }
 
 export interface WebSearchResponse {
@@ -62,11 +63,11 @@ export async function searchWeb(
     if (quota.calls_used < quota.calls_limit) {
       try {
         const results = await callTavily(query, tavilyKey);
+        await incrementQuota(supabase, "tavily", currentMonth);
         if (results.length > 0) {
-          await incrementQuota(supabase, "tavily", currentMonth);
           await cacheResults(supabase, queryHash, query, "tavily", results);
-          return { results, provider: "tavily", cached: false, quota_exhausted: false };
         }
+        return { results, provider: "tavily", cached: false, quota_exhausted: false };
       } catch {
         // Tavily failed, try Brave
       }
@@ -79,11 +80,11 @@ export async function searchWeb(
     if (quota.calls_used < quota.calls_limit) {
       try {
         const results = await callBrave(query, braveKey);
+        await incrementQuota(supabase, "brave", currentMonth);
         if (results.length > 0) {
-          await incrementQuota(supabase, "brave", currentMonth);
           await cacheResults(supabase, queryHash, query, "brave", results);
-          return { results, provider: "brave", cached: false, quota_exhausted: false };
         }
+        return { results, provider: "brave", cached: false, quota_exhausted: false };
       } catch {
         // Brave also failed
       }
@@ -114,7 +115,7 @@ async function callTavily(
   apiKey: string
 ): Promise<WebSearchResult[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
 
   try {
     const resp = await fetch("https://api.tavily.com/search", {
@@ -125,7 +126,7 @@ async function callTavily(
         query,
         search_depth: "advanced",
         max_results: 10,
-        include_raw_content: false,
+        include_raw_content: true,
       }),
       signal: controller.signal,
     });
@@ -136,10 +137,11 @@ async function callTavily(
     if (!data.results || !Array.isArray(data.results)) return [];
 
     return data.results.map(
-      (r: { title?: string; content?: string; url?: string }) => ({
+      (r: { title?: string; content?: string; url?: string; raw_content?: string }) => ({
         title: r.title || "",
         content: r.content || "",
         url: r.url || "",
+        raw_content: r.raw_content || "",
       })
     );
   } finally {
@@ -246,9 +248,12 @@ async function cacheResults(
  */
 export function formatResultsForLLM(results: WebSearchResult[]): string {
   return results
-    .map(
-      (r) =>
-        `Source: ${r.url}\nTitle: ${r.title}\nContent: ${r.content}`
-    )
+    .map((r) => {
+      // Prefer raw_content (full page text) over snippet, truncate to 2000 chars per result
+      const body = r.raw_content && r.raw_content.length > r.content.length
+        ? r.raw_content.slice(0, 2000)
+        : r.content;
+      return `Source: ${r.url}\nTitle: ${r.title}\nContent: ${body}`;
+    })
     .join("\n\n---\n\n");
 }
