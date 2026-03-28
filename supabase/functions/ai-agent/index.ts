@@ -7,7 +7,7 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   parse_contacts: `You are a data extraction assistant for a Flemish-American network directory that tracks people in the US with connections to Flanders (Belgium).

@@ -94,27 +94,27 @@ Both functions reference columns that were dropped in the location refactor migr
 **Scope:** `ai-agent/index.ts`, `search-contacts/index.ts`
 **Effort:** Small (< 1 hour)
 
-- [ ] Replace hardcoded `const GEMINI_MODEL = "gemini-3-flash-preview"` with `Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview"` in both edge functions
-- [ ] Document in Supabase dashboard: set `GEMINI_FLASH_MODEL` env var
+- [x] Replace hardcoded `const GEMINI_MODEL = "gemini-3-flash-preview"` with `Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview"` in both edge functions
+- [x] Document in Supabase dashboard: set `GEMINI_FLASH_MODEL` env var
 
 ### 2. Embeddings & Vector Search
 **Scope:** New migration, new edge function, admin UI, frontend trigger points
 **Depends on:** Nothing
 **Effort:** Medium (1-2 days)
 
-- [ ] **Migration:** Enable pgvector, add `embedding vector(768)`, `embedding_dirty_at`, `embedding_generated_at` to `people`, create HNSW index, create `match_people()` RPC function, create dirty-marking triggers on `people` (name, bio, current_position, flemish_connection, occupation, location_id) AND on `person_sectors` insert/delete (see `ai-implementation-strategy.md` Phase 1.1 for exact SQL)
-- [ ] **Edge function `generate-embeddings`:** Accept `{ personId | personIds | backfill }`, call text-embedding-004, store 768-dim vector. Batch mode: 20 per invocation (Supabase 60s limit). For backfill, return `{ processed, remaining }` — frontend loops until remaining=0. (see strategy Phase 1.2)
-- [ ] **Frontend triggers:** After person INSERT (AddContact.tsx) and UPDATE (PersonProfile.tsx), fire-and-forget call to generate-embeddings
-- [ ] **Admin backfill:** Add "Generate Embeddings" button in Admin.tsx with progress bar. Calls generate-embeddings in a loop (20 per call) until `remaining === 0`. Shows progress: "Processed 120/500".
+- [x] **Migration:** Enable pgvector, add `embedding vector(768)`, `embedding_dirty_at`, `embedding_generated_at` to `people`, create HNSW index, create `match_people()` RPC function, create dirty-marking triggers on `people` (name, bio, current_position, flemish_connection, occupation, location_id) AND on `person_sectors` insert/delete (see `ai-implementation-strategy.md` Phase 1.1 for exact SQL)
+- [x] **Edge function `generate-embeddings`:** Accept `{ personId | personIds | backfill }`, call text-embedding-004, store 768-dim vector. Batch mode: 20 per invocation (Supabase 60s limit). For backfill, return `{ processed, remaining }` — frontend loops until remaining=0. (see strategy Phase 1.2)
+- [x] **Frontend triggers:** After person INSERT (AddContact.tsx) and UPDATE (PersonProfile.tsx), fire-and-forget call to generate-embeddings
+- [x] **Admin backfill:** Add "Generate Embeddings" button in Admin.tsx with progress bar. Calls generate-embeddings in a loop (20 per call) until `remaining === 0`. Shows progress: "Processed 120/500".
 
 ### 3. Suggest-People Edge Function
 **Scope:** New edge function, updated aiService.ts, CollectionDetail.tsx
 **Depends on:** Task 2 (embeddings)
 **Effort:** Medium (1-2 days)
 
-- [ ] **Edge function `suggest-people`:** Embed query → `match_people(50)` → exclude existing members → Gemini Pro ranking → return top 15 with reasons (see strategy Phase 1.3)
-- [ ] **Update `aiService.ts`:** Replace current `suggestPeople()` (client-side scoring) with call to suggest-people edge function
-- [ ] **Collection "Find Similar":** Add button to CollectionDetail.tsx. Build query from collection description or top member bios. Show suggestions in slide-out panel with "Add to Collection" buttons.
+- [x] **Edge function `suggest-people`:** Embed query → `match_people(50)` → exclude existing members → Gemini Pro ranking → return top 15 with reasons (see strategy Phase 1.3)
+- [x] **Update `aiService.ts`:** Replace current `suggestPeople()` (client-side scoring) with call to suggest-people edge function
+- [x] **Collection "Find Similar":** Add button to CollectionDetail.tsx. Build query from collection description or top member bios. Show suggestions in slide-out panel with "Add to Collection" buttons.
 
 ---
 
@@ -382,6 +382,12 @@ No tests exist currently.
 
 - [ ] Extract UI strings to translation files
 - [ ] Language toggle in Navigation
+
+---
+
+## Notes
+
+- **suggest-people uses Flash instead of Pro:** The `suggest-people` edge function currently defaults to `gemini-3-flash-preview` for ranking because the API tier doesn't allow Gemini Pro. When upgrading, set `GEMINI_PRO_MODEL=gemini-2.5-pro-preview-05-06` in Supabase secrets (or update the default in `supabase/functions/suggest-people/index.ts`).
 
 ---
 

@@ -242,6 +242,54 @@ export async function flemishSearch(
   return result;
 }
 
+/** Fire-and-forget: trigger embedding generation for a person */
+export function generateEmbedding(personId: string): void {
+  supabase.functions.invoke('generate-embeddings', {
+    body: { personId },
+  }).catch(() => {/* fire-and-forget */});
+}
+
+export interface SuggestPeopleResult {
+  id: string;
+  name: string;
+  reason: string;
+  similarity: number;
+}
+
+/**
+ * Suggest people via server-side embedding search + Gemini Pro ranking.
+ * Falls back to client-side keyword scoring if the edge function is unavailable.
+ */
+export async function suggestPeopleEmbedding(
+  query: string,
+  options?: { collection_id?: string; exclude_ids?: string[]; max_results?: number }
+): Promise<SuggestPeopleResult[]> {
+  try {
+    const { data, error } = await supabase.functions.invoke('suggest-people', {
+      body: {
+        query,
+        collection_id: options?.collection_id,
+        exclude_ids: options?.exclude_ids,
+        max_results: options?.max_results || 15,
+      },
+    });
+
+    if (error) throw error;
+    if (!data?.suggestions) throw new Error('No suggestions returned');
+
+    return data.suggestions as SuggestPeopleResult[];
+  } catch {
+    // Fallback to client-side scoring
+    const fallback = await suggestPeople(query);
+    return fallback.map((item) => ({
+      id: item.person.id,
+      name: item.person.name,
+      reason: item.reason,
+      similarity: item.score,
+    }));
+  }
+}
+
 export async function suggestPeople(query: string): Promise<{ person: Person; reason: string; score: number }[]> {
   try {
     const res = await smartSearch(query);

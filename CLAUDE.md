@@ -201,6 +201,12 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - **`profile_suggestions.person_id` is NOT NULL:** The Discovery Agent design (Phase 3.1 in AI strategy) inserts discovered NEW contacts into `profile_suggestions` — but new contacts have no `people` row yet, so the FK constraint will reject the insert. Design blocker for discovery agent.
 - **`@types/leaflet` and `@types/leaflet.markercluster` in dependencies:** Should be in devDependencies in `package.json`.
 
+## Workflow Expectations
+- **Always deploy and verify changes end-to-end.** After writing code, run all necessary deployment steps yourself (push migrations with `supabase db push --linked`, deploy edge functions with `supabase functions deploy <name> --project-ref ofzuhajxwxggybkuzefq`, run `npm run typecheck`, `npm run build`, etc.). Do not leave deployment as instructions for the user.
+- **Smoke-test after deploying.** After deploying edge functions or migrations, make a quick curl/API call to verify things work. Fix issues immediately if they don't.
+- **Run the full loop:** code → typecheck → build → deploy → test. The user expects changes to be live and verified, not just written to disk.
+- **Provide manual testing steps for the UI.** After deploying, tell the user exactly how to verify the changes in the browser: which page to go to, which button to click, what they should see. Be specific (e.g., "Go to Admin → scroll to Embedding Search Index → click Generate Embeddings → you should see a progress bar fill up").
+
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.
 - Tailwind for all styling. No CSS files, no CSS-in-JS.

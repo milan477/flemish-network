@@ -26,6 +26,7 @@ import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTI
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
+import { generateEmbedding } from '../lib/aiService';
 
 interface PersonProfileProps {
   personId: string;
@@ -188,6 +189,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setSaveError(null);
 
     setPerson(updatedPerson as Person);
+    // Regenerate embedding after profile update
+    generateEmbedding(person.id);
+
     const currentIds = personSectors.map((s) => s.id);
     const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
     const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
