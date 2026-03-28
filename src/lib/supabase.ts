@@ -90,12 +90,6 @@ export interface Sector {
   created_at: string;
 }
 
-export interface ExpertiseTag {
-  id: string;
-  name: string;
-  created_at: string;
-}
-
 export interface Connection {
   id: string;
   from_person_id?: string;

@@ -124,7 +124,7 @@ Both functions reference columns that were dropped in the location refactor migr
 **Scope:** New `lib/exportService.ts`, DirectoryGrid.tsx, CollectionDetail.tsx, PersonProfile.tsx
 **Effort:** Medium (1-2 days)
 
-- [ ] **CSV export of filtered results:** "Export" button on DirectoryGrid header. Columns: Name, Position, Organization, Location, Sector(s), Flemish Connection, Email, Phone, LinkedIn
+- [ ] **CSV export of filtered results:** "Export" button on DirectoryGrid header. Columns: Title, First Name, Last Name, Position, Organization, About, City, State, Sector(s), Flemish Connections, Email, Phone, LinkedIn, website, X url
 - [ ] **Collection PDF briefing:** "Export Briefing" button on CollectionDetail. For each member: photo placeholder, name, title, position, location, bio, contact info, flemish connection. Use `window.print()` with print CSS or jsPDF.
 - [ ] **Print-friendly profiles:** Print stylesheet for PersonProfile.tsx (hide nav, sidebar, action buttons). "Print" button.
 

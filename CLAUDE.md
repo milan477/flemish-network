@@ -100,7 +100,6 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `flemish_link`, `created_at`, `updated_at` | No inline location columns. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude` | UNIQUE(city, state). Populated from us_cities.csv import. |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `expertise_tags` | `id`, `name` (unique) | Tags for specific skills |
 | `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair |
 
 ### Junction Tables
@@ -108,7 +107,6 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 |---|---|
 | `person_sectors` | `(person_id, sector_id)` PK |
 | `organization_sectors` | `(organization_id, sector_id)` PK |
-| `person_expertise` | `(person_id, expertise_id)` PK |
 
 ### Collections
 | Table | Key Columns |

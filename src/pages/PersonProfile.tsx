@@ -850,7 +850,7 @@ function ViewBody({
       )}
 
       <div className="mb-8 pb-8 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sectors & Expertise</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sectors</h2>
         {personSectors.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {personSectors.map((s) => {
