@@ -178,7 +178,7 @@ async function processOnePerson(
       return { personName: "Unknown", suggestionsCount: 0 };
     }
 
-    const searchQuery = `${p.name} ${p.current_position} ${p.location_city} flemish belgian`.trim();
+    const searchQuery = `${p.name} ${p.current_position} ${p.location_city}`.trim();
 
     let searchResults = "";
     if (tavilyKey) {

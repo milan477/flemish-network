@@ -484,7 +484,7 @@ When admin approves: INSERT into `people`, then DELETE from `discovered_contacts
 **Pipeline (using Option A) — dual-channel: web search + LinkedIn search:**
 
 **Channel 1: Web search (existing approach)**
-1. Call `searchWeb(query + " flemish belgian professional")` via shared module
+1. Call `searchWeb(query)` via shared module
 2. Feed results to Gemini Flash (reuse `search-contacts` extraction logic) to extract contacts
 
 **Channel 2: LinkedIn search via Apify (new)**

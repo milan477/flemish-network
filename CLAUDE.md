@@ -160,7 +160,7 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 
 ### Edge Function: `update-profile`
 1. Takes `{ personId }` or `{ personIds }` → fetches person from DB
-2. Searches Tavily for `"{name} {position} {city} flemish belgian"`
+2. Searches Tavily for `"{name} {position} {city}"`
 3. Calls `ai-agent` with `check_profile` task
 4. Inserts resulting suggestions into `profile_suggestions` table
 
