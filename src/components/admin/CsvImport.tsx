@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Upload,
   AlertCircle,
@@ -12,13 +12,19 @@ import {
   AlertTriangle,
   ChevronDown,
   Users,
+  Download,
+  RefreshCw,
+  Tags,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, US_STATES, type Sector } from '../../lib/supabase';
+import { generateEmbedding } from '../../lib/aiService';
 import {
   parseCSV,
+  parseExcel,
   suggestMappings,
   applyMappings,
   validateMappedRows,
+  downloadTemplate,
   PROFILE_FIELDS,
   FULL_NAME_FIELD,
   type FieldMapping,
@@ -26,7 +32,21 @@ import {
   type MappedRow,
 } from '../../lib/csvParser';
 
-type Step = 'upload' | 'map' | 'confirm' | 'done';
+type Step = 'upload' | 'map' | 'confirm' | 'importing' | 'done';
+type DupeAction = 'skip' | 'update' | 'create';
+
+// Build lookup: full state name → code (e.g. "california" → "CA")
+const STATE_NAME_TO_CODE = new Map<string, string>();
+for (const s of US_STATES) {
+  STATE_NAME_TO_CODE.set(s.name.toLowerCase(), s.code);
+  STATE_NAME_TO_CODE.set(s.code.toLowerCase(), s.code);
+}
+
+/** Normalize a state value (full name or code) to its 2-letter code. */
+function normalizeStateCode(raw: string): string {
+  const trimmed = raw.trim().toLowerCase();
+  return STATE_NAME_TO_CODE.get(trimmed) || raw.trim();
+}
 
 interface CsvImportProps {
   onContactAdded: () => void;
@@ -36,6 +56,15 @@ interface DupeInfo {
   rowIdx: number;
   existingName: string;
   existingId: string;
+}
+
+interface ImportSummary {
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: { row: number; name: string; reason: string }[];
+  personIds: string[];
 }
 
 function confidenceLabel(score: number): {
@@ -100,12 +129,27 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
     { row: MappedRow; reason: string }[]
   >([]);
   const [dupes, setDupes] = useState<DupeInfo[]>([]);
-  const [importing, setImporting] = useState(false);
+  const [dupeAction, setDupeAction] = useState<DupeAction>('skip');
   const [checkingDupes, setCheckingDupes] = useState(false);
-  const [importResult, setImportResult] = useState('');
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Import progress state
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+
+  // Sector assignment state
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
+  const [assigningSectors, setAssigningSectors] = useState(false);
+  const [sectorsAssigned, setSectorsAssigned] = useState(false);
+
+  useEffect(() => {
+    supabase.from('sectors').select('*').then(({ data }) => {
+      setSectors((data || []) as Sector[]);
+    });
+  }, []);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -113,32 +157,57 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
     setFileName(file.name);
     setError('');
-    setImportResult('');
+    setImportSummary(null);
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      if (!text) {
-        setError('Could not read file');
-        return;
-      }
+    const isExcel = /\.xlsx?$/i.test(file.name);
 
-      const result = parseCSV(text);
-      if (result.headers.length === 0) {
-        setError('No headers found in the file');
-        return;
-      }
-      if (result.rows.length === 0) {
-        setError('File has headers but no data rows');
-        return;
-      }
-
-      setParsed(result);
-      const suggested = suggestMappings(result.headers);
-      setMappings(suggested);
-      setStep('map');
-    };
-    reader.readAsText(file);
+    if (isExcel) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const buffer = ev.target?.result as ArrayBuffer;
+        if (!buffer) {
+          setError('Could not read file');
+          return;
+        }
+        const result = parseExcel(buffer);
+        if (result.headers.length === 0) {
+          setError('No headers found in the file');
+          return;
+        }
+        if (result.rows.length === 0) {
+          setError('File has headers but no data rows');
+          return;
+        }
+        setParsed(result);
+        const suggested = suggestMappings(result.headers);
+        setMappings(suggested);
+        setStep('map');
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        if (!text) {
+          setError('Could not read file');
+          return;
+        }
+        const result = parseCSV(text);
+        if (result.headers.length === 0) {
+          setError('No headers found in the file');
+          return;
+        }
+        if (result.rows.length === 0) {
+          setError('File has headers but no data rows');
+          return;
+        }
+        setParsed(result);
+        const suggested = suggestMappings(result.headers);
+        setMappings(suggested);
+        setStep('map');
+      };
+      reader.readAsText(file);
+    }
   };
 
   const updateMapping = (fieldKey: string, csvColumn: string) => {
@@ -167,27 +236,113 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
   };
 
   const handleImport = async () => {
-    setImporting(true);
-    let added = 0;
-    let failed = 0;
+    setStep('importing');
+    const summary: ImportSummary = { created: 0, updated: 0, skipped: 0, failed: 0, errors: [], personIds: [] };
     const dupeIdxSet = new Set(dupes.map((d) => d.rowIdx));
+    const dupeMap = new Map(dupes.map((d) => [d.rowIdx, d]));
 
-    const { data: allLocations } = await supabase.from('locations').select('id, city, state');
-    const locMap = new Map<string, string>();
-    (allLocations || []).forEach(l => locMap.set(`${l.city.toLowerCase()}|${l.state.toLowerCase()}`, l.id));
+    // Local cache for resolved locations (avoids repeated DB queries for same city/state)
+    const locCache = new Map<string, string>();
+
+    // Resolve a city+state pair to a location_id, querying DB with case-insensitive match
+    async function resolveLocationId(rawCity: string, rawState: string): Promise<string | null> {
+      const city = rawCity.trim();
+      const stateCode = normalizeStateCode(rawState);
+      if (!city || !stateCode) return null;
+
+      const cacheKey = `${city.toLowerCase()}|${stateCode.toLowerCase()}`;
+      if (locCache.has(cacheKey)) return locCache.get(cacheKey)!;
+
+      // Query DB case-insensitively
+      const { data: existing } = await supabase
+        .from('locations')
+        .select('id')
+        .ilike('city', city)
+        .eq('state', stateCode)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        locCache.set(cacheKey, existing.id);
+        return existing.id;
+      }
+
+      // Not found — create it
+      const { data: created } = await supabase
+        .from('locations')
+        .insert({ city, state: stateCode })
+        .select('id')
+        .maybeSingle();
+
+      if (created) {
+        locCache.set(cacheKey, created.id);
+        return created.id;
+      }
+
+      return null;
+    }
+
+    const total = validRows.length;
+    setImportProgress({ current: 0, total });
 
     for (let i = 0; i < validRows.length; i++) {
-      if (dupeIdxSet.has(i)) continue;
       const row = validRows[i];
+      const isDupe = dupeIdxSet.has(i);
       const first = (row.first_name || '').trim();
       const last = (row.last_name || '').trim();
       const fullName = [row.title, first, last].filter(Boolean).join(' ');
 
-      const city = (row.location_city || '').trim().toLowerCase();
-      const state = (row.location_state || '').trim().toLowerCase();
-      const locationId = locMap.get(`${city}|${state}`);
+      // Handle duplicates based on user choice
+      if (isDupe) {
+        if (dupeAction === 'skip') {
+          summary.skipped++;
+          setImportProgress({ current: i + 1, total });
+          continue;
+        }
 
-      const { data: person } = await supabase
+        if (dupeAction === 'update') {
+          const dupe = dupeMap.get(i)!;
+          const locationId = await resolveLocationId(row.location_city || '', row.location_state || '');
+
+          const updateFields: Record<string, string | null> = {};
+          if (row.title) updateFields.title = row.title;
+          if (row.current_position) updateFields.current_position = row.current_position;
+          if (row.occupation) updateFields.occupation = row.occupation;
+          if (row.bio) updateFields.bio = row.bio;
+          if (row.flemish_connection) updateFields.flemish_connection = row.flemish_connection;
+          if (row.email) updateFields.email = row.email;
+          if (row.phone) updateFields.phone = row.phone;
+          if (row.linkedin_url) updateFields.linkedin_url = row.linkedin_url;
+          if (row.website_url) updateFields.website_url = row.website_url;
+          if (locationId) updateFields.location_id = locationId;
+
+          if (Object.keys(updateFields).length > 0) {
+            const { error: updateErr } = await supabase
+              .from('people')
+              .update(updateFields)
+              .eq('id', dupe.existingId);
+
+            if (updateErr) {
+              summary.failed++;
+              summary.errors.push({ row: i + 1, name: fullName, reason: updateErr.message });
+            } else {
+              summary.updated++;
+              summary.personIds.push(dupe.existingId);
+            }
+          } else {
+            summary.skipped++;
+          }
+
+          setImportProgress({ current: i + 1, total });
+          continue;
+        }
+        // dupeAction === 'create' falls through to normal insert below
+      }
+
+      // Resolve location_id (normalizes state names to codes, case-insensitive city match)
+      const locationId = await resolveLocationId(row.location_city || '', row.location_state || '');
+
+      const { data: person, error: insertErr } = await supabase
         .from('people')
         .insert({
           name: fullName,
@@ -209,20 +364,45 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         .maybeSingle();
 
       if (person) {
-        added++;
+        summary.created++;
+        summary.personIds.push(person.id);
       } else {
-        failed++;
+        summary.failed++;
+        summary.errors.push({
+          row: i + 1,
+          name: fullName,
+          reason: insertErr?.message || 'Unknown error',
+        });
       }
+
+      setImportProgress({ current: i + 1, total });
     }
 
-    setImporting(false);
-    const skipped = dupes.length;
-    let msg = `Imported ${added} contact${added !== 1 ? 's' : ''}`;
-    if (skipped > 0) msg += `, ${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped`;
-    if (failed > 0) msg += `, ${failed} failed`;
-    setImportResult(msg);
+    // Auto-trigger embedding generation for all imported/updated contacts
+    for (const pid of summary.personIds) {
+      generateEmbedding(pid);
+    }
+
+    setImportSummary(summary);
     onContactAdded();
     setStep('done');
+  };
+
+  const handleBulkSectorAssign = async () => {
+    if (!importSummary || selectedSectorIds.length === 0) return;
+    setAssigningSectors(true);
+
+    const rows = importSummary.personIds.flatMap((pid) =>
+      selectedSectorIds.map((sid) => ({ person_id: pid, sector_id: sid }))
+    );
+
+    // Insert in batches of 200 to avoid payload limits
+    for (let i = 0; i < rows.length; i += 200) {
+      await supabase.from('person_sectors').upsert(rows.slice(i, i + 200), { onConflict: 'person_id,sector_id' });
+    }
+
+    setAssigningSectors(false);
+    setSectorsAssigned(true);
   };
 
   const handleReset = () => {
@@ -232,9 +412,13 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
     setValidRows([]);
     setInvalidRows([]);
     setDupes([]);
+    setDupeAction('skip');
     setError('');
-    setImportResult('');
+    setImportSummary(null);
+    setImportProgress({ current: 0, total: 0 });
     setFileName('');
+    setSelectedSectorIds([]);
+    setSectorsAssigned(false);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -247,6 +431,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
   const dupeIdxSet = new Set(dupes.map((d) => d.rowIdx));
   const nonDupeCount = validRows.filter((_, i) => !dupeIdxSet.has(i)).length;
+  const importCount = dupeAction === 'skip' ? nonDupeCount : validRows.length;
 
   return (
     <div className="space-y-5">
@@ -258,31 +443,44 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           >
             <Upload className="w-9 h-9 text-yellow-300 group-hover:text-yellow-500 mx-auto mb-3 transition-colors" />
             <p className="text-sm font-medium text-gray-700 mb-1">
-              Click to upload a CSV file
+              Click to upload a file
             </p>
             <p className="text-xs text-gray-400 leading-relaxed max-w-md mx-auto">
-              Upload any CSV and we will guide you through mapping columns to
-              contact fields. Supports first name, last name, title, positions,
-              locations, emails, phone numbers, and more.
+              Accepted formats: <span className="font-medium text-gray-500">.csv</span>, <span className="font-medium text-gray-500">.xlsx</span>, <span className="font-medium text-gray-500">.xls</span>, <span className="font-medium text-gray-500">.tsv</span>, <span className="font-medium text-gray-500">.txt</span>
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              We'll guide you through mapping columns to contact fields.
             </p>
           </div>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.txt,.tsv"
+            accept=".csv,.txt,.tsv,.xlsx,.xls"
             onChange={handleFile}
             className="hidden"
           />
+
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={() => downloadTemplate('csv')}
+              className="flex items-center gap-1.5 text-xs text-yellow-700 hover:text-yellow-800 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download CSV template
+            </button>
+            <button
+              onClick={() => downloadTemplate('xlsx')}
+              className="flex items-center gap-1.5 text-xs text-yellow-700 hover:text-yellow-800 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download Excel template
+            </button>
+          </div>
+
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-600 mt-3">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
-            </div>
-          )}
-          {importResult && (
-            <div className="flex items-center gap-2 text-sm text-green-600 mt-3">
-              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-              <span>{importResult}</span>
             </div>
           )}
         </div>
@@ -435,7 +633,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                   Confirm Import
                 </p>
                 <p className="text-xs text-gray-500">
-                  {nonDupeCount} to import, {dupes.length} duplicate{dupes.length !== 1 ? 's' : ''}, {invalidRows.length} skipped
+                  {nonDupeCount} new, {dupes.length} duplicate{dupes.length !== 1 ? 's' : ''}, {invalidRows.length} invalid
                 </p>
               </div>
             </div>
@@ -455,13 +653,14 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           )}
 
           {dupes.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2 mb-1.5">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 space-y-3">
+              <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-amber-600" />
                 <p className="text-xs font-medium text-amber-700">
-                  {dupes.length} duplicate{dupes.length !== 1 ? 's' : ''} found -- these will be skipped:
+                  {dupes.length} duplicate{dupes.length !== 1 ? 's' : ''} found
                 </p>
               </div>
+
               <div className="space-y-0.5 max-h-20 overflow-y-auto">
                 {dupes.map((d, i) => {
                   const row = validRows[d.rowIdx];
@@ -471,6 +670,30 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                     </p>
                   );
                 })}
+              </div>
+
+              <div>
+                <p className="text-[10px] uppercase tracking-wider font-semibold text-amber-700 mb-1.5">How to handle duplicates:</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: 'skip' as DupeAction, label: 'Skip duplicates', desc: 'Don\'t import matching rows' },
+                    { value: 'update' as DupeAction, label: 'Update existing', desc: 'Overwrite with new data' },
+                    { value: 'create' as DupeAction, label: 'Create anyway', desc: 'Import as new contacts' },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setDupeAction(opt.value)}
+                      className={`text-left px-3 py-2 rounded-lg border text-xs transition-all ${
+                        dupeAction === opt.value
+                          ? 'border-amber-400 bg-amber-100 text-amber-800'
+                          : 'border-amber-200 bg-white text-amber-600 hover:bg-amber-50'
+                      }`}
+                    >
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="block text-[10px] opacity-70 mt-0.5">{opt.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -491,102 +714,99 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             </div>
           )}
 
-          {validRows.length > 0 && (
-            <div className="border border-yellow-200 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-yellow-50 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-yellow-700 font-medium">
-                      Title
-                    </th>
-                    <th className="px-3 py-2 text-left text-yellow-700 font-medium">
-                      First Name
-                    </th>
-                    <th className="px-3 py-2 text-left text-yellow-700 font-medium">
-                      Last Name
-                    </th>
-                    <th className="px-3 py-2 text-left text-yellow-700 font-medium">
-                      Position
-                    </th>
-                    <th className="px-3 py-2 text-left text-yellow-700 font-medium">
-                      Email
-                    </th>
-                    <th className="px-3 py-2 w-16 text-center text-yellow-700 font-medium">
-                      Status
-                    </th>
-                    <th className="px-3 py-2 w-8" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-yellow-100">
-                  {validRows.map((row, i) => {
-                    const isDupe = dupeIdxSet.has(i);
-                    return (
-                      <tr
-                        key={i}
-                        className={isDupe ? 'bg-amber-50/50 opacity-60' : 'hover:bg-yellow-50/30'}
-                      >
-                        <td className="px-3 py-2 text-gray-500">
-                          {row.title || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-900 font-medium">
-                          {row.first_name}
-                        </td>
-                        <td className="px-3 py-2 text-gray-900">
-                          {row.last_name || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-600">
-                          {row.current_position || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-600">
-                          {row.email || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          {isDupe ? (
-                            <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                              Dupe
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                              New
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2">
-                          {!isDupe && (
-                            <button
-                              onClick={() =>
-                                setValidRows((prev) =>
-                                  prev.filter((_, idx) => idx !== i)
-                                )
-                              }
-                              className="p-1 text-gray-300 hover:text-red-500 transition-colors"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {validRows.length > 0 && (() => {
+            // Build column list from mapped fields that have data
+            const mappedFields = mappings
+              .filter((m) => m.csvColumn && m.fieldKey !== '_full_name')
+              .map((m) => {
+                const field = PROFILE_FIELDS.find((f) => f.key === m.fieldKey);
+                return field ? { key: field.key, label: field.label } : null;
+              })
+              .filter(Boolean) as { key: string; label: string }[];
+
+            // Always include first_name/last_name if full_name was mapped (they get split)
+            const keys = new Set(mappedFields.map((f) => f.key));
+            if (!keys.has('first_name')) {
+              mappedFields.unshift({ key: 'first_name', label: 'First Name' });
+            }
+            if (!keys.has('last_name') && validRows.some((r) => r.last_name)) {
+              const fnIdx = mappedFields.findIndex((f) => f.key === 'first_name');
+              mappedFields.splice(fnIdx + 1, 0, { key: 'last_name', label: 'Last Name' });
+            }
+
+            return (
+              <div className="border border-yellow-200 rounded-lg max-h-64 overflow-x-auto overflow-y-auto">
+                <table className="text-xs w-max min-w-full">
+                  <thead className="bg-yellow-50 sticky top-0 z-10">
+                    <tr>
+                      {mappedFields.map((f) => (
+                        <th key={f.key} className="px-3 py-2 text-left text-yellow-700 font-medium whitespace-nowrap">
+                          {f.label}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 w-16 text-center text-yellow-700 font-medium sticky right-0 bg-yellow-50">
+                        Status
+                      </th>
+                      <th className="px-3 py-2 w-8 sticky right-0 bg-yellow-50" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-yellow-100">
+                    {validRows.map((row, i) => {
+                      const isDupe = dupeIdxSet.has(i);
+                      return (
+                        <tr
+                          key={i}
+                          className={isDupe ? 'bg-amber-50/50 opacity-60' : 'hover:bg-yellow-50/30'}
+                        >
+                          {mappedFields.map((f) => (
+                            <td key={f.key} className="px-3 py-2 text-gray-600 whitespace-nowrap max-w-[200px] truncate">
+                              {row[f.key] || '-'}
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 text-center sticky right-8 bg-white">
+                            {isDupe ? (
+                              <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                                {dupeAction === 'skip' ? 'Skip' : dupeAction === 'update' ? 'Update' : 'New'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                New
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 sticky right-0 bg-white">
+                            {!isDupe && (
+                              <button
+                                onClick={() =>
+                                  setValidRows((prev) =>
+                                    prev.filter((_, idx) => idx !== i)
+                                  )
+                                }
+                                className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
 
           <div className="flex items-center gap-3">
             <button
               onClick={handleImport}
-              disabled={importing || nonDupeCount === 0}
+              disabled={importCount === 0}
               className="flex items-center gap-2 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
             >
-              {importing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
+              <Upload className="w-4 h-4" />
               <span>
-                Import {nonDupeCount} Contact
-                {nonDupeCount !== 1 ? 's' : ''}
+                Import {importCount} Contact
+                {importCount !== 1 ? 's' : ''}
               </span>
             </button>
             <button
@@ -599,20 +819,155 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         </div>
       )}
 
-      {step === 'done' && (
-        <div className="text-center py-8">
-          <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <CheckCircle2 className="w-6 h-6 text-yellow-600" />
+      {step === 'importing' && (
+        <div className="py-8 space-y-4">
+          <div className="flex items-center justify-center gap-2 text-sm text-yellow-700">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span>Importing contacts... {importProgress.current} / {importProgress.total}</span>
           </div>
-          <p className="text-sm font-semibold text-gray-900 mb-1">
-            {importResult}
+          <div className="w-full bg-yellow-100 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="bg-yellow-500 h-2.5 rounded-full transition-all duration-300"
+              style={{ width: importProgress.total > 0 ? `${(importProgress.current / importProgress.total) * 100}%` : '0%' }}
+            />
+          </div>
+          <p className="text-[11px] text-gray-400 text-center">
+            {importProgress.total > 0
+              ? `${Math.round((importProgress.current / importProgress.total) * 100)}% complete`
+              : 'Starting...'}
           </p>
-          <button
-            onClick={handleReset}
-            className="mt-3 text-sm text-yellow-600 hover:text-yellow-700 font-medium transition-colors"
-          >
-            Import another file
-          </button>
+        </div>
+      )}
+
+      {step === 'done' && importSummary && (
+        <div className="space-y-5">
+          <div className="text-center py-4">
+            <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-6 h-6 text-yellow-600" />
+            </div>
+            <p className="text-sm font-semibold text-gray-900 mb-3">
+              Import Complete
+            </p>
+
+            {/* Summary grid */}
+            <div className="grid grid-cols-4 gap-3 max-w-md mx-auto mb-4">
+              {importSummary.created > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  <p className="text-lg font-bold text-green-700">{importSummary.created}</p>
+                  <p className="text-[10px] text-green-600 font-medium">Created</p>
+                </div>
+              )}
+              {importSummary.updated > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  <p className="text-lg font-bold text-blue-700">{importSummary.updated}</p>
+                  <p className="text-[10px] text-blue-600 font-medium">Updated</p>
+                </div>
+              )}
+              {importSummary.skipped > 0 && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <p className="text-lg font-bold text-gray-500">{importSummary.skipped}</p>
+                  <p className="text-[10px] text-gray-500 font-medium">Skipped</p>
+                </div>
+              )}
+              {importSummary.failed > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <p className="text-lg font-bold text-red-700">{importSummary.failed}</p>
+                  <p className="text-[10px] text-red-600 font-medium">Failed</p>
+                </div>
+              )}
+            </div>
+
+            {importSummary.personIds.length > 0 && (
+              <p className="text-[11px] text-gray-400 flex items-center justify-center gap-1">
+                <RefreshCw className="w-3 h-3" />
+                Embeddings are being generated in the background
+              </p>
+            )}
+          </div>
+
+          {/* Error details */}
+          {importSummary.errors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <p className="text-xs font-medium text-red-700 mb-1.5">
+                Failed rows:
+              </p>
+              <div className="space-y-0.5 max-h-24 overflow-y-auto">
+                {importSummary.errors.map((err, i) => (
+                  <p key={i} className="text-[11px] text-red-600">
+                    Row {err.row} ({err.name}): {err.reason}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bulk sector assignment */}
+          {importSummary.personIds.length > 0 && sectors.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Tags className="w-4 h-4 text-gray-500" />
+                <p className="text-xs font-semibold text-gray-700">
+                  Assign sectors to {importSummary.personIds.length} imported contact{importSummary.personIds.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              {!sectorsAssigned ? (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sectors.map((s) => {
+                      const selected = selectedSectorIds.includes(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() =>
+                            setSelectedSectorIds((prev) =>
+                              selected ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                            )
+                          }
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                            selected
+                              ? 'bg-yellow-100 border-yellow-400 text-yellow-800 font-medium'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedSectorIds.length > 0 && (
+                    <button
+                      onClick={handleBulkSectorAssign}
+                      disabled={assigningSectors}
+                      className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {assigningSectors ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Tags className="w-3.5 h-3.5" />
+                      )}
+                      Assign {selectedSectorIds.length} sector{selectedSectorIds.length !== 1 ? 's' : ''} to all
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-green-600">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Sectors assigned successfully</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="text-center">
+            <button
+              onClick={handleReset}
+              className="text-sm text-yellow-600 hover:text-yellow-700 font-medium transition-colors"
+            >
+              Import another file
+            </button>
+          </div>
         </div>
       )}
     </div>

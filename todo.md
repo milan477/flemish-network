@@ -145,15 +145,17 @@ Currently `profile_photo_url` is a text field with no automatic population.
 
 Current CSV import works but needs improvements for bulk population.
 
-- [ ] **CSV import improvements:**
+- [x] **CSV import improvements:**
   - Progress bar during import (currently no feedback)
   - Better error reporting (show which rows failed and why)
   - Post-import summary: created, updated, skipped, errors
   - Auto-trigger embedding generation after import completes
-  - Auto-link imported people to locations table (match city+state → location_id)
-- [ ] **Bulk sector assignment:** After import, allow selecting imported people and assigning sectors in bulk
-- [ ] **Excel support:** Accept .xlsx files in addition to .csv (use SheetJS/xlsx library)
-- [ ] **Template download:** "Download template" button with expected columns and example data
+  - Auto-link imported people to locations table (match city+state → location_id, auto-creates missing locations)
+- [x] **Bulk sector assignment:** After import, allow selecting imported people and assigning sectors in bulk
+- [x] **Excel support:** Accept .xlsx files in addition to .csv (use SheetJS/xlsx library)
+- [x] **Template download:** "Download template" button with expected columns and example data (CSV + Excel)
+- [x] **Duplicate handling:** Option to skip duplicates, update existing, or create new.
+- [x] **Show the accepted formats** Upload area shows .csv, .xlsx, .xls, .tsv, .txt as accepted formats.
 
 ---
 
