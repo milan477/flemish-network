@@ -4,6 +4,9 @@
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
 ## Recent Notes (2026-03-28)
+- `supabase/functions/agent-discovery/index.ts` now supports two operating modes: a blank-query seeded sweep that rotates through predefined Flemish institution/company/fellowship searches, and a custom-query mode that expands one query into several discovery variants. The function now executes up to 3 web searches and 2 LinkedIn searches per run as originally intended.
+- Discovery dedup is stronger now: cross-channel candidates merge on normalized LinkedIn/email/website/name signals before insert, and DB dedup checks `people` and `discovered_contacts` by normalized name, email, LinkedIn URL, and website URL instead of relying on a case-sensitive name lookup.
+- Discovery now reports Gemini extraction failures explicitly in `errors`/`steps` and stops burning web-search budget when the current Gemini quota is exhausted, instead of quietly returning zero contacts.
 - `supabase/functions/agent-verify/index.ts` now exists. It verifies stale profiles in a LinkedIn-first flow: Apify scrape when `linkedin_url` is present, deterministic field diffing for position/location/bio/photo, then web search + the same Gemini `check_profile` schema locally when LinkedIn is unavailable or missing. The operational default is a 5-profile batch to stay inside the edge timeout.
 - Verification can create advisory `profile_suggestions` rows with `field_name = '_status'` and `suggested_value = 'may_have_left_us'` when LinkedIn indicates the person is no longer US-based. These are review-only flags; approving them should not try to write an unknown column onto `people`.
 - LinkedIn verification also suggests `profile_photo_url` when the profile has no stored photo and Apify returns one.
@@ -13,7 +16,7 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)
 - **Map:** Leaflet + react-leaflet + react-leaflet-cluster (marker clustering)
 - **AI:** Google Gemini (`gemini-3-flash-preview`, hardcoded in edge functions)
-- **Web Search:** Tavily API (free tier, 1000 calls/mo). Brave Search API key configured but not yet integrated.
+- **Web Search:** Tavily API (free tier, 1000 calls/mo) with Brave Search fallback via the shared web search module.
 - **Geocoding:** Nominatim / OpenStreetMap (cached in `locations` table via `geocode` edge function)
 - **No router library** — routing is manual via `useState<Page>` in `App.tsx`
 
@@ -164,6 +167,13 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 3. Calls `ai-agent` with `check_profile` task
 4. Inserts resulting suggestions into `profile_suggestions` table
 
+### Edge Function: `agent-discovery`
+1. Takes optional `{ query, run_id, max_results }`
+2. If `query` is blank, runs a seeded sweep that rotates through predefined Flemish university/company/fellowship searches; if `query` is present, expands it into several focused discovery variants
+3. Executes up to 3 web searches through the shared Tavily/Brave module and up to 2 LinkedIn searches through Apify
+4. Uses Gemini structured extraction for web results, deterministic mapping for LinkedIn results, merges overlapping candidates across channels, then dedups against both `people` and `discovered_contacts`
+5. Inserts pending candidates into `discovered_contacts` for admin review and writes full run telemetry into `agent_runs.results`
+
 ### Edge Function: `geocode`
 1. Takes `{ pairs: [{ city, state }] }` (max 25)
 2. Checks `locations` table cache first
@@ -184,11 +194,7 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - `suggest-people` edge function (planned)
 - pgvector / `people.embedding` column (planned)
 - `match_people` SQL function (planned)
-- `agent_runs`, `api_quotas`, `web_search_cache` tables (planned)
-- Agent scheduler / orchestrator (planned)
-- Discovery, verification, connection agents (planned)
-- Apify integration for LinkedIn scraping (API key in `.env`, no code yet) — planned for Discovery Agent (LinkedIn people search) and Verification Agent (LinkedIn profile scrape + photo extraction)
-- Brave Search integration (API key configured but no code uses it)
+- Connection agent (planned)
 - Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used, model is hardcoded
 
 ### Known Bugs
@@ -237,9 +243,9 @@ Frontend (in `.env`):
 Edge functions (set in Supabase dashboard):
 - `GEMINI_API_KEY` (required for all AI features)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
-- `TAVILY_API_KEY` (required for web search in search-contacts and update-profile)
-- `BRAVE_API_KEY` (configured but not yet used in code)
-- `APIFY_TOKEN` (configured in `.env`, not yet used in code — planned for LinkedIn scraping in Discovery/Verification agents, $5/mo free tier)
+- `TAVILY_API_KEY` (primary web search provider for search-contacts, update-profile, and agent-discovery)
+- `BRAVE_API_KEY` (optional fallback provider used by the shared web search module)
+- `APIFY_TOKEN` (used by discovery and verification agents for LinkedIn search/scrape)
 
 ## Deploying Edge Functions
 ```bash

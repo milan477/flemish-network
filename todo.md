@@ -182,6 +182,7 @@ Current CSV import works but needs improvements for bulk population.
 - [x] `supabase/functions/agent-discovery/index.ts` — dual-channel discovery: web search (Tavily/Brave) + LinkedIn search (Apify `harvestapi/linkedin-profile-search`). Gemini extraction for web results, structured mapping for LinkedIn results. Dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
 - [x] 8 predefined web search queries + 7 LinkedIn-specific queries (university/company filters via Apify)
 - [x] Max 3 web searches + 2 LinkedIn searches per invocation (cost control). Graceful fallback if Apify credits exhausted.
+- [x] Discovery sweep behavior fixed: blank-query runs now execute the predefined search set, custom queries expand into multiple focused variants, and dedup now checks normalized name/email/LinkedIn/website signals before insert.
 
 ### 9. Verification Agent
 **Scope:** New edge function

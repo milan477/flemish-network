@@ -34,6 +34,21 @@ const PREDEFINED_WEB_QUERIES = [
   "imec alumni working in the United States",
 ];
 
+const PREDEFINED_WEB_QUERY_GROUPS = [
+  ["BAEF fellowship alumni currently in the United States"],
+  [
+    "KU Leuven alumni working in the United States",
+    "UGent alumni professionals in the United States",
+    "VUB alumni in the United States",
+    "UAntwerp alumni working in the United States",
+  ],
+  [
+    "Flemish entrepreneurs in US technology sector",
+    "Belgian researchers at American universities",
+    "imec alumni working in the United States",
+  ],
+];
+
 const PREDEFINED_LINKEDIN_QUERIES = [
   { keywords: "KU Leuven", type: "school" },
   { keywords: "UGent OR Ghent University", type: "school" },
@@ -42,6 +57,20 @@ const PREDEFINED_LINKEDIN_QUERIES = [
   { keywords: "Barco", type: "company" },
   { keywords: "Umicore", type: "company" },
   { keywords: "BAEF fellow", type: "keyword" },
+];
+
+const PREDEFINED_LINKEDIN_QUERY_GROUPS = [
+  [
+    { keywords: "KU Leuven", type: "school" },
+    { keywords: "UGent OR Ghent University", type: "school" },
+    { keywords: "VUB OR Vrije Universiteit Brussel", type: "school" },
+  ],
+  [
+    { keywords: "imec", type: "company" },
+    { keywords: "Barco", type: "company" },
+    { keywords: "Umicore", type: "company" },
+    { keywords: "BAEF fellow", type: "keyword" },
+  ],
 ];
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -86,6 +115,24 @@ interface StepLog {
   detail: Record<string, unknown>;
 }
 
+interface LinkedInSearchPlan {
+  keywords: string;
+  type: string;
+}
+
+interface DiscoveryPlan {
+  mode: "seeded_sweep" | "custom_query";
+  input_query: string | null;
+  web_queries: string[];
+  linkedin_queries: LinkedInSearchPlan[];
+}
+
+interface WebExtractionResult {
+  contacts: ExtractedContact[];
+  error?: string;
+  quotaExceeded?: boolean;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function safeStr(val: unknown): string {
@@ -93,8 +140,127 @@ function safeStr(val: unknown): string {
   return String(val);
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeName(name: string): string {
+  return normalizeWhitespace(safeStr(name).toLowerCase());
+}
+
+function normalizeEmail(email: string): string {
+  return normalizeWhitespace(safeStr(email).toLowerCase());
+}
+
 function normalizeLinkedInUrl(url: string): string {
-  return safeStr(url).replace(/\/+$/, "").toLowerCase();
+  return normalizeWhitespace(safeStr(url)).replace(/\/+$/, "").toLowerCase();
+}
+
+function normalizeWebsiteUrl(url: string): string {
+  const normalized = normalizeWhitespace(safeStr(url)).replace(/\/+$/, "").toLowerCase();
+  return normalized.replace(/^https?:\/\/(www\.)?/, "");
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const trimmed = normalizeWhitespace(value);
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+
+  return result;
+}
+
+function escapeOrValue(value: string): string {
+  return value.replace(/,/g, " ").replace(/[()]/g, " ").trim();
+}
+
+function hashSeed(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function selectRotatingItems<T>(items: T[], count: number, seed: string): T[] {
+  if (items.length <= count) return [...items];
+
+  const result: T[] = [];
+  const start = hashSeed(seed) % items.length;
+  for (let i = 0; i < Math.min(count, items.length); i++) {
+    result.push(items[(start + i) % items.length]);
+  }
+  return result;
+}
+
+function selectFromGroups<T>(groups: T[][], seed: string): T[] {
+  return groups
+    .map((group, index) => selectRotatingItems(group, 1, `${seed}:${index}`)[0])
+    .filter((item): item is T => item !== undefined);
+}
+
+function enrichWebQuery(query: string): string {
+  const base = normalizeWhitespace(query);
+  const lower = base.toLowerCase();
+  const suffixTerms = [
+    "flemish",
+    "belgian",
+    "united states",
+  ].filter((term) => !lower.includes(term));
+
+  return suffixTerms.length > 0
+    ? `${base} ${suffixTerms.join(" ")}`
+    : base;
+}
+
+function buildDiscoveryPlan(
+  query: string,
+  runId?: string
+): DiscoveryPlan {
+  const trimmedQuery = normalizeWhitespace(query);
+
+  if (trimmedQuery) {
+    const webQueries = uniqueStrings([
+      enrichWebQuery(trimmedQuery),
+      enrichWebQuery(`${trimmedQuery} alumni researcher entrepreneur executive`),
+      enrichWebQuery(`${trimmedQuery} KU Leuven UGent VUB UAntwerp imec BAEF`),
+    ]).slice(0, MAX_WEB_SEARCHES);
+
+    const linkedinQueries = uniqueStrings([
+      trimmedQuery,
+      `${trimmedQuery} Belgium OR Flanders`,
+      `${trimmedQuery} KU Leuven OR UGent OR VUB OR UAntwerp OR imec`,
+    ]).slice(0, MAX_LINKEDIN_SEARCHES).map((keywords) => ({
+      keywords,
+      type: "keyword",
+    }));
+
+    return {
+      mode: "custom_query",
+      input_query: trimmedQuery,
+      web_queries: webQueries,
+      linkedin_queries: linkedinQueries,
+    };
+  }
+
+  const seed = runId || new Date().toISOString().slice(0, 13);
+  return {
+    mode: "seeded_sweep",
+    input_query: null,
+    web_queries: uniqueStrings(
+      selectFromGroups(PREDEFINED_WEB_QUERY_GROUPS, `web:${seed}`).map(enrichWebQuery)
+    ).slice(0, MAX_WEB_SEARCHES),
+    linkedin_queries: selectFromGroups(
+      PREDEFINED_LINKEDIN_QUERY_GROUPS,
+      `linkedin:${seed}`
+    ).slice(0, MAX_LINKEDIN_SEARCHES),
+  };
 }
 
 // Parse US city/state from a location string like "San Francisco, California"
@@ -146,6 +312,143 @@ function isLikelyUS(contact: ExtractedContact): boolean {
 
   // No location info or unrecognized state — let it through
   return true;
+}
+
+function contactScore(contact: ExtractedContact): number {
+  let score = 0;
+  if (normalizeLinkedInUrl(contact.linkedin_url)) score += 5;
+  if (normalizeEmail(contact.email)) score += 4;
+  if (normalizeWebsiteUrl(contact.website_url)) score += 3;
+  if (contact.flemish_connection) score += 3;
+  if (contact.current_position) score += 2;
+  if (contact.bio) score += Math.min(contact.bio.length / 120, 3);
+  if (contact.location_state) score += 1;
+  if (contact.sectors.length > 0) score += 1;
+  if (contact.source_urls.length > 0) score += 1;
+  return score;
+}
+
+function pickBetterValue(primary: string, secondary: string): string {
+  const a = normalizeWhitespace(primary);
+  const b = normalizeWhitespace(secondary);
+  if (!a) return b;
+  if (!b) return a;
+  return b.length > a.length ? b : a;
+}
+
+function mergeContacts(
+  existing: ExtractedContact,
+  incoming: ExtractedContact
+): ExtractedContact {
+  const preferIncoming = contactScore(incoming) > contactScore(existing);
+  const base = preferIncoming ? incoming : existing;
+  const other = preferIncoming ? existing : incoming;
+
+  const baseCity = normalizeWhitespace(base.location_city);
+  const baseState = normalizeWhitespace(base.location_state);
+  const otherCity = normalizeWhitespace(other.location_city);
+  const otherState = normalizeWhitespace(other.location_state);
+  const useOtherLocation =
+    (!baseState && otherState) ||
+    (!baseCity && otherCity) ||
+    (!baseCity && !baseState && (otherCity || otherState));
+
+  return {
+    name: pickBetterValue(base.name, other.name),
+    bio: pickBetterValue(base.bio, other.bio).slice(0, 500),
+    occupation: pickBetterValue(base.occupation, other.occupation),
+    current_position: pickBetterValue(base.current_position, other.current_position),
+    location_city: useOtherLocation ? otherCity : baseCity,
+    location_state: useOtherLocation ? otherState : baseState,
+    flemish_connection: pickBetterValue(base.flemish_connection, other.flemish_connection),
+    website_url: pickBetterValue(base.website_url, other.website_url),
+    email: pickBetterValue(base.email, other.email),
+    linkedin_url: pickBetterValue(base.linkedin_url, other.linkedin_url),
+    sectors: uniqueStrings([...base.sectors, ...other.sectors]),
+    source_urls: uniqueStrings([...base.source_urls, ...other.source_urls]),
+    channel:
+      base.channel === "linkedin" || other.channel === "linkedin"
+        ? "linkedin"
+        : "web_search",
+  };
+}
+
+function locationsCompatible(
+  a: ExtractedContact,
+  b: ExtractedContact
+): boolean {
+  const aState = normalizeWhitespace(a.location_state).toLowerCase();
+  const bState = normalizeWhitespace(b.location_state).toLowerCase();
+  if (aState && bState && aState !== bState) return false;
+
+  const aCity = normalizeWhitespace(a.location_city).toLowerCase();
+  const bCity = normalizeWhitespace(b.location_city).toLowerCase();
+  if (aCity && bCity && aCity !== bCity && aState && bState) return false;
+
+  return true;
+}
+
+function hasConflictingStrongIdentity(
+  a: ExtractedContact,
+  b: ExtractedContact
+): boolean {
+  const emailA = normalizeEmail(a.email);
+  const emailB = normalizeEmail(b.email);
+  if (emailA && emailB && emailA !== emailB) return true;
+
+  const linkedinA = normalizeLinkedInUrl(a.linkedin_url);
+  const linkedinB = normalizeLinkedInUrl(b.linkedin_url);
+  if (linkedinA && linkedinB && linkedinA !== linkedinB) return true;
+
+  const websiteA = normalizeWebsiteUrl(a.website_url);
+  const websiteB = normalizeWebsiteUrl(b.website_url);
+  if (websiteA && websiteB && websiteA !== websiteB) return true;
+
+  return false;
+}
+
+function likelySameContact(
+  a: ExtractedContact,
+  b: ExtractedContact
+): boolean {
+  const linkedinA = normalizeLinkedInUrl(a.linkedin_url);
+  const linkedinB = normalizeLinkedInUrl(b.linkedin_url);
+  if (linkedinA && linkedinB && linkedinA === linkedinB) return true;
+
+  const emailA = normalizeEmail(a.email);
+  const emailB = normalizeEmail(b.email);
+  if (emailA && emailB && emailA === emailB) return true;
+
+  const websiteA = normalizeWebsiteUrl(a.website_url);
+  const websiteB = normalizeWebsiteUrl(b.website_url);
+  if (websiteA && websiteB && websiteA === websiteB) return true;
+
+  const nameA = normalizeName(a.name);
+  const nameB = normalizeName(b.name);
+  if (!nameA || nameA !== nameB) return false;
+
+  if (hasConflictingStrongIdentity(a, b)) return false;
+
+  return locationsCompatible(a, b);
+}
+
+function consolidateContacts(contacts: ExtractedContact[]): ExtractedContact[] {
+  const consolidated: ExtractedContact[] = [];
+
+  for (const contact of contacts) {
+    const matchIndex = consolidated.findIndex((existing) =>
+      likelySameContact(existing, contact)
+    );
+
+    if (matchIndex === -1) {
+      consolidated.push(contact);
+      continue;
+    }
+
+    consolidated[matchIndex] = mergeContacts(consolidated[matchIndex], contact);
+  }
+
+  return consolidated;
 }
 
 // Map a LinkedIn profile to our contact schema
@@ -248,8 +551,10 @@ async function extractContactsFromWeb(
   searchResults: string,
   query: string,
   geminiKey: string
-): Promise<ExtractedContact[]> {
+): Promise<WebExtractionResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  let lastError = "Unknown Gemini extraction error";
+  let quotaExceeded = false;
 
   const userPrompt = `Query: "${query}"
 
@@ -281,16 +586,29 @@ Extract ALL Flemish/Belgian-connected people mentioned in these results. Include
       });
       clearTimeout(fetchTimeout);
 
-      if (!resp.ok) continue;
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        quotaExceeded = resp.status === 429;
+        lastError = `Gemini ${resp.status}: ${errorText.slice(0, 300)}`;
+        if (quotaExceeded) break;
+        continue;
+      }
 
       const data = await resp.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) continue;
+      if (!text) {
+        lastError = "Gemini returned no structured text";
+        continue;
+      }
 
       const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed.contacts)) continue;
+      if (!Array.isArray(parsed.contacts)) {
+        lastError = "Gemini response did not include a contacts array";
+        continue;
+      }
 
-      return parsed.contacts
+      return {
+        contacts: parsed.contacts
         .filter(
           (c: Record<string, unknown>) =>
             safeStr(c.name).trim().length > 0
@@ -317,62 +635,68 @@ Extract ALL Flemish/Belgian-connected people mentioned in these results. Include
               )
             : [],
           channel: "web_search",
-        }));
-    } catch {
-      // retry
+        })),
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : "Gemini request failed";
     }
   }
 
-  return [];
+  return {
+    contacts: [],
+    error: lastError,
+    quotaExceeded,
+  };
 }
 
-// isDuplicate removed — replaced with batched dedup in main handler
-
-// Cross-dedup between channels: remove contacts that share a LinkedIn URL
-function crossDedup(contacts: ExtractedContact[]): ExtractedContact[] {
-  const seen = new Map<string, ExtractedContact>();
-  const result: ExtractedContact[] = [];
-
-  for (const c of contacts) {
-    const linkedinKey = c.linkedin_url
-      ? normalizeLinkedInUrl(c.linkedin_url)
-      : "";
-    const nameKey = c.name.trim().toLowerCase();
-
-    if (linkedinKey && seen.has(linkedinKey)) {
-      // Merge: prefer the one with more data
-      const existing = seen.get(linkedinKey)!;
-      if (
-        (c.bio && !existing.bio) ||
-        (c.flemish_connection && !existing.flemish_connection)
-      ) {
-        // Merge fields from web search into LinkedIn result
-        existing.bio = existing.bio || c.bio;
-        existing.flemish_connection =
-          existing.flemish_connection || c.flemish_connection;
-        existing.email = existing.email || c.email;
-        existing.sectors =
-          existing.sectors.length > 0 ? existing.sectors : c.sectors;
-        existing.source_urls = [
-          ...new Set([...existing.source_urls, ...c.source_urls]),
-        ];
-      }
-      continue;
-    }
-
-    // Also dedup by name (case-insensitive)
-    if (!linkedinKey) {
-      const existingByName = result.find(
-        (r) => r.name.trim().toLowerCase() === nameKey
-      );
-      if (existingByName) continue;
-    }
-
-    if (linkedinKey) seen.set(linkedinKey, c);
-    result.push(c);
+function addKnownIdentifiers(
+  sink: Set<string>,
+  row: {
+    name?: string | null;
+    email?: string | null;
+    linkedin_url?: string | null;
+    website_url?: string | null;
   }
+): void {
+  const name = normalizeName(row.name || "");
+  const email = normalizeEmail(row.email || "");
+  const linkedin = normalizeLinkedInUrl(row.linkedin_url || "");
+  const website = normalizeWebsiteUrl(row.website_url || "");
 
-  return result;
+  if (name) sink.add(`name:${name}`);
+  if (email) sink.add(`email:${email}`);
+  if (linkedin) sink.add(`linkedin:${linkedin}`);
+  if (website) sink.add(`website:${website}`);
+}
+
+async function fetchKnownIdentifiers(
+  supabase: ReturnType<typeof createClient>,
+  table: "people" | "discovered_contacts",
+  field: "name" | "email" | "linkedin_url" | "website_url",
+  values: string[],
+  sink: Set<string>
+): Promise<void> {
+  if (values.length === 0) return;
+
+  const chunkSize = 20;
+  for (let i = 0; i < values.length; i += chunkSize) {
+    const chunk = values
+      .slice(i, i + chunkSize)
+      .map(escapeOrValue)
+      .filter(Boolean);
+
+    if (chunk.length === 0) continue;
+
+    const filter = chunk.map((value) => `${field}.ilike.${value}`).join(",");
+    const { data } = await supabase
+      .from(table)
+      .select("name, email, linkedin_url, website_url")
+      .or(filter);
+
+    for (const row of data || []) {
+      addKnownIdentifiers(sink, row);
+    }
+  }
 }
 
 // ── Main handler ─────────────────────────────────────────────────────
@@ -408,13 +732,7 @@ Deno.serve(async (req: Request) => {
     const query: string = safeStr(body.query).trim();
     runId = body.run_id;
     const maxResults = body.max_results || 20;
-
-    if (!query) {
-      return new Response(
-        JSON.stringify({ error: "query is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const plan = buildDiscoveryPlan(query, runId);
 
     // Heartbeat helper
     const heartbeat = async () => {
@@ -448,104 +766,149 @@ Deno.serve(async (req: Request) => {
 
     await heartbeat();
 
-    // Only append suffix terms that aren't already in the query
-    const queryLower = query.toLowerCase();
-    const suffixTerms = ["flemish", "belgian", "professional"].filter(
-      (t) => !queryLower.includes(t)
-    );
-    const webQuery = suffixTerms.length > 0
-      ? `${query} ${suffixTerms.join(" ")}`
-      : query;
+    steps.push({
+      step: "search_plan",
+      timestamp: new Date().toISOString(),
+      elapsed: elapsed(),
+      status: "ok",
+      detail: {
+        mode: plan.mode,
+        input_query: plan.input_query,
+        web_queries: plan.web_queries,
+        linkedin_queries: plan.linkedin_queries,
+      },
+    });
 
-    try {
-      const searchResp = await searchWeb(webQuery, supabase);
-      webSearchesMade++;
-      if (!searchResp.cached) webSearchProvider = searchResp.provider;
-
-      steps.push({
-        step: "web_search",
-        timestamp: new Date().toISOString(),
-        elapsed: elapsed(),
-        status: searchResp.quota_exhausted ? "error" : "ok",
-        detail: {
-          query: webQuery,
-          provider: searchResp.provider,
-          cached: searchResp.cached,
-          results_count: searchResp.results.length,
-          quota_exhausted: searchResp.quota_exhausted,
-          result_urls: searchResp.results.map((r) => r.url),
-        },
-      });
-
-      await heartbeat();
-
-      if (searchResp.results.length > 0 && !isTimedOut()) {
-        // Use shorter content per result (1000 chars) to speed up LLM processing
-        const formatted = searchResp.results
-          .map((r) => {
-            const body = r.raw_content && r.raw_content.length > r.content.length
-              ? r.raw_content.slice(0, 1000)
-              : r.content;
-            return `Source: ${r.url}\nTitle: ${r.title}\nContent: ${body}`;
-          })
-          .join("\n\n---\n\n");
-        const extracted = await extractContactsFromWeb(
-          formatted,
-          query,
-          geminiKey
-        );
-        llmCallsMade++;
-
-        const usFiltered = extracted.filter(isLikelyUS);
-        const nonUsFiltered = extracted.filter((c) => !isLikelyUS(c));
-
+    for (let i = 0; i < plan.web_queries.length; i++) {
+      if (isTimedOut()) {
         steps.push({
-          step: "llm_extraction",
+          step: `web_search_${i + 1}`,
           timestamp: new Date().toISOString(),
           elapsed: elapsed(),
-          status: "ok",
+          status: "skipped",
           detail: {
-            model: GEMINI_MODEL,
-            extracted_count: extracted.length,
-            us_filtered_count: usFiltered.length,
-            non_us_removed: nonUsFiltered.map((c) => ({
-              name: c.name,
-              location: `${c.location_city}, ${c.location_state}`,
-            })),
-            contacts: usFiltered.map((c) => ({
-              name: c.name,
-              position: c.current_position,
-              location: `${c.location_city}, ${c.location_state}`,
-              flemish_connection: c.flemish_connection,
-              email: c.email || null,
-              linkedin: c.linkedin_url || null,
-              sectors: c.sectors,
-            })),
+            query: plan.web_queries[i],
+            reason: "Not enough time remaining",
+            time_remaining_ms: timeLeft(),
+          },
+        });
+        break;
+      }
+
+      const webQuery = plan.web_queries[i];
+
+      try {
+        const searchResp = await searchWeb(webQuery, supabase);
+        webSearchesMade++;
+        if (!searchResp.cached && searchResp.provider !== "none") {
+          webSearchProvider = searchResp.provider;
+        }
+
+        steps.push({
+          step: `web_search_${i + 1}`,
+          timestamp: new Date().toISOString(),
+          elapsed: elapsed(),
+          status: searchResp.quota_exhausted ? "error" : "ok",
+          detail: {
+            query: webQuery,
+            provider: searchResp.provider,
+            cached: searchResp.cached,
+            results_count: searchResp.results.length,
+            quota_exhausted: searchResp.quota_exhausted,
+            result_urls: searchResp.results.map((r) => r.url),
           },
         });
 
-        allContacts.push(...usFiltered);
-      }
+        await heartbeat();
 
-      if (searchResp.quota_exhausted) {
-        errors.push("Web search quota exhausted");
+        if (searchResp.results.length > 0 && !isTimedOut()) {
+          const formatted = searchResp.results
+            .map((r) => {
+              const body = r.raw_content && r.raw_content.length > r.content.length
+                ? r.raw_content.slice(0, 1200)
+                : r.content;
+              return `Source: ${r.url}\nTitle: ${r.title}\nContent: ${body}`;
+            })
+            .join("\n\n---\n\n");
+          const extraction = await extractContactsFromWeb(
+            formatted,
+            webQuery,
+            geminiKey
+          );
+          if (extraction.error) {
+            errors.push(`LLM extraction failed for "${webQuery}": ${extraction.error}`);
+            steps.push({
+              step: `llm_extraction_${i + 1}`,
+              timestamp: new Date().toISOString(),
+              elapsed: elapsed(),
+              status: "error",
+              detail: {
+                query: webQuery,
+                model: GEMINI_MODEL,
+                error: extraction.error,
+                quota_exhausted: extraction.quotaExceeded || false,
+              },
+            });
+
+            if (extraction.quotaExceeded) break;
+            continue;
+          }
+
+          llmCallsMade++;
+
+          const usFiltered = extraction.contacts.filter(isLikelyUS);
+          const nonUsFiltered = extraction.contacts.filter((c) => !isLikelyUS(c));
+
+          steps.push({
+            step: `llm_extraction_${i + 1}`,
+            timestamp: new Date().toISOString(),
+            elapsed: elapsed(),
+            status: "ok",
+            detail: {
+              query: webQuery,
+              model: GEMINI_MODEL,
+              extracted_count: extraction.contacts.length,
+              us_filtered_count: usFiltered.length,
+              non_us_removed: nonUsFiltered.map((c) => ({
+                name: c.name,
+                location: `${c.location_city}, ${c.location_state}`,
+              })),
+              contacts: usFiltered.map((c) => ({
+                name: c.name,
+                position: c.current_position,
+                location: `${c.location_city}, ${c.location_state}`,
+                flemish_connection: c.flemish_connection,
+                email: c.email || null,
+                linkedin: c.linkedin_url || null,
+                website: c.website_url || null,
+                sectors: c.sectors,
+              })),
+            },
+          });
+
+          allContacts.push(...usFiltered);
+        }
+
+        if (searchResp.quota_exhausted) {
+          errors.push("Web search quota exhausted");
+          break;
+        }
+      } catch (err) {
+        const msg = (err as Error).message;
+        errors.push(`Web search failed for "${webQuery}": ${msg}`);
+        steps.push({
+          step: `web_search_${i + 1}`,
+          timestamp: new Date().toISOString(),
+          elapsed: elapsed(),
+          status: "error",
+          detail: { query: webQuery, error: msg },
+        });
       }
-    } catch (err) {
-      const msg = (err as Error).message;
-      errors.push(`Web search failed: ${msg}`);
-      steps.push({
-        step: "web_search",
-        timestamp: new Date().toISOString(),
-        elapsed: elapsed(),
-        status: "error",
-        detail: { query: webQuery, error: msg },
-      });
     }
 
     await heartbeat();
 
     // ── Channel 2: LinkedIn search via Apify ───────────────────────
-    // Skip LinkedIn on tight deadline — web search + LLM already took most of our budget
     if (isTimedOut()) {
       const msg = "Skipping LinkedIn channel — not enough time remaining";
       steps.push({
@@ -559,73 +922,103 @@ Deno.serve(async (req: Request) => {
       const apifyAvailable = await getApifyUsage();
 
       if (apifyAvailable.available) {
-        try {
-          const linkedinInput: Record<string, unknown> = {
-            keywords: query,
-            location: "United States",
-            limit: 10, // reduced from 20 — faster actor completion
-          };
-
-          // Give Apify at most 15s so we have time for dedup+insert
-          const apifyTimeout = Math.min(15, Math.floor(timeLeft() / 1000) - 8);
-          if (apifyTimeout < 5) throw new Error("Not enough time for LinkedIn search");
-
-          const result = await runApifyActor<LinkedInProfile>(
-            APIFY_ACTORS.LINKEDIN_PROFILE_SEARCH,
-            linkedinInput,
-            { sync: true, timeoutSecs: apifyTimeout }
-          );
-
-          linkedinSearchesMade++;
-
-          const rawItems = result.items || [];
-          const mapped = rawItems
-            .map(mapLinkedInProfile)
-            .filter((c) => c.name.trim().length > 0);
-          const usFiltered = mapped.filter(isLikelyUS);
-          const nonUsFiltered = mapped.filter((c) => !isLikelyUS(c));
-
-          steps.push({
-            step: "linkedin_search",
-            timestamp: new Date().toISOString(),
-            elapsed: elapsed(),
-            status: "ok",
-            detail: {
-              actor: APIFY_ACTORS.LINKEDIN_PROFILE_SEARCH,
-              input: linkedinInput,
-              timeout_secs: apifyTimeout,
-              raw_results: rawItems.length,
-              mapped_count: mapped.length,
-              us_filtered_count: usFiltered.length,
-              non_us_removed: nonUsFiltered.map((c) => ({
-                name: c.name,
-                location: `${c.location_city}, ${c.location_state}`,
-              })),
-              contacts: usFiltered.map((c) => ({
-                name: c.name,
-                position: c.current_position,
-                location: `${c.location_city}, ${c.location_state}`,
-                linkedin: c.linkedin_url || null,
-              })),
-            },
-          });
-
-          allContacts.push(...usFiltered);
-        } catch (err) {
-          const msg = (err as Error).message;
-          const code = err instanceof ApifyError ? err.code : "unknown";
-          if (err instanceof ApifyError && err.code === "apify_quota_exhausted") {
-            errors.push("Apify credits exhausted — LinkedIn channel skipped");
-          } else {
-            errors.push(`LinkedIn search failed: ${msg}`);
+        for (let i = 0; i < plan.linkedin_queries.length; i++) {
+          if (isTimedOut()) {
+            steps.push({
+              step: `linkedin_search_${i + 1}`,
+              timestamp: new Date().toISOString(),
+              elapsed: elapsed(),
+              status: "skipped",
+              detail: {
+                query: plan.linkedin_queries[i],
+                reason: "Not enough time remaining",
+                time_remaining_ms: timeLeft(),
+              },
+            });
+            break;
           }
-          steps.push({
-            step: "linkedin_search",
-            timestamp: new Date().toISOString(),
-            elapsed: elapsed(),
-            status: "error",
-            detail: { error: msg, code },
-          });
+
+          try {
+            const linkedinQuery = plan.linkedin_queries[i];
+            const linkedinInput: Record<string, unknown> = {
+              keywords: linkedinQuery.keywords,
+              location: "United States",
+              limit: 10,
+            };
+
+            const apifyTimeout = Math.min(15, Math.floor(timeLeft() / 1000) - 8);
+            if (apifyTimeout < 5) {
+              throw new Error("Not enough time for LinkedIn search");
+            }
+
+            const result = await runApifyActor<LinkedInProfile>(
+              APIFY_ACTORS.LINKEDIN_PROFILE_SEARCH,
+              linkedinInput,
+              { sync: true, timeoutSecs: apifyTimeout }
+            );
+
+            linkedinSearchesMade++;
+
+            const rawItems = result.items || [];
+            const mapped = rawItems
+              .map(mapLinkedInProfile)
+              .filter((c) => c.name.trim().length > 0);
+            const usFiltered = mapped.filter(isLikelyUS);
+            const nonUsFiltered = mapped.filter((c) => !isLikelyUS(c));
+
+            steps.push({
+              step: `linkedin_search_${i + 1}`,
+              timestamp: new Date().toISOString(),
+              elapsed: elapsed(),
+              status: "ok",
+              detail: {
+                actor: APIFY_ACTORS.LINKEDIN_PROFILE_SEARCH,
+                query: linkedinQuery,
+                input: linkedinInput,
+                timeout_secs: apifyTimeout,
+                raw_results: rawItems.length,
+                mapped_count: mapped.length,
+                us_filtered_count: usFiltered.length,
+                non_us_removed: nonUsFiltered.map((c) => ({
+                  name: c.name,
+                  location: `${c.location_city}, ${c.location_state}`,
+                })),
+                contacts: usFiltered.map((c) => ({
+                  name: c.name,
+                  position: c.current_position,
+                  location: `${c.location_city}, ${c.location_state}`,
+                  linkedin: c.linkedin_url || null,
+                })),
+              },
+            });
+
+            allContacts.push(...usFiltered);
+            await heartbeat();
+          } catch (err) {
+            const msg = (err as Error).message;
+            const code = err instanceof ApifyError ? err.code : "unknown";
+
+            if (err instanceof ApifyError && err.code === "apify_quota_exhausted") {
+              errors.push("Apify credits exhausted — LinkedIn channel skipped");
+              steps.push({
+                step: `linkedin_search_${i + 1}`,
+                timestamp: new Date().toISOString(),
+                elapsed: elapsed(),
+                status: "error",
+                detail: { error: msg, code },
+              });
+              break;
+            }
+
+            errors.push(`LinkedIn search failed: ${msg}`);
+            steps.push({
+              step: `linkedin_search_${i + 1}`,
+              timestamp: new Date().toISOString(),
+              elapsed: elapsed(),
+              status: "error",
+              detail: { error: msg, code },
+            });
+          }
         }
       } else {
         const msg = `Apify unavailable: ${apifyAvailable.error || "no token"}`;
@@ -644,7 +1037,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Cross-dedup between channels ───────────────────────────────
 
-    const deduped = crossDedup(allContacts);
+    const deduped = consolidateContacts(allContacts);
 
     steps.push({
       step: "cross_dedup",
@@ -664,68 +1057,63 @@ Deno.serve(async (req: Request) => {
     const newContacts: ExtractedContact[] = [];
     const dupeNames: string[] = [];
 
-    // Batch: collect all emails, linkedin URLs, and names for a single query each
-    const allEmails = deduped.map((c) => c.email?.trim()).filter((e) => e && e.includes("@")) as string[];
-    const allLinkedins = deduped.map((c) => normalizeLinkedInUrl(c.linkedin_url)).filter(Boolean);
-    const allNames = deduped.map((c) => c.name.trim().toLowerCase()).filter(Boolean);
+    const allEmails = uniqueStrings(
+      deduped
+        .map((c) => normalizeEmail(c.email))
+        .filter((email) => email && email.includes("@"))
+    );
+    const allLinkedins = uniqueStrings(
+      deduped.map((c) => normalizeLinkedInUrl(c.linkedin_url)).filter(Boolean)
+    );
+    const allWebsites = uniqueStrings(
+      deduped.map((c) => normalizeWebsiteUrl(c.website_url)).filter(Boolean)
+    );
+    const allNames = uniqueStrings(
+      deduped.map((c) => normalizeName(c.name)).filter(Boolean)
+    );
 
-    // Fetch known emails/linkedin/names from people table in one go
     const knownPeople = new Set<string>();
-    if (allEmails.length > 0 || allLinkedins.length > 0) {
-      const orParts: string[] = [];
-      for (const e of allEmails) orParts.push(`email.ilike.${e}`);
-      for (const l of allLinkedins) orParts.push(`linkedin_url.ilike.${l}`);
-      const { data } = await supabase.from("people").select("email, linkedin_url, name").or(orParts.join(","));
-      for (const p of data || []) {
-        if (p.email) knownPeople.add(p.email.toLowerCase());
-        if (p.linkedin_url) knownPeople.add(normalizeLinkedInUrl(p.linkedin_url));
-        if (p.name) knownPeople.add(p.name.toLowerCase());
-      }
-    }
-    // Also check by name (catches people without email/linkedin match)
-    if (allNames.length > 0) {
-      const { data } = await supabase.from("people").select("name").in("name", allNames);
-      for (const p of data || []) {
-        if (p.name) knownPeople.add(p.name.toLowerCase());
-      }
-    }
-
-    // Same for discovered_contacts
     const knownDiscovered = new Set<string>();
-    if (allEmails.length > 0 || allLinkedins.length > 0) {
-      const orParts: string[] = [];
-      for (const e of allEmails) orParts.push(`email.ilike.${e}`);
-      for (const l of allLinkedins) orParts.push(`linkedin_url.ilike.${l}`);
-      const { data } = await supabase.from("discovered_contacts").select("email, linkedin_url, name").or(orParts.join(","));
-      for (const d of data || []) {
-        if (d.email) knownDiscovered.add(d.email.toLowerCase());
-        if (d.linkedin_url) knownDiscovered.add(normalizeLinkedInUrl(d.linkedin_url));
-        if (d.name) knownDiscovered.add(d.name.toLowerCase());
-      }
-    }
-    if (allNames.length > 0) {
-      const { data } = await supabase.from("discovered_contacts").select("name").in("name", allNames);
-      for (const d of data || []) {
-        if (d.name) knownDiscovered.add(d.name.toLowerCase());
-      }
-    }
+
+    await Promise.all([
+      fetchKnownIdentifiers(supabase, "people", "email", allEmails, knownPeople),
+      fetchKnownIdentifiers(supabase, "people", "linkedin_url", allLinkedins, knownPeople),
+      fetchKnownIdentifiers(supabase, "people", "website_url", allWebsites, knownPeople),
+      fetchKnownIdentifiers(supabase, "people", "name", allNames, knownPeople),
+      fetchKnownIdentifiers(supabase, "discovered_contacts", "email", allEmails, knownDiscovered),
+      fetchKnownIdentifiers(supabase, "discovered_contacts", "linkedin_url", allLinkedins, knownDiscovered),
+      fetchKnownIdentifiers(supabase, "discovered_contacts", "website_url", allWebsites, knownDiscovered),
+      fetchKnownIdentifiers(supabase, "discovered_contacts", "name", allNames, knownDiscovered),
+    ]);
 
     // Now check each contact against the batch results
     for (const contact of deduped) {
-      const email = contact.email?.trim()?.toLowerCase() || "";
+      const email = normalizeEmail(contact.email);
       const linkedin = normalizeLinkedInUrl(contact.linkedin_url);
-      const name = contact.name.trim().toLowerCase();
+      const website = normalizeWebsiteUrl(contact.website_url);
+      const name = normalizeName(contact.name);
 
       const isDupe =
-        (email && (knownPeople.has(email) || knownDiscovered.has(email))) ||
-        (linkedin && (knownPeople.has(linkedin) || knownDiscovered.has(linkedin))) ||
-        (name && (knownPeople.has(name) || knownDiscovered.has(name)));
+        (email && (knownPeople.has(`email:${email}`) || knownDiscovered.has(`email:${email}`))) ||
+        (linkedin &&
+          (knownPeople.has(`linkedin:${linkedin}`) ||
+            knownDiscovered.has(`linkedin:${linkedin}`))) ||
+        (website &&
+          (knownPeople.has(`website:${website}`) ||
+            knownDiscovered.has(`website:${website}`))) ||
+        (name && (knownPeople.has(`name:${name}`) || knownDiscovered.has(`name:${name}`)));
 
       if (isDupe) {
         duplicatesSkipped++;
         dupeNames.push(contact.name);
       } else {
         newContacts.push(contact);
+        addKnownIdentifiers(knownDiscovered, {
+          name: contact.name,
+          email: contact.email,
+          linkedin_url: contact.linkedin_url,
+          website_url: contact.website_url,
+        });
       }
     }
 
@@ -799,6 +1187,12 @@ Deno.serve(async (req: Request) => {
     // ── Return results ─────────────────────────────────────────────
 
     const result = {
+      mode: plan.mode,
+      input_query: plan.input_query,
+      queries_executed: {
+        web: plan.web_queries,
+        linkedin: plan.linkedin_queries,
+      },
       profiles_found: deduped.length,
       duplicates_skipped: duplicatesSkipped,
       suggestions_created: suggestionsCreated,

@@ -179,8 +179,8 @@ export default function AgentDashboard() {
   );
 
   const handleDiscoveryTrigger = useCallback(() => {
-    if (!discoveryQuery.trim()) return;
-    triggerAgent('discovery', { query: discoveryQuery.trim() });
+    const trimmedQuery = discoveryQuery.trim();
+    triggerAgent('discovery', trimmedQuery ? { query: trimmedQuery } : {});
     setDiscoveryQuery('');
     setShowQueryInput(false);
   }, [discoveryQuery, triggerAgent]);
@@ -284,16 +284,15 @@ export default function AgentDashboard() {
                   value={discoveryQuery}
                   onChange={(e) => setDiscoveryQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleDiscoveryTrigger()}
-                  placeholder="Search query..."
+                  placeholder="Optional custom query..."
                   className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
                   autoFocus
                 />
                 <button
                   onClick={handleDiscoveryTrigger}
-                  disabled={!discoveryQuery.trim()}
-                  className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
+                  className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg"
                 >
-                  Go
+                  Run
                 </button>
               </div>
             )}
@@ -325,6 +324,12 @@ export default function AgentDashboard() {
             Connections
           </button>
         </div>
+        {showQueryInput && (
+          <p className="mt-3 text-xs text-gray-500">
+            Leave the query blank to run a seeded discovery sweep across Flemish institutions,
+            fellowships, and companies. Add a query to focus the run on a specific topic or group.
+          </p>
+        )}
       </div>
 
       {/* API Quota Bars + Pending Actions */}
