@@ -239,7 +239,7 @@ Current CSV import works but needs improvements for bulk population.
 
 Map already uses Leaflet + markercluster. Improvements:
 
-- [ ] Performance: virtualize marker rendering for > 500 contacts
+- [x] Performance: virtualize marker rendering for > 500 contacts
 
 ### 15. Interaction Tracking / Notes
 **Scope:** New migration, PersonProfile.tsx, new component
@@ -372,22 +372,6 @@ No tests exist currently.
 - [ ] Coverage gaps: "15 contacts in Boston, 0 in Houston"
 - [ ] Suggest discovery agent searches for underrepresented areas
 
-### 23. Notification System
-**Scope:** New migration, Navigation.tsx
-**Depends on:** Task 20 (auth)
-**Effort:** Medium (1-2 days)
-
-- [ ] In-app notification bell
-- [ ] Notification types: new suggestions, agent run complete, stale profiles
-- [ ] Optional email digest
-
-### 24. Multi-Language Support (Dutch + English)
-**Scope:** All UI components
-**Effort:** Large (2-3 days)
-
-- [ ] Extract UI strings to translation files
-- [ ] Language toggle in Navigation
-
 ---
 
 ## Notes
@@ -417,14 +401,3 @@ No tests exist currently.
 10 → 21. Network visualization
 20 → 23. Notifications
 ```
-
-**Recommended implementation order:**
-1. Tasks 0a-0e (critical bug fixes) — unblock typecheck, fix broken edge functions, clean up console/alert
-2. Tasks 1 + 2 (model config + embeddings) — foundation for all AI
-3. Tasks 4 + 5 + 6 (export, photos, import) — immediate user value
-4. Task 3 (suggest-people) — needs embeddings
-5. Tasks 16 + 17 + 19 (performance, deployment, code quality) — ship-readiness
-6. Task 7 (agent infrastructure) — foundation for agents
-7. Tasks 8 + 9 + 10 (agents) — autonomous enrichment (Task 8 needs `discovered_contacts` migration)
-8. Task 18 (documentation) — handover readiness
-9. Everything else based on priority

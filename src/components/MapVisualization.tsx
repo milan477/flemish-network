@@ -30,6 +30,7 @@ interface MapVisualizationProps {
 
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
+const MAX_CIRCLE_SCALE_COUNT = 25;
 
 function MapController({ onMapClick }: { onMapClick: () => void }) {
   const map = useMap();
@@ -86,7 +87,8 @@ export default function MapVisualization({
   const createCityIcon = useCallback((cluster: MapCluster) => {
     const key = `${cluster.city}-${cluster.state}`;
     const count = cluster.people.length + cluster.organizations.length;
-    const size = Math.max(Math.sqrt(count) * 12, 32);
+    const scaledCount = Math.min(count, MAX_CIRCLE_SCALE_COUNT);
+    const size = Math.max(Math.sqrt(scaledCount) * 12, 32);
     const isSelected = selectedCityKey === key;
     
     return L.divIcon({
@@ -115,7 +117,8 @@ export default function MapVisualization({
       }
     });
 
-    const size = Math.max(Math.sqrt(totalCount) * 10, 40);
+    const scaledCount = Math.min(totalCount, MAX_CIRCLE_SCALE_COUNT);
+    const size = Math.max(Math.sqrt(scaledCount) * 10, 40);
     
     return L.divIcon({
       html: `
