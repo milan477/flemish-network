@@ -218,18 +218,18 @@ Current CSV import works but needs improvements for bulk population.
 **Scope:** Admin.tsx, admin components
 **Effort:** Medium (1 day)
 
-- [ ] Make data bars/labels/counts clickable for cross-filtering
-- [ ] Click "Finance" in sectors → other charts filter to Finance people only
-- [ ] Active cross-filter shown as chip with X to clear
-- [ ] "View in Network" link: navigate to Dashboard with filter pre-applied
+- [x] Make data bars/labels/counts clickable for cross-filtering
+- [x] Click "Finance" in sectors → other charts filter to Finance people only
+- [x] Active cross-filter shown as chip with X to clear
+- [x] "View in Network" link: navigate to Dashboard with filter pre-applied
 
 ### 13. Profile Page Clickable Tags
 **Scope:** PersonProfile.tsx, OrganizationProfile.tsx
 **Effort:** Small (< 0.5 day)
 
-- [ ] Sector tags clickable → Dashboard with sector filter
-- [ ] Flemish Connection clickable → Dashboard with connection filter
-- [ ] Location clickable → Dashboard centered on city
+- [x] Sector tags clickable → Dashboard with sector filter
+- [x] Flemish Connection clickable → Dashboard with connection filter
+- [x] Location clickable → Dashboard centered on city
 
 ### 14. Map Improvements
 **Scope:** MapVisualization.tsx, ClusterPopover.tsx
@@ -237,10 +237,6 @@ Current CSV import works but needs improvements for bulk population.
 
 Map already uses Leaflet + markercluster. Improvements:
 
-- [ ] Cluster circles scale proportionally to count
-- [ ] Click cluster → zoom to show sub-clusters
-- [ ] Individual marker popup: name, occupation, org, link to profile
-- [ ] Heat density overlay option (toggle on/off)
 - [ ] Performance: virtualize marker rendering for > 500 contacts
 
 ### 15. Interaction Tracking / Notes

@@ -10,6 +10,11 @@ import {
   Check,
 } from 'lucide-react';
 import { displayName, type Person } from '../../lib/supabase';
+import {
+  FRESHNESS_TIER_LABELS,
+  getFreshnessTier,
+  type FreshnessTier,
+} from './interactiveStatsShared';
 
 interface StaleContactsBarProps {
   people: Person[];
@@ -19,6 +24,8 @@ interface StaleContactsBarProps {
   aiLoading: boolean;
   aiLoadingIds: Set<string>;
   noUpdateIds: Set<string>;
+  onTierClick?: (tier: FreshnessTier) => void;
+  activeTier?: FreshnessTier | null;
 }
 
 function daysSince(dateStr: string): number {
@@ -28,6 +35,7 @@ function daysSince(dateStr: string): number {
 }
 
 interface FreshnessGroup {
+  key: FreshnessTier;
   label: string;
   barColor: string;
   icon: typeof CheckCircle2;
@@ -41,6 +49,8 @@ export default function StaleContactsBar({
   aiLoading,
   aiLoadingIds,
   noUpdateIds,
+  onTierClick,
+  activeTier = null,
 }: StaleContactsBarProps) {
   const [expanded, setExpanded] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
@@ -51,10 +61,10 @@ export default function StaleContactsBar({
   const outdated: Person[] = [];
 
   people.forEach((p) => {
-    const days = daysSince(p.updated_at);
-    if (days < 30) fresh.push(p);
-    else if (days < 90) aging.push(p);
-    else if (days < 365) stale.push(p);
+    const tier = getFreshnessTier(p);
+    if (tier === 'fresh') fresh.push(p);
+    else if (tier === 'aging') aging.push(p);
+    else if (tier === 'stale') stale.push(p);
     else outdated.push(p);
   });
 
@@ -62,10 +72,10 @@ export default function StaleContactsBar({
   const needsAttention = aging.length + stale.length + outdated.length;
 
   const groups: FreshnessGroup[] = [
-    { label: 'Up to date', barColor: 'bg-green-500', icon: CheckCircle2, items: fresh },
-    { label: 'Aging (30-90d)', barColor: 'bg-yellow-400', icon: Clock, items: aging },
-    { label: 'Stale (3-12mo)', barColor: 'bg-orange-400', icon: AlertTriangle, items: stale },
-    { label: 'Outdated (>1yr)', barColor: 'bg-red-500', icon: AlertTriangle, items: outdated },
+    { key: 'fresh', label: FRESHNESS_TIER_LABELS.fresh, barColor: 'bg-green-500', icon: CheckCircle2, items: fresh },
+    { key: 'aging', label: FRESHNESS_TIER_LABELS.aging, barColor: 'bg-yellow-400', icon: Clock, items: aging },
+    { key: 'stale', label: FRESHNESS_TIER_LABELS.stale, barColor: 'bg-orange-400', icon: AlertTriangle, items: stale },
+    { key: 'outdated', label: FRESHNESS_TIER_LABELS.outdated, barColor: 'bg-red-500', icon: AlertTriangle, items: outdated },
   ];
 
   const staleList = [...aging, ...stale, ...outdated].sort(
@@ -127,9 +137,13 @@ export default function StaleContactsBar({
         {groups.map(
           (g) =>
             g.items.length > 0 && (
-              <div
+              <button
                 key={g.label}
-                className={`${g.barColor} transition-all duration-500`}
+                type="button"
+                onClick={() => onTierClick?.(g.key)}
+                className={`${g.barColor} transition-all duration-500 ${
+                  activeTier === g.key ? 'ring-2 ring-inset ring-white/80' : ''
+                }`}
                 style={{ width: `${(g.items.length / total) * 100}%` }}
                 title={`${g.label}: ${g.items.length}`}
               />
@@ -139,13 +153,20 @@ export default function StaleContactsBar({
 
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {groups.map((g) => (
-          <div key={g.label} className="flex items-center space-x-1.5">
+          <button
+            key={g.label}
+            type="button"
+            onClick={() => onTierClick?.(g.key)}
+            className={`flex items-center space-x-1.5 rounded-full px-2 py-1 transition-colors ${
+              activeTier === g.key ? 'bg-gray-100' : 'hover:bg-gray-50'
+            }`}
+          >
             <div className={`w-2 h-2 rounded-full ${g.barColor}`} />
             <span className="text-xs text-gray-600">
               {g.label}:{' '}
               <span className="font-semibold">{g.items.length}</span>
             </span>
-          </div>
+          </button>
         ))}
       </div>
 

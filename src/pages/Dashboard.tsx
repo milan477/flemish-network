@@ -457,7 +457,7 @@ export default function Dashboard({
     if (filterPreset.focusCity) {
       setTimeout(() => {
         setFocusedCity(filterPreset.focusCity!);
-        setViewMode('list');
+        setViewMode('map');
       }, 100);
     }
 
@@ -608,6 +608,7 @@ export default function Dashboard({
           <MapVisualization
             clusters={clusters}
             loading={loading}
+            focusedCity={focusedCity}
             onViewInDirectory={handleViewInDirectory}
             onNavigate={onNavigate}
           />

@@ -90,7 +90,7 @@ function App() {
         />
       )}
 
-      {currentPage === 'admin' && <Admin />}
+      {currentPage === 'admin' && <Admin onNavigate={handleNavigate} />}
 
       {currentPage === 'add-contact' && <AddContact onNavigate={handleNavigate} />}
     </div>

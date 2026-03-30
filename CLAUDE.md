@@ -3,7 +3,8 @@
 ## What This Is
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
-## Recent Notes (2026-03-28)
+## Recent Notes (2026-03-30)
+- Person and organization profile tags are now navigational: sector chips open the dashboard with the sector filter applied, Flemish connection chips open the matching Flemish filter, and clicking a profile location opens the dashboard map centered on that city while preserving the focused-city list state if the user switches to list view.
 - `supabase/functions/agent-discovery/index.ts` now supports two operating modes: a blank-query seeded sweep that rotates through predefined Flemish institution/company/fellowship searches, and a custom-query mode that expands one query into several discovery variants. The function now executes up to 3 web searches and 2 LinkedIn searches per run as originally intended.
 - Discovery dedup is stronger now: cross-channel candidates merge on normalized LinkedIn/email/website/name signals before insert, and DB dedup checks `people` and `discovered_contacts` by normalized name, email, LinkedIn URL, and website URL instead of relying on a case-sensitive name lookup.
 - Discovery now reports Gemini extraction failures explicitly in `errors`/`steps` and stops burning web-search budget when the current Gemini quota is exhausted, instead of quietly returning zero contacts.

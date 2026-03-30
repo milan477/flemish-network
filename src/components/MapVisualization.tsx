@@ -21,6 +21,7 @@ L.Icon.Default.mergeOptions({
 interface MapVisualizationProps {
   clusters: MapCluster[];
   loading: boolean;
+  focusedCity: { city: string; state: string } | null;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
 }
@@ -37,7 +38,13 @@ function MapController({ onMapClick }: { onMapClick: () => void }) {
   return null;
 }
 
-export default function MapVisualization({ clusters, loading, onViewInDirectory, onNavigate }: MapVisualizationProps) {
+export default function MapVisualization({
+  clusters,
+  loading,
+  focusedCity,
+  onViewInDirectory,
+  onNavigate,
+}: MapVisualizationProps) {
   const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -45,6 +52,22 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
   useEffect(() => {
     setSelectedCityKey(null);
   }, [clusters]);
+
+  useEffect(() => {
+    if (!focusedCity || !mapRef.current) return;
+
+    const targetCluster = clusters.find(
+      (cluster) =>
+        cluster.city === focusedCity.city && cluster.state === focusedCity.state
+    );
+
+    if (!targetCluster) return;
+
+    mapRef.current.setView([targetCluster.lat, targetCluster.lng], 9, {
+      animate: true,
+    });
+    setSelectedCityKey(`${targetCluster.city}-${targetCluster.state}`);
+  }, [clusters, focusedCity]);
 
   const handleBackdropClick = useCallback(() => {
     setSelectedCityKey(null);
