@@ -223,7 +223,7 @@ Mapping the 9-category occupation system to the 4-value `OCCUPATION_OPTIONS`:
 ### Phase 5: Polish
 1. "View in Network" buttons (per-bar + chip bar level)
 2. Hover tooltips on bars
-3. Smooth bar width transitions (already have `transition-all duration-700`)
+3. Smooth bar width transitions (already have `transition-all duration-700`) 
 4. Empty state when cross-filters return 0 results
 5. Responsive layout testing
 
