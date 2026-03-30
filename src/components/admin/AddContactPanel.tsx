@@ -28,6 +28,7 @@ import {
   extractFlemishConnectionsFromText,
   getPersonFlemishConnectionNames,
 } from '../../lib/flemishConnections';
+import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { generateEmbedding } from '../../lib/aiService';
 import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
@@ -61,7 +62,6 @@ interface ManualForm {
   location_id: string;
   location_display?: string;
   bio: string;
-  flemish_connection: string;
   phone: string;
   email: string;
   linkedin_url: string;
@@ -79,7 +79,6 @@ const EMPTY_FORM: ManualForm = {
   location_id: '',
   location_display: '',
   bio: '',
-  flemish_connection: '',
   phone: '',
   email: '',
   linkedin_url: '',
@@ -395,7 +394,6 @@ function ManualAddForm({
         occupation: form.occupation || null,
         location_id: form.location_id || null,
         bio: form.bio || null,
-        flemish_connection: flemishStr || null,
         phone: form.phone || null,
         email: form.email || null,
         linkedin_url: linkedin || null,
@@ -460,21 +458,12 @@ function ManualAddForm({
       );
     }
 
-    if (ensuredConnections.length > 0) {
-      const { error: insertFlemishError } = await supabase
-        .from('person_flemish_connections')
-        .insert(
-          ensuredConnections.map((connection) => ({
-            person_id: person.id,
-            flemish_connection_id: connection.id,
-          }))
-        );
-
-      if (insertFlemishError) {
-        setError(insertFlemishError.message);
-        setSaving(false);
-        return;
-      }
+    try {
+      await syncPersonFlemishConnections(person.id, flemishStr);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save Flemish connections');
+      setSaving(false);
+      return;
     }
 
     // Fire-and-forget embedding generation for the new contact

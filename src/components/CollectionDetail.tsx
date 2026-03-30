@@ -22,6 +22,7 @@ import {
   type CollectionMember,
   displayName,
 } from '../lib/supabase';
+import { getPersonFlemishConnectionText } from '../lib/flemishConnections';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiService';
 import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
@@ -70,7 +71,7 @@ export default function CollectionDetail({
       // Fetch members with person data
       const { data: memData, error: memError } = await supabase
         .from('collection_members')
-        .select('*, person:people(*, locations(*))')
+        .select('*, person:people(*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)))')
         .eq('collection_id', collectionId)
         .order('added_at', { ascending: false });
 
@@ -159,7 +160,8 @@ export default function CollectionDetail({
     if (collection.description) queryParts.push(collection.description);
     members.slice(0, 5).forEach((m) => {
       if (m.person?.current_position) queryParts.push(m.person.current_position);
-      if (m.person?.flemish_connection) queryParts.push(m.person.flemish_connection);
+      const flemishText = getPersonFlemishConnectionText(m.person);
+      if (flemishText) queryParts.push(flemishText);
     });
     const query = queryParts.join('. ') || collection.name;
 

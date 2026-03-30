@@ -1,4 +1,5 @@
 import { supabase, displayName, type Person } from './supabase';
+import { getPersonFlemishConnectionText } from './flemishConnections';
 
 // ---------- CSV Export ----------
 
@@ -25,7 +26,7 @@ function personToCsvRow(person: PersonWithSectors): string {
     person.locations?.city || '',
     person.locations?.state || '',
     (person.sectorNames || []).join('; '),
-    person.flemish_connection || '',
+    getPersonFlemishConnectionText(person),
     person.email || '',
     person.phone || '',
     person.linkedin_url || '',
@@ -87,7 +88,8 @@ export function printCollectionBriefing(
     const details: string[] = [];
     if (p.current_position) details.push(escapeHtml(p.current_position));
     if (location) details.push(escapeHtml(location));
-    if (p.flemish_connection) details.push(`<span class="fc">FC:</span> ${escapeHtml(p.flemish_connection)}`);
+    const flemishText = getPersonFlemishConnectionText(p);
+    if (flemishText) details.push(`<span class="fc">FC:</span> ${escapeHtml(flemishText)}`);
 
     const contactParts: string[] = [];
     if (p.email) contactParts.push(escapeHtml(p.email));

@@ -156,6 +156,8 @@ Current CSV import works but needs improvements for bulk population.
 - [x] **Template download:** "Download template" button with expected columns and example data (CSV + Excel)
 - [x] **Duplicate handling:** Option to skip duplicates, update existing, or create new.
 - [x] **Show the accepted formats** Upload area shows .csv, .xlsx, .xls, .tsv, .txt as accepted formats.
+- [x] **Cancelable imports with rollback:** While row writes are in progress, the CSV importer now exposes a cancel action that halts after the current DB step and rolls back contacts created in that run while restoring prior data for contacts updated earlier in the same run.
+- [x] **Importer load-test fixtures:** Added `test-csvs/08_large_people_dataset.csv` (504 rows) plus `09`-`14` sector-split CSVs (84 rows each). The importer now maps `Sector` / `Sectors` columns directly into `person_sectors`, including multi-value cells, and the bulk sector assignment step remains available for adding shared sectors to the full batch.
 
 ---
 
@@ -249,7 +251,7 @@ Map already uses Leaflet + markercluster. Improvements:
 
 ### 16. Improvement on Flemish Connection Tagging
 
-- [x] Refactored person Flemish links to support multiple discrete connections per person while keeping `people.flemish_connection` as a normalized compatibility string for existing search/export/agent flows.
+- [x] Refactored person Flemish links to support multiple discrete connections per person and removed `people.flemish_connection` entirely after migrating filtering/search paths to the join table.
 - [x] Added improved entity extraction for universities, government, companies, and other Flemish links, with parser tightening to avoid generic descriptive phrases becoming tags.
 - [x] Added `flemish_connections` + `person_flemish_connections`, wired searchable multi-select creation into the person/admin forms, and backfilled existing people on the linked Supabase project.
 

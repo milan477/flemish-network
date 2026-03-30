@@ -189,7 +189,8 @@ export default function Dashboard({
             const searchTerms = query.toLowerCase().replace(/^dr\.?\s+/, '').split(' ');
             const mainTerm = searchTerms[searchTerms.length - 1];
             const { data } = await supabase
-              .from('people').select('*, locations(*)')
+              .from('people')
+              .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
               .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
               .limit(20);
             return (data as Person[]) || [];
@@ -239,7 +240,9 @@ export default function Dashboard({
       let orgsData: Organization[] = [];
 
       if (currentFilters.showPeople) {
-        let q = supabase.from('people').select('*, locations(*)');
+        let q = supabase
+          .from('people')
+          .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))');
 
         if (currentFilters.sector) {
           const { data: sectorRows } = await supabase
@@ -272,10 +275,33 @@ export default function Dashboard({
         }
 
         if (currentFilters.flemishConnections.length > 0) {
-          const orFilter = currentFilters.flemishConnections
-            .map((fc) => `flemish_connection.ilike.%${fc}%`)
-            .join(',');
-          q = q.or(orFilter);
+          const { data: matchingConnections } = await supabase
+            .from('flemish_connections')
+            .select('id, name')
+            .in('name', currentFilters.flemishConnections);
+
+          const connectionIds = (matchingConnections || []).map(
+            (connection: { id: string }) => connection.id
+          );
+
+          if (connectionIds.length > 0) {
+            const { data: matchedPeople } = await supabase
+              .from('person_flemish_connections')
+              .select('person_id')
+              .in('flemish_connection_id', connectionIds);
+
+            const personIds = Array.from(
+              new Set((matchedPeople || []).map((row: { person_id: string }) => row.person_id))
+            );
+
+            if (personIds.length > 0) {
+              q = q.in('id', personIds);
+            } else {
+              q = q.eq('id', '00000000-0000-0000-0000-000000000000');
+            }
+          } else {
+            q = q.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
         }
 
         if (currentFilters.availableForLectures) {
@@ -284,17 +310,6 @@ export default function Dashboard({
 
         const { data } = await q;
         peopleData = data || [];
-
-        if (currentFilters.flemishConnections.length > 0 && peopleData.length === 0) {
-          const { data: allPeople } = await supabase.from('people').select('*, locations(*)');
-          if (allPeople) {
-            peopleData = (allPeople as Person[]).filter((p) =>
-              currentFilters.flemishConnections.some((fc) =>
-                fuzzyMatch(fc, p.flemish_connection || '')
-              )
-            );
-          }
-        }
       }
 
       if (currentFilters.showOrganizations) {
@@ -626,6 +641,8 @@ export default function Dashboard({
             focusedCity={focusedCity}
             onViewInDirectory={handleViewInDirectory}
             onNavigate={onNavigate}
+            totalPeople={people.length}
+            totalOrganizations={organizations.length}
           />
         ) : (
           <div className="h-full overflow-y-auto bg-gray-50">

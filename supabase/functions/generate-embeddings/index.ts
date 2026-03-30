@@ -17,9 +17,14 @@ interface PersonRow {
   name: string | null;
   current_position: string | null;
   bio: string | null;
-  flemish_connection: string | null;
   occupation: string | null;
   location_id: string | null;
+  person_flemish_connections?: {
+    flemish_connections:
+      | { name: string | null }
+      | { name: string | null }[]
+      | null;
+  }[] | null;
 }
 
 interface SectorRow {
@@ -29,6 +34,21 @@ interface SectorRow {
 interface LocationRow {
   city: string | null;
   state: string | null;
+}
+
+function buildFlemishConnectionText(person: PersonRow): string {
+  const names = new Set<string>();
+
+  for (const link of person.person_flemish_connections || []) {
+    const raw = link.flemish_connections;
+    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const row of rows) {
+      const name = row?.name?.trim();
+      if (name) names.add(name);
+    }
+  }
+
+  return Array.from(names).sort().join(", ");
 }
 
 function buildEmbeddingText(
@@ -41,7 +61,8 @@ function buildEmbeddingText(
   if (person.current_position) parts.push(person.current_position);
   if (person.bio) parts.push(person.bio);
   if (sectorNames.length > 0) parts.push(sectorNames.join(", "));
-  if (person.flemish_connection) parts.push(person.flemish_connection);
+  const flemishConnections = buildFlemishConnectionText(person);
+  if (flemishConnections) parts.push(flemishConnections);
   if (location) {
     const loc = [location.city, location.state].filter(Boolean).join(", ");
     if (loc) parts.push(loc);
@@ -199,7 +220,7 @@ async function processBatch(
       // Fetch person data
       const { data: person } = await supabase
         .from("people")
-        .select("id, name, current_position, bio, flemish_connection, occupation, location_id")
+        .select("id, name, current_position, bio, occupation, location_id, person_flemish_connections(flemish_connections(name))")
         .eq("id", id)
         .single();
 

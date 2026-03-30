@@ -307,6 +307,12 @@ export function getPersonFlemishConnectionNames(person: HasFlemishConnections | 
   return getPersonFlemishConnections(person).map((connection) => connection.name);
 }
 
+export function getPersonFlemishConnectionText(
+  person: HasFlemishConnections | null | undefined
+): string {
+  return getPersonFlemishConnectionNames(person).join(', ');
+}
+
 export function personHasFlemishConnection(
   person: HasFlemishConnections | null | undefined,
   connectionName: string

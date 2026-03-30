@@ -49,6 +49,30 @@ interface SearchResultItem {
   snippet: string;
 }
 
+interface FlemishConnectionLinkRow {
+  flemish_connections:
+    | { name: string | null }
+    | { name: string | null }[]
+    | null;
+}
+
+function buildFlemishConnectionText(
+  links: FlemishConnectionLinkRow[] | null | undefined
+): string {
+  const names = new Set<string>();
+
+  for (const link of links || []) {
+    const raw = link.flemish_connections;
+    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const row of rows) {
+      const name = row?.name?.trim();
+      if (name) names.add(name);
+    }
+  }
+
+  return Array.from(names).sort().join(", ");
+}
+
 // ---------- Gemini helpers ----------
 
 async function extractKeywords(
@@ -358,9 +382,6 @@ Deno.serve(async (req: Request) => {
       for (const kw of keywords.current_position) {
         orClauses.push(`current_position.ilike.%${kw}%`);
       }
-      for (const kw of keywords.flemish_connection) {
-        orClauses.push(`flemish_connection.ilike.%${kw}%`);
-      }
       for (const kw of keywords.bio.slice(0, 3)) {
         orClauses.push(`bio.ilike.%${kw}%`);
       }
@@ -375,6 +396,33 @@ Deno.serve(async (req: Request) => {
         if (kwMatches) {
           for (const m of kwMatches) {
             keywordCandidateIds.add(m.id);
+          }
+        }
+      }
+
+      if (hasFlemishKw) {
+        const { data: connectionMatches } = await supabase
+          .from("flemish_connections")
+          .select("id")
+          .or(
+            keywords.flemish_connection
+              .map((kw) => `name.ilike.%${kw}%`)
+              .join(",")
+          )
+          .limit(50);
+
+        const connectionIds = (connectionMatches || []).map(
+          (row: { id: string }) => row.id
+        );
+
+        if (connectionIds.length > 0) {
+          const { data: personLinks } = await supabase
+            .from("person_flemish_connections")
+            .select("person_id")
+            .in("flemish_connection_id", connectionIds);
+
+          for (const link of personLinks || []) {
+            keywordCandidateIds.add(link.person_id);
           }
         }
       }
@@ -404,7 +452,7 @@ Deno.serve(async (req: Request) => {
     const candidateIdArray = Array.from(allCandidateIds);
     const { data: people } = await supabase
       .from("people")
-      .select("*, locations(*)")
+      .select("*, locations(*), person_flemish_connections(flemish_connections(name))")
       .in("id", candidateIdArray);
 
     if (!people || people.length === 0) {
@@ -458,6 +506,9 @@ Deno.serve(async (req: Request) => {
         location_city: person.locations?.city || "",
         location_state: person.locations?.state || "",
         sectors_text: sectorsByPerson.get(person.id) || "",
+        flemish_connection: buildFlemishConnectionText(
+          person.person_flemish_connections as FlemishConnectionLinkRow[] | undefined
+        ),
       };
 
       const keywordScore = scoreAgainstKeywords(flat, keywords);
@@ -494,7 +545,9 @@ Deno.serve(async (req: Request) => {
       current_position: s.person.current_position as string | null,
       bio: s.person.bio as string | null,
       occupation: s.person.occupation as string | null,
-      flemish_connection: s.person.flemish_connection as string | null,
+      flemish_connection: buildFlemishConnectionText(
+        s.person.person_flemish_connections as FlemishConnectionLinkRow[] | undefined
+      ) || null,
       profile_photo_url: s.person.profile_photo_url as string | null,
       email: s.person.email as string | null,
       linkedin_url: s.person.linkedin_url as string | null,

@@ -24,6 +24,8 @@ interface MapVisualizationProps {
   focusedCity: { city: string; state: string } | null;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
+  totalPeople: number;
+  totalOrganizations: number;
 }
 
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
@@ -44,6 +46,8 @@ export default function MapVisualization({
   focusedCity,
   onViewInDirectory,
   onNavigate,
+  totalPeople,
+  totalOrganizations,
 }: MapVisualizationProps) {
   const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,6 +80,7 @@ export default function MapVisualization({
   const zoomIn = () => { mapRef.current?.zoomIn(); };
   const zoomOut = () => { mapRef.current?.zoomOut(); };
   const resetView = () => { mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM); };
+  const totalResults = totalPeople + totalOrganizations;
 
   // Custom icon for a single city cluster
   const createCityIcon = useCallback((cluster: MapCluster) => {
@@ -253,7 +258,11 @@ export default function MapVisualization({
         {!loading && clusters.length === 0 && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none">
             <div className="bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-100">
-              <span className="text-sm font-medium text-gray-500">No results match your filters</span>
+              <span className="text-sm font-medium text-gray-500">
+                {totalResults > 0
+                  ? `${totalResults} matching result${totalResults === 1 ? '' : 's'} found, but none have a mapped location yet`
+                  : 'No results match your filters'}
+              </span>
             </div>
           </div>
         )}

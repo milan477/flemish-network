@@ -39,6 +39,7 @@ import {
   extractFlemishConnectionsFromText,
   getPersonFlemishConnections,
 } from '../lib/flemishConnections';
+import { syncPersonFlemishConnections } from '../lib/flemishConnectionSync';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
@@ -290,7 +291,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       occupation: person.occupation || '',
       location_id: person.location_id || '',
       bio: person.bio || '',
-      flemish_connection: person.flemish_connection || '',
       phone: person.phone || '',
       email: person.email || '',
       linkedin_url: person.linkedin_url || '',
@@ -336,7 +336,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       occupation: editForm.occupation || null,
       location_id: editForm.location_id || null,
       bio: editForm.bio || null,
-      flemish_connection: flemishStr || null,
       phone: editForm.phone || null,
       email: editForm.email || null,
       linkedin_url: linkedin || null,
@@ -412,23 +411,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
 
     try {
-      const { error: deleteFlemishError } = await supabase
-        .from('person_flemish_connections')
-        .delete()
-        .eq('person_id', person.id);
-      if (deleteFlemishError) throw deleteFlemishError;
-
-      if (ensuredConnections.length > 0) {
-        const { error: insertFlemishError } = await supabase
-          .from('person_flemish_connections')
-          .insert(
-            ensuredConnections.map((connection) => ({
-              person_id: person.id,
-              flemish_connection_id: connection.id,
-            }))
-          );
-        if (insertFlemishError) throw insertFlemishError;
-      }
+      await syncPersonFlemishConnections(person.id, flemishStr);
 
       if (toRemove.length > 0) {
         for (const sid of toRemove) {
