@@ -12,6 +12,7 @@ interface FilterPanelProps {
   onRemoveAiFilter: (id: string) => void;
   activeSearchQuery: string;
   onRemoveSearchQuery: () => void;
+  flemishOptions?: string[];
 }
 
 const SELECT_CLS =
@@ -27,7 +28,11 @@ export default function FilterPanel({
   onRemoveAiFilter,
   activeSearchQuery,
   onRemoveSearchQuery,
+  flemishOptions,
 }: FilterPanelProps) {
+  const connectionOptions = flemishOptions && flemishOptions.length > 0
+    ? flemishOptions
+    : FLEMISH_OPTIONS;
 
   const handleReset = () => {
     onFiltersChange({ ...DEFAULT_MAP_FILTERS });
@@ -148,7 +153,7 @@ export default function FilterPanel({
               Flemish Connection
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {FLEMISH_OPTIONS.map((opt) => {
+              {connectionOptions.map((opt) => {
                 const isActive = filters.flemishConnections.includes(opt);
                 return (
                   <button

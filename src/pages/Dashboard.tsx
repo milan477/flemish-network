@@ -10,6 +10,7 @@ import {
   type FilterPreset,
   type SearchCommand,
   type ActiveAiFilter,
+  type FlemishConnection,
   DEFAULT_MAP_FILTERS,
   OCCUPATION_CATEGORY_KEYWORDS,
 } from '../lib/supabase';
@@ -129,6 +130,7 @@ export default function Dashboard({
   const [people, setPeople] = useState<Person[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [clusters, setClusters] = useState<MapCluster[]>([]);
+  const [flemishOptions, setFlemishOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(true);
   const [stats, setStats] = useState({ people: 0, organizations: 0, cities: 0 });
@@ -435,6 +437,19 @@ export default function Dashboard({
   );
 
   useEffect(() => {
+    supabase
+      .from('flemish_connections')
+      .select('name')
+      .order('name')
+      .then(({ data }) => {
+        const names = ((data || []) as Pick<FlemishConnection, 'name'>[]).map(
+          (connection) => connection.name
+        );
+        setFlemishOptions(names);
+      });
+  }, []);
+
+  useEffect(() => {
     loadData(filters, activeFilters);
   }, [filters, activeFilters, loadData]);
 
@@ -657,6 +672,7 @@ export default function Dashboard({
         onRemoveAiFilter={handleRemoveFilter}
         activeSearchQuery={activeQuery}
         onRemoveSearchQuery={handleRemoveSearchQueryFilter}
+        flemishOptions={flemishOptions}
       />
     </div>
   );

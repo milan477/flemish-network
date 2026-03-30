@@ -79,7 +79,9 @@ export default function Admin({ onNavigate }: AdminProps) {
         connectionsRes,
         collectionMembersRes,
       ] = await Promise.all([
-        supabase.from('people').select('*, locations(*)'),
+        supabase
+          .from('people')
+          .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'),
         supabase
           .from('organizations')
           .select('id', { count: 'exact', head: true }),

@@ -2,6 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { Building2, Clock, MapPin, Users } from 'lucide-react';
 import type { Person } from '../../lib/supabase';
 import type { FilterPreset } from '../../lib/supabase';
+import {
+  getPersonFlemishConnections,
+  personHasFlemishConnection,
+} from '../../lib/flemishConnections';
 import OccupationOverview, {
   classifyPerson,
 } from './OccupationOverview';
@@ -473,7 +477,7 @@ export default function InteractiveStatsOverview({
         case 'sector':
           return (personToSectorsMap.get(person.id)?.size || 0) > 0;
         case 'flemish_connection':
-          return hasText(person.flemish_connection);
+          return getPersonFlemishConnections(person).length > 0;
       }
     },
     [personToSectorsMap]
@@ -501,7 +505,7 @@ export default function InteractiveStatsOverview({
         if (
           excludeDimension !== 'flemishConnection' &&
           crossFilters.flemishConnection &&
-          person.flemish_connection !== crossFilters.flemishConnection
+          !personHasFlemishConnection(person, crossFilters.flemishConnection)
         ) {
           return false;
         }

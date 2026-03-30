@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import type { FlemishConnection, PersonFlemishConnectionLink } from './flemishConnections';
+import { DEFAULT_FLEMISH_CONNECTIONS } from './flemishConnections';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
@@ -19,6 +21,7 @@ export interface Person {
   bio?: string;
   profile_photo_url?: string;
   flemish_connection?: string;
+  person_flemish_connections?: PersonFlemishConnectionLink[];
   linkedin_url?: string;
   website_url?: string;
   twitter_url?: string;
@@ -145,14 +148,10 @@ export const OCCUPATION_CATEGORY_KEYWORDS: Record<string, string[]> = {
 };
 
 export const FLEMISH_OPTIONS = [
-  'KU Leuven',
-  'UGent',
-  'VUB',
-  'UAntwerp',
-  'BAEF',
-  'imec',
-  'Fayat',
+  ...DEFAULT_FLEMISH_CONNECTIONS.map((connection) => connection.name),
 ];
+
+export type { FlemishConnection };
 
 export const US_STATES = [
   { code: 'AL', name: 'Alabama' },

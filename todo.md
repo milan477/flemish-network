@@ -247,6 +247,12 @@ Map already uses Leaflet + markercluster. Improvements:
 - [ ] InteractionLog component on profile pages: chronological list, "+ Add Note" form
 - [ ] "Last contacted: [date]" on person cards in DirectoryGrid
 
+### 16. Improvement on Flemish Connection Tagging
+
+- [x] Refactored person Flemish links to support multiple discrete connections per person while keeping `people.flemish_connection` as a normalized compatibility string for existing search/export/agent flows.
+- [x] Added improved entity extraction for universities, government, companies, and other Flemish links, with parser tightening to avoid generic descriptive phrases becoming tags.
+- [x] Added `flemish_connections` + `person_flemish_connections`, wired searchable multi-select creation into the person/admin forms, and backfilled existing people on the linked Supabase project.
+
 ---
 
 ## P1 — Operational Readiness

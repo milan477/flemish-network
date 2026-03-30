@@ -1,5 +1,6 @@
 import type { Person } from '../../lib/supabase';
 import { FLEMISH_OPTIONS } from '../../lib/supabase';
+import { getPersonFlemishConnectionNames } from '../../lib/flemishConnections';
 import InteractiveBarChart, {
   type InteractiveBarChartItem,
 } from './InteractiveBarChart';
@@ -27,9 +28,9 @@ function buildCounts(people: Person[]): Map<string, number> {
   const counts = new Map<string, number>();
 
   people.forEach((person) => {
-    const key = person.flemish_connection?.trim();
-    if (!key) return;
-    counts.set(key, (counts.get(key) || 0) + 1);
+    getPersonFlemishConnectionNames(person).forEach((name) => {
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
   });
 
   return counts;
