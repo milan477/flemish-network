@@ -32,6 +32,7 @@ import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { generateEmbedding } from '../lib/aiService';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import ConnectionGraphModal, { type GraphConnection } from '../components/ConnectionGraphModal';
 
 interface PersonProfileProps {
   personId: string;
@@ -41,6 +42,105 @@ interface PersonProfileProps {
 interface PersonSector {
   sector_id: string;
   sectors: { name: string } | null;
+}
+
+interface ConnectionRow {
+  id: string;
+  from_person_id: string | null;
+  to_person_id: string | null;
+  relationship_type: string | null;
+  strength: number | null;
+}
+
+interface RelatedConnectionPersonRow {
+  id: string;
+  name: string;
+  title?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  current_position?: string | null;
+  occupation?: string | null;
+  profile_photo_url?: string | null;
+  email?: string | null;
+  location_id?: string | null;
+  locations?:
+    | GraphConnection['person']['locations']
+    | GraphConnection['person']['locations'][]
+    | null;
+}
+
+function formatRelationshipType(type: string): string {
+  if (type === 'local_peer') return 'Local Peer';
+  return type
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildGraphConnections(
+  rows: ConnectionRow[],
+  relatedPeople: GraphConnection['person'][],
+  currentPersonId: string
+): GraphConnection[] {
+  const peopleById = new Map(relatedPeople.map((relatedPerson) => [relatedPerson.id, relatedPerson]));
+  const connectionsByPerson = new Map<string, GraphConnection>();
+
+  for (const row of rows) {
+    const connectedPersonId =
+      row.from_person_id === currentPersonId ? row.to_person_id : row.from_person_id;
+
+    if (!connectedPersonId) continue;
+
+    const connectedPerson = peopleById.get(connectedPersonId);
+    if (!connectedPerson) continue;
+
+    const existing = connectionsByPerson.get(connectedPersonId);
+    if (existing) {
+      if (row.relationship_type && !existing.relationshipTypes.includes(row.relationship_type)) {
+        existing.relationshipTypes.push(row.relationship_type);
+      }
+      existing.connectionIds.push(row.id);
+      existing.strength = Math.max(existing.strength, row.strength || 0);
+      continue;
+    }
+
+    connectionsByPerson.set(connectedPersonId, {
+      person: connectedPerson,
+      relationshipTypes: row.relationship_type ? [row.relationship_type] : [],
+      connectionIds: [row.id],
+      strength: row.strength || 0,
+    });
+  }
+
+  return Array.from(connectionsByPerson.values())
+    .map((connection) => ({
+      ...connection,
+      relationshipTypes: connection.relationshipTypes.sort(),
+    }))
+    .sort((a, b) => {
+      if (b.relationshipTypes.length !== a.relationshipTypes.length) {
+        return b.relationshipTypes.length - a.relationshipTypes.length;
+      }
+      return a.person.name.localeCompare(b.person.name);
+    });
+}
+
+function normalizeRelatedPeople(
+  rows: RelatedConnectionPersonRow[]
+): GraphConnection['person'][] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    title: row.title || undefined,
+    first_name: row.first_name || undefined,
+    last_name: row.last_name || undefined,
+    current_position: row.current_position || undefined,
+    occupation: row.occupation || undefined,
+    profile_photo_url: row.profile_photo_url || undefined,
+    email: row.email || undefined,
+    location_id: row.location_id || undefined,
+    locations: Array.isArray(row.locations) ? row.locations[0] || undefined : row.locations || undefined,
+  }));
 }
 
 function ensureProtocol(url: string): string {
@@ -58,7 +158,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
-  const [connections, setConnections] = useState<{ id: string }[]>([]);
+  const [connections, setConnections] = useState<GraphConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Person>>({});
@@ -70,24 +170,54 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
+  const [showConnectionGraph, setShowConnectionGraph] = useState(false);
 
   const loadPerson = useCallback(async () => {
     const [personRes, sectorsRes, allSectorsRes, connRes] = await Promise.all([
       supabase.from('people').select('*, locations(*)').eq('id', personId).maybeSingle(),
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
       supabase.from('sectors').select('*'),
-      supabase.from('connections').select('id').or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`).limit(50),
+      supabase
+        .from('connections')
+        .select('id, from_person_id, to_person_id, relationship_type, strength')
+        .or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`)
+        .limit(100),
     ]);
 
     const personData = personRes.data;
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
-    setConnections(connRes.data || []);
 
     const ps = ((sectorsRes.data || []) as unknown as PersonSector[])
       .filter((r) => r.sectors?.name)
       .map((r) => ({ id: r.sector_id, name: r.sectors!.name }));
     setPersonSectors(ps);
+
+    const connectionRows = (connRes.data || []) as ConnectionRow[];
+    const relatedPersonIds = Array.from(
+      new Set(
+        connectionRows
+          .map((row) => (row.from_person_id === personId ? row.to_person_id : row.from_person_id))
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    if (relatedPersonIds.length > 0) {
+      const { data: relatedPeople } = await supabase
+        .from('people')
+        .select('id, name, title, first_name, last_name, current_position, occupation, profile_photo_url, email, location_id, locations(*)')
+        .in('id', relatedPersonIds);
+
+      setConnections(
+        buildGraphConnections(
+          connectionRows,
+          normalizeRelatedPeople((relatedPeople || []) as RelatedConnectionPersonRow[]),
+          personId
+        )
+      );
+    } else {
+      setConnections([]);
+    }
 
     if (personData) {
       const flemish = personData.flemish_connection
@@ -432,6 +562,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               person={person}
               personSectors={personSectors}
               connections={connections}
+              onOpenGraph={() => setShowConnectionGraph(true)}
               onNavigate={onNavigate}
             />
           )}
@@ -443,6 +574,15 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
           person={person}
           onClose={() => setShowUpdateModal(false)}
           onApplied={handleUpdateApplied}
+        />
+      )}
+
+      {showConnectionGraph && (
+        <ConnectionGraphModal
+          person={person}
+          connections={connections}
+          onClose={() => setShowConnectionGraph(false)}
+          onNavigate={onNavigate}
         />
       )}
     </div>
@@ -928,13 +1068,22 @@ function ViewBody({
   person,
   personSectors,
   connections,
+  onOpenGraph,
   onNavigate,
 }: {
   person: Person;
   personSectors: { id: string; name: string }[];
-  connections: { id: string }[];
+  connections: GraphConnection[];
+  onOpenGraph: () => void;
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
 }) {
+  const connectionTypeCounts = connections.reduce<Record<string, number>>((counts, connection) => {
+    connection.relationshipTypes.forEach((type) => {
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return counts;
+  }, {});
+
   return (
     <>
       {person.bio && (
@@ -993,7 +1142,11 @@ function ViewBody({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Network</h2>
-          <button className="text-yellow-600 hover:text-yellow-700 font-medium text-sm flex items-center space-x-1">
+          <button
+            onClick={onOpenGraph}
+            disabled={connections.length === 0}
+            className="text-yellow-600 hover:text-yellow-700 disabled:text-gray-300 disabled:cursor-not-allowed font-medium text-sm flex items-center space-x-1 transition-colors"
+          >
             <Network className="w-4 h-4" />
             <span>View graph</span>
           </button>
@@ -1014,6 +1167,59 @@ function ViewBody({
             <p className="text-2xl font-semibold text-gray-900">{connections.length * 12}</p>
           </div>
         </div>
+        {connections.length > 0 ? (
+          <>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Object.entries(connectionTypeCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700"
+                  >
+                    {formatRelationshipType(type)}: {count}
+                  </span>
+                ))}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {connections.slice(0, 4).map((connection) => (
+                <button
+                  key={connection.person.id}
+                  onClick={() => onNavigate('person', connection.person.id)}
+                  className="rounded-xl border border-gray-100 bg-white p-4 text-left transition-all hover:border-yellow-200 hover:bg-yellow-50/40"
+                >
+                  <div className="flex items-start gap-3">
+                    <ProfileAvatar person={connection.person} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-gray-900 truncate">
+                        {displayName(connection.person)}
+                      </div>
+                      {connection.person.current_position && (
+                        <div className="mt-1 text-sm text-gray-600 line-clamp-2">
+                          {connection.person.current_position}
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {connection.relationshipTypes.map((type) => (
+                          <span
+                            key={`${connection.person.id}-${type}`}
+                            className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+                          >
+                            {formatRelationshipType(type)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-sm text-gray-400">
+            No direct connections yet. Run the Connections agent from Admin to generate them.
+          </p>
+        )}
       </div>
     </>
   );

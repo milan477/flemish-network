@@ -10,6 +10,9 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - `supabase/functions/agent-verify/index.ts` now exists. It verifies stale profiles in a LinkedIn-first flow: Apify scrape when `linkedin_url` is present, deterministic field diffing for position/location/bio/photo, then web search + the same Gemini `check_profile` schema locally when LinkedIn is unavailable or missing. The operational default is a 5-profile batch to stay inside the edge timeout.
 - Verification can create advisory `profile_suggestions` rows with `field_name = '_status'` and `suggested_value = 'may_have_left_us'` when LinkedIn indicates the person is no longer US-based. These are review-only flags; approving them should not try to write an unknown column onto `people`.
 - LinkedIn verification also suggests `profile_photo_url` when the profile has no stored photo and Apify returns one.
+- `supabase/functions/agent-connections/index.ts` now exists. It is a pure-SQL agent wrapper around the `discover_connections(text[])` RPC and reports connection runs through `agent_runs` with no LLM or web-search usage.
+- Migration `20260328210000_connection_discovery.sql` makes connection discovery idempotent by adding a partial unique index on unordered person-person pairs plus `relationship_type`, so rerunning the agent does not create reverse-direction duplicates.
+- The person profile now aggregates `connections` rows by connected person, so one person can surface multiple relationship types (`colleague`, `alumni`, `local_peer`) without inflating the direct-connection count. The `View graph` action opens a modal graph plus a detail list that exposes those type badges.
 
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript, Vite 5, Tailwind CSS 3, Lucide React (icons)
@@ -70,9 +73,15 @@ src/
 │   ├── geocoding.ts                 # Batch geocoding via edge function
 │   └── locations.ts                 # Location coordinate helpers
 supabase/
-├── migrations/                      # 23 sequential SQL migrations (see Database Schema below)
-└── functions/                       # 4 deployed Deno edge functions
+├── migrations/                      # Sequential SQL migrations (see Database Schema below)
+└── functions/                       # Deno edge functions
     ├── ai-agent/                    # Gemini orchestration (4 tasks: parse_contacts, smart_search, flemish_search, check_profile)
+    ├── agent-connections/           # Deterministic colleague/alumni/local-peer discovery
+    ├── agent-discovery/             # Web + LinkedIn discovery agent
+    ├── agent-scheduler/             # Agent run dispatcher / zombie cleanup
+    ├── agent-verify/                # LinkedIn-first profile verification
+    ├── generate-embeddings/         # Batch embedding generation for people
+    ├── suggest-people/              # Embedding + Gemini ranking for collections
     ├── search-contacts/             # Tavily web search + Gemini extraction + dedup check
     ├── update-profile/              # Web search a person + generate profile suggestions via check_profile
     └── geocode/                     # Nominatim geocoding + locations table caching
@@ -108,7 +117,7 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `flemish_link`, `created_at`, `updated_at` | No inline location columns. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude` | UNIQUE(city, state). Populated from us_cities.csv import. |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair |
+| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair. Person-person rows are unique per unordered pair + relationship type. |
 
 ### Junction Tables
 | Table | Keys |
@@ -174,6 +183,11 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 4. Uses Gemini structured extraction for web results, deterministic mapping for LinkedIn results, merges overlapping candidates across channels, then dedups against both `people` and `discovered_contacts`
 5. Inserts pending candidates into `discovered_contacts` for admin review and writes full run telemetry into `agent_runs.results`
 
+### Edge Function: `agent-connections`
+1. Takes optional `{ types, run_id }`, defaulting to all three deterministic relationship types
+2. Calls the `discover_connections(text[])` RPC to compute and insert `colleague`, `alumni`, and `local_peer` links directly in Postgres
+3. Writes zero-cost telemetry back to `agent_runs` with per-type counts for `connections_found`, `new_connections_created`, and `already_existed`
+
 ### Edge Function: `geocode`
 1. Takes `{ pairs: [{ city, state }] }` (max 25)
 2. Checks `locations` table cache first
@@ -190,12 +204,7 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - `scorePersonAgainstFilter(person, keywords, fields)` → boolean match
 
 ### What Does NOT Exist Yet
-- `generate-embeddings` edge function (planned)
-- `suggest-people` edge function (planned)
-- pgvector / `people.embedding` column (planned)
-- `match_people` SQL function (planned)
-- Connection agent (planned)
-- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used, model is hardcoded
+- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used consistently across the whole stack
 
 ### Known Bugs
 - **`geocode` edge function broken:** References `people.latitude`, `people.longitude`, `people.location_city`, `people.location_state` — all dropped in location refactor migration. Needs rewrite to use `locations` table via `location_id`.

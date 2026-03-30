@@ -197,8 +197,8 @@ Current CSV import works but needs improvements for bulk population.
 **Depends on:** Task 7 (agent infrastructure)
 **Effort:** Small-Medium (0.5-1 day)
 
-- [ ] `supabase/functions/agent-connections/index.ts` — deterministic SQL: colleague (same org), alumni (same flemish_connection), local_peer (same location + sector) (see strategy Phase 3.3)
-- [ ] No LLM, no web search — pure SQL
+- [x] `supabase/functions/agent-connections/index.ts` — deterministic SQL: colleague (same org), alumni (same flemish_connection), local_peer (same location + sector) (see strategy Phase 3.3)
+- [x] No LLM, no web search — pure SQL
 
 ---
 
