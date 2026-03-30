@@ -12,7 +12,6 @@ import {
   Pencil,
   Save,
   X,
-  Plus,
   RotateCw,
   Loader2,
   Tag,
@@ -26,13 +25,28 @@ import {
   Trash2,
   Link,
 } from 'lucide-react';
-import { supabase, displayName, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import {
+  supabase,
+  displayName,
+  OCCUPATION_OPTIONS,
+  type Person,
+  type Sector,
+  type FilterPreset,
+  type FlemishConnection,
+} from '../lib/supabase';
+import {
+  canonicalizeFlemishConnection,
+  extractFlemishConnectionsFromText,
+  getPersonFlemishConnections,
+} from '../lib/flemishConnections';
+import { syncPersonFlemishConnections } from '../lib/flemishConnectionSync';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { generateEmbedding } from '../lib/aiService';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import ConnectionGraphModal, { type GraphConnection } from '../components/ConnectionGraphModal';
+import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
 
 interface PersonProfileProps {
   personId: string;
@@ -154,17 +168,41 @@ function ensureProtocol(url: string): string {
   return trimmed;
 }
 
+function normalizeConnectionName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function reconcileConnections(
+  selected: FlemishConnection[],
+  options: FlemishConnection[]
+): FlemishConnection[] {
+  const byName = new Map(
+    options.map((connection) => [normalizeConnectionName(connection.name), connection])
+  );
+  const deduped = new Map<string, FlemishConnection>();
+
+  selected.forEach((connection) => {
+    const key = normalizeConnectionName(connection.name);
+    const resolved = byName.get(key) || connection;
+    if (!deduped.has(key)) {
+      deduped.set(key, resolved);
+    }
+  });
+
+  return Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
+  const [allFlemishConnections, setAllFlemishConnections] = useState<FlemishConnection[]>([]);
   const [connections, setConnections] = useState<GraphConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Person>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
-  const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
-  const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
+  const [editFlemishConnections, setEditFlemishConnections] = useState<FlemishConnection[]>([]);
   const [editLocationDisplay, setEditLocationDisplay] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -173,8 +211,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [showConnectionGraph, setShowConnectionGraph] = useState(false);
 
   const loadPerson = useCallback(async () => {
-    const [personRes, sectorsRes, allSectorsRes, connRes] = await Promise.all([
-      supabase.from('people').select('*, locations(*)').eq('id', personId).maybeSingle(),
+    const [personRes, sectorsRes, allSectorsRes, connRes, flemishRes] = await Promise.all([
+      supabase
+        .from('people')
+        .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+        .eq('id', personId)
+        .maybeSingle(),
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
       supabase.from('sectors').select('*'),
       supabase
@@ -182,11 +224,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
         .select('id, from_person_id, to_person_id, relationship_type, strength')
         .or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`)
         .limit(100),
+      supabase.from('flemish_connections').select('id, name, type').order('name'),
     ]);
 
     const personData = personRes.data;
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
+    setAllFlemishConnections((flemishRes.data || []) as FlemishConnection[]);
 
     const ps = ((sectorsRes.data || []) as unknown as PersonSector[])
       .filter((r) => r.sectors?.name)
@@ -220,10 +264,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     }
 
     if (personData) {
-      const flemish = personData.flemish_connection
-        ? personData.flemish_connection.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
-      setEditFlemishConnections(flemish);
+      setEditFlemishConnections(
+        reconcileConnections(
+          getPersonFlemishConnections(personData as Person),
+          (flemishRes.data || []) as FlemishConnection[]
+        )
+      );
     }
 
     setLoading(false);
@@ -245,7 +291,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       occupation: person.occupation || '',
       location_id: person.location_id || '',
       bio: person.bio || '',
-      flemish_connection: person.flemish_connection || '',
       phone: person.phone || '',
       email: person.email || '',
       linkedin_url: person.linkedin_url || '',
@@ -254,11 +299,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       profile_photo_url: person.profile_photo_url || '',
     });
     setEditSectorIds(personSectors.map((s) => s.id));
-    const flemish = person.flemish_connection
-      ? person.flemish_connection.split(',').map((s: string) => s.trim()).filter(Boolean)
-      : [];
-    setEditFlemishConnections(flemish);
-    setRemovedFlemishConnections([]);
+    setEditFlemishConnections(
+      reconcileConnections(getPersonFlemishConnections(person), allFlemishConnections)
+    );
     setEditing(true);
   };
 
@@ -267,7 +310,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setEditForm({});
     setEditSectorIds([]);
     setEditFlemishConnections([]);
-    setRemovedFlemishConnections([]);
   };
 
   const saveEdits = async () => {
@@ -279,7 +321,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     const title = (editForm.title || '').trim();
     const computedName = [title, first, last].filter(Boolean).join(' ') || editForm.name || person.name;
 
-    const flemishStr = editFlemishConnections.join(', ');
+    const flemishStr = editFlemishConnections.map((connection) => connection.name).join(', ');
 
     const linkedin = ensureProtocol(editForm.linkedin_url || '');
     const twitter = ensureProtocol(editForm.twitter_url || '');
@@ -294,7 +336,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       occupation: editForm.occupation || null,
       location_id: editForm.location_id || null,
       bio: editForm.bio || null,
-      flemish_connection: flemishStr || null,
       phone: editForm.phone || null,
       email: editForm.email || null,
       linkedin_url: linkedin || null,
@@ -309,7 +350,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .from('people')
       .update(updatePayload)
       .eq('id', person.id)
-      .select('*, locations(*)')
+      .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
       .maybeSingle();
 
     if (updateErr) {
@@ -329,11 +370,49 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     // Regenerate embedding after profile update
     generateEmbedding(person.id);
 
+    const ensuredConnections: FlemishConnection[] = [];
+    for (const connection of editFlemishConnections) {
+      const canonical =
+        canonicalizeFlemishConnection(connection.name) || {
+          name: connection.name.trim(),
+          type: connection.type,
+        };
+      const existing = allFlemishConnections.find(
+        (option) => normalizeConnectionName(option.name) === normalizeConnectionName(canonical.name)
+      );
+
+      if (existing) {
+        ensuredConnections.push(existing);
+        continue;
+      }
+
+      const { data: inserted, error: insertConnectionError } = await supabase
+        .from('flemish_connections')
+        .insert({
+          name: canonical.name,
+          type: canonical.type,
+        })
+        .select('id, name, type')
+        .maybeSingle();
+
+      if (insertConnectionError) {
+        setSaveError(`Profile info saved, but error saving Flemish connections: ${insertConnectionError.message}`);
+        setSaving(false);
+        return;
+      }
+
+      if (inserted) {
+        ensuredConnections.push(inserted as FlemishConnection);
+      }
+    }
+
     const currentIds = personSectors.map((s) => s.id);
     const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
     const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
 
     try {
+      await syncPersonFlemishConnections(person.id, flemishStr);
+
       if (toRemove.length > 0) {
         for (const sid of toRemove) {
           await supabase
@@ -350,10 +429,22 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
           .insert(toAdd.map((sid) => ({ person_id: person.id, sector_id: sid })));
         if (insertErr) throw insertErr;
       }
-      
+
+      setPerson({
+        ...(updatedPerson as Person),
+        person_flemish_connections: ensuredConnections.map((connection) => ({
+          person_id: person.id,
+          flemish_connection_id: connection.id,
+          flemish_connections: connection,
+        })),
+      });
+      setAllFlemishConnections((prev) =>
+        reconcileConnections([...prev, ...ensuredConnections], [...prev, ...ensuredConnections])
+      );
+      setEditFlemishConnections(ensuredConnections);
       setEditing(false);
     } catch (err: any) {
-      setSaveError(`Profile info saved, but error updating sectors: ${err.message}`);
+      setSaveError(`Profile info saved, but error updating related tags: ${err.message}`);
       setEditing(false);
     }
 
@@ -366,36 +457,30 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     );
   };
 
-  const toggleEditFlemish = (option: string) => {
-    setEditFlemishConnections((prev) => {
-      const exists = prev.includes(option);
-      if (exists) {
-        setRemovedFlemishConnections(r => [...new Set([...r, option])]);
-        return prev.filter((s) => s !== option);
-      } else {
-        setRemovedFlemishConnections(r => r.filter(i => i !== option));
-        return [...prev, option];
-      }
-    });
-  };
-
   const setField = (field: string, value: string) => {
     setEditForm((f) => {
       const next = { ...f, [field]: value };
-      
-      // Auto-inference for Flemish Connection from Bio
+
       if (field === 'bio') {
-        const lowerBio = value.toLowerCase();
-        const detected = FLEMISH_OPTIONS.filter(opt => 
-          lowerBio.includes(opt.toLowerCase()) && 
-          !editFlemishConnections.includes(opt) &&
-          !removedFlemishConnections.includes(opt)
+        const detected = reconcileConnections(
+          extractFlemishConnectionsFromText(value).map((connection) => {
+            const existing = allFlemishConnections.find(
+              (option) =>
+                normalizeConnectionName(option.name) ===
+                normalizeConnectionName(connection.name)
+            );
+            return existing || { id: connection.name.toLowerCase(), ...connection };
+          }),
+          allFlemishConnections
         );
+
         if (detected.length > 0) {
-          setEditFlemishConnections(prev => [...new Set([...prev, ...detected])]);
+          setEditFlemishConnections((prev) =>
+            reconcileConnections([...prev, ...detected], allFlemishConnections)
+          );
         }
       }
-      
+
       return next;
     });
   };
@@ -552,10 +637,45 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               editForm={editForm}
               setField={setField}
               allSectors={allSectors}
+              allFlemishConnections={allFlemishConnections}
               editSectorIds={editSectorIds}
               toggleEditSector={toggleEditSector}
               editFlemishConnections={editFlemishConnections}
-              toggleEditFlemish={toggleEditFlemish}
+              setEditFlemishConnections={setEditFlemishConnections}
+              onCreateFlemishConnection={async (name, type) => {
+                const canonical =
+                  canonicalizeFlemishConnection(name) || {
+                    name: name.trim(),
+                    type,
+                  };
+
+                const existing = allFlemishConnections.find(
+                  (connection) =>
+                    normalizeConnectionName(connection.name) ===
+                    normalizeConnectionName(canonical.name)
+                );
+                if (existing) return existing;
+
+                const { data, error } = await supabase
+                  .from('flemish_connections')
+                  .insert({
+                    name: canonical.name,
+                    type: canonical.type,
+                  })
+                  .select('id, name, type')
+                  .maybeSingle();
+
+                if (error || !data) {
+                  setSaveError(error?.message || 'Failed to create Flemish connection');
+                  return null;
+                }
+
+                const created = data as FlemishConnection;
+                setAllFlemishConnections((prev) =>
+                  reconcileConnections([...prev, created], [...prev, created])
+                );
+                return created;
+              }}
             />
           ) : (
             <ViewBody
@@ -947,31 +1067,26 @@ function EditBody({
   editForm,
   setField,
   allSectors,
+  allFlemishConnections,
   editSectorIds,
   toggleEditSector,
   editFlemishConnections,
-  toggleEditFlemish,
+  setEditFlemishConnections,
+  onCreateFlemishConnection,
 }: {
   editForm: Partial<Person>;
   setField: (f: string, v: string) => void;
   allSectors: Sector[];
+  allFlemishConnections: FlemishConnection[];
   editSectorIds: string[];
   toggleEditSector: (id: string) => void;
-  editFlemishConnections: string[];
-  toggleEditFlemish: (opt: string) => void;
+  editFlemishConnections: FlemishConnection[];
+  setEditFlemishConnections: React.Dispatch<React.SetStateAction<FlemishConnection[]>>;
+  onCreateFlemishConnection: (
+    name: string,
+    type: FlemishConnection['type']
+  ) => Promise<FlemishConnection | null>;
 }) {
-  const [customFlemish, setCustomFlemish] = useState('');
-
-  const handleAddCustom = (e: React.KeyboardEvent | React.MouseEvent) => {
-    if ('key' in e && e.key !== 'Enter') return;
-    e.preventDefault();
-    const val = customFlemish.trim();
-    if (val && !editFlemishConnections.includes(val)) {
-      toggleEditFlemish(val);
-      setCustomFlemish('');
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -986,51 +1101,13 @@ function EditBody({
       </div>
       <div>
         <label className="text-sm font-medium text-gray-700 mb-2 block">Flemish Connection</label>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {FLEMISH_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => toggleEditFlemish(opt)}
-              className={`text-sm px-4 py-1.5 rounded-full font-medium transition-colors ${
-                editFlemishConnections.includes(opt)
-                  ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-          {/* Custom tags not in FLEMISH_OPTIONS */}
-          {editFlemishConnections.filter(opt => !FLEMISH_OPTIONS.includes(opt)).map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => toggleEditFlemish(opt)}
-              className="text-sm px-4 py-1.5 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 ring-1 ring-amber-300 flex items-center space-x-1"
-            >
-              <span>{opt}</span>
-              <X className="w-3 h-3" />
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center space-x-2 max-w-xs">
-          <input
-            type="text"
-            value={customFlemish}
-            onChange={(e) => setCustomFlemish(e.target.value)}
-            onKeyDown={handleAddCustom}
-            placeholder="Add custom connection..."
-            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-          />
-          <button
-            type="button"
-            onClick={handleAddCustom}
-            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
+        <FlemishConnectionSelector
+          options={allFlemishConnections}
+          value={editFlemishConnections}
+          onChange={setEditFlemishConnections}
+          onCreateOption={onCreateFlemishConnection}
+          placeholder="Search universities, companies, government links..."
+        />
       </div>
       <div>
         <label className="text-sm font-medium text-gray-700 mb-2 block">Sectors</label>
@@ -1083,6 +1160,7 @@ function ViewBody({
     });
     return counts;
   }, {});
+  const flemishConnections = getPersonFlemishConnections(person);
 
   return (
     <>
@@ -1093,26 +1171,19 @@ function ViewBody({
         </div>
       )}
 
-      {person.flemish_connection && (
+      {flemishConnections.length > 0 && (
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
           <div className="flex flex-wrap gap-2">
-            {person.flemish_connection.split(',').map(s => s.trim()).filter(Boolean).map((m, idx) => {
-              const isStandard = FLEMISH_OPTIONS.includes(m);
-              return (
-                <button
-                  key={`${m}-${idx}`}
-                  onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [m] })}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer hover:ring-2 ${
-                    isStandard 
-                      ? 'bg-blue-50 text-blue-700 hover:ring-blue-300' 
-                      : 'bg-amber-50 text-amber-700 hover:ring-amber-300 border border-amber-100'
-                  }`}
-                >
-                  {m}
-                </button>
-              );
-            })}
+            {flemishConnections.map((connection) => (
+              <button
+                key={connection.id}
+                onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [connection.name] })}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer hover:ring-2 bg-blue-50 text-blue-700 hover:ring-blue-300"
+              >
+                {connection.name}
+              </button>
+            ))}
           </div>
         </div>
       )}

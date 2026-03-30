@@ -13,13 +13,21 @@ import {
   Globe,
   Plus,
 } from 'lucide-react';
-import { supabase, displayName, FLEMISH_OPTIONS, type Organization, type Person, type Sector } from '../lib/supabase';
+import {
+  supabase,
+  displayName,
+  FLEMISH_OPTIONS,
+  type Organization,
+  type Person,
+  type Sector,
+  type FilterPreset,
+} from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 
 interface OrganizationProfileProps {
   organizationId: string;
-  onNavigate: (page: string, id?: string) => void;
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
 }
 
 interface OrganizationSector {
@@ -35,6 +43,15 @@ function ensureProtocol(url: string): string {
   }
   return trimmed;
 }
+
+const SECTOR_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
+  'Artificial Intelligence': { bg: 'bg-blue-50', text: 'text-blue-700', ring: 'hover:ring-blue-300' },
+  Biotechnology: { bg: 'bg-green-50', text: 'text-green-700', ring: 'hover:ring-green-300' },
+  Finance: { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'hover:ring-amber-300' },
+  Education: { bg: 'bg-yellow-50', text: 'text-yellow-700', ring: 'hover:ring-yellow-300' },
+  'Culture & Arts': { bg: 'bg-pink-50', text: 'text-pink-700', ring: 'hover:ring-pink-300' },
+  Research: { bg: 'bg-cyan-50', text: 'text-cyan-700', ring: 'hover:ring-cyan-300' },
+};
 
 export default function OrganizationProfile({ organizationId, onNavigate }: OrganizationProfileProps) {
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -304,10 +321,22 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                   <p className="text-lg text-gray-600 mb-2">{organization.type}</p>
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-4">
                     {organization.locations?.city && (
-                      <div className="flex items-center space-x-2 text-gray-600">
+                      <button
+                        onClick={() =>
+                          onNavigate('dashboard', undefined, {
+                            focusCity: {
+                              city: organization.locations?.city || '',
+                              state: organization.locations?.state || '',
+                            },
+                          })
+                        }
+                        className="group flex items-center space-x-2 text-gray-600 hover:text-yellow-700 transition-colors"
+                      >
                         <MapPin className="w-5 h-5 text-gray-400" />
-                        <span>{organization.locations?.city}, {organization.locations?.state}</span>
-                      </div>
+                        <span className="group-hover:underline">
+                          {organization.locations?.city}, {organization.locations?.state}
+                        </span>
+                      </button>
                     )}
                     {organization.website_url && (
                       <a
@@ -326,14 +355,23 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
               
               {!editing && orgSectors.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {orgSectors.map((s) => (
-                    <span
-                      key={s.id}
-                      className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium"
-                    >
-                      {s.name}
-                    </span>
-                  ))}
+                  {orgSectors.map((s) => {
+                    const colors = SECTOR_COLORS[s.name] || {
+                      bg: 'bg-gray-50',
+                      text: 'text-gray-700',
+                      ring: 'hover:ring-gray-300',
+                    };
+
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => onNavigate('dashboard', undefined, { sector: s.name })}
+                        className={`px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-sm font-medium transition-all hover:ring-2 ${colors.ring}`}
+                      >
+                        {s.name}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               
@@ -463,16 +501,21 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                     {organization.flemish_link.split(',').map(s => s.trim()).filter(Boolean).map((m, idx) => {
                       const isStandard = FLEMISH_OPTIONS.includes(m);
                       return (
-                        <span
+                        <button
                           key={`${m}-${idx}`}
-                          className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                          onClick={() =>
+                            onNavigate('dashboard', undefined, {
+                              flemishConnections: [m],
+                            })
+                          }
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all hover:ring-2 ${
                             isStandard 
-                              ? 'bg-blue-50 text-blue-700' 
-                              : 'bg-amber-50 text-amber-700 border border-amber-100'
+                              ? 'bg-blue-50 text-blue-700 hover:ring-blue-300' 
+                              : 'bg-amber-50 text-amber-700 border border-amber-100 hover:ring-amber-300'
                           }`}
                         >
                           {m}
-                        </span>
+                        </button>
                       );
                     })}
                   </div>

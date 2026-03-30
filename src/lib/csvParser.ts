@@ -81,6 +81,21 @@ export const PROFILE_FIELDS: ProfileField[] = [
     ],
   },
   {
+    key: 'sectors',
+    label: 'Sector(s)',
+    required: false,
+    aliases: [
+      'sector',
+      'sectors',
+      'sector(s)',
+      'industry',
+      'industries',
+      'domain',
+      'focus area',
+      'focus areas',
+    ],
+  },
+  {
     key: 'location_city',
     label: 'City',
     required: false,
@@ -186,82 +201,63 @@ export interface CsvParseResult {
 }
 
 export function parseCSV(text: string): CsvParseResult {
-  const lines: string[] = [];
-  let current = '';
+  const parsedRows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
   let inQuotes = false;
 
-  for (let i = 0; i < text.length; i++) {
+  const finishCell = () => {
+    row.push(cell.trim());
+    cell = '';
+  };
+
+  const finishRow = () => {
+    finishCell();
+    if (row.some((value) => value.length > 0)) {
+      parsedRows.push(row);
+    }
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     const next = text[i + 1];
 
     if (inQuotes) {
       if (ch === '"' && next === '"') {
-        current += '"';
-        i++;
+        cell += '"';
+        i += 1;
       } else if (ch === '"') {
         inQuotes = false;
       } else {
-        current += ch;
+        cell += ch;
       }
     } else {
       if (ch === '"') {
         inQuotes = true;
-      } else if (ch === '\n' || (ch === '\r' && next === '\n')) {
-        lines.push(current);
-        current = '';
-        if (ch === '\r') i++;
+      } else if (ch === ',') {
+        finishCell();
+      } else if (ch === '\n') {
+        finishRow();
       } else if (ch === '\r') {
-        lines.push(current);
-        current = '';
+        finishRow();
+        if (next === '\n') i += 1;
       } else {
-        current += ch;
+        cell += ch;
       }
     }
   }
-  if (current.trim()) {
-    lines.push(current);
+
+  if (cell.length > 0 || row.length > 0) {
+    finishRow();
   }
 
-  if (lines.length < 1) {
+  if (parsedRows.length < 1) {
     return { headers: [], rows: [], totalRows: 0 };
   }
 
-  const splitRow = (line: string): string[] => {
-    const cells: string[] = [];
-    let cell = '';
-    let quoted = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (quoted) {
-        if (ch === '"' && line[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else if (ch === '"') {
-          quoted = false;
-        } else {
-          cell += ch;
-        }
-      } else {
-        if (ch === '"') {
-          quoted = true;
-        } else if (ch === ',') {
-          cells.push(cell.trim());
-          cell = '';
-        } else {
-          cell += ch;
-        }
-      }
-    }
-    cells.push(cell.trim());
-    return cells;
-  };
-
-  const headers = splitRow(lines[0]);
-  const rows = lines
-    .slice(1)
-    .map(splitRow)
-    .filter((r) => r.some((c) => c.length > 0));
+  const headers = parsedRows[0];
+  const rows = parsedRows.slice(1).filter((r) => r.some((c) => c.length > 0));
 
   return { headers, rows, totalRows: rows.length };
 }
@@ -470,6 +466,7 @@ const TEMPLATE_EXAMPLE: Record<string, string> = {
   'Last Name': 'De Smedt',
   Position: 'Professor of Computer Science at MIT',
   Occupation: 'Academic/Researcher',
+  'Sector(s)': 'Artificial Intelligence; Research',
   City: 'Boston',
   State: 'Massachusetts',
   Bio: 'Belgian researcher specializing in AI and machine learning.',

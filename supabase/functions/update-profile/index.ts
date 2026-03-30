@@ -26,6 +26,31 @@ interface PersonData {
   twitter_url?: string;
 }
 
+function buildFlemishConnectionText(
+  links:
+    | {
+        flemish_connections:
+          | { name: string | null }
+          | { name: string | null }[]
+          | null;
+      }[]
+    | null
+    | undefined
+): string {
+  const names = new Set<string>();
+
+  for (const link of links || []) {
+    const raw = link.flemish_connections;
+    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const row of rows) {
+      const name = row?.name?.trim();
+      if (name) names.add(name);
+    }
+  }
+
+  return Array.from(names).sort().join(", ");
+}
+
 interface Suggestion {
   field_name: string;
   current_value: string;
@@ -148,7 +173,7 @@ async function processOnePerson(
 
     const { data: person, error: fetchErr } = await supabase
       .from("people")
-      .select("*, locations(city, state)")
+      .select("*, locations(city, state), person_flemish_connections(flemish_connections(name))")
       .eq("id", personId)
       .maybeSingle();
 
@@ -166,7 +191,7 @@ async function processOnePerson(
       location_city: safeStr(person.locations?.city),
       location_state: safeStr(person.locations?.state),
       bio: safeStr(person.bio),
-      flemish_connection: safeStr(person.flemish_connection),
+      flemish_connection: buildFlemishConnectionText(person.person_flemish_connections),
       phone: safeStr(person.phone),
       email: safeStr(person.email),
       linkedin_url: safeStr(person.linkedin_url),

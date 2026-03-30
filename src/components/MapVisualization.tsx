@@ -21,12 +21,16 @@ L.Icon.Default.mergeOptions({
 interface MapVisualizationProps {
   clusters: MapCluster[];
   loading: boolean;
+  focusedCity: { city: string; state: string } | null;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
+  totalPeople: number;
+  totalOrganizations: number;
 }
 
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
+const MAX_CIRCLE_SCALE_COUNT = 25;
 
 function MapController({ onMapClick }: { onMapClick: () => void }) {
   const map = useMap();
@@ -37,7 +41,15 @@ function MapController({ onMapClick }: { onMapClick: () => void }) {
   return null;
 }
 
-export default function MapVisualization({ clusters, loading, onViewInDirectory, onNavigate }: MapVisualizationProps) {
+export default function MapVisualization({
+  clusters,
+  loading,
+  focusedCity,
+  onViewInDirectory,
+  onNavigate,
+  totalPeople,
+  totalOrganizations,
+}: MapVisualizationProps) {
   const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -46,6 +58,22 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
     setSelectedCityKey(null);
   }, [clusters]);
 
+  useEffect(() => {
+    if (!focusedCity || !mapRef.current) return;
+
+    const targetCluster = clusters.find(
+      (cluster) =>
+        cluster.city === focusedCity.city && cluster.state === focusedCity.state
+    );
+
+    if (!targetCluster) return;
+
+    mapRef.current.setView([targetCluster.lat, targetCluster.lng], 9, {
+      animate: true,
+    });
+    setSelectedCityKey(`${targetCluster.city}-${targetCluster.state}`);
+  }, [clusters, focusedCity]);
+
   const handleBackdropClick = useCallback(() => {
     setSelectedCityKey(null);
   }, []);
@@ -53,12 +81,14 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
   const zoomIn = () => { mapRef.current?.zoomIn(); };
   const zoomOut = () => { mapRef.current?.zoomOut(); };
   const resetView = () => { mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM); };
+  const totalResults = totalPeople + totalOrganizations;
 
   // Custom icon for a single city cluster
   const createCityIcon = useCallback((cluster: MapCluster) => {
     const key = `${cluster.city}-${cluster.state}`;
     const count = cluster.people.length + cluster.organizations.length;
-    const size = Math.max(Math.sqrt(count) * 12, 32);
+    const scaledCount = Math.min(count, MAX_CIRCLE_SCALE_COUNT);
+    const size = Math.max(Math.sqrt(scaledCount) * 12, 32);
     const isSelected = selectedCityKey === key;
     
     return L.divIcon({
@@ -87,7 +117,8 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
       }
     });
 
-    const size = Math.max(Math.sqrt(totalCount) * 10, 40);
+    const scaledCount = Math.min(totalCount, MAX_CIRCLE_SCALE_COUNT);
+    const size = Math.max(Math.sqrt(scaledCount) * 10, 40);
     
     return L.divIcon({
       html: `
@@ -230,7 +261,11 @@ export default function MapVisualization({ clusters, loading, onViewInDirectory,
         {!loading && clusters.length === 0 && (
           <div className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none">
             <div className="bg-white/90 backdrop-blur-sm px-6 py-3 rounded-full shadow-lg border border-gray-100">
-              <span className="text-sm font-medium text-gray-500">No results match your filters</span>
+              <span className="text-sm font-medium text-gray-500">
+                {totalResults > 0
+                  ? `${totalResults} matching result${totalResults === 1 ? '' : 's'} found, but none have a mapped location yet`
+                  : 'No results match your filters'}
+              </span>
             </div>
           </div>
         )}

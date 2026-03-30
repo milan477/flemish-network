@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { type Person } from './supabase';
+import { getPersonFlemishConnectionText } from './flemishConnections';
 
 export interface ParsedContact {
   name: string;
@@ -179,7 +180,9 @@ export function scorePersonAgainstKeywords(
       const [parent, child] = personField.split('.');
       val = String(person[parent]?.[child] || '').toLowerCase();
     } else {
-      val = String(person[personField] || '').toLowerCase();
+      val = personField === 'flemish_connection'
+        ? getPersonFlemishConnectionText(person as Person).toLowerCase()
+        : String(person[personField] || '').toLowerCase();
     }
     
     if (!val) continue;
@@ -203,7 +206,9 @@ export function scorePersonAgainstFilter(
   for (const field of fields) {
     const kws = keywords[field];
     if (!kws || kws.length === 0) continue;
-    const val = String(person[field] || '').toLowerCase();
+    const val = field === 'flemish_connection'
+      ? getPersonFlemishConnectionText(person as Person).toLowerCase()
+      : String(person[field] || '').toLowerCase();
     if (!val) continue;
     for (const kw of kws) {
       if (val.includes(kw)) return true;
@@ -293,7 +298,10 @@ export async function suggestPeopleEmbedding(
 export async function suggestPeople(query: string): Promise<{ person: Person; reason: string; score: number }[]> {
   try {
     const res = await smartSearch(query);
-    const { data: people, error } = await supabase.from('people').select('*, locations(*)').limit(200);
+    const { data: people, error } = await supabase
+      .from('people')
+      .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+      .limit(200);
     if (error || !people) throw error || new Error('No people found');
 
     return (people || [])
@@ -361,7 +369,10 @@ export async function hybridSearch(
   } catch {
     // Fallback: client-side scoring (same as before, but only as degraded path)
     const res = await smartSearch(query);
-    const { data: people } = await supabase.from('people').select('*, locations(*)').limit(200);
+    const { data: people } = await supabase
+      .from('people')
+      .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+      .limit(200);
 
     if (!people) {
       return { results: [], keywords: res.keywords, message: res.message, total_with_embeddings: 0 };
@@ -388,7 +399,7 @@ export async function hybridSearch(
       current_position: s.person.current_position ?? null,
       bio: s.person.bio ?? null,
       occupation: s.person.occupation ?? null,
-      flemish_connection: s.person.flemish_connection ?? null,
+      flemish_connection: getPersonFlemishConnectionText(s.person) || null,
       profile_photo_url: s.person.profile_photo_url ?? null,
       email: s.person.email ?? null,
       linkedin_url: s.person.linkedin_url ?? null,

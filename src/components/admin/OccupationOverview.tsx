@@ -11,8 +11,9 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import type { Person } from '../../lib/supabase';
+import InteractiveBarChart from './InteractiveBarChart';
 
-const CATEGORIES = [
+export const CATEGORIES = [
   { label: 'Professors', icon: GraduationCap, color: 'bg-blue-500', light: 'bg-blue-50 text-blue-700', keywords: ['professor', 'prof.', 'faculty', 'lecturer'] },
   { label: 'Researchers', icon: Microscope, color: 'bg-emerald-500', light: 'bg-emerald-50 text-emerald-700', keywords: ['researcher', 'scientist', 'postdoc', 'neuroscientist'] },
   { label: 'Engineers', icon: Wrench, color: 'bg-cyan-500', light: 'bg-cyan-50 text-cyan-700', keywords: ['engineer', 'developer', 'architect'] },
@@ -38,7 +39,7 @@ const OCCUPATION_MAP: Record<string, string> = {
   consultant: 'Executives',
 };
 
-function classifyPerson(person: Person): string {
+export function classifyPerson(person: Person): string {
   if (person.occupation) {
     const mapped = OCCUPATION_MAP[person.occupation.toLowerCase()];
     if (mapped) return mapped;
@@ -53,74 +54,69 @@ function classifyPerson(person: Person): string {
   return 'Other';
 }
 
-export default function OccupationOverview({ people }: { people: Person[] }) {
-  const counts: Record<string, number> = {};
-  people.forEach((p) => {
-    const cat = classifyPerson(p);
-    counts[cat] = (counts[cat] || 0) + 1;
+interface OccupationOverviewProps {
+  people: Person[];
+  totalPeople?: Person[];
+  activeCategory?: string | null;
+  onBarClick?: (category: string) => void;
+  onViewInNetwork?: (category: string) => void;
+}
+
+function buildCategoryCounts(people: Person[]) {
+  const counts = new Map<string, number>();
+
+  people.forEach((person) => {
+    const category = classifyPerson(person);
+    counts.set(category, (counts.get(category) || 0) + 1);
   });
 
-  const sorted = [
-    ...CATEGORIES.map((c) => ({
-      ...c,
-      count: counts[c.label] || 0,
-    })).filter((c) => c.count > 0),
-    ...(counts['Other']
+  return counts;
+}
+
+export default function OccupationOverview({
+  people,
+  totalPeople,
+  activeCategory = null,
+  onBarClick,
+  onViewInNetwork,
+}: OccupationOverviewProps) {
+  const filteredCounts = buildCategoryCounts(people);
+  const baselineCounts = buildCategoryCounts(totalPeople || people);
+
+  const items = [
+    ...CATEGORIES.map((category) => ({
+      key: category.label,
+      label: category.label,
+      icon: category.icon,
+      iconClassName: category.light.split(' ')[1] || 'text-gray-600',
+      color: category.color,
+      count: filteredCounts.get(category.label) || 0,
+      totalCount: baselineCounts.get(category.label) || 0,
+    })).filter((item) => item.totalCount > 0),
+    ...(baselineCounts.get('Other')
       ? [
           {
+            key: 'Other',
             label: 'Other',
             icon: HelpCircle,
+            iconClassName: 'text-gray-600',
             color: 'bg-gray-400',
-            light: 'bg-gray-50 text-gray-600',
-            keywords: [] as string[],
-            count: counts['Other'],
+            count: filteredCounts.get('Other') || 0,
+            totalCount: baselineCounts.get('Other') || 0,
           },
         ]
       : []),
-  ].sort((a, b) => b.count - a.count);
-
-  const maxCount = sorted[0]?.count || 1;
+  ].sort((a, b) => b.count - a.count || (b.totalCount || 0) - (a.totalCount || 0));
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-      <h2 className="text-lg font-semibold text-gray-900 mb-5">
-        Occupations Overview
-      </h2>
-      <div className="space-y-3">
-        {sorted.map((cat) => {
-          const Icon = cat.icon;
-          return (
-            <div key={cat.label} className="flex items-center space-x-2.5">
-              <div
-                className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${cat.light}`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-700 font-medium truncate">
-                    {cat.label}
-                  </span>
-                  <span className="text-sm font-semibold text-gray-900 ml-2 flex-shrink-0">
-                    {cat.count}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`${cat.color} h-2 rounded-full transition-all duration-700`}
-                    style={{ width: `${(cat.count / maxCount) * 100}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {sorted.length === 0 && (
-        <p className="text-sm text-gray-400 text-center py-6">
-          No contacts in the database yet.
-        </p>
-      )}
-    </div>
+    <InteractiveBarChart
+      title="Occupations Overview"
+      subtitle="Nine profile categories that can be cross-filtered into the main network."
+      items={items}
+      activeKey={activeCategory}
+      onBarClick={(category) => onBarClick?.(category)}
+      onViewInNetwork={onViewInNetwork}
+      emptyMessage="No contacts in the database yet."
+    />
   );
 }

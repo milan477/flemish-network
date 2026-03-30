@@ -156,6 +156,8 @@ Current CSV import works but needs improvements for bulk population.
 - [x] **Template download:** "Download template" button with expected columns and example data (CSV + Excel)
 - [x] **Duplicate handling:** Option to skip duplicates, update existing, or create new.
 - [x] **Show the accepted formats** Upload area shows .csv, .xlsx, .xls, .tsv, .txt as accepted formats.
+- [x] **Cancelable imports with rollback:** While row writes are in progress, the CSV importer now exposes a cancel action that halts after the current DB step and rolls back contacts created in that run while restoring prior data for contacts updated earlier in the same run.
+- [x] **Importer load-test fixtures:** Added `test-csvs/08_large_people_dataset.csv` (504 rows) plus `09`-`14` sector-split CSVs (84 rows each). The importer now maps `Sector` / `Sectors` columns directly into `person_sectors`, including multi-value cells, and the bulk sector assignment step remains available for adding shared sectors to the full batch.
 
 ---
 
@@ -218,18 +220,18 @@ Current CSV import works but needs improvements for bulk population.
 **Scope:** Admin.tsx, admin components
 **Effort:** Medium (1 day)
 
-- [ ] Make data bars/labels/counts clickable for cross-filtering
-- [ ] Click "Finance" in sectors → other charts filter to Finance people only
-- [ ] Active cross-filter shown as chip with X to clear
-- [ ] "View in Network" link: navigate to Dashboard with filter pre-applied
+- [x] Make data bars/labels/counts clickable for cross-filtering
+- [x] Click "Finance" in sectors → other charts filter to Finance people only
+- [x] Active cross-filter shown as chip with X to clear
+- [x] "View in Network" link: navigate to Dashboard with filter pre-applied
 
 ### 13. Profile Page Clickable Tags
 **Scope:** PersonProfile.tsx, OrganizationProfile.tsx
 **Effort:** Small (< 0.5 day)
 
-- [ ] Sector tags clickable → Dashboard with sector filter
-- [ ] Flemish Connection clickable → Dashboard with connection filter
-- [ ] Location clickable → Dashboard centered on city
+- [x] Sector tags clickable → Dashboard with sector filter
+- [x] Flemish Connection clickable → Dashboard with connection filter
+- [x] Location clickable → Dashboard centered on city
 
 ### 14. Map Improvements
 **Scope:** MapVisualization.tsx, ClusterPopover.tsx
@@ -237,11 +239,7 @@ Current CSV import works but needs improvements for bulk population.
 
 Map already uses Leaflet + markercluster. Improvements:
 
-- [ ] Cluster circles scale proportionally to count
-- [ ] Click cluster → zoom to show sub-clusters
-- [ ] Individual marker popup: name, occupation, org, link to profile
-- [ ] Heat density overlay option (toggle on/off)
-- [ ] Performance: virtualize marker rendering for > 500 contacts
+- [x] Performance: virtualize marker rendering for > 500 contacts
 
 ### 15. Interaction Tracking / Notes
 **Scope:** New migration, PersonProfile.tsx, new component
@@ -250,6 +248,12 @@ Map already uses Leaflet + markercluster. Improvements:
 - [ ] `interactions` table: `person_id`, `interaction_type` (email/call/meeting/note/event), `summary`, `interaction_date`
 - [ ] InteractionLog component on profile pages: chronological list, "+ Add Note" form
 - [ ] "Last contacted: [date]" on person cards in DirectoryGrid
+
+### 16. Improvement on Flemish Connection Tagging
+
+- [x] Refactored person Flemish links to support multiple discrete connections per person and removed `people.flemish_connection` entirely after migrating filtering/search paths to the join table.
+- [x] Added improved entity extraction for universities, government, companies, and other Flemish links, with parser tightening to avoid generic descriptive phrases becoming tags.
+- [x] Added `flemish_connections` + `person_flemish_connections`, wired searchable multi-select creation into the person/admin forms, and backfilled existing people on the linked Supabase project.
 
 ---
 
@@ -368,22 +372,6 @@ No tests exist currently.
 - [ ] Coverage gaps: "15 contacts in Boston, 0 in Houston"
 - [ ] Suggest discovery agent searches for underrepresented areas
 
-### 23. Notification System
-**Scope:** New migration, Navigation.tsx
-**Depends on:** Task 20 (auth)
-**Effort:** Medium (1-2 days)
-
-- [ ] In-app notification bell
-- [ ] Notification types: new suggestions, agent run complete, stale profiles
-- [ ] Optional email digest
-
-### 24. Multi-Language Support (Dutch + English)
-**Scope:** All UI components
-**Effort:** Large (2-3 days)
-
-- [ ] Extract UI strings to translation files
-- [ ] Language toggle in Navigation
-
 ---
 
 ## Notes
@@ -413,14 +401,3 @@ No tests exist currently.
 10 → 21. Network visualization
 20 → 23. Notifications
 ```
-
-**Recommended implementation order:**
-1. Tasks 0a-0e (critical bug fixes) — unblock typecheck, fix broken edge functions, clean up console/alert
-2. Tasks 1 + 2 (model config + embeddings) — foundation for all AI
-3. Tasks 4 + 5 + 6 (export, photos, import) — immediate user value
-4. Task 3 (suggest-people) — needs embeddings
-5. Tasks 16 + 17 + 19 (performance, deployment, code quality) — ship-readiness
-6. Task 7 (agent infrastructure) — foundation for agents
-7. Tasks 8 + 9 + 10 (agents) — autonomous enrichment (Task 8 needs `discovered_contacts` migration)
-8. Task 18 (documentation) — handover readiness
-9. Everything else based on priority
