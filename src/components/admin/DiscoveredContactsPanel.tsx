@@ -26,6 +26,7 @@ import {
   type Person,
   type Sector,
 } from '../../lib/supabase';
+import { syncPersonFlemishConnectionsAndRequeue } from '../../lib/flemishConnectionSync';
 
 interface DiscoveredContact {
   id: string;
@@ -177,6 +178,7 @@ async function approveContact(
   sectors: Sector[]
 ): Promise<boolean> {
   const parsed = parseTitleFromName(contact.name || '');
+  const flemishConnectionText = contact.flemish_connection?.trim() || null;
   const locationId = await resolveLocationId(
     contact.location_city,
     contact.location_state
@@ -193,7 +195,6 @@ async function approveContact(
       occupation: contact.occupation || null,
       location_id: locationId,
       bio: contact.bio || null,
-      flemish_connection: contact.flemish_connection || null,
       email: contact.email || null,
       email_verified: contact.email ? false : null,
       linkedin_url: contact.linkedin_url || null,
@@ -204,6 +205,14 @@ async function approveContact(
     .maybeSingle();
 
   if (error || !person) return false;
+
+  try {
+    if (flemishConnectionText) {
+      await syncPersonFlemishConnectionsAndRequeue(person.id, flemishConnectionText);
+    }
+  } catch {
+    return false;
+  }
 
   if (contact.sectors && contact.sectors.length > 0) {
     const matched = sectors.filter((s) => contact.sectors!.includes(s.name));
@@ -216,11 +225,6 @@ async function approveContact(
       );
     }
   }
-
-  supabase.functions
-    .invoke('generate-embeddings', { body: { personId: person.id } })
-    .catch(() => {});
-
   await supabase.from('discovered_contacts').delete().eq('id', contact.id);
 
   return true;
@@ -252,7 +256,9 @@ async function mergeIntoExisting(
     } else if (fieldKey === 'location_city' || fieldKey === 'location_state') {
       // Location handled separately below
     } else {
-      updates[fieldKey] = newVal;
+      if (fieldKey !== 'flemish_connection') {
+        updates[fieldKey] = newVal;
+      }
     }
   }
 
@@ -277,12 +283,31 @@ async function mergeIntoExisting(
   delete updates.location_city;
   delete updates.location_state;
 
+  const mergedFlemishConnection =
+    selectedFields.includes('flemish_connection') && updates.flemish_connection !== undefined
+      ? String(updates.flemish_connection)
+      : selectedFields.includes('flemish_connection')
+        ? contact.flemish_connection || null
+        : null;
+  delete updates.flemish_connection;
+
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase
       .from('people')
       .update(updates)
       .eq('id', existingPerson.id);
     if (error) return false;
+  }
+
+  try {
+    if (selectedFields.includes('flemish_connection')) {
+      await syncPersonFlemishConnectionsAndRequeue(
+        existingPerson.id,
+        mergedFlemishConnection
+      );
+    }
+  } catch {
+    return false;
   }
 
   // Merge sectors
@@ -299,12 +324,6 @@ async function mergeIntoExisting(
       );
     }
   }
-
-  // Regenerate embedding
-  supabase.functions
-    .invoke('generate-embeddings', { body: { personId: existingPerson.id } })
-    .catch(() => {});
-
   // Delete from discovered_contacts
   await supabase.from('discovered_contacts').delete().eq('id', contact.id);
 

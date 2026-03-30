@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase, parseTitleFromName, type Sector, type Person } from '../../lib/supabase';
 import { searchContacts } from '../../lib/aiService';
+import { syncPersonFlemishConnectionsAndRequeue } from '../../lib/flemishConnectionSync';
 import ContactCard, {
   ContactCardEdit,
   type DiscoveredContact,
@@ -44,6 +45,7 @@ async function addContactToDb(
   const hasEmail = !!(contact.email && contact.email.includes('@'));
   const parsed = parseTitleFromName(contact.name || '');
   const locationId = await resolveLocationId(contact.location_city, contact.location_state);
+  const flemishConnectionText = contact.flemish_connection?.trim() || null;
   const { data: person, error } = await supabase
     .from('people')
     .insert({
@@ -55,7 +57,6 @@ async function addContactToDb(
       occupation: contact.occupation || null,
       location_id: locationId,
       bio: contact.bio || null,
-      flemish_connection: contact.flemish_connection || null,
       email: contact.email || null,
       email_verified: hasEmail ? false : null,
       linkedin_url: contact.linkedin_url || null,
@@ -66,6 +67,14 @@ async function addContactToDb(
     .maybeSingle();
 
   if (error || !person) return false;
+
+  try {
+    if (flemishConnectionText) {
+      await syncPersonFlemishConnectionsAndRequeue(person.id, flemishConnectionText);
+    }
+  } catch {
+    return false;
+  }
 
   if (contact.sectors && contact.sectors.length > 0) {
     const matchedSectors = allSectors.filter((s) =>
@@ -95,7 +104,9 @@ async function updateExistingContact(
   for (const field of selectedFields) {
     const val = contactObj[field];
     if (val !== undefined && val !== null && val !== '') {
-      updates[field] = val;
+      if (field !== 'flemish_connection') {
+        updates[field] = val;
+      }
     }
   }
 
@@ -103,14 +114,32 @@ async function updateExistingContact(
     updates.email_verified = false;
   }
 
-  if (Object.keys(updates).length === 0) return true;
+  if (
+    Object.keys(updates).length === 0 &&
+    !selectedFields.includes('flemish_connection')
+  ) {
+    return true;
+  }
 
-  const { error } = await supabase
-    .from('people')
-    .update(updates)
-    .eq('id', existingId);
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase
+      .from('people')
+      .update(updates)
+      .eq('id', existingId);
 
-  if (error) return false;
+    if (error) return false;
+  }
+
+  try {
+    if (selectedFields.includes('flemish_connection')) {
+      await syncPersonFlemishConnectionsAndRequeue(
+        existingId,
+        contact.flemish_connection || null
+      );
+    }
+  } catch {
+    return false;
+  }
 
   if (contact.sectors && contact.sectors.length > 0) {
     const matchedSectors = allSectors.filter((s) =>

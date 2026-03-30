@@ -7,11 +7,43 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { supabase, displayName, type Person } from '../lib/supabase';
+import { syncPersonFlemishConnectionsAndRequeue } from '../lib/flemishConnectionSync';
 
 interface Suggestion {
   current: string;
   suggested: string;
   source: string;
+}
+
+interface ApiSuggestion {
+  field_name?: string;
+  current_value?: string;
+  suggested_value?: string;
+  source?: string;
+}
+
+function normalizeSuggestions(
+  raw: unknown
+): Record<string, Suggestion> {
+  if (Array.isArray(raw)) {
+    return raw.reduce<Record<string, Suggestion>>((acc, item) => {
+      const suggestion = item as ApiSuggestion;
+      const field = suggestion.field_name;
+      if (!field) return acc;
+      acc[field] = {
+        current: suggestion.current_value || '',
+        suggested: suggestion.suggested_value || '',
+        source: suggestion.source || '',
+      };
+      return acc;
+    }, {});
+  }
+
+  if (raw && typeof raw === 'object') {
+    return raw as Record<string, Suggestion>;
+  }
+
+  return {};
 }
 
 interface ProfileUpdateModalProps {
@@ -68,9 +100,9 @@ export default function ProfileUpdateModal({
       }
 
       const data = await resp.json();
-      const sugs = data.suggestions as Record<string, Suggestion>;
+      const sugs = normalizeSuggestions(data?.suggestions);
 
-      if (sugs['_none']) {
+      if (sugs['_none'] || Object.keys(sugs).length === 0) {
         setSuggestions({});
         setStage('results');
         return;
@@ -91,13 +123,18 @@ export default function ProfileUpdateModal({
     setStage('applying');
 
     const updates: Record<string, string | null> = {};
+    let selectedFlemishConnection: string | null = null;
     Object.entries(selected).forEach(([field, isSelected]) => {
       if (isSelected && suggestions[field]) {
-        updates[field] = suggestions[field].suggested || null;
+        if (field === 'flemish_connection') {
+          selectedFlemishConnection = suggestions[field].suggested || null;
+        } else {
+          updates[field] = suggestions[field].suggested || null;
+        }
       }
     });
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && selectedFlemishConnection === null) {
       onApplied();
       return;
     }
@@ -123,6 +160,21 @@ export default function ProfileUpdateModal({
 
     if (error) {
       setErrorMsg(error.message);
+      setStage('error');
+      return;
+    }
+
+    try {
+      if (selectedFlemishConnection !== null) {
+        await syncPersonFlemishConnectionsAndRequeue(
+          person.id,
+          selectedFlemishConnection
+        );
+      }
+    } catch (syncError) {
+      setErrorMsg(
+        syncError instanceof Error ? syncError.message : 'Failed to sync Flemish connections'
+      );
       setStage('error');
       return;
     }

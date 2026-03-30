@@ -1,403 +1,218 @@
-# Flemish Network Platform — TODO
-
-Updated 2026-03-28. Reflects actual codebase state. Checked items are merged and working.
-
----
-
-## P0 — Completed Features
-
-These are done and merged into main. Listed for reference only.
-
-### Unified Search Bar [DONE]
-- [x] Consolidated three search experiences into one UnifiedSearchBar
-- [x] Name/org autocomplete + NL AI search mode
-- [x] Active search context as removable chips
-- [x] Profile name decomposition (title, first_name, last_name)
-
-### Auto-Apply Filters & Deterministic Parser [DONE]
-- [x] Filters auto-apply on change (no "Apply" button)
-- [x] Occupation dropdown (4 categories)
-- [x] Flemish Connection multi-select
-- [x] `filterParser.ts` — deterministic keyword matching, no LLM
-- [x] Removed `interpret_filters` LLM task
-
-### Collections [DONE]
-- [x] `collections` + `collection_members` tables
-- [x] Collections page with list/detail views
-- [x] Add/remove members, per-member notes
-- [x] Add-to-collection dropdown on person cards and profiles
-- [x] Removed Planner/Missions system (tables remain in DB unused)
-
-### Data Quality Fields [DONE]
-- [x] `data_source` and `last_verified_at` columns on `people`
-- [x] Verification badge on profiles
-- [x] Data source indicator on profiles
-
-### Profile Form UX [DONE]
-- [x] Occupation proper dropdown
-- [x] State dropdown, city search autocomplete (CitySearch component)
-- [x] Flemish Connection tag selector
-- [x] Bio auto-inference for flemish connections
-
-### Location Refactor [DONE]
-- [x] Separate `locations` table with city/state/lat/lng
-- [x] `location_id` FK on people and organizations
-- [x] Old inline location columns dropped
-- [x] Bulk US cities imported from CSV
-
----
-
-## P0 — Critical Bug Fixes (Do First)
-
-### 0a. Fix TypeScript Errors
-**Scope:** AdminChatbot.tsx, ContactCard.tsx, CitySearch.tsx, PersonProfile.tsx, supabase.ts
-**Effort:** Small (< 1 hour)
-
-12 TypeScript errors currently block `npm run typecheck`:
-- [x] `DiscoveredContact` type in AdminChatbot/ContactCard uses `location_id` and `locations` — but discovered contacts from web search have inline `location_city`/`location_state`. Fix: keep DiscoveredContact type with inline fields, don't try to use the locations FK pattern.
-- [x] `PersonProfile.tsx` references `location_display` which doesn't exist on `Partial<Person>`. Fix: use proper location fields or a local state variable.
-- [x] `CitySearch.tsx` has unused `value` variable. Fix: remove or use it.
-- [x] `Person` interface in `supabase.ts` is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields (exist in DB, used in Dashboard queries). Fix: add them.
-
-### 0b. Fix Broken Edge Functions
-**Scope:** `supabase/functions/geocode/index.ts`, `supabase/functions/update-profile/index.ts`
-**Effort:** Small (< 1 hour)
-
-Both functions reference columns that were dropped in the location refactor migration:
-- [x] **`geocode`:** Lines 110-121 try to `UPDATE people SET latitude = ..., longitude = ... WHERE location_city = ...` — these columns don't exist anymore. Fix: the geocode function should just cache into `locations` table. Remove the people/organizations update logic (linking is now done via `location_id` FK).
-- [x] **`update-profile`:** Lines 166-170 read `person.location_city` and `person.location_state` from `people.*` — these columns were dropped. Fix: join `locations` table via `location_id` and use `locations.city`/`locations.state`.
-
-### 0c. Remove console.log/alert from Production Code
-**Scope:** 9 frontend files
-**Effort:** Small (< 1 hour)
-
-- [x] **25 console.log/error/warn calls** across PersonProfile.tsx (8), CollectionDetail.tsx (4), OrganizationProfile.tsx (3), AddToCollectionDropdown.tsx (3), Admin.tsx (2), CollectionModal.tsx (2), aiService.ts (1), Collections.tsx (1), Dashboard.tsx (1). Remove or replace with a lightweight logger that can be silenced in production.
-- [x] **9 alert() calls** in PersonProfile.tsx (3), OrganizationProfile.tsx (3), CollectionDetail.tsx (3). Replace with a toast/snackbar notification component (e.g., react-hot-toast or a custom Tailwind toast).
-
-### 0d. Fix search-contacts Dedup Performance
-**Scope:** `supabase/functions/search-contacts/index.ts`
-**Effort:** Small (< 0.5 hour)
-
-- [x] Currently fetches ALL `people` rows (`SELECT name, email, linkedin_url FROM people`) to check for duplicates. Replace with targeted per-contact lookups: `WHERE email = $1 OR linkedin_url = $2 OR LOWER(name) = LOWER($3)`.
-
-### 0e. Fix @types in Wrong Dependency Section
-**Scope:** `package.json`
-**Effort:** Trivial
-
-- [x] Move `@types/leaflet` and `@types/leaflet.markercluster` from `dependencies` to `devDependencies`.
-
----
-
-## P0 — AI Infrastructure (Next Priority)
-
-### 1. Model Configuration Refactor
-**Scope:** `ai-agent/index.ts`, `search-contacts/index.ts`
-**Effort:** Small (< 1 hour)
-
-- [x] Replace hardcoded `const GEMINI_MODEL = "gemini-3-flash-preview"` with `Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview"` in both edge functions
-- [x] Document in Supabase dashboard: set `GEMINI_FLASH_MODEL` env var
-
-### 2. Embeddings & Vector Search
-**Scope:** New migration, new edge function, admin UI, frontend trigger points
-**Depends on:** Nothing
-**Effort:** Medium (1-2 days)
-
-- [x] **Migration:** Enable pgvector, add `embedding vector(768)`, `embedding_dirty_at`, `embedding_generated_at` to `people`, create HNSW index, create `match_people()` RPC function, create dirty-marking triggers on `people` (name, bio, current_position, flemish_connection, occupation, location_id) AND on `person_sectors` insert/delete (see `ai-implementation-strategy.md` Phase 1.1 for exact SQL)
-- [x] **Edge function `generate-embeddings`:** Accept `{ personId | personIds | backfill }`, call text-embedding-004, store 768-dim vector. Batch mode: 20 per invocation (Supabase 60s limit). For backfill, return `{ processed, remaining }` — frontend loops until remaining=0. (see strategy Phase 1.2)
-- [x] **Frontend triggers:** After person INSERT (AddContact.tsx) and UPDATE (PersonProfile.tsx), fire-and-forget call to generate-embeddings
-- [x] **Admin backfill:** Add "Generate Embeddings" button in Admin.tsx with progress bar. Calls generate-embeddings in a loop (20 per call) until `remaining === 0`. Shows progress: "Processed 120/500".
-
-### 3. Suggest-People Edge Function
-**Scope:** New edge function, updated aiService.ts, CollectionDetail.tsx
-**Depends on:** Task 2 (embeddings)
-**Effort:** Medium (1-2 days)
-
-- [x] **Edge function `suggest-people`:** Embed query → `match_people(50)` → exclude existing members → Gemini Pro ranking → return top 15 with reasons (see strategy Phase 1.3)
-- [x] **Update `aiService.ts`:** Replace current `suggestPeople()` (client-side scoring) with call to suggest-people edge function
-- [x] **Collection "Find Similar":** Add button to CollectionDetail.tsx. Build query from collection description or top member bios. Show suggestions in slide-out panel with "Add to Collection" buttons.
-
----
-
-## P0 — Data & Content
-
-### 4. Export & Briefing Documents
-**Scope:** New `lib/exportService.ts`, DirectoryGrid.tsx, CollectionDetail.tsx, PersonProfile.tsx
-**Effort:** Medium (1-2 days)
-keep in mind that sector(s) and flemish connections are multi-valued and need to be aggregated properly in exports. For the PDF briefing, keep in mind that the export formats should be clean and professional, suitable for sharing with external stakeholders or for internal briefings.
-- [x] **CSV export of filtered results:** "Export" button on DirectoryGrid header. Columns: Title, First Name, Last Name, Position, Organization, About, City, State, Sector(s), Flemish Connections, Email, Phone, LinkedIn, website, X url
-- [x] **Collection PDF briefing:** "Export Briefing" button on CollectionDetail. For each member: photo placeholder, name, title, position, location, bio, contact info, flemish connection. Use `window.print()` with print CSS or jsPDF.
-- [x] **Print-friendly profiles:** Print stylesheet for PersonProfile.tsx (hide nav, sidebar, action buttons). "Print" button.
-
-### 5. Profile Pictures (Automatic)
-**Scope:** PersonProfile.tsx, AddContact.tsx, DirectoryGrid.tsx, new utility
-**Effort:** Small-Medium (0.5-1 day)
-
-Currently `profile_photo_url` is a text field with no automatic population.
-
-- [x] **Gravatar fallback:** ProfileAvatar component uses SHA-256 hash of email for Gravatar URL with `?d=404` fallback. Falls back to initials if Gravatar returns 404.
-- [x] **LinkedIn photo (via Apify):** For contacts with `linkedin_url` and no photo, the Verification Agent's LinkedIn scrape (Task 9) automatically suggests `profile_photo_url` from LinkedIn profile data. Manual paste in edit mode as fallback.
-- [x] **Upload support:** PersonProfile.tsx edit mode has photo upload (Supabase Storage `profile-photos` bucket) + URL paste field. 5MB limit, stores public URL to `profile_photo_url`.
-- [x] **Display priority:** ProfileAvatar component implements: profile_photo_url > Gravatar (if email exists) > initials circle. Used across DirectoryGrid, PersonProfile, CollectionDetail, ClusterPopover, OrganizationProfile, CollectionModal.
-
-### 6. Improve Database Population Pipeline
-**Scope:** CsvImport.tsx, new import features
-**Effort:** Medium (1-2 days)
-
-Current CSV import works but needs improvements for bulk population.
-
-- [x] **CSV import improvements:**
-  - Progress bar during import (currently no feedback)
-  - Better error reporting (show which rows failed and why)
-  - Post-import summary: created, updated, skipped, errors
-  - Auto-trigger embedding generation after import completes
-  - Auto-link imported people to locations table (match city+state → location_id, auto-creates missing locations)
-- [x] **Bulk sector assignment:** After import, allow selecting imported people and assigning sectors in bulk
-- [x] **Excel support:** Accept .xlsx files in addition to .csv (use SheetJS/xlsx library)
-- [x] **Template download:** "Download template" button with expected columns and example data (CSV + Excel)
-- [x] **Duplicate handling:** Option to skip duplicates, update existing, or create new.
-- [x] **Show the accepted formats** Upload area shows .csv, .xlsx, .xls, .tsv, .txt as accepted formats.
-- [x] **Cancelable imports with rollback:** While row writes are in progress, the CSV importer now exposes a cancel action that halts after the current DB step and rolls back contacts created in that run while restoring prior data for contacts updated earlier in the same run.
-- [x] **Importer load-test fixtures:** Added `test-csvs/08_large_people_dataset.csv` (504 rows) plus `09`-`14` sector-split CSVs (84 rows each). The importer now maps `Sector` / `Sectors` columns directly into `person_sectors`, including multi-value cells, and the bulk sector assignment step remains available for adding shared sectors to the full batch.
-
----
-
-## P1 — Agent System
-
-### 7. Agent Infrastructure
-**Scope:** New migration, shared module, scheduler edge function, admin dashboard
-**Depends on:** Tasks 1-3 (AI infrastructure) should be stable
-**Effort:** Large (2-3 days)
-
-- [x] **Migration:** Create `agent_runs`, `api_quotas`, `web_search_cache` tables (see strategy Phase 2.1)
-- [x] **Shared web search module:** `supabase/functions/_shared/webSearch.ts` with Tavily/Brave cascading, quota tracking, 30-day caching, TTL cleanup of expired cache entries (see strategy Phase 2.2)
-- [x] **Shared Apify module:** `supabase/functions/_shared/apifyClient.ts` — wrapper for Apify REST API. Sync/async actor execution, credit tracking. Used by Discovery Agent (LinkedIn search) and Verification Agent (LinkedIn profile scrape). Env var: `APIFY_TOKEN`. (see strategy Phase 2.3)
-- [x] **Agent scheduler edge function:** `supabase/functions/agent-scheduler/index.ts` — dispatches to agents, manages run lifecycle, zombie detection, purges `web_search_cache` entries older than 30 days on each invocation (see strategy Phase 2.4)
-- [x] **Admin Agent Dashboard:** `components/admin/AgentDashboard.tsx` — run history table, manual trigger buttons, API quota bars (Tavily, Brave, Apify credits), pending suggestions count. Add "Agents" tab to Admin.tsx.
-
-### 8. Discovery Agent
-**Scope:** New edge function, new migration (`discovered_contacts` table)
-**Depends on:** Task 7 (agent infrastructure)
-**Effort:** Medium (1-2 days)
-
-- [x] **Migration:** Create `discovered_contacts` staging table (see strategy Phase 3.1). Required because `profile_suggestions.person_id` is NOT NULL — can't store new contacts there.
-- [x] **Admin UI:** Add "Discovered Contacts" tab in Admin.tsx to review/approve/reject. On approve: create `people` row, delete from `discovered_contacts`. DiscoveredContactsPanel component with approve/reject per-contact and bulk actions.
-- [x] `supabase/functions/agent-discovery/index.ts` — dual-channel discovery: web search (Tavily/Brave) + LinkedIn search (Apify `harvestapi/linkedin-profile-search`). Gemini extraction for web results, structured mapping for LinkedIn results. Dedup against BOTH `people` AND `discovered_contacts` → insert into `discovered_contacts` (see strategy Phase 3.1)
-- [x] 8 predefined web search queries + 7 LinkedIn-specific queries (university/company filters via Apify)
-- [x] Max 3 web searches + 2 LinkedIn searches per invocation (cost control). Graceful fallback if Apify credits exhausted.
-- [x] Discovery sweep behavior fixed: blank-query runs now execute the predefined search set, custom queries expand into multiple focused variants, and dedup now checks normalized name/email/LinkedIn/website signals before insert.
-
-### 9. Verification Agent
-**Scope:** New edge function
-**Depends on:** Task 7 (agent infrastructure)
-**Effort:** Medium (1-2 days)
-
-- [x] `supabase/functions/agent-verify/index.ts` — LinkedIn-first verification: for contacts with `linkedin_url`, scrape via Apify (`supreme_coder/linkedin-profile-scraper`) and deterministically diff against stored data (no LLM needed). Falls back to web search + `check_profile` LLM if no LinkedIn URL or Apify unavailable. Auto-suggests profile photos from LinkedIn. (see strategy Phase 3.2)
-- [x] Handle edge cases: person left US, career change, LinkedIn profile not found
-
-### 10. Connection Discovery Agent
-**Scope:** New edge function
-**Depends on:** Task 7 (agent infrastructure)
-**Effort:** Small-Medium (0.5-1 day)
-
-- [x] `supabase/functions/agent-connections/index.ts` — deterministic SQL: colleague (same org), alumni (same flemish_connection), local_peer (same location + sector) (see strategy Phase 3.3)
-- [x] No LLM, no web search — pure SQL
-
----
-
-## P1 — UX Improvements
-
-### 11. AI Search Quality & Relevance
-**Scope:** aiService.ts, UnifiedSearchBar.tsx, DirectoryGrid.tsx
-**Effort:** Medium (1-2 days)
-
-- [x] **Move scoring server-side (critical):** New `search-people` edge function handles all scoring server-side. Dashboard no longer fetches all people — only receives ranked results.
-- [x] **Hybrid search (after embeddings exist):** `search-people` runs keyword extraction (Gemini Flash) and embedding similarity (pgvector `match_people`) in parallel, combines scores: `final = 0.4 * keyword + 0.6 * embedding`. Also queries keyword-only candidates via targeted SQL to catch profiles without embeddings.
-- [x] **Search result snippets:** Snippets generated server-side in `search-people` and returned with results. Displayed under each AI-Enhanced Result card.
-- [x] **Relevance feedback loop:** `search_clicks` table tracks `{ query, person_id, clicked_at }`. Frontend logs clicks via `logSearchClick()` when user clicks AI search results.
-- [x] **Empty state improvement:** When search returns 0 results, shows actionable suggestions (use broader terms, search by field, try descriptive queries) with a clear button.
-
-### 12. Interactive Stats Dashboard
-**Scope:** Admin.tsx, admin components
-**Effort:** Medium (1 day)
-
-- [x] Make data bars/labels/counts clickable for cross-filtering
-- [x] Click "Finance" in sectors → other charts filter to Finance people only
-- [x] Active cross-filter shown as chip with X to clear
-- [x] "View in Network" link: navigate to Dashboard with filter pre-applied
-
-### 13. Profile Page Clickable Tags
-**Scope:** PersonProfile.tsx, OrganizationProfile.tsx
-**Effort:** Small (< 0.5 day)
-
-- [x] Sector tags clickable → Dashboard with sector filter
-- [x] Flemish Connection clickable → Dashboard with connection filter
-- [x] Location clickable → Dashboard centered on city
-
-### 14. Map Improvements
-**Scope:** MapVisualization.tsx, ClusterPopover.tsx
-**Effort:** Medium (1 day)
-
-Map already uses Leaflet + markercluster. Improvements:
-
-- [x] Performance: virtualize marker rendering for > 500 contacts
-
-### 15. Interaction Tracking / Notes
-**Scope:** New migration, PersonProfile.tsx, new component
-**Effort:** Medium (1 day)
-
-- [ ] `interactions` table: `person_id`, `interaction_type` (email/call/meeting/note/event), `summary`, `interaction_date`
-- [ ] InteractionLog component on profile pages: chronological list, "+ Add Note" form
-- [ ] "Last contacted: [date]" on person cards in DirectoryGrid
-
-### 16. Improvement on Flemish Connection Tagging
-
-- [x] Refactored person Flemish links to support multiple discrete connections per person and removed `people.flemish_connection` entirely after migrating filtering/search paths to the join table.
-- [x] Added improved entity extraction for universities, government, companies, and other Flemish links, with parser tightening to avoid generic descriptive phrases becoming tags.
-- [x] Added `flemish_connections` + `person_flemish_connections`, wired searchable multi-select creation into the person/admin forms, and backfilled existing people on the linked Supabase project.
-
----
-
-## P1 — Operational Readiness
-
-### 16. Performance Optimization
-**Scope:** Various frontend files, Supabase queries
-**Effort:** Medium (1-2 days)
-
-- [ ] **Pagination:** DirectoryGrid currently loads all contacts. Add cursor-based pagination (50 per page) with "Load more" or infinite scroll.
-- [ ] **Query optimization:** Profile queries currently do `.select('*, locations(*)')` — add `.limit()` and index usage analysis via `EXPLAIN ANALYZE`
-- [ ] **Bundle size (currently 688kb JS, warns at 500kb):** Audit with `npx vite-bundle-visualizer`. Leaflet + react-leaflet + markercluster are large. Use `React.lazy()` + `Suspense` to code-split: load map only when Dashboard is active, load admin components only when Admin page is active. Add `build.rollupOptions.output.manualChunks` for vendor splitting.
-- [ ] **Image lazy loading:** Defer profile photo loads until visible (native `loading="lazy"` on img tags)
-- [ ] **Debounce search:** Ensure UnifiedSearchBar debounces API calls (currently may fire on every keystroke for autocomplete)
-- [ ] **Memoization:** Wrap expensive computations (scoring, filtering) in useMemo. Wrap stable callbacks in useCallback.
-- [ ] **Mobile responsiveness:** MapVisualization, FilterPanel, UnifiedSearchBar, ClusterPopover have no responsive breakpoints. The filter sidebar should collapse into a drawer/modal on mobile. Map should be full-width on small screens.
-
-### 17. Deployment
-**Scope:** New Dockerfile, docker-compose.yml, nginx.conf, .env.example
-**Effort:** Small (< 0.5 day)
-
-- [ ] **Dockerfile:** Multi-stage build: Node 20 builder → nginx:alpine static server
-- [ ] **nginx.conf:** SPA routing (try_files → index.html), gzip, asset caching (1 year for hashed files), no-cache for index.html
-- [ ] **docker-compose.yml:** Single frontend service, build args for VITE_* env vars
-- [ ] **.env.example:** Document all required env vars with descriptions and where to find them
-- [ ] **.dockerignore:** node_modules, dist, .git, .env, .claude
-
-### 18. Documentation & Handover
-**Scope:** New docs/ directory
-**Effort:** Medium (1 day)
-
-- [ ] **docs/SETUP.md** — Deploy from scratch: Supabase project setup, run migrations, env vars, deploy edge functions, Docker option, initial data import
-- [ ] **docs/USER_GUIDE.md** — How to use: search, filter, collections, review AI suggestions, export
-- [ ] **docs/AGENTS.md** — Agent system: what each does, manual triggers, scheduling, monitoring costs, quota management
-- [ ] **docs/DATA_IMPORT.md** — CSV format spec, handling duplicates, post-import steps (backfill embeddings, assign sectors)
-- [ ] **docs/ARCHITECTURE.md** — High-level architecture diagram, data flow, AI pipeline, tech decisions
-
-### 19. Maintainability & Code Quality
-**Scope:** Various
-**Effort:** Small-Medium (0.5-1 day)
-
-- [ ] **Remove dead code:** Delete unused `generate_migration.js`, `generate_migration.cjs` (one-time scripts already run). Delete `scripts/batch_replace.cjs`. Clean up any remaining Planner references.
-- [ ] **Edge function DRY:** Extract shared CORS headers, Gemini call wrapper, and error response builder into `supabase/functions/_shared/` modules
-- [ ] **TypeScript coverage:** Run `npm run typecheck` and fix any remaining `any` types in components. Ensure all Supabase query results are properly typed.
-- [ ] **Error boundaries:** Add React error boundary around map and AI search components (these depend on external APIs and can fail)
-- [ ] **Stale migration cleanup:** The `geocode` edge function still references `people.latitude` and `people.longitude` (dropped in location refactor migration). Fix to use `locations` table via `location_id`.
-
----
-
-## P1 — Testing, CI/CD & Security
-
-### 25. Testing Strategy
-**Scope:** New test setup, new test files
-**Effort:** Medium (1-2 days)
-
-No tests exist currently.
-
-- [ ] **Test setup:** Add Vitest (`npm i -D vitest @testing-library/react @testing-library/jest-dom`). Configure in `vite.config.ts`.
-- [ ] **Unit tests for critical logic:**
-  - `filterParser.ts` — test every keyword mapping, edge cases, combined queries
-  - `aiService.ts` — test scoring functions with mock data
-  - `csvParser.ts` — test field mapping, dedup logic
-  - `supabase.ts` — test `displayName`, `parseTitleFromName`, `personInitials`
-- [ ] **Edge function tests:** Add basic request/response tests for each edge function using Deno test runner
-- [ ] **Add `npm run test` script** to package.json
-
-### 26. CI/CD Pipeline
-**Scope:** New `.github/workflows/` config
-**Effort:** Small (< 0.5 day)
-
-- [ ] **GitHub Actions workflow:**
-  - On push/PR to main: `npm run typecheck` + `npm run lint` + `npm run build`
-  - Fail PR if any step fails
-- [ ] **Optional:** Add Supabase CLI migration check (`supabase db diff --linked`)
-- [ ] **Optional:** Deploy preview builds for PRs (Vercel/Netlify integration)
-
-### 27. Security Hardening
-**Scope:** RLS policies, edge functions, frontend
-**Effort:** Medium (1 day)
-
-- [ ] **RLS audit:** All tables currently allow anon INSERT/UPDATE/DELETE — this is a security risk. Before production: lock down write operations to authenticated users at minimum.
-- [ ] **Edge function auth:** `search-contacts` and `update-profile` use service role key internally but are callable by anyone with the anon key. Add rate limiting or auth check.
-- [ ] **Input validation:** Edge functions do minimal input validation. Add length limits, sanitize SQL-injectable strings.
-- [ ] **CORS tightening:** All edge functions use `Access-Control-Allow-Origin: *`. Before production: restrict to the actual frontend domain.
-- [ ] **Environment secrets:** Ensure `.env` is in `.gitignore` (check this exists)
-
----
-
-## P2 — Future Enhancements
-
-### 20. Authentication & Multi-User
-**Scope:** Broad — touches every page and component
-**Effort:** Large (3-5 days)
-
-- [ ] Enable Supabase Auth (email/password for staff, magic link for professionals)
-- [ ] `user_profiles` table: role (admin, staff, viewer, network_member)
-- [ ] Update all RLS policies for role-based access
-- [ ] `created_by`, `updated_by` audit columns on key tables
-- [ ] Profile claiming: network member links auth account to their `people` record
-
-### 21. Network Analysis & Visualization
-**Scope:** New component, D3 or vis.js
-**Depends on:** Task 10 (connection discovery agent)
-**Effort:** Large (2-3 days)
-
-- [ ] Force-directed network graph component
-- [ ] Show on profile pages: person's immediate connections
-- [ ] Full network view toggle on Dashboard (alongside Map/List)
-- [ ] Bridge node identification (people connecting different clusters)
-
-### 22. Geographic Coverage Analysis
-**Scope:** Admin components
-**Effort:** Medium (1 day)
-
-- [ ] US choropleth/heatmap showing contact density by state
-- [ ] Coverage gaps: "15 contacts in Boston, 0 in Houston"
-- [ ] Suggest discovery agent searches for underrepresented areas
-
----
-
-## Notes
-
-- **suggest-people uses Flash instead of Pro:** The `suggest-people` edge function currently defaults to `gemini-3-flash-preview` for ranking because the API tier doesn't allow Gemini Pro. When upgrading, set `GEMINI_PRO_MODEL=gemini-2.5-pro-preview-05-06` in Supabase secrets (or update the default in `supabase/functions/suggest-people/index.ts`).
-
----
-
-## Dependency Graph
-
-```
-(no deps)    1. Model config refactor
-(no deps)    2. Embeddings + vector search
-(no deps)    4. Export & briefing
-(no deps)    5. Profile pictures
-(no deps)    6. DB population pipeline
-(no deps)    12-15. UX improvements
-(no deps)    16-19. Operational readiness
-
-2 → 3. Suggest-people (needs embeddings)
-2 → 11. Hybrid search (needs embeddings)
-3+7 merged → 7. Agent infrastructure (includes Apify module)
-7 → 8. Discovery agent (uses Apify LinkedIn search + web search)
-7 → 9. Verification agent (uses Apify LinkedIn scrape + web search fallback)
-7 → 10. Connection agent
-9 → 5. Profile photos (verification agent auto-suggests LinkedIn photos)
-10 → 21. Network visualization
-20 → 23. Notifications
-```
+# Flemish Network Platform — AI Strategy TODO
+
+This backlog replaces the old generic wishlist. It is derived from `AI-strategy.md` and follows the roadmap order from that document.
+
+Working rule for every task:
+- finish the relevant validation/deploy loop for the area you touched (`npm run typecheck`, `npm run build`, `supabase db push --linked`, deploy changed edge functions, and smoke-test the affected UI/API flow)
+- read the `Strategy refs` line before implementation so the exact rationale and design detail comes from `AI-strategy.md`, not from this summary
+
+## Phase 0 — Contract Cleanup
+
+- [x] Remove dead `people.flemish_connection` writes from every AI-assisted create, merge, and review flow.
+  Do: stop writing a scalar `flemish_connection` onto `people`; create/update the person row, normalize via `syncPersonFlemishConnections()`, and regenerate or requeue embeddings after the normalized links change.
+  Repo touchpoints: `src/components/admin/AdminChatbot.tsx`, `src/components/admin/DiscoveredContactsPanel.tsx`, `src/components/ProfileUpdateModal.tsx`, `src/components/admin/ContactCard.tsx`, `src/lib/flemishConnectionSync.ts`.
+  Strategy refs: `AI-strategy.md` §Critical Findings -> `1. Data-contract drift is breaking AI flows` (line 50), §Immediate Fixes -> `P0.1 Fix all broken flemish_connection writes` (line 272), §What To Remove Or Rename (line 1398), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
+
+- [ ] Fix the ad hoc profile-update contract and make the modal/API behavior consistent.
+  Do: pick one contract and implement it end to end. Preferred path: the single-person modal gets preview suggestions directly, while batch verification owns the durable `profile_suggestions` queue.
+  Repo touchpoints: `src/components/ProfileUpdateModal.tsx`, `supabase/functions/update-profile/index.ts`, `supabase/functions/agent-verify/index.ts`, the suggestions UI in Admin and Person Profile.
+  Strategy refs: §Critical Findings -> `4. Verification and updates are duplicated and partly disconnected` (line 130), §Immediate Fixes -> `P0.2 Unify the profile-update contract` (line 293), §Verification And Updates Strategy -> `1. Collapse update-profile into the verification system` (line 1130), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
+
+- [ ] Route agent triggering through one orchestration path.
+  Do: either make `AgentDashboard` always trigger work via `agent-scheduler`, or remove the scheduler entirely. Lifecycle control, zombie cleanup, run claiming, and telemetry should live in one path only.
+  Repo touchpoints: `src/components/admin/AgentDashboard.tsx`, `supabase/functions/agent-scheduler/index.ts`, `agent_runs` writes in agent functions and UI triggers.
+  Strategy refs: §Critical Findings -> `5. Several "agent" pieces are not really operating as an agent system` (line 161), §Immediate Fixes -> `P0.3 Use one orchestration path` (line 304), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
+
+- [ ] Centralize shared prompts, schemas, and model-selection rules.
+  Do: move query parsing, profile-check schemas, and model routing into shared helpers used by `ai-agent`, `search-people`, and `agent-verify`; remove or freeze unused `ai-agent` tasks unless they have a live product call site.
+  Repo touchpoints: `supabase/functions/ai-agent/index.ts`, `supabase/functions/search-people/index.ts`, `supabase/functions/agent-verify/index.ts`, `supabase/functions/_shared/`.
+  Strategy refs: §Critical Findings -> `6. The centralized ai-agent function is not actually central` (line 177), §Immediate Fixes -> `P0.4 Remove prompt duplication` (line 318), §What To Remove Or Rename (line 1398), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
+
+- [ ] Lock in benchmark datasets and success metrics before Phase 1 starts.
+  Do: create a fixed search query set, benchmark discovery sources, and saved metrics queries so every later phase can be measured against the same baseline.
+  Repo touchpoints: admin analytics queries/views, benchmark fixtures/docs, `search_clicks`, `agent_runs`, discovery review metrics.
+  Strategy refs: §Search Strategy -> `Scope` (line 417), §Discovery Strategy -> `Suggested discovery metrics for geographic coverage` (line 1007), §Success Metrics (line 1469).
+
+## Phase 1 — Search Upgrade
+
+- [ ] Build a denormalized lexical search substrate for people.
+  Do: add a `people_search_documents` table or materialized view that combines name, role, bio, occupation, normalized Flemish connections, sectors, and location text; add `tsvector` and any trigram-friendly fields/indexes needed for lexical retrieval.
+  Repo touchpoints: new migration(s), search SQL/RPC, `supabase/functions/search-people/index.ts`.
+  Strategy refs: §Search Strategy -> `1. Add a lexical retrieval layer` (line 346), §Search Strategy -> `Scope` (line 417), §Roadmap -> `Phase 1: Search Upgrade` (line 1420).
+
+- [ ] Replace candidate gating with lexical + vector fusion ranking.
+  Do: retrieve lexical top K and vector top K separately, add exact/trigram boosts, and use reciprocal-rank or normalized weighted fusion instead of the current narrow candidate gate.
+  Repo touchpoints: `supabase/functions/search-people/index.ts`, `match_people()`-related SQL/migrations, any search ranking helpers.
+  Strategy refs: §Search Strategy -> `2. Switch from candidate gating to rank fusion` (line 367), §Roadmap -> `Phase 1: Search Upgrade` (line 1420).
+
+- [ ] Add query routing for direct lookup, faceted search, and exploratory semantic search.
+  Do: classify each query and change retrieval order and weights per route instead of pushing every query through the same pipeline.
+  Repo touchpoints: `supabase/functions/search-people/index.ts`, shared query parsing/router helpers.
+  Strategy refs: §Search Strategy -> `3. Add query routing` (line 382), §Roadmap -> `Phase 1: Search Upgrade` (line 1420).
+
+- [ ] Rewrite snippets so they come from the best matching field, chunk, or evidence sentence.
+  Do: pick snippets from lexical field hits, matched bio chunks, or evidence text instead of defaulting to generic bio output.
+  Repo touchpoints: `supabase/functions/search-people/index.ts`, future chunk/evidence tables.
+  Strategy refs: §Search Strategy -> `4. Improve snippets` (line 396), §Embeddings Strategy -> `2. Add bio-chunk vectors` (line 1270), §Roadmap -> `Phase 1: Search Upgrade` (line 1420).
+
+- [ ] Remove weak fallback assumptions and validate the new stack against the fixed benchmark set.
+  Do: demote the 200-row client-side fallback mentality, run the representative query set before/after the changes, and compare with click data and the success metrics dashboard.
+  Repo touchpoints: `src/lib/aiService.ts`, dashboard search flow, analytics queries.
+  Strategy refs: §Search Strategy -> `What To Scrap` (line 406), §Search Strategy -> `Scope` (line 417), §Success Metrics (line 1469).
+
+## Phase 2A — Discovery Redesign Foundation
+
+- [ ] Rebuild discovery around a persistent frontier.
+  Do: add `discovery_frontier` plus supporting domain/page state so discovery persists across runs with statuses, priorities, budgets, revisit timestamps, content hashes, and extraction outcomes.
+  Repo touchpoints: new migration(s), `supabase/functions/agent-discovery/index.ts`, `supabase/functions/agent-scheduler/index.ts`, `agent_runs`.
+  Strategy refs: §Discovery Strategy (line 428), `1. Turn discovery into a bounded frontier crawler` (line 473), `Implementation Shape` (line 1065), `Scope` (line 1090), §Roadmap -> `Phase 2: Discovery Redesign` (line 1431).
+
+- [ ] Define source packs for head coverage.
+  Do: create configurable source packs with domains, query templates, refresh cadence, and extraction expectations for BAEF, universities, labs, team pages, event rosters, associations, and similar high-yield source families.
+  Repo touchpoints: discovery config tables/files, `agent-discovery`, scheduler/admin controls.
+  Strategy refs: §Discovery Strategy -> `2. Use three discovery lanes, not one` (line 529), §Roadmap -> `Phase 2: Discovery Redesign` (line 1431).
+
+- [ ] Make search seed the frontier instead of acting as the extraction substrate.
+  Do: save Tavily/Brave results as frontier URLs/domains and stop doing mainline extraction from merged search result blobs.
+  Repo touchpoints: `supabase/functions/_shared/webSearch.ts`, `supabase/functions/agent-discovery/index.ts`.
+  Strategy refs: §Discovery Strategy -> `3. Search should seed the frontier, not be the frontier` (line 581), `4. Extract per page, not from a merged search blob` (line 605).
+
+- [ ] Add per-page fetch, canonicalization, and cheap page classification.
+  Do: fetch pages individually, canonicalize URL/content, store page records, and classify page type with deterministic heuristics first and low-cost model help only when rules are ambiguous.
+  Repo touchpoints: discovery fetch/classification helpers, `agent-discovery`, new `discovery_pages` data.
+  Strategy refs: §Discovery Strategy -> `4. Extract per page, not from a merged search blob` (line 605), `5. Classify pages cheaply before running expensive extraction` (line 626), `Implementation Shape` (line 1065).
+
+- [ ] Store discovery evidence as first-class records.
+  Do: add evidence rows carrying source URL, title, type, excerpt, raw location/Flemish/role text, confidence, parent URL, discovered-via reason, and fetch time; allow multiple evidence rows per candidate.
+  Repo touchpoints: `discovered_contacts`, new `discovery_evidence` table, admin review UI.
+  Strategy refs: §Discovery Strategy -> `9. Store evidence, not just final fields` (line 737), §Roadmap -> `Phase 2: Discovery Redesign` (line 1431).
+
+- [ ] Move LinkedIn to enrichment-only use inside discovery.
+  Do: stop using LinkedIn search as the primary top-of-funnel channel; use it after a page or person is already promising to enrich role/location/photo/profile URL and to support verification.
+  Repo touchpoints: `supabase/functions/agent-discovery/index.ts`, `supabase/functions/agent-verify/index.ts`, Apify integration.
+  Strategy refs: §Discovery Strategy -> `11. Use LinkedIn as enrichment, not as the main discovery engine` (line 809), `Scope` (line 1090), §Roadmap -> `Phase 2: Discovery Redesign` (line 1431).
+
+- [ ] Run discovery as small scheduled batches with bounded budgets.
+  Do: claim the next 10-20 frontier URLs, process them, update domain/page state, enqueue the best next links only, and release the batch cleanly instead of treating discovery as a one-shot prompt run.
+  Repo touchpoints: `supabase/functions/agent-scheduler/index.ts`, `supabase/functions/agent-discovery/index.ts`, frontier/domain/page tables, `agent_runs`.
+  Strategy refs: §Discovery Strategy -> `Implementation Shape` (line 1065), `1. Turn discovery into a bounded frontier crawler` (line 473), `6. Expand links selectively, not blindly` (line 662).
+
+## Phase 2B — Discovery Expansion, Coverage, and Yield Learning
+
+- [ ] Add selective child-link expansion and hard crawl budgets.
+  Do: score outgoing links, follow only promising children, enforce max depth/per-domain/per-run budgets, and expand aggressively only when the parent page yielded a candidate or strong person-like signals.
+  Repo touchpoints: `agent-discovery`, frontier tables, page/domain telemetry.
+  Strategy refs: §Discovery Strategy -> `6. Expand links selectively, not blindly` (line 662), `1. Turn discovery into a bounded frontier crawler` (line 473), `Scope` (line 1090).
+
+- [ ] Teach discovery which domains deserve budget.
+  Do: track per-domain fetches, promising pages, approvals, rejections, duplicates, evidence quality, and last approved contact date; use those metrics to set revisit cadence and decay low-yield domains.
+  Repo touchpoints: `discovery_domains`, scheduler/discovery scoring logic, admin analytics.
+  Strategy refs: §Discovery Strategy -> `7. Use domain yield learning so the crawler gets smarter over time` (line 695), `Scope` (line 1090), §Success Metrics (line 1469).
+
+- [ ] Add sitemap and RSS harvesting for proven domains.
+  Do: once a domain has shown yield, seed the frontier from `sitemap.xml`, RSS/Atom, and obvious directory/news pages instead of relying on deeper random crawling.
+  Repo touchpoints: discovery fetch helpers, frontier seeding, domain-yield policy.
+  Strategy refs: §Discovery Strategy -> `8. Add sitemap and RSS harvesting for proven domains` (line 718), `Scope` (line 1090).
+
+- [ ] Make discovery coverage tracking first-class.
+  Do: persist and surface frontier size, queued/fetched/ignored counts, high-yield and exhausted domains, page-type mix, duplicates, average evidence count per candidate, frontier refills, and revisit latency.
+  Repo touchpoints: `agent_runs`, discovery tables/views, admin analytics.
+  Strategy refs: §Discovery Strategy -> `12. Coverage tracking must become first-class` (line 829), `18. Suggested discovery metrics for geographic coverage` (line 1007), §Success Metrics (line 1469).
+
+- [ ] Build geographic coverage inputs and gap scoring.
+  Do: add metro mapping, `coverage_targets`, and `coverage_gaps` so approved/pending/verified counts, sector mix, recent activity, expected coverage, and gap score can be computed by state and metro.
+  Repo touchpoints: new migration/views, locations/geography mapping, admin reporting.
+  Strategy refs: §Discovery Strategy -> `13. Add geographic coverage intelligence and gap-seeking` (line 854), `14. Gap detection should be based on expected presence, not just low counts` (line 891), `17. Suggested data model for geographic coverage` (line 974).
+
+- [ ] Feed gap scores back into discovery planning.
+  Do: bias frontier revisits, source pack refresh order, and seed generation toward undercovered but high-expected metros/sectors instead of repeating naive geography queries.
+  Repo touchpoints: scheduler/discovery planner, frontier priority scoring.
+  Strategy refs: §Discovery Strategy -> `15. Geographic gaps should steer the frontier and the search planner` (line 925), `16. Add a discovery-planning surface for operators` (line 953).
+
+## Phase 2C — Discovery Compounding and Operator Tooling
+
+- [ ] Add entity-pivot discovery from approved contacts and strong evidence.
+  Do: generate follow-up frontier seeds from organizations, labs, fellowships, advisory boards, events, and co-mentioned institutions that already carry evidence, never from vague model summaries.
+  Repo touchpoints: approval flows, `agent-discovery`, frontier seeding.
+  Strategy refs: §Discovery Strategy -> `10. Add entity-pivot discovery` (line 779), `2. Use three discovery lanes, not one` (line 529), `Scope` (line 1090).
+
+- [ ] Improve multi-page candidate merging so evidence can accumulate over time.
+  Do: merge mentions across pages into one candidate strength profile instead of inserting thin one-page records that reviewers have to reconstruct manually.
+  Repo touchpoints: discovery merge logic, `discovered_contacts`, `discovery_evidence`, admin review UI.
+  Strategy refs: §Discovery Strategy -> `9. Store evidence, not just final fields` (line 737), `Scope` (line 1090).
+
+- [ ] Build an operator-facing discovery planning panel in Admin.
+  Do: show state/metro coverage, top undercovered metros, gap score, recent discovery activity, and recommended next actions such as frontier expansion or source-pack refreshes.
+  Repo touchpoints: admin pages/components, coverage views, scheduler trigger UI.
+  Strategy refs: §Discovery Strategy -> `16. Add a discovery-planning surface for operators` (line 953), `13. Add geographic coverage intelligence and gap-seeking` (line 854), `17. Suggested data model for geographic coverage` (line 974).
+
+- [ ] Rename or fold `search-contacts` into the discovery system.
+  Do: stop presenting web prospecting as directory search; either rename the endpoint/UI to `discover-contacts` or absorb it fully into the frontier-based discovery pipeline.
+  Repo touchpoints: `supabase/functions/search-contacts/index.ts`, `src/lib/aiService.ts`, admin UI labels/docs.
+  Strategy refs: §What To Remove Or Rename (line 1398), §Discovery Strategy (line 428).
+
+## Phase 3 — Verification Unification
+
+- [ ] Build one shared verification core for modal and batch modes.
+  Do: move single-person review and scheduled verification onto the same core pipeline with shared fetching, deterministic diffs, evidence capture, dedupe, and model usage.
+  Repo touchpoints: `supabase/functions/update-profile/index.ts`, `supabase/functions/agent-verify/index.ts`, `src/components/ProfileUpdateModal.tsx`.
+  Strategy refs: §Verification And Updates Strategy -> `1. Collapse update-profile into the verification system` (line 1130), `Scope` (line 1192), §Roadmap -> `Phase 3: Verification Unification` (line 1448).
+
+- [ ] Add evidence-bearing fields to `profile_suggestions`.
+  Do: extend the table/UI with `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, and `dedupe_key`, then show that evidence in the reviewer workflow.
+  Repo touchpoints: new migration(s), `agent-verify`, admin/person suggestion review UI.
+  Strategy refs: §Verification And Updates Strategy -> `2. Add evidence columns to profile_suggestions` (line 1139), `Scope` (line 1192), §Roadmap -> `Phase 3: Verification Unification` (line 1448).
+
+- [ ] Route verification behavior by field risk.
+  Do: use deterministic extraction for low-risk fields first, explicit review for medium-risk fields, and stricter evidence/LLM judgment for high-risk changes such as bio rewrites or “may have left the US” status.
+  Repo touchpoints: verification core, suggestion UI, reviewer guidance.
+  Strategy refs: §Verification And Updates Strategy -> `3. Route by field risk` (line 1152), `Devil's Advocate` (line 1188).
+
+- [ ] Add smarter verification scheduling.
+  Do: prioritize stale profiles by stale age, LinkedIn presence, source importance, user activity/search volume, and recent discovery evidence touching an existing person.
+  Repo touchpoints: `agent-scheduler`, `agent-verify`, analytics/priority queries.
+  Strategy refs: §Verification And Updates Strategy -> `4. Add smarter scheduling` (line 1174), `Scope` (line 1192), §Success Metrics (line 1469).
+
+## Phase 4 — Labeling, Embeddings, and Connections
+
+- [ ] Build an evidence-first derived labeling pipeline.
+  Do: extract proposed sectors, occupation/career stage, Flemish entities, US location, source quality, and profile confidence into reviewable derived-label records before promoting them into canonical tables or filter fields.
+  Repo touchpoints: new label tables/views or suggestion extensions, admin review UI, discovery/verification outputs.
+  Strategy refs: §Automatic Labeling And Location Extraction (line 1327), `Recommended derived labels` (line 1331), `Recommended implementation pattern` (line 1340), §Roadmap -> `Phase 4: Labeling, Embeddings, Connections` (line 1459).
+
+- [ ] Turn location extraction into a pipeline instead of a single model field.
+  Do: store raw location text, parse city/state/country deterministically, geocode US candidates, score confidence, and require review when location remains ambiguous.
+  Repo touchpoints: discovery evidence, verification core, `supabase/functions/geocode/index.ts`, location-related tables/views.
+  Strategy refs: §Automatic Labeling And Location Extraction -> `Location extraction` (line 1349), `Recommended implementation pattern` (line 1340).
+
+- [ ] Improve embedding document construction and backfill accounting before any model migration.
+  Do: build structured embedding text with explicit field labels, fix stale/null progress accounting, and batch embedding requests where practical.
+  Repo touchpoints: `supabase/functions/generate-embeddings/index.ts`, embedding tables/migrations, nightly refresh jobs.
+  Strategy refs: §Embeddings Strategy -> `1. Build a better embedding document` (line 1256), `3. Fix backfill accounting and batching` (line 1286), `4. Delay the embedding-model migration until the pipeline is stable` (line 1296).
+
+- [ ] Add bio-chunk vectors once lexical + single-vector search is stable.
+  Do: create `person_text_chunks`, embed chunks, retrieve top chunks, roll results back up to people, and reuse matched chunk text for snippets/evidence.
+  Repo touchpoints: new migration(s), `generate-embeddings`, `search-people`.
+  Strategy refs: §Embeddings Strategy -> `2. Add bio-chunk vectors` (line 1270), `Devil's Advocate` (line 1314), §Roadmap -> `Phase 4: Labeling, Embeddings, Connections` (line 1459).
+
+- [ ] Expand connections conservatively and keep soft affinity separate from hard graph edges.
+  Do: add evidence-backed connection types such as same organization/program/lab/event roster, and keep softer semantic affinity in a separate `connection_suggestions` surface rather than writing noisy graph edges directly.
+  Repo touchpoints: `discover_connections()` SQL/RPC, connection migrations/views, profile/graph UI.
+  Strategy refs: §Connections Strategy (line 1201), `What To Change` (line 1213), `Scope` (line 1238), §Roadmap -> `Phase 4: Labeling, Embeddings, Connections` (line 1459).
+
+## Cross-Cutting Model, Ops, and Evaluation Work
+
+- [ ] Move production defaults to stable Gemini 2.5 models.
+  Do: replace preview-first hardcoded defaults with shared env/config-based model selection using `gemini-2.5-flash-lite`, `gemini-2.5-flash`, and `gemini-2.5-pro`; keep Gemini 3.x preview models opt-in for evaluation lanes only.
+  Repo touchpoints: all AI edge functions, shared model helper, env docs.
+  Strategy refs: §Critical Findings -> `8. The current model strategy leans too hard on preview models` (line 220), §Model Strategy -> `Production Defaults` (line 1363), `Why Not Make Gemini 3.x Preview The Core` (line 1379).
+
+- [ ] Add the caching and batch patterns the strategy depends on.
+  Do: use context caching for repeated large prompt/evidence prefixes and Gemini Batch API for large embedding refreshes or other offline high-volume jobs.
+  Repo touchpoints: shared AI helpers, embedding jobs, offline admin tooling.
+  Strategy refs: §Caching And Batch Strategy (line 1385).
+
+- [ ] Track the success metrics phase by phase in Admin or saved ops queries.
+  Do: implement dashboards or materialized views for search benchmark success, discovery recall/yield, multi-evidence rate, review approval rates, duplicate rate, verified-US-location rate, gap-closure rate, and connection suggestion acceptance.
+  Repo touchpoints: admin analytics, SQL views/materialized views, benchmark fixtures.
+  Strategy refs: §Success Metrics (line 1469), §Final Recommendation (line 1491).
