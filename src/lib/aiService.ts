@@ -309,3 +309,104 @@ export async function suggestPeople(query: string): Promise<{ person: Person; re
     return [];
   }
 }
+
+// ---------- Hybrid Search (server-side) ----------
+
+export interface HybridSearchResultItem {
+  id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  title: string | null;
+  current_position: string | null;
+  bio: string | null;
+  occupation: string | null;
+  flemish_connection: string | null;
+  profile_photo_url: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+  last_verified_at: string | null;
+  available_for_lectures: boolean | null;
+  location_id: string | null;
+  locations: { city: string; state: string } | null;
+  score: number;
+  snippet: string;
+}
+
+export interface HybridSearchResponse {
+  results: HybridSearchResultItem[];
+  keywords: SmartSearchKeywords;
+  message: string;
+  total_with_embeddings: number;
+}
+
+/**
+ * Server-side hybrid search combining keyword scoring (0.4) + embedding similarity (0.6).
+ * Replaces the old pattern of fetching all people and scoring client-side.
+ * Falls back to client-side scoring if the edge function fails.
+ */
+export async function hybridSearch(
+  query: string,
+  maxResults = 30
+): Promise<HybridSearchResponse> {
+  try {
+    const { data, error } = await supabase.functions.invoke('search-people', {
+      body: { query, max_results: maxResults },
+    });
+
+    if (error) throw error;
+    if (!data?.results || !data?.keywords) throw new Error('Invalid response');
+
+    return data as HybridSearchResponse;
+  } catch {
+    // Fallback: client-side scoring (same as before, but only as degraded path)
+    const res = await smartSearch(query);
+    const { data: people } = await supabase.from('people').select('*, locations(*)').limit(200);
+
+    if (!people) {
+      return { results: [], keywords: res.keywords, message: res.message, total_with_embeddings: 0 };
+    }
+
+    const scored = (people as Person[])
+      .map((p) => ({
+        person: p,
+        score: scorePersonAgainstKeywords(
+          p as unknown as Record<string, unknown>,
+          res.keywords
+        ),
+      }))
+      .filter((s) => s.score >= AI_SCORE_THRESHOLD)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+
+    const results: HybridSearchResultItem[] = scored.map((s) => ({
+      id: s.person.id,
+      name: s.person.name,
+      first_name: s.person.first_name ?? null,
+      last_name: s.person.last_name ?? null,
+      title: s.person.title ?? null,
+      current_position: s.person.current_position ?? null,
+      bio: s.person.bio ?? null,
+      occupation: s.person.occupation ?? null,
+      flemish_connection: s.person.flemish_connection ?? null,
+      profile_photo_url: s.person.profile_photo_url ?? null,
+      email: s.person.email ?? null,
+      linkedin_url: s.person.linkedin_url ?? null,
+      last_verified_at: s.person.last_verified_at ?? null,
+      available_for_lectures: s.person.available_for_lectures ?? null,
+      location_id: s.person.location_id ?? null,
+      locations: s.person.locations
+        ? { city: s.person.locations.city, state: s.person.locations.state }
+        : null,
+      score: s.score,
+      snippet: '',
+    }));
+
+    return { results, keywords: res.keywords, message: res.message, total_with_embeddings: 0 };
+  }
+}
+
+/** Log a search result click for relevance feedback (fire-and-forget) */
+export function logSearchClick(query: string, personId: string): void {
+  supabase.from('search_clicks').insert({ query, person_id: personId }).then();
+}

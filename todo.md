@@ -208,13 +208,11 @@ Current CSV import works but needs improvements for bulk population.
 **Scope:** aiService.ts, UnifiedSearchBar.tsx, DirectoryGrid.tsx
 **Effort:** Medium (1-2 days)
 
-Current smart_search extracts keywords then loads ALL people (limit 200) to score client-side. This does not scale.
-
-- [ ] **Move scoring server-side (critical):** Replace `suggestPeople()` client-side scoring with server-side endpoint. After embeddings exist (Task 2), use `suggest-people` edge function. Before embeddings: at minimum move the `scorePersonAgainstKeywords` logic into an RPC or edge function to avoid transferring all person data to the client.
-- [ ] **Hybrid search (after embeddings exist):** For NL queries, run BOTH keyword scoring AND embedding similarity. Combine scores: `final = 0.4 * keyword_score + 0.6 * embedding_similarity`. This captures semantic meaning that keywords miss.
-- [ ] **Search result snippets:** After NL search, show 1-sentence snippet below each person card explaining WHY they matched (highlight matching bio text or show filter match)
-- [ ] **Relevance feedback loop:** Track which search results users click. Log `{ query, person_id, clicked_at }` to a `search_clicks` table. Use to tune scoring weights over time.
-- [ ] **Empty state improvement:** When search returns 0 results, suggest: "Try broader terms" or show nearest matches below threshold with "(low relevance)" label
+- [x] **Move scoring server-side (critical):** New `search-people` edge function handles all scoring server-side. Dashboard no longer fetches all people — only receives ranked results.
+- [x] **Hybrid search (after embeddings exist):** `search-people` runs keyword extraction (Gemini Flash) and embedding similarity (pgvector `match_people`) in parallel, combines scores: `final = 0.4 * keyword + 0.6 * embedding`. Also queries keyword-only candidates via targeted SQL to catch profiles without embeddings.
+- [x] **Search result snippets:** Snippets generated server-side in `search-people` and returned with results. Displayed under each AI-Enhanced Result card.
+- [x] **Relevance feedback loop:** `search_clicks` table tracks `{ query, person_id, clicked_at }`. Frontend logs clicks via `logSearchClick()` when user clicks AI search results.
+- [x] **Empty state improvement:** When search returns 0 results, shows actionable suggestions (use broader terms, search by field, try descriptive queries) with a clear button.
 
 ### 12. Interactive Stats Dashboard
 **Scope:** Admin.tsx, admin components

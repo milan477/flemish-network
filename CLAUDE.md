@@ -81,6 +81,7 @@ supabase/
     ├── agent-scheduler/             # Agent run dispatcher / zombie cleanup
     ├── agent-verify/                # LinkedIn-first profile verification
     ├── generate-embeddings/         # Batch embedding generation for people
+    ├── search-people/               # Hybrid search: keyword extraction + embedding similarity, server-side scoring
     ├── suggest-people/              # Embedding + Gemini ranking for collections
     ├── search-contacts/             # Tavily web search + Gemini extraction + dedup check
     ├── update-profile/              # Web search a person + generate profile suggestions via check_profile
@@ -136,6 +137,7 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 |---|---|
 | `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status` (pending/approved/rejected) |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
+| `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at`. Tracks which search results users click for relevance feedback. |
 
 ### Legacy (still in DB, no longer used in frontend)
 | Table | Status |
@@ -163,6 +165,16 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 | `smart_search` | NL query → keyword arrays for 8 profile fields | `{ query }` | `{ message, keywords: { name[], occupation[], sector[], location_city[], location_state[], current_position[], flemish_connection[], bio[] } }` |
 | `flemish_search` | NL query → Flemish-specific keywords | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
 | `check_profile` | Compare person data vs web results, suggest updates | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
+
+### Edge Function: `search-people`
+Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces the old pattern of fetching all people and scoring client-side.
+1. Takes `{ query, max_results }` — runs keyword extraction (Gemini Flash) and query embedding (gemini-embedding-001) in parallel
+2. Calls `match_people` RPC for embedding candidates (top 50 by cosine similarity, threshold 0.2)
+3. Also runs targeted SQL keyword queries to find candidates without embeddings
+4. Fetches full person data + locations + sectors for all candidates
+5. Scores each candidate: `final = 0.4 * keyword_score + 0.6 * embedding_similarity`
+6. Generates snippets server-side, returns ranked results with full person data
+7. Returns `{ results: [...], keywords: {...}, message: "...", total_with_embeddings: N }`
 
 ### Edge Function: `search-contacts`
 1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results)
@@ -199,9 +211,12 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - `searchContacts(query)` → calls `search-contacts` edge function
 - `smartSearch(query)` → calls `ai-agent` smart_search
 - `flemishSearch(query)` → calls `ai-agent` flemish_search
-- `suggestPeople(query)` → uses `smartSearch` + scores all people client-side (no embeddings yet)
-- `scorePersonAgainstKeywords(person, keywords)` → weighted field matching
+- `hybridSearch(query, maxResults)` → calls `search-people` edge function (server-side hybrid scoring). Primary search path for Dashboard NL queries. Falls back to client-side scoring if edge function fails.
+- `suggestPeopleEmbedding(query, options)` → calls `suggest-people` edge function (for collection suggestions)
+- `suggestPeople(query)` → client-side keyword scoring fallback (used only when edge functions fail)
+- `scorePersonAgainstKeywords(person, keywords)` → weighted field matching (used by fallback path)
 - `scorePersonAgainstFilter(person, keywords, fields)` → boolean match
+- `logSearchClick(query, personId)` → fire-and-forget insert into `search_clicks` table
 
 ### What Does NOT Exist Yet
 - Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used consistently across the whole stack
@@ -215,7 +230,7 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - **25 console.log/error/warn calls in production code:** Across 9 frontend files. Should use a proper logger or remove.
 - **9 alert() calls as error handling:** In PersonProfile, OrganizationProfile, CollectionDetail. Should replace with toast/snackbar UI.
 - **`search-contacts` dedup loads ALL people:** Fetches entire `people` table to check for duplicates by name. Will degrade as DB grows. Should use targeted queries (e.g., `WHERE name ILIKE $1`).
-- **Dashboard NL search loads ALL people:** `suggestPeople()` in `aiService.ts` fetches up to 200 people then scores client-side. No server-side filtering. Will not scale.
+- **~~Dashboard NL search loads ALL people:~~** Fixed. Dashboard now uses `search-people` edge function for server-side hybrid search (keyword + embedding). Client-side `suggestPeople()` fallback still exists but is only used if the edge function fails.
 - **`profile_suggestions.person_id` is NOT NULL:** The Discovery Agent design (Phase 3.1 in AI strategy) inserts discovered NEW contacts into `profile_suggestions` — but new contacts have no `people` row yet, so the FK constraint will reject the insert. Design blocker for discovery agent.
 - **`@types/leaflet` and `@types/leaflet.markercluster` in dependencies:** Should be in devDependencies in `package.json`.
 
