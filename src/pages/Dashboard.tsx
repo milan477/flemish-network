@@ -21,11 +21,9 @@ import { lookupCity, ensureLocationsLoaded, addToCache } from '../lib/locations'
 import { geocodeBatch } from '../lib/geocoding';
 import { parseFiltersFromQuery } from '../lib/filterParser';
 import {
-  smartSearch,
-  scorePersonAgainstKeywords,
   scorePersonAgainstFilter,
-  AI_SCORE_THRESHOLD,
-  type SmartSearchKeywords,
+  hybridSearch,
+  type HybridSearchResultItem,
 } from '../lib/aiService';
 
 interface DashboardProps {
@@ -40,50 +38,8 @@ interface DashboardProps {
 
 type ViewMode = 'map' | 'list';
 
-function generateSnippet(
-  person: Person,
-  keywords: SmartSearchKeywords
-): string {
-  if (person.bio && keywords.bio.length > 0) {
-    const sentences = person.bio.split(/[.!?]+/).filter((s) => s.trim());
-    for (const sentence of sentences) {
-      const lower = sentence.toLowerCase();
-      if (keywords.bio.some((kw) => lower.includes(kw))) {
-        return sentence.trim();
-      }
-    }
-  }
-
-  if (person.current_position && keywords.current_position.length > 0) {
-    const lower = person.current_position.toLowerCase();
-    if (keywords.current_position.some((kw) => lower.includes(kw))) {
-      return person.current_position;
-    }
-  }
-
-  if (person.bio) {
-    const sentences = person.bio.split(/[.!?]+/).filter((s) => s.trim());
-    const allKw = [
-      ...keywords.name,
-      ...keywords.occupation,
-      ...keywords.sector,
-      ...keywords.location_city,
-      ...keywords.location_state,
-      ...keywords.current_position,
-      ...keywords.flemish_connection,
-      ...keywords.bio,
-    ];
-    for (const sentence of sentences) {
-      const lower = sentence.toLowerCase();
-      if (allKw.some((kw) => lower.includes(kw))) {
-        return sentence.trim();
-      }
-    }
-    if (sentences[0]) return sentences[0].trim();
-  }
-
-  return '';
-}
+// Snippets are now generated server-side by the search-people edge function.
+// This helper converts HybridSearchResultItem[] to Person-like objects for display.
 
 function buildClusters(
   people: Person[],
@@ -219,59 +175,51 @@ export default function Dashboard({
     setSnippets(new Map());
 
     const words = query.trim().split(/\s+/);
-    // If it's more than 3 words or contains descriptive words, it's NL.
-    // "Dr Griet Vanholme" is 3 words, so it should still be isDirectSearch.
-    const isDirectSearch = words.length <= 4; 
+    const isDirectSearch = words.length <= 4;
 
     setAiLoading(true);
     onSearchingChange(true);
 
     try {
-      if (isDirectSearch) {
-        // Improved fuzzy name match to handle "Dr." or titles
-        const searchTerms = query.toLowerCase().replace(/^dr\.?\s+/, '').split(' ');
-        const mainTerm = searchTerms[searchTerms.length - 1]; // Use last name as main term for better results
+      // Run name matching and hybrid search in parallel
+      const nameMatchPromise = isDirectSearch
+        ? (async () => {
+            const searchTerms = query.toLowerCase().replace(/^dr\.?\s+/, '').split(' ');
+            const mainTerm = searchTerms[searchTerms.length - 1];
+            const { data } = await supabase
+              .from('people').select('*, locations(*)')
+              .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
+              .limit(20);
+            return (data as Person[]) || [];
+          })()
+        : Promise.resolve([]);
 
-        const { data: peopleMatches } = await supabase
-          .from('people').select('*, locations(*)')
-          .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
-          .limit(20);
-        
-        setNameMatches(peopleMatches as Person[] || []);
-      }
+      const hybridPromise = hybridSearch(query);
 
-      // Always run smart search for NL understanding and keyword extraction
-      const result = await smartSearch(query);
+      const [nameResults, hybridResult] = await Promise.all([nameMatchPromise, hybridPromise]);
+
+      setNameMatches(nameResults);
 
       // Apply deterministic filters from query
       const parsed = parseFiltersFromQuery(query, filters);
       setFilters(parsed.filters);
 
-      const { data: allPeople } = await supabase.from('people').select('*, locations(*)');
-      if (allPeople) {
-        const scored = (allPeople as Person[])
-          .map((p) => ({
-            person: p,
-            score: scorePersonAgainstKeywords(
-              p as unknown as Record<string, unknown>,
-              result.keywords
-            ),
-          }))
-          .filter((s) => s.score >= AI_SCORE_THRESHOLD)
-          .sort((a, b) => b.score - a.score);
+      // Convert hybrid results to Person-like objects for display
+      const aiPeople = hybridResult.results.map((r: HybridSearchResultItem) => ({
+        ...r,
+        // Ensure the shape matches what PersonCard expects
+      } as unknown as Person));
 
-        const aiPeople = scored.map((s) => s.person);
-        setAiResults(aiPeople);
+      setAiResults(aiPeople);
 
-        const newSnippets = new Map<string, string>();
-        for (const person of aiPeople) {
-          const snippet = generateSnippet(person, result.keywords);
-          if (snippet) newSnippets.set(person.id, snippet);
-        }
-        setSnippets(newSnippets);
+      // Set snippets from server-side results
+      const newSnippets = new Map<string, string>();
+      for (const r of hybridResult.results) {
+        if (r.snippet) newSnippets.set(r.id, r.snippet);
       }
-    } catch (err) {
-      console.error('Search error:', err);
+      setSnippets(newSnippets);
+    } catch {
+      // search failed
     } finally {
       setAiLoading(false);
       onSearchingChange(false);

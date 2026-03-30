@@ -8,7 +8,7 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
 
 interface ExtractedContact {
   name: string;
@@ -327,30 +327,14 @@ async function checkDuplicates(
     }
   }
 
-  const nameMap = new Map<string, string>();
-  try {
-    const { data: allPeopleNames } = await supabase
-      .from("people")
-      .select("id, name, first_name, last_name");
+  const results: ContactWithDupe[] = [];
 
-    if (allPeopleNames && Array.isArray(allPeopleNames)) {
-      for (const p of allPeopleNames as Array<{ id: string; name: string; first_name?: string; last_name?: string }>) {
-        const fullName = safeStr(p.name).trim().toLowerCase();
-        const pid = safeStr(p.id);
-        if (fullName) nameMap.set(fullName, pid);
-        const composed = `${safeStr(p.first_name)} ${safeStr(p.last_name)}`.trim().toLowerCase();
-        if (composed && composed !== fullName) nameMap.set(composed, pid);
-      }
-    }
-  } catch {
-    // name check unavailable
-  }
-
-  return contacts.map((contact) => {
+  for (const contact of contacts) {
     let is_duplicate = false;
     let duplicate_reason = "";
     let existing_person_id = "";
 
+    // Check email match
     if (contact.email && contact.email.includes("@")) {
       const match = existing.find(
         (e) =>
@@ -364,6 +348,7 @@ async function checkDuplicates(
       }
     }
 
+    // Check LinkedIn match
     if (!is_duplicate && contact.linkedin_url) {
       const normalize = (url: string) =>
         safeStr(url).replace(/\/+$/, "").toLowerCase();
@@ -379,23 +364,34 @@ async function checkDuplicates(
       }
     }
 
-    if (!is_duplicate) {
-      const nameKey = contact.name.trim().toLowerCase();
-      const matchId = nameMap.get(nameKey);
-      if (matchId) {
-        is_duplicate = true;
-        duplicate_reason = `Name matches existing contact`;
-        existing_person_id = matchId;
+    // Check name match with targeted query
+    if (!is_duplicate && contact.name) {
+      try {
+        const nameKey = contact.name.trim().toLowerCase();
+        const { data: nameMatches } = await supabase
+          .from("people")
+          .select("id, name")
+          .or(`name.ilike.${nameKey},name.ilike.${nameKey}`)
+          .limit(1);
+        if (nameMatches && nameMatches.length > 0) {
+          is_duplicate = true;
+          duplicate_reason = `Name matches existing contact`;
+          existing_person_id = safeStr(nameMatches[0].id);
+        }
+      } catch {
+        // name check unavailable
       }
     }
 
-    return {
+    results.push({
       ...contact,
       is_duplicate,
       duplicate_reason,
       existing_person_id,
-    };
-  });
+    });
+  }
+
+  return results;
 }
 
 Deno.serve(async (req: Request) => {

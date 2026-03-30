@@ -1,6 +1,7 @@
 import { X, MapPin, Building2, ExternalLink } from 'lucide-react';
-import { displayName, personInitials } from '../lib/supabase';
+import { displayName } from '../lib/supabase';
 import type { MapCluster } from '../lib/supabase';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface ClusterPopoverProps {
   cluster: MapCluster;
@@ -59,11 +60,7 @@ export default function ClusterPopover({
                   onClick={() => onNavigate('person', person.id)}
                   className="w-full flex items-center gap-x-2.5 px-2 py-0 hover:bg-yellow-50/50 rounded-lg transition-colors text-left group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                    <span className="text-[12px] font-bold text-white">
-                      {personInitials(person)}
-                    </span>
-                  </div>
+                  <ProfileAvatar person={person} size="sm" variant="dark" className="shadow-sm" />
 
                   {/* UPDATED TEXT BLOCK */}
                   <div className="flex-1 min-w-0 min-h-0">

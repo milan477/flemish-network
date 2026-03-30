@@ -13,8 +13,9 @@ import {
   Globe,
   Plus,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, type Organization, type Person, type Sector } from '../lib/supabase';
+import { supabase, displayName, FLEMISH_OPTIONS, type Organization, type Person, type Sector } from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 
 interface OrganizationProfileProps {
   organizationId: string;
@@ -47,6 +48,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
   const [customFlemish, setCustomFlemish] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const loadOrganization = useCallback(async () => {
     const [orgRes, sectorsRes, allSectorsRes] = await Promise.all([
@@ -139,18 +141,17 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       .maybeSingle();
 
     if (updateErr) {
-      console.error('Error updating organization:', updateErr);
-      alert(`Error saving: ${updateErr.message}`);
-      setSaving(false);
-      return;
-    } 
-    
-    if (!updatedOrg) {
-      console.warn('Update successful but no data returned. This might be due to RLS policies.');
-      alert('The update was not applied. You might not have permission to edit this organization.');
+      setSaveError(`Error saving: ${updateErr.message}`);
       setSaving(false);
       return;
     }
+
+    if (!updatedOrg) {
+      setSaveError('The update was not applied. You might not have permission to edit this organization.');
+      setSaving(false);
+      return;
+    }
+    setSaveError(null);
 
     setOrganization(updatedOrg as Organization);
 
@@ -179,8 +180,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       await loadOrganization();
       setEditing(false);
     } catch (err: any) {
-      console.error('Error updating sectors:', err);
-      alert(`Organization info saved, but error updating sectors: ${err.message}`);
+      setSaveError(`Organization info saved, but error updating sectors: ${err.message}`);
       await loadOrganization();
       setEditing(false);
     }
@@ -358,6 +358,12 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                   </>
                 ) : (
                   <>
+                    {saveError && (
+                      <div className="px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+                        <span>{saveError}</span>
+                        <button onClick={() => setSaveError(null)} className="ml-2 text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button>
+                      </div>
+                    )}
                     <button
                       onClick={startEditing}
                       className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
@@ -521,11 +527,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                     className="bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition-colors text-left border border-gray-200"
                   >
                     <div className="flex items-start space-x-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                        <span className="text-lg font-semibold text-blue-700">
-                          {personInitials(person)}
-                        </span>
-                      </div>
+                      <ProfileAvatar person={person} size="md" />
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-gray-900 mb-1">{displayName(person)}</h3>
                         {person.current_position && (

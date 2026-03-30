@@ -4,6 +4,10 @@ import {
   Building2,
   MapPin,
   Clock,
+  Sparkles,
+  Loader2,
+  Bot,
+  LayoutDashboard,
 } from 'lucide-react';
 import { supabase, type Person } from '../lib/supabase';
 import OccupationOverview from '../components/admin/OccupationOverview';
@@ -11,6 +15,8 @@ import StaleContactsBar from '../components/admin/StaleContactsBar';
 import SuggestedChanges, {
   type ProfileSuggestion,
 } from '../components/admin/SuggestedChanges';
+import AgentDashboard from '../components/admin/AgentDashboard';
+import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 
 interface SectorCount {
   name: string;
@@ -33,7 +39,10 @@ const SECTOR_COLORS: Record<string, string> = {
   Research: 'bg-cyan-500',
 };
 
+type AdminTab = 'overview' | 'agents' | 'discovered';
+
 export default function Admin() {
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [sectorCounts, setSectorCounts] = useState<SectorCount[]>([]);
@@ -44,6 +53,10 @@ export default function Admin() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiLoadingIds, setAiLoadingIds] = useState<Set<string>>(new Set());
   const [noUpdateIds, setNoUpdateIds] = useState<Set<string>>(new Set());
+
+  // Embedding backfill state
+  const [embeddingProgress, setEmbeddingProgress] = useState<{ processed: number; total: number } | null>(null);
+  const [embeddingRunning, setEmbeddingRunning] = useState(false);
 
   const loadSuggestions = useCallback(async () => {
     const { data } = await supabase
@@ -167,11 +180,9 @@ export default function Admin() {
               return next;
             });
           }
-        } else {
-          console.error('AI check failed:', await resp.text());
         }
-      } catch (err) {
-        console.error('AI check error:', err);
+      } catch {
+        // AI check failed
       }
 
       setAiLoading(false);
@@ -204,6 +215,50 @@ export default function Admin() {
     await Promise.all([loadData(), loadSuggestions()]);
   }, [loadData, loadSuggestions]);
 
+  const handleBackfillEmbeddings = useCallback(async () => {
+    setEmbeddingRunning(true);
+    setEmbeddingProgress({ processed: 0, total: 0 });
+
+    try {
+      // First call to get total count
+      const { count } = await supabase
+        .from('people')
+        .select('id', { count: 'exact', head: true })
+        .or('embedding.is.null,embedding_dirty_at.gt.embedding_generated_at');
+
+      const total = count || 0;
+      if (total === 0) {
+        setEmbeddingProgress(null);
+        setEmbeddingRunning(false);
+        return;
+      }
+
+      let totalProcessed = 0;
+      let remaining = total;
+
+      while (remaining > 0) {
+        const { data, error } = await supabase.functions.invoke('generate-embeddings', {
+          body: { backfill: true, batch_size: 20 },
+        });
+
+        if (error) throw error;
+
+        totalProcessed += data.processed || 0;
+        remaining = data.remaining ?? 0;
+        setEmbeddingProgress({ processed: totalProcessed, total });
+
+        if ((data.processed || 0) === 0 && remaining > 0) {
+          // Safety: avoid infinite loop if nothing is being processed
+          break;
+        }
+      }
+    } catch {
+      // backfill failed
+    }
+
+    setEmbeddingRunning(false);
+  }, []);
+
   const cityCount = new Set(
     people.filter((p) => p.locations?.city).map((p) => p.locations?.city)
   ).size;
@@ -226,14 +281,57 @@ export default function Admin() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-          Admin Dashboard
-        </h1>
-        <p className="text-gray-600">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-3xl font-semibold text-gray-900">
+            Admin Dashboard
+          </h1>
+        </div>
+        <p className="text-gray-600 mb-4">
           Monitor network statistics and manage contacts
         </p>
+
+        <div className="flex gap-1 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'overview'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('agents')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'agents'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Bot className="w-4 h-4" />
+            Agents
+          </button>
+          <button
+            onClick={() => setActiveTab('discovered')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'discovered'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Discovered
+          </button>
+        </div>
       </div>
 
+      {activeTab === 'agents' && <AgentDashboard />}
+
+      {activeTab === 'discovered' && <DiscoveredContactsPanel />}
+
+      {activeTab === 'overview' && <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           icon={Users}
@@ -364,8 +462,52 @@ export default function Admin() {
               onRefresh={handleSuggestionsRefresh}
             />
           </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">
+              Embedding Search Index
+            </h3>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handleBackfillEmbeddings}
+                disabled={embeddingRunning}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+              >
+                {embeddingRunning ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
+              </button>
+              {embeddingProgress && (
+                <div className="flex-1 max-w-xs">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>Progress</span>
+                    <span>
+                      {embeddingProgress.processed} / {embeddingProgress.total}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-teal-500 h-2 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${embeddingProgress.total > 0 ? (embeddingProgress.processed / embeddingProgress.total) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {embeddingProgress && !embeddingRunning && embeddingProgress.processed > 0 && (
+                <span className="text-xs text-green-600 font-medium">
+                  Done — {embeddingProgress.processed} profiles indexed
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }

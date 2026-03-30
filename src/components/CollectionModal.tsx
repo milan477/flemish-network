@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { X, Check, Loader2, Sparkles, MapPin, Briefcase } from 'lucide-react';
-import { supabase, type Collection, type Person, displayName, personInitials } from '../lib/supabase';
+import { supabase, type Collection, type Person, displayName } from '../lib/supabase';
 import { suggestPeople } from '../lib/aiService';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface CollectionModalProps {
   collection?: Collection;
@@ -43,8 +44,8 @@ export default function CollectionModal({
       // Auto-select top matches (score > 0.2)
       const topIds = new Set(results.filter(r => r.score > 0.2).map(r => r.person.id));
       setSelectedPersonIds(topIds);
-    } catch (err) {
-      console.error('Error getting suggestions:', err);
+    } catch {
+      // suggestion failed
     } finally {
       setIsLoadingSuggestions(false);
     }
@@ -103,7 +104,6 @@ export default function CollectionModal({
       onSave(savedCollection);
       onClose();
     } catch (err: any) {
-      console.error('Error saving collection:', err);
       setError(err.message || 'Failed to save collection');
       setIsSaving(false);
     }
@@ -204,13 +204,13 @@ export default function CollectionModal({
                         }`}
                       >
                         <div className="flex items-start gap-4">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-yellow-200' : 'bg-gray-100'}`}>
-                            {isSelected ? (
+                          {isSelected ? (
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-yellow-200">
                               <Check className="w-5 h-5 text-yellow-700" />
-                            ) : (
-                              <span className="text-xs font-bold text-gray-400">{personInitials(person)}</span>
-                            )}
-                          </div>
+                            </div>
+                          ) : (
+                            <ProfileAvatar person={person} size="sm" />
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
                               <h4 className="font-bold text-gray-900 truncate">{displayName(person)}</h4>

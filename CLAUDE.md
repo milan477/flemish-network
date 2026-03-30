@@ -3,12 +3,23 @@
 ## What This Is
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
+## Recent Notes (2026-03-28)
+- `supabase/functions/agent-discovery/index.ts` now supports two operating modes: a blank-query seeded sweep that rotates through predefined Flemish institution/company/fellowship searches, and a custom-query mode that expands one query into several discovery variants. The function now executes up to 3 web searches and 2 LinkedIn searches per run as originally intended.
+- Discovery dedup is stronger now: cross-channel candidates merge on normalized LinkedIn/email/website/name signals before insert, and DB dedup checks `people` and `discovered_contacts` by normalized name, email, LinkedIn URL, and website URL instead of relying on a case-sensitive name lookup.
+- Discovery now reports Gemini extraction failures explicitly in `errors`/`steps` and stops burning web-search budget when the current Gemini quota is exhausted, instead of quietly returning zero contacts.
+- `supabase/functions/agent-verify/index.ts` now exists. It verifies stale profiles in a LinkedIn-first flow: Apify scrape when `linkedin_url` is present, deterministic field diffing for position/location/bio/photo, then web search + the same Gemini `check_profile` schema locally when LinkedIn is unavailable or missing. The operational default is a 5-profile batch to stay inside the edge timeout.
+- Verification can create advisory `profile_suggestions` rows with `field_name = '_status'` and `suggested_value = 'may_have_left_us'` when LinkedIn indicates the person is no longer US-based. These are review-only flags; approving them should not try to write an unknown column onto `people`.
+- LinkedIn verification also suggests `profile_photo_url` when the profile has no stored photo and Apify returns one.
+- `supabase/functions/agent-connections/index.ts` now exists. It is a pure-SQL agent wrapper around the `discover_connections(text[])` RPC and reports connection runs through `agent_runs` with no LLM or web-search usage.
+- Migration `20260328210000_connection_discovery.sql` makes connection discovery idempotent by adding a partial unique index on unordered person-person pairs plus `relationship_type`, so rerunning the agent does not create reverse-direction duplicates.
+- The person profile now aggregates `connections` rows by connected person, so one person can surface multiple relationship types (`colleague`, `alumni`, `local_peer`) without inflating the direct-connection count. The `View graph` action opens a modal graph plus a detail list that exposes those type badges.
+
 ## Tech Stack
 - **Frontend:** React 18 + TypeScript, Vite 5, Tailwind CSS 3, Lucide React (icons)
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)
 - **Map:** Leaflet + react-leaflet + react-leaflet-cluster (marker clustering)
 - **AI:** Google Gemini (`gemini-3-flash-preview`, hardcoded in edge functions)
-- **Web Search:** Tavily API (free tier, 1000 calls/mo). Brave Search API key configured but not yet integrated.
+- **Web Search:** Tavily API (free tier, 1000 calls/mo) with Brave Search fallback via the shared web search module.
 - **Geocoding:** Nominatim / OpenStreetMap (cached in `locations` table via `geocode` edge function)
 - **No router library** — routing is manual via `useState<Page>` in `App.tsx`
 
@@ -62,9 +73,16 @@ src/
 │   ├── geocoding.ts                 # Batch geocoding via edge function
 │   └── locations.ts                 # Location coordinate helpers
 supabase/
-├── migrations/                      # 23 sequential SQL migrations (see Database Schema below)
-└── functions/                       # 4 deployed Deno edge functions
+├── migrations/                      # Sequential SQL migrations (see Database Schema below)
+└── functions/                       # Deno edge functions
     ├── ai-agent/                    # Gemini orchestration (4 tasks: parse_contacts, smart_search, flemish_search, check_profile)
+    ├── agent-connections/           # Deterministic colleague/alumni/local-peer discovery
+    ├── agent-discovery/             # Web + LinkedIn discovery agent
+    ├── agent-scheduler/             # Agent run dispatcher / zombie cleanup
+    ├── agent-verify/                # LinkedIn-first profile verification
+    ├── generate-embeddings/         # Batch embedding generation for people
+    ├── search-people/               # Hybrid search: keyword extraction + embedding similarity, server-side scoring
+    ├── suggest-people/              # Embedding + Gemini ranking for collections
     ├── search-contacts/             # Tavily web search + Gemini extraction + dedup check
     ├── update-profile/              # Web search a person + generate profile suggestions via check_profile
     └── geocode/                     # Nominatim geocoding + locations table caching
@@ -100,15 +118,13 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `flemish_link`, `created_at`, `updated_at` | No inline location columns. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude` | UNIQUE(city, state). Populated from us_cities.csv import. |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `expertise_tags` | `id`, `name` (unique) | Tags for specific skills |
-| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair |
+| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair. Person-person rows are unique per unordered pair + relationship type. |
 
 ### Junction Tables
 | Table | Keys |
 |---|---|
 | `person_sectors` | `(person_id, sector_id)` PK |
 | `organization_sectors` | `(organization_id, sector_id)` PK |
-| `person_expertise` | `(person_id, expertise_id)` PK |
 
 ### Collections
 | Table | Key Columns |
@@ -121,6 +137,7 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 |---|---|
 | `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status` (pending/approved/rejected) |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
+| `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at`. Tracks which search results users click for relevance feedback. |
 
 ### Legacy (still in DB, no longer used in frontend)
 | Table | Status |
@@ -149,6 +166,16 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 | `flemish_search` | NL query → Flemish-specific keywords | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
 | `check_profile` | Compare person data vs web results, suggest updates | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
 
+### Edge Function: `search-people`
+Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces the old pattern of fetching all people and scoring client-side.
+1. Takes `{ query, max_results }` — runs keyword extraction (Gemini Flash) and query embedding (gemini-embedding-001) in parallel
+2. Calls `match_people` RPC for embedding candidates (top 50 by cosine similarity, threshold 0.2)
+3. Also runs targeted SQL keyword queries to find candidates without embeddings
+4. Fetches full person data + locations + sectors for all candidates
+5. Scores each candidate: `final = 0.4 * keyword_score + 0.6 * embedding_similarity`
+6. Generates snippets server-side, returns ranked results with full person data
+7. Returns `{ results: [...], keywords: {...}, message: "...", total_with_embeddings: N }`
+
 ### Edge Function: `search-contacts`
 1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results)
 2. Feeds search results to Gemini for structured extraction
@@ -157,9 +184,21 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 
 ### Edge Function: `update-profile`
 1. Takes `{ personId }` or `{ personIds }` → fetches person from DB
-2. Searches Tavily for `"{name} {position} {city} flemish belgian"`
+2. Searches Tavily for `"{name} {position} {city}"`
 3. Calls `ai-agent` with `check_profile` task
 4. Inserts resulting suggestions into `profile_suggestions` table
+
+### Edge Function: `agent-discovery`
+1. Takes optional `{ query, run_id, max_results }`
+2. If `query` is blank, runs a seeded sweep that rotates through predefined Flemish university/company/fellowship searches; if `query` is present, expands it into several focused discovery variants
+3. Executes up to 3 web searches through the shared Tavily/Brave module and up to 2 LinkedIn searches through Apify
+4. Uses Gemini structured extraction for web results, deterministic mapping for LinkedIn results, merges overlapping candidates across channels, then dedups against both `people` and `discovered_contacts`
+5. Inserts pending candidates into `discovered_contacts` for admin review and writes full run telemetry into `agent_runs.results`
+
+### Edge Function: `agent-connections`
+1. Takes optional `{ types, run_id }`, defaulting to all three deterministic relationship types
+2. Calls the `discover_connections(text[])` RPC to compute and insert `colleague`, `alumni`, and `local_peer` links directly in Postgres
+3. Writes zero-cost telemetry back to `agent_runs` with per-type counts for `connections_found`, `new_connections_created`, and `already_existed`
 
 ### Edge Function: `geocode`
 1. Takes `{ pairs: [{ city, state }] }` (max 25)
@@ -172,20 +211,15 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - `searchContacts(query)` → calls `search-contacts` edge function
 - `smartSearch(query)` → calls `ai-agent` smart_search
 - `flemishSearch(query)` → calls `ai-agent` flemish_search
-- `suggestPeople(query)` → uses `smartSearch` + scores all people client-side (no embeddings yet)
-- `scorePersonAgainstKeywords(person, keywords)` → weighted field matching
+- `hybridSearch(query, maxResults)` → calls `search-people` edge function (server-side hybrid scoring). Primary search path for Dashboard NL queries. Falls back to client-side scoring if edge function fails.
+- `suggestPeopleEmbedding(query, options)` → calls `suggest-people` edge function (for collection suggestions)
+- `suggestPeople(query)` → client-side keyword scoring fallback (used only when edge functions fail)
+- `scorePersonAgainstKeywords(person, keywords)` → weighted field matching (used by fallback path)
 - `scorePersonAgainstFilter(person, keywords, fields)` → boolean match
+- `logSearchClick(query, personId)` → fire-and-forget insert into `search_clicks` table
 
 ### What Does NOT Exist Yet
-- `generate-embeddings` edge function (planned)
-- `suggest-people` edge function (planned)
-- pgvector / `people.embedding` column (planned)
-- `match_people` SQL function (planned)
-- `agent_runs`, `api_quotas`, `web_search_cache` tables (planned)
-- Agent scheduler / orchestrator (planned)
-- Discovery, verification, connection agents (planned)
-- Brave Search integration (API key configured but no code uses it)
-- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used, model is hardcoded
+- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used consistently across the whole stack
 
 ### Known Bugs
 - **`geocode` edge function broken:** References `people.latitude`, `people.longitude`, `people.location_city`, `people.location_state` — all dropped in location refactor migration. Needs rewrite to use `locations` table via `location_id`.
@@ -196,9 +230,17 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 - **25 console.log/error/warn calls in production code:** Across 9 frontend files. Should use a proper logger or remove.
 - **9 alert() calls as error handling:** In PersonProfile, OrganizationProfile, CollectionDetail. Should replace with toast/snackbar UI.
 - **`search-contacts` dedup loads ALL people:** Fetches entire `people` table to check for duplicates by name. Will degrade as DB grows. Should use targeted queries (e.g., `WHERE name ILIKE $1`).
-- **Dashboard NL search loads ALL people:** `suggestPeople()` in `aiService.ts` fetches up to 200 people then scores client-side. No server-side filtering. Will not scale.
+- **~~Dashboard NL search loads ALL people:~~** Fixed. Dashboard now uses `search-people` edge function for server-side hybrid search (keyword + embedding). Client-side `suggestPeople()` fallback still exists but is only used if the edge function fails.
 - **`profile_suggestions.person_id` is NOT NULL:** The Discovery Agent design (Phase 3.1 in AI strategy) inserts discovered NEW contacts into `profile_suggestions` — but new contacts have no `people` row yet, so the FK constraint will reject the insert. Design blocker for discovery agent.
 - **`@types/leaflet` and `@types/leaflet.markercluster` in dependencies:** Should be in devDependencies in `package.json`.
+
+## Workflow Expectations
+- **Always deploy and verify changes end-to-end.** After writing code, run all necessary deployment steps yourself (push migrations with `supabase db push --linked`, deploy edge functions with `supabase functions deploy <name> --project-ref ofzuhajxwxggybkuzefq`, run `npm run typecheck`, `npm run build`, etc.). Do not leave deployment as instructions for the user.
+- **Smoke-test after deploying.** After deploying edge functions or migrations, make a quick curl/API call to verify things work. Fix issues immediately if they don't.
+- **Run the full loop:** code → typecheck → build → deploy → test. The user expects changes to be live and verified, not just written to disk.
+- **Provide manual testing steps for the UI.** After deploying, tell the user exactly how to verify the changes in the browser: which page to go to, which button to click, what they should see. Be specific (e.g., "Go to Admin → scroll to Embedding Search Index → click Generate Embeddings → you should see a progress bar fill up").
+- **Document any new environment variables or secrets.** If your code relies on a new env var (e.g., `GEMINI_FLASH_MODEL`), set a default in the code and also tell the user to add it to their `.env` file.
+- **Update documentation.** Update this CLAUDE.md file with any new architectural decisions, conventions, or important notes related to your changes. Update a todo item in `todo.md` if the change is related to an existing task, and mark it as done.
 
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.
@@ -225,8 +267,9 @@ Frontend (in `.env`):
 Edge functions (set in Supabase dashboard):
 - `GEMINI_API_KEY` (required for all AI features)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
-- `TAVILY_API_KEY` (required for web search in search-contacts and update-profile)
-- `BRAVE_API_KEY` (configured but not yet used in code)
+- `TAVILY_API_KEY` (primary web search provider for search-contacts, update-profile, and agent-discovery)
+- `BRAVE_API_KEY` (optional fallback provider used by the shared web search module)
+- `APIFY_TOKEN` (used by discovery and verification agents for LinkedIn search/scrape)
 
 ## Deploying Edge Functions
 ```bash
@@ -237,7 +280,7 @@ supabase functions deploy ai-agent --project-ref <your-project-ref>
 supabase functions deploy --project-ref <your-project-ref>
 
 # Set secrets (required per function)
-supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... --project-ref <your-project-ref>
+supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... APIFY_TOKEN=... --project-ref <your-project-ref>
 ```
 Edge functions require the Supabase CLI (`npm i -g supabase`). The project ref is in the Supabase dashboard URL.
 

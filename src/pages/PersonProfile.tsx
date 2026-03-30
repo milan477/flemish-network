@@ -21,11 +21,18 @@ import {
   ShieldCheck,
   ShieldAlert,
   Database,
+  Printer,
+  Camera,
+  Trash2,
+  Link,
 } from 'lucide-react';
-import { supabase, displayName, personInitials, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
+import { supabase, displayName, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Person, type Sector, type FilterPreset } from '../lib/supabase';
 import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
+import { generateEmbedding } from '../lib/aiService';
+import { ProfileAvatar } from '../components/ProfileAvatar';
+import ConnectionGraphModal, { type GraphConnection } from '../components/ConnectionGraphModal';
 
 interface PersonProfileProps {
   personId: string;
@@ -35,6 +42,105 @@ interface PersonProfileProps {
 interface PersonSector {
   sector_id: string;
   sectors: { name: string } | null;
+}
+
+interface ConnectionRow {
+  id: string;
+  from_person_id: string | null;
+  to_person_id: string | null;
+  relationship_type: string | null;
+  strength: number | null;
+}
+
+interface RelatedConnectionPersonRow {
+  id: string;
+  name: string;
+  title?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  current_position?: string | null;
+  occupation?: string | null;
+  profile_photo_url?: string | null;
+  email?: string | null;
+  location_id?: string | null;
+  locations?:
+    | GraphConnection['person']['locations']
+    | GraphConnection['person']['locations'][]
+    | null;
+}
+
+function formatRelationshipType(type: string): string {
+  if (type === 'local_peer') return 'Local Peer';
+  return type
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildGraphConnections(
+  rows: ConnectionRow[],
+  relatedPeople: GraphConnection['person'][],
+  currentPersonId: string
+): GraphConnection[] {
+  const peopleById = new Map(relatedPeople.map((relatedPerson) => [relatedPerson.id, relatedPerson]));
+  const connectionsByPerson = new Map<string, GraphConnection>();
+
+  for (const row of rows) {
+    const connectedPersonId =
+      row.from_person_id === currentPersonId ? row.to_person_id : row.from_person_id;
+
+    if (!connectedPersonId) continue;
+
+    const connectedPerson = peopleById.get(connectedPersonId);
+    if (!connectedPerson) continue;
+
+    const existing = connectionsByPerson.get(connectedPersonId);
+    if (existing) {
+      if (row.relationship_type && !existing.relationshipTypes.includes(row.relationship_type)) {
+        existing.relationshipTypes.push(row.relationship_type);
+      }
+      existing.connectionIds.push(row.id);
+      existing.strength = Math.max(existing.strength, row.strength || 0);
+      continue;
+    }
+
+    connectionsByPerson.set(connectedPersonId, {
+      person: connectedPerson,
+      relationshipTypes: row.relationship_type ? [row.relationship_type] : [],
+      connectionIds: [row.id],
+      strength: row.strength || 0,
+    });
+  }
+
+  return Array.from(connectionsByPerson.values())
+    .map((connection) => ({
+      ...connection,
+      relationshipTypes: connection.relationshipTypes.sort(),
+    }))
+    .sort((a, b) => {
+      if (b.relationshipTypes.length !== a.relationshipTypes.length) {
+        return b.relationshipTypes.length - a.relationshipTypes.length;
+      }
+      return a.person.name.localeCompare(b.person.name);
+    });
+}
+
+function normalizeRelatedPeople(
+  rows: RelatedConnectionPersonRow[]
+): GraphConnection['person'][] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    title: row.title || undefined,
+    first_name: row.first_name || undefined,
+    last_name: row.last_name || undefined,
+    current_position: row.current_position || undefined,
+    occupation: row.occupation || undefined,
+    profile_photo_url: row.profile_photo_url || undefined,
+    email: row.email || undefined,
+    location_id: row.location_id || undefined,
+    locations: Array.isArray(row.locations) ? row.locations[0] || undefined : row.locations || undefined,
+  }));
 }
 
 function ensureProtocol(url: string): string {
@@ -52,35 +158,66 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
-  const [connections, setConnections] = useState<{ id: string }[]>([]);
+  const [connections, setConnections] = useState<GraphConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Person>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
   const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
   const [removedFlemishConnections, setRemovedFlemishConnections] = useState<string[]>([]);
+  const [editLocationDisplay, setEditLocationDisplay] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
+  const [showConnectionGraph, setShowConnectionGraph] = useState(false);
 
   const loadPerson = useCallback(async () => {
     const [personRes, sectorsRes, allSectorsRes, connRes] = await Promise.all([
       supabase.from('people').select('*, locations(*)').eq('id', personId).maybeSingle(),
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
       supabase.from('sectors').select('*'),
-      supabase.from('connections').select('id').or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`).limit(50),
+      supabase
+        .from('connections')
+        .select('id, from_person_id, to_person_id, relationship_type, strength')
+        .or(`from_person_id.eq.${personId},to_person_id.eq.${personId}`)
+        .limit(100),
     ]);
 
     const personData = personRes.data;
-    console.log('loadPerson result for:', personId, personData);
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
-    setConnections(connRes.data || []);
 
     const ps = ((sectorsRes.data || []) as unknown as PersonSector[])
       .filter((r) => r.sectors?.name)
       .map((r) => ({ id: r.sector_id, name: r.sectors!.name }));
     setPersonSectors(ps);
+
+    const connectionRows = (connRes.data || []) as ConnectionRow[];
+    const relatedPersonIds = Array.from(
+      new Set(
+        connectionRows
+          .map((row) => (row.from_person_id === personId ? row.to_person_id : row.from_person_id))
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    if (relatedPersonIds.length > 0) {
+      const { data: relatedPeople } = await supabase
+        .from('people')
+        .select('id, name, title, first_name, last_name, current_position, occupation, profile_photo_url, email, location_id, locations(*)')
+        .in('id', relatedPersonIds);
+
+      setConnections(
+        buildGraphConnections(
+          connectionRows,
+          normalizeRelatedPeople((relatedPeople || []) as RelatedConnectionPersonRow[]),
+          personId
+        )
+      );
+    } else {
+      setConnections([]);
+    }
 
     if (personData) {
       const flemish = personData.flemish_connection
@@ -93,13 +230,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   }, [personId]);
 
   useEffect(() => {
-    console.log('PersonProfile useEffect: loading for', personId);
     loadPerson();
   }, [loadPerson, personId]);
 
   const startEditing = () => {
     if (!person) return;
-    console.log('startEditing for:', person.id, person.name);
+    setEditLocationDisplay(person.locations ? `${person.locations.city}, ${person.locations.state}` : '');
     setEditForm({
       name: person.name,
       title: person.title || '',
@@ -108,7 +244,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_position: person.current_position || '',
       occupation: person.occupation || '',
       location_id: person.location_id || '',
-      location_display: person.locations ? `${person.locations.city}, ${person.locations.state}` : '',
       bio: person.bio || '',
       flemish_connection: person.flemish_connection || '',
       phone: person.phone || '',
@@ -116,6 +251,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       linkedin_url: person.linkedin_url || '',
       website_url: person.website_url || '',
       twitter_url: person.twitter_url || '',
+      profile_photo_url: person.profile_photo_url || '',
     });
     setEditSectorIds(personSectors.map((s) => s.id));
     const flemish = person.flemish_connection
@@ -135,12 +271,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   };
 
   const saveEdits = async () => {
-    if (!person) {
-      console.warn('saveEdits: no person in state');
-      return;
-    }
+    if (!person) return;
     setSaving(true);
-    console.log('saveEdits starting. person.id:', person.id, 'prop personId:', personId);
 
     const first = (editForm.first_name || '').trim();
     const last = (editForm.last_name || '').trim();
@@ -168,6 +300,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       linkedin_url: linkedin || null,
       website_url: website || null,
       twitter_url: twitter || null,
+      profile_photo_url: editForm.profile_photo_url || null,
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -180,20 +313,22 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .maybeSingle();
 
     if (updateErr) {
-      console.error('Supabase update error:', updateErr);
-      alert(`Error saving: ${updateErr.message}`);
-      setSaving(false);
-      return;
-    } 
-    
-    if (!updatedPerson) {
-      console.warn('Update successful but no data returned. This might be due to RLS policies.');
-      alert('The update was not applied. You might not have permission to edit this profile.');
+      setSaveError(`Error saving: ${updateErr.message}`);
       setSaving(false);
       return;
     }
 
+    if (!updatedPerson) {
+      setSaveError('The update was not applied. You might not have permission to edit this profile.');
+      setSaving(false);
+      return;
+    }
+    setSaveError(null);
+
     setPerson(updatedPerson as Person);
+    // Regenerate embedding after profile update
+    generateEmbedding(person.id);
+
     const currentIds = personSectors.map((s) => s.id);
     const toRemove = currentIds.filter((id) => !editSectorIds.includes(id));
     const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
@@ -218,8 +353,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       
       setEditing(false);
     } catch (err: any) {
-      console.error('Error updating sectors:', err);
-      alert(`Profile info saved, but error updating sectors: ${err.message}`);
+      setSaveError(`Profile info saved, but error updating sectors: ${err.message}`);
       setEditing(false);
     }
 
@@ -293,13 +427,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     );
   }
 
-  const initials = personInitials(person);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <button
         onClick={() => onNavigate('directory')}
         className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        data-print-hide
       >
         <ArrowLeft className="w-4 h-4" />
         <span>Back to directory</span>
@@ -309,17 +443,23 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
         <div className="p-8">
           <div className="flex items-start justify-between mb-8">
             <div className="flex items-start space-x-6 flex-1">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                <span className="text-3xl font-semibold text-blue-700">{initials}</span>
-              </div>
+              {editing ? (
+                <EditableAvatar
+                  person={person}
+                  editForm={editForm}
+                  setField={setField}
+                />
+              ) : (
+                <ProfileAvatar person={person} size="lg" />
+              )}
               <div className="flex-1 min-w-0">
                 {editing ? (
-                  <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} />
+                  <EditHeader editForm={editForm} setField={setField} setEditForm={setEditForm} editLocationDisplay={editLocationDisplay} setEditLocationDisplay={setEditLocationDisplay} />
                 ) : (
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 mt-4">
+                <div className="flex flex-wrap items-center gap-3 mt-4" data-print-hide>
                   {!editing && (
                     <>
                       <button
@@ -364,6 +504,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           <span>Email</span>
                         </a>
                       )}
+                      <button
+                        onClick={() => window.print()}
+                        className="px-5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium rounded-lg transition-colors flex items-center space-x-2 border border-gray-200"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Print</span>
+                      </button>
                     </>
                   )}
                   {editing && (
@@ -386,6 +533,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                     </div>
                   )}
                 </div>
+                {saveError && (
+                  <div className="mt-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+                    <span>{saveError}</span>
+                    <button onClick={() => setSaveError(null)} className="ml-2 text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button>
+                  </div>
+                )}
 
                 {!editing && (
                   <SocialLinks person={person} />
@@ -409,6 +562,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               person={person}
               personSectors={personSectors}
               connections={connections}
+              onOpenGraph={() => setShowConnectionGraph(true)}
               onNavigate={onNavigate}
             />
           )}
@@ -420,6 +574,15 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
           person={person}
           onClose={() => setShowUpdateModal(false)}
           onApplied={handleUpdateApplied}
+        />
+      )}
+
+      {showConnectionGraph && (
+        <ConnectionGraphModal
+          person={person}
+          connections={connections}
+          onClose={() => setShowConnectionGraph(false)}
+          onNavigate={onNavigate}
         />
       )}
     </div>
@@ -501,14 +664,117 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
   );
 }
 
+function EditableAvatar({
+  person,
+  editForm,
+  setField,
+}: {
+  person: Person;
+  editForm: Partial<Person>;
+  setField: (field: string, value: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
+  const previewPerson = {
+    ...person,
+    profile_photo_url: editForm.profile_photo_url || person.profile_photo_url,
+    email: editForm.email || person.email,
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 5 * 1024 * 1024) return; // 5MB limit
+
+    setUploading(true);
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${person.id}/${Date.now()}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('profile-photos')
+      .upload(path, file, { upsert: true });
+
+    if (!error) {
+      const { data: urlData } = supabase.storage
+        .from('profile-photos')
+        .getPublicUrl(path);
+      setField('profile_photo_url', urlData.publicUrl);
+    }
+    setUploading(false);
+  };
+
+  const handleRemovePhoto = () => {
+    setField('profile_photo_url', '');
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative group">
+        <ProfileAvatar person={previewPerson} size="lg" />
+        <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+          {uploading ? (
+            <Loader2 className="w-6 h-6 text-white animate-spin" />
+          ) : (
+            <Camera className="w-6 h-6 text-white" />
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileUpload}
+            disabled={uploading}
+          />
+        </label>
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setShowUrlInput(!showUrlInput)}
+          className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
+          title="Paste image URL"
+        >
+          <Link className="w-3 h-3" />
+          URL
+        </button>
+        {(editForm.profile_photo_url || person.profile_photo_url) && (
+          <button
+            type="button"
+            onClick={handleRemovePhoto}
+            className="text-[10px] text-red-400 hover:text-red-600 flex items-center gap-0.5"
+            title="Remove photo"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+      {showUrlInput && (
+        <input
+          type="url"
+          placeholder="Paste image URL..."
+          value={editForm.profile_photo_url || ''}
+          onChange={(e) => setField('profile_photo_url', e.target.value)}
+          className="w-28 text-[10px] px-2 py-1 border border-gray-200 rounded text-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+        />
+      )}
+    </div>
+  );
+}
+
 function EditHeader({
   editForm,
   setField,
   setEditForm,
+  editLocationDisplay,
+  setEditLocationDisplay,
 }: {
   editForm: Partial<Person>;
   setField: (f: string, v: string) => void;
   setEditForm: React.Dispatch<React.SetStateAction<Partial<Person>>>;
+  editLocationDisplay: string;
+  setEditLocationDisplay: React.Dispatch<React.SetStateAction<string>>;
 }) {
   return (
     <div className="space-y-3">
@@ -571,13 +837,10 @@ function EditHeader({
           <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <CitySearch
             value={editForm.location_id || ''}
-            cityStateDisplay={editForm.location_display || ''}
+            cityStateDisplay={editLocationDisplay}
             onChange={(id, city, state) => {
-              setEditForm(f => ({
-                ...f,
-                location_id: id,
-                location_display: id ? `${city}, ${state}` : ''
-              }));
+              setEditForm(f => ({ ...f, location_id: id }));
+              setEditLocationDisplay(id ? `${city}, ${state}` : '');
             }}
             placeholder="Search city..."
           />
@@ -805,13 +1068,22 @@ function ViewBody({
   person,
   personSectors,
   connections,
+  onOpenGraph,
   onNavigate,
 }: {
   person: Person;
   personSectors: { id: string; name: string }[];
-  connections: { id: string }[];
+  connections: GraphConnection[];
+  onOpenGraph: () => void;
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
 }) {
+  const connectionTypeCounts = connections.reduce<Record<string, number>>((counts, connection) => {
+    connection.relationshipTypes.forEach((type) => {
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return counts;
+  }, {});
+
   return (
     <>
       {person.bio && (
@@ -846,7 +1118,7 @@ function ViewBody({
       )}
 
       <div className="mb-8 pb-8 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sectors & Expertise</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sectors</h2>
         {personSectors.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {personSectors.map((s) => {
@@ -870,7 +1142,11 @@ function ViewBody({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Network</h2>
-          <button className="text-yellow-600 hover:text-yellow-700 font-medium text-sm flex items-center space-x-1">
+          <button
+            onClick={onOpenGraph}
+            disabled={connections.length === 0}
+            className="text-yellow-600 hover:text-yellow-700 disabled:text-gray-300 disabled:cursor-not-allowed font-medium text-sm flex items-center space-x-1 transition-colors"
+          >
             <Network className="w-4 h-4" />
             <span>View graph</span>
           </button>
@@ -891,6 +1167,59 @@ function ViewBody({
             <p className="text-2xl font-semibold text-gray-900">{connections.length * 12}</p>
           </div>
         </div>
+        {connections.length > 0 ? (
+          <>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Object.entries(connectionTypeCounts)
+                .sort((a, b) => b[1] - a[1])
+                .map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700"
+                  >
+                    {formatRelationshipType(type)}: {count}
+                  </span>
+                ))}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {connections.slice(0, 4).map((connection) => (
+                <button
+                  key={connection.person.id}
+                  onClick={() => onNavigate('person', connection.person.id)}
+                  className="rounded-xl border border-gray-100 bg-white p-4 text-left transition-all hover:border-yellow-200 hover:bg-yellow-50/40"
+                >
+                  <div className="flex items-start gap-3">
+                    <ProfileAvatar person={connection.person} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-gray-900 truncate">
+                        {displayName(connection.person)}
+                      </div>
+                      {connection.person.current_position && (
+                        <div className="mt-1 text-sm text-gray-600 line-clamp-2">
+                          {connection.person.current_position}
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {connection.relationshipTypes.map((type) => (
+                          <span
+                            key={`${connection.person.id}-${type}`}
+                            className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700"
+                          >
+                            {formatRelationshipType(type)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-sm text-gray-400">
+            No direct connections yet. Run the Connections agent from Admin to generate them.
+          </p>
+        )}
       </div>
     </>
   );

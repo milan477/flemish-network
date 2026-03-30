@@ -104,22 +104,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    for (const result of results) {
-      await supabase
-        .from("people")
-        .update({ latitude: result.lat, longitude: result.lng })
-        .eq("location_city", result.city)
-        .eq("location_state", result.state)
-        .is("latitude", null);
-
-      await supabase
-        .from("organizations")
-        .update({ latitude: result.lat, longitude: result.lng })
-        .eq("location_city", result.city)
-        .eq("location_state", result.state)
-        .is("latitude", null);
-    }
-
     return new Response(JSON.stringify({ results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

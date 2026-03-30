@@ -17,8 +17,6 @@ import {
 } from 'lucide-react';
 import type { SearchedContact } from '../../lib/aiService';
 
-import CitySearch from '../CitySearch';
-
 export interface DiscoveredContact extends SearchedContact {
   id: string;
 }
@@ -81,18 +79,18 @@ export function ContactCardEdit({
           <option value="Consultant" />
         </datalist>
       </div>
-      <div className="grid grid-cols-1 gap-2">
-        <CitySearch
-          value={form.location_id || ''}
-          cityStateDisplay={form.locations ? `${form.locations.city}, ${form.locations.state}` : ''}
-          onChange={(id, city, state, lat, lng) => {
-            setForm(f => ({
-              ...f,
-              location_id: id,
-              locations: id ? { id, city, state, latitude: lat || 0, longitude: lng || 0 } : undefined
-            }));
-          }}
-          className="!flex-none"
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          value={form.location_city || ''}
+          onChange={(e) => set('location_city', e.target.value)}
+          className={INPUT_CLS}
+          placeholder="City"
+        />
+        <input
+          value={form.location_state || ''}
+          onChange={(e) => set('location_state', e.target.value)}
+          className={INPUT_CLS}
+          placeholder="State"
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -203,10 +201,10 @@ export default function ContactCard({
           )}
 
           <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-            {contact.locations?.city && (
+            {contact.location_city && (
               <span className="text-xs text-gray-400">
-                {contact.locations?.city}
-                {contact.locations?.state && `, ${contact.locations?.state}`}
+                {contact.location_city}
+                {contact.location_state && `, ${contact.location_state}`}
               </span>
             )}
             {contact.flemish_connection && (

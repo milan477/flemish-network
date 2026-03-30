@@ -1,3 +1,5 @@
+import * as XLSX from 'xlsx';
+
 export interface ProfileField {
   key: string;
   label: string;
@@ -351,17 +353,29 @@ export function suggestMappings(csvHeaders: string[]): FieldMapping[] {
   });
 
   const firstNameMapping = mappings.find((m) => m.fieldKey === 'first_name');
-  const hasFirstName = !!(firstNameMapping && firstNameMapping.csvColumn);
+  const fullNameMatch = bestMatch(FULL_NAME_FIELD, csvHeaders, 0.35);
 
-  if (!hasFirstName) {
-    const fullNameMatch = bestMatch(FULL_NAME_FIELD, csvHeaders, 0.35);
-    if (fullNameMatch.col) {
-      mappings.push({
-        fieldKey: '_full_name',
-        csvColumn: fullNameMatch.col,
-        confidence: fullNameMatch.score,
-      });
-    }
+  // If _full_name matches the same column as first_name with higher confidence,
+  // prefer _full_name (e.g. a "Full Name" header is closer to "full name" than "first name")
+  if (
+    fullNameMatch.col &&
+    firstNameMapping &&
+    fullNameMatch.col === firstNameMapping.csvColumn &&
+    fullNameMatch.score > firstNameMapping.confidence
+  ) {
+    firstNameMapping.csvColumn = '';
+    firstNameMapping.confidence = 0;
+    mappings.push({
+      fieldKey: '_full_name',
+      csvColumn: fullNameMatch.col,
+      confidence: fullNameMatch.score,
+    });
+  } else if (!firstNameMapping?.csvColumn && fullNameMatch.col) {
+    mappings.push({
+      fieldKey: '_full_name',
+      csvColumn: fullNameMatch.col,
+      confidence: fullNameMatch.score,
+    });
   }
 
   return mappings;
@@ -429,4 +443,60 @@ export function validateMappedRows(rows: MappedRow[]): ValidationResult {
   }
 
   return { valid, invalid };
+}
+
+export function parseExcel(buffer: ArrayBuffer): CsvParseResult {
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return { headers: [], rows: [], totalRows: 0 };
+
+  const sheet = workbook.Sheets[sheetName];
+  const jsonRows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+  if (jsonRows.length < 1) return { headers: [], rows: [], totalRows: 0 };
+
+  const headers = jsonRows[0].map((h) => String(h).trim());
+  const rows = jsonRows
+    .slice(1)
+    .map((r) => r.map((c) => String(c).trim()))
+    .filter((r) => r.some((c) => c.length > 0));
+
+  return { headers, rows, totalRows: rows.length };
+}
+
+const TEMPLATE_COLUMNS = PROFILE_FIELDS.map((f) => f.label);
+const TEMPLATE_EXAMPLE: Record<string, string> = {
+  Title: 'Dr.',
+  'First Name': 'Jan',
+  'Last Name': 'De Smedt',
+  Position: 'Professor of Computer Science at MIT',
+  Occupation: 'Academic/Researcher',
+  City: 'Boston',
+  State: 'Massachusetts',
+  Bio: 'Belgian researcher specializing in AI and machine learning.',
+  'Flemish Connection': 'KU Leuven',
+  Email: 'jan.desmedt@example.com',
+  Phone: '+1 617-555-0100',
+  LinkedIn: 'https://linkedin.com/in/jandesmedt',
+  Website: 'https://jandesmedt.example.com',
+};
+
+export function downloadTemplate(format: 'csv' | 'xlsx') {
+  const exampleRow = TEMPLATE_COLUMNS.map((col) => TEMPLATE_EXAMPLE[col] || '');
+
+  if (format === 'xlsx') {
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLUMNS, exampleRow]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
+    XLSX.writeFile(wb, 'flemish_network_import_template.xlsx');
+  } else {
+    const escape = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v);
+    const lines = [TEMPLATE_COLUMNS.map(escape).join(','), exampleRow.map(escape).join(',')];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'flemish_network_import_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 }

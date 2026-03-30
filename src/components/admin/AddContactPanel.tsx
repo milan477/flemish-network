@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase, FLEMISH_OPTIONS, OCCUPATION_OPTIONS, type Sector, type Person } from '../../lib/supabase';
+import { generateEmbedding } from '../../lib/aiService';
 import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
@@ -375,6 +376,9 @@ function ManualAddForm({
         }))
       );
     }
+
+    // Fire-and-forget embedding generation for the new contact
+    generateEmbedding(person.id);
 
     setSaving(false);
     setSuccess(true);

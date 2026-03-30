@@ -1,0 +1,6 @@
+First Name,Last Name,Title,Position,Email,City,State,Flemish Connection,Bio
+Jan,De Vos,Dr.,Professor of Neuroscience at Harvard Medical School,jan.devos@harvard.edu,Boston,Massachusetts,KU Leuven,Leading researcher in computational neuroscience.
+Marie,Claes,,Senior Data Scientist at Google,marie.claes@gmail.com,Mountain View,California,UGent,Updated bio: now leading the NLP team at Google Brain.
+Pieter,Van den Berg,Prof.,Dean of Engineering at MIT,different.email@mit.edu,Cambridge,Massachusetts,imec,Same name as existing contact but different email.
+Nora,Aerts,,Curator at the Smithsonian,nora.aerts@si.edu,Washington,District of Columbia,Flanders House,Brand new contact not in the database.
+Thomas,Maes,,VP of Business Development at Pfizer,thomas.maes@pfizer.com,New York,New York,BAEF,Same email as existing Thomas Maes.

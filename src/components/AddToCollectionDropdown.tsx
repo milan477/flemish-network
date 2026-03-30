@@ -60,8 +60,8 @@ export default function AddToCollectionDropdown({
         counts[m.collection_id] = (counts[m.collection_id] || 0) + 1;
       });
       setMembershipCount(counts);
-    } catch (err) {
-      console.error('Error fetching collection data:', err);
+    } catch {
+      // fetch failed
     } finally {
       setLoading(false);
     }
@@ -107,8 +107,8 @@ export default function AddToCollectionDropdown({
         setMembershipCount(prev => ({ ...prev, [collectionId]: personIds.length }));
       }
       onSuccess?.();
-    } catch (err) {
-      console.error('Error toggling collection membership:', err);
+    } catch {
+      // toggle failed
     } finally {
       setProcessingId(null);
     }
@@ -143,8 +143,8 @@ export default function AddToCollectionDropdown({
       setNewCollectionName('');
       setShowCreateInline(false);
       onSuccess?.();
-    } catch (err) {
-      console.error('Error creating collection:', err);
+    } catch {
+      // create failed
     } finally {
       setLoading(false);
     }

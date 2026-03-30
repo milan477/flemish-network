@@ -10,15 +10,22 @@ import {
   FileText,
   Save,
   Pencil,
+  Sparkles,
+  Loader2,
+  Plus,
+  Printer,
+  Download,
 } from 'lucide-react';
 import {
   supabase,
   type Collection,
   type CollectionMember,
   displayName,
-  personInitials,
 } from '../lib/supabase';
 import CollectionModal from './CollectionModal';
+import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiService';
+import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
+import { ProfileAvatar } from './ProfileAvatar';
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -38,6 +45,10 @@ export default function CollectionDetail({
   const [notesValue, setNotesValue] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [suggestions, setSuggestions] = useState<SuggestPeopleResult[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchCollectionData();
@@ -59,14 +70,14 @@ export default function CollectionDetail({
       // Fetch members with person data
       const { data: memData, error: memError } = await supabase
         .from('collection_members')
-        .select('*, person:people(*)')
+        .select('*, person:people(*, locations(*))')
         .eq('collection_id', collectionId)
         .order('added_at', { ascending: false });
 
       if (memError) throw memError;
       setMembers(memData || []);
-    } catch (err) {
-      console.error('Error fetching collection details:', err);
+    } catch {
+      // fetch failed
     } finally {
       setLoading(false);
     }
@@ -83,9 +94,8 @@ export default function CollectionDetail({
 
       if (error) throw error;
       setMembers(members.filter((m) => m.id !== memberId));
-    } catch (err) {
-      console.error('Error removing member:', err);
-      alert('Failed to remove member');
+    } catch {
+      // remove failed
     }
   };
 
@@ -110,9 +120,8 @@ export default function CollectionDetail({
         )
       );
       setEditingNotes(null);
-    } catch (err) {
-      console.error('Error saving notes:', err);
-      alert('Failed to save notes');
+    } catch {
+      // save failed
     } finally {
       setIsSavingNotes(false);
     }
@@ -135,10 +144,56 @@ export default function CollectionDetail({
 
       if (error) throw error;
       onBack();
-    } catch (err) {
-      console.error('Error deleting collection:', err);
-      alert('Failed to delete collection');
+    } catch {
+      // delete failed
     }
+  };
+
+  const handleFindSimilar = async () => {
+    if (!collection) return;
+    setSuggestLoading(true);
+    setShowSuggestions(true);
+
+    // Build query from collection description + top member bios
+    const queryParts: string[] = [];
+    if (collection.description) queryParts.push(collection.description);
+    members.slice(0, 5).forEach((m) => {
+      if (m.person?.current_position) queryParts.push(m.person.current_position);
+      if (m.person?.flemish_connection) queryParts.push(m.person.flemish_connection);
+    });
+    const query = queryParts.join('. ') || collection.name;
+
+    try {
+      const results = await suggestPeopleEmbedding(query, {
+        collection_id: collectionId,
+        max_results: 10,
+      });
+      setSuggestions(results);
+    } catch {
+      setSuggestions([]);
+    }
+
+    setSuggestLoading(false);
+  };
+
+  const handleAddSuggestion = async (personId: string) => {
+    setAddingIds((prev) => new Set([...prev, personId]));
+    try {
+      const { error } = await supabase
+        .from('collection_members')
+        .insert({ collection_id: collectionId, person_id: personId });
+      if (error) throw error;
+      // Remove from suggestions, refresh members
+      setSuggestions((prev) => prev.filter((s) => s.id !== personId));
+      await fetchCollectionData();
+    } catch {
+      // add failed
+    }
+    setAddingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(personId);
+      return next;
+    });
   };
 
   if (loading) {
@@ -194,6 +249,33 @@ export default function CollectionDetail({
         </div>
 
         <div className="flex items-center gap-3">
+          {members.length > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  const people = members.filter((m) => m.person).map((m) => m.person!);
+                  exportPeopleToCsv(people, `${collection.name.replace(/\s+/g, '-').toLowerCase()}.csv`);
+                }}
+                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export CSV
+              </button>
+              <button
+                onClick={() => {
+                  printCollectionBriefing(
+                    collection.name,
+                    collection.description,
+                    members.filter((m) => m.person).map((m) => ({ person: m.person!, notes: m.notes }))
+                  );
+                }}
+                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Export Briefing
+              </button>
+            </>
+          )}
           <button
             onClick={handleDeleteCollection}
             className="flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
@@ -209,10 +291,81 @@ export default function CollectionDetail({
           <h2 className="text-lg font-semibold text-gray-900">
             Members ({members.length})
           </h2>
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 italic text-sm text-gray-500">
-            Placeholder for "Find similar people" (Task 6)
-          </div>
+          <button
+            onClick={handleFindSimilar}
+            disabled={suggestLoading}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {suggestLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            Find Similar People
+          </button>
         </div>
+
+        {showSuggestions && (
+          <div className="px-6 py-4 bg-yellow-50/50 border-b border-yellow-100">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Suggested People
+              </h3>
+              <button
+                onClick={() => setShowSuggestions(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {suggestLoading ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Finding similar people...
+              </div>
+            ) : suggestions.length === 0 ? (
+              <p className="text-sm text-gray-500 py-2">
+                No suggestions found. Try generating embeddings first from the Admin page.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {suggestions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <button
+                        onClick={() => onNavigate('person', s.id)}
+                        className="text-sm font-medium text-gray-900 hover:text-yellow-700 truncate block"
+                      >
+                        {s.name}
+                      </button>
+                      <p className="text-xs text-gray-500 truncate">{s.reason}</p>
+                    </div>
+                    <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                      <span className="text-xs text-gray-400">
+                        {(s.similarity * 100).toFixed(0)}%
+                      </span>
+                      <button
+                        onClick={() => handleAddSuggestion(s.id)}
+                        disabled={addingIds.has(s.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-md transition-colors disabled:opacity-50"
+                      >
+                        {addingIds.has(s.id) ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Plus className="w-3 h-3" />
+                        )}
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {members.length === 0 ? (
           <div className="p-12 text-center">
@@ -237,26 +390,13 @@ export default function CollectionDetail({
             {members.map((member) => {
               if (!member.person) return null;
               const person = member.person;
-              const initials = personInitials(person);
 
               return (
                 <div key={member.id} className="p-6 hover:bg-gray-50/50 transition-colors">
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     {/* Person Info Section - Fixed width on LG to align notes */}
                     <div className="flex items-start gap-4 lg:w-72 xl:w-80 flex-shrink-0">
-                      {person.profile_photo_url ? (
-                        <img
-                          src={person.profile_photo_url}
-                          alt={person.name}
-                          className="w-12 h-12 rounded-full object-cover border border-gray-100 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-yellow-50 flex items-center justify-center border border-yellow-100 flex-shrink-0">
-                          <span className="text-yellow-700 font-semibold text-sm">
-                            {initials}
-                          </span>
-                        </div>
-                      )}
+                      <ProfileAvatar person={person} size="md" />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="text-lg font-bold text-gray-900 truncate">

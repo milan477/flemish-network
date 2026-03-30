@@ -26,12 +26,24 @@ interface AdminChatbotProps {
   onContactAdded: () => void;
 }
 
+async function resolveLocationId(city?: string, state?: string): Promise<string | null> {
+  if (!city || !state) return null;
+  const { data } = await supabase
+    .from('locations')
+    .select('id')
+    .eq('city', city)
+    .eq('state', state)
+    .maybeSingle();
+  return data?.id || null;
+}
+
 async function addContactToDb(
   contact: DiscoveredContact,
   allSectors: Sector[]
 ): Promise<boolean> {
   const hasEmail = !!(contact.email && contact.email.includes('@'));
   const parsed = parseTitleFromName(contact.name || '');
+  const locationId = await resolveLocationId(contact.location_city, contact.location_state);
   const { data: person, error } = await supabase
     .from('people')
     .insert({
@@ -41,7 +53,7 @@ async function addContactToDb(
       last_name: parsed.lastName || null,
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
-      location_id: contact.location_id || null,
+      location_id: locationId,
       bio: contact.bio || null,
       flemish_connection: contact.flemish_connection || null,
       email: contact.email || null,

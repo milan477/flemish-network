@@ -17,7 +17,7 @@ export default function Navigation({
   const navItems = [
     { id: 'dashboard', label: 'Network', icon: MapPin },
     { id: 'collections', label: 'Collections', icon: Library },
-    { id: 'admin', label: 'Stats', icon: Shield },
+    { id: 'admin', label: 'Dashboard', icon: Shield },
   ];
 
   return (

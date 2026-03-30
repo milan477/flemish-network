@@ -148,7 +148,7 @@ async function processOnePerson(
 
     const { data: person, error: fetchErr } = await supabase
       .from("people")
-      .select("*")
+      .select("*, locations(city, state)")
       .eq("id", personId)
       .maybeSingle();
 
@@ -163,8 +163,8 @@ async function processOnePerson(
       first_name: safeStr(person.first_name),
       last_name: safeStr(person.last_name),
       current_position: safeStr(person.current_position),
-      location_city: safeStr(person.location_city),
-      location_state: safeStr(person.location_state),
+      location_city: safeStr(person.locations?.city),
+      location_state: safeStr(person.locations?.state),
       bio: safeStr(person.bio),
       flemish_connection: safeStr(person.flemish_connection),
       phone: safeStr(person.phone),
@@ -178,7 +178,7 @@ async function processOnePerson(
       return { personName: "Unknown", suggestionsCount: 0 };
     }
 
-    const searchQuery = `${p.name} ${p.current_position} ${p.location_city} flemish belgian`.trim();
+    const searchQuery = `${p.name} ${p.current_position} ${p.location_city}`.trim();
 
     let searchResults = "";
     if (tavilyKey) {

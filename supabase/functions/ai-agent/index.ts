@@ -7,7 +7,8 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
+const GEMINI_LITE_MODEL = "gemini-2.5-flash-lite";
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   parse_contacts: `You are a data extraction assistant for a Flemish-American network directory that tracks people in the US with connections to Flanders (Belgium).
@@ -61,6 +62,10 @@ Rules:
 - Maximum 6 keywords per field
 - Always populate both fields with relevant keywords
 - Always provide a brief message describing what you're searching for`,
+
+  merge_text: `You are a text merging assistant for a professional network directory.
+
+Given two versions of a text field (e.g. bio, flemish_connection), merge them into a single coherent text that preserves all unique information from both versions. Remove redundancies but keep all distinct facts. Keep the tone professional and concise. Return only the merged text, nothing else.`,
 
   check_profile: `You are a profile accuracy checker for a Flemish-American professional network directory.
 
@@ -159,6 +164,17 @@ const SCHEMAS: Record<string, object> = {
     required: ["message", "keywords"],
   },
 
+  merge_text: {
+    type: "OBJECT",
+    properties: {
+      merged: {
+        type: "STRING",
+        description: "The merged text combining information from both versions",
+      },
+    },
+    required: ["merged"],
+  },
+
   check_profile: {
     type: "OBJECT",
     properties: {
@@ -203,6 +219,11 @@ function buildUserPrompt(
       return `Search query: "${context.query}"`;
     }
 
+    case "merge_text": {
+      const field = context.field_name || "text";
+      return `Field: ${field}\n\nExisting value:\n${context.existing_value || "(empty)"}\n\nNew value:\n${context.new_value || "(empty)"}`;
+    }
+
     case "check_profile": {
       const person = context.person as Record<string, unknown> | undefined;
       const sanitized: Record<string, string> = {};
@@ -225,9 +246,11 @@ async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   schema: object,
-  maxRetries = 2
+  maxRetries = 2,
+  model?: string
 ): Promise<unknown> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const useModel = model || GEMINI_MODEL;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent`;
 
   let lastError = "";
 
@@ -292,6 +315,8 @@ function validateResponse(task: string, data: unknown): boolean {
         typeof obj.keywords === "object" &&
         obj.keywords !== null
       );
+    case "merge_text":
+      return typeof obj.merged === "string";
     case "check_profile":
       return Array.isArray(obj.suggestions);
     default:
@@ -340,7 +365,8 @@ Deno.serve(async (req: Request) => {
     const schema = SCHEMAS[task];
     const userPrompt = buildUserPrompt(task, context);
 
-    const result = await callGemini(apiKey, systemPrompt, userPrompt, schema);
+    const model = task === "merge_text" ? GEMINI_LITE_MODEL : undefined;
+    const result = await callGemini(apiKey, systemPrompt, userPrompt, schema, 2, model);
 
     if (!validateResponse(task, result)) {
       return new Response(

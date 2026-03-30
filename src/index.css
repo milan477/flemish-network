@@ -1,3 +1,30 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  /* Hide navigation, action buttons, and non-essential UI */
+  nav,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Clean up the profile page for printing */
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove shadows and borders for cleaner print */
+  .shadow-sm, .shadow-md {
+    box-shadow: none !important;
+  }
+
+  /* Ensure profile content takes full width */
+  main, .max-w-5xl {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
