@@ -24,20 +24,17 @@ export default function DataQualityChart({
   const total = people.length;
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 h-[34rem] flex flex-col">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-gray-900">Data Quality</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Click a row to require the field, or use Missing to isolate gaps.
-        </p>
       </div>
 
       {total === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-6">
+        <p className="flex-1 flex items-center justify-center text-sm text-gray-400 text-center py-6">
           No people match the current filters.
         </p>
       ) : (
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
           {FIELDS.map((field) => {
             const label = COMPLETENESS_FIELD_LABELS[field];
             const completeCount = people.filter((person) => hasField(person, field)).length;

@@ -111,12 +111,12 @@ export default function OccupationOverview({
   return (
     <InteractiveBarChart
       title="Occupations Overview"
-      subtitle="Nine profile categories that can be cross-filtered into the main network."
       items={items}
       activeKey={activeCategory}
       onBarClick={(category) => onBarClick?.(category)}
       onViewInNetwork={onViewInNetwork}
       emptyMessage="No contacts in the database yet."
+      listClassName="max-h-[23rem] overflow-y-auto pr-1"
     />
   );
 }

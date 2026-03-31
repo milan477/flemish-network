@@ -29,8 +29,9 @@ Working rule for every task:
   Repo touchpoints: `supabase/functions/ai-agent/index.ts`, `supabase/functions/search-people/index.ts`, `supabase/functions/agent-verify/index.ts`, `supabase/functions/_shared/`.
   Strategy refs: §Critical Findings -> `6. The centralized ai-agent function is not actually central` (line 177), §Immediate Fixes -> `P0.4 Remove prompt duplication` (line 318), §What To Remove Or Rename (line 1398), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
 
-- [ ] Lock in benchmark datasets and success metrics before Phase 1 starts.
+- [x] Lock in benchmark datasets and success metrics before Phase 1 starts.
   Do: create a fixed search query set, benchmark discovery sources, and saved metrics queries so every later phase can be measured against the same baseline.
+  Update (2026-03-31): Added seeded `benchmark_search_queries` and `benchmark_discovery_sources` tables, durable review telemetry on `discovered_contacts` / `profile_suggestions`, and saved ops views (`ops_search_benchmark_clicks`, `ops_discovery_review_metrics`, `ops_benchmark_discovery_source_coverage`, `ops_phase_success_metrics`) to establish a stable pre-Phase-1 baseline.
   Repo touchpoints: admin analytics queries/views, benchmark fixtures/docs, `search_clicks`, `agent_runs`, discovery review metrics.
   Strategy refs: §Search Strategy -> `Scope` (line 417), §Discovery Strategy -> `Suggested discovery metrics for geographic coverage` (line 1007), §Success Metrics (line 1469).
 

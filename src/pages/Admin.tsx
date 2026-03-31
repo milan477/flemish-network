@@ -10,7 +10,6 @@ import { type ProfileSuggestion } from '../components/admin/SuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 import {
-  type ConnectionStatsRow,
   type PersonSectorRow,
 } from '../components/admin/interactiveStatsShared';
 
@@ -26,8 +25,6 @@ export default function Admin({ onNavigate }: AdminProps) {
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
-  const [connections, setConnections] = useState<ConnectionStatsRow[]>([]);
-  const [collectionMemberPersonIds, setCollectionMemberPersonIds] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -77,8 +74,6 @@ export default function Admin({ onNavigate }: AdminProps) {
         peopleRes,
         orgsRes,
         personSectorsRes,
-        connectionsRes,
-        collectionMembersRes,
       ] = await Promise.all([
         supabase
           .from('people')
@@ -89,21 +84,11 @@ export default function Admin({ onNavigate }: AdminProps) {
         supabase
           .from('person_sectors')
           .select('person_id, sector_id, sectors(name)'),
-        supabase
-          .from('connections')
-          .select('from_person_id, to_person_id, relationship_type'),
-        supabase.from('collection_members').select('person_id'),
       ]);
 
       setPeople((peopleRes.data || []) as Person[]);
       setOrgCount(orgsRes.count || 0);
       setPersonSectors((personSectorsRes.data || []) as unknown as PersonSectorRow[]);
-      setConnections((connectionsRes.data || []) as ConnectionStatsRow[]);
-      setCollectionMemberPersonIds(
-        ((collectionMembersRes.data || []) as { person_id: string }[]).map(
-          (row) => row.person_id
-        )
-      );
     } finally {
       setLoading(false);
     }
@@ -305,8 +290,6 @@ export default function Admin({ onNavigate }: AdminProps) {
           orgCount={orgCount}
           suggestions={suggestions}
           personSectors={personSectors}
-          connections={connections}
-          collectionMemberPersonIds={collectionMemberPersonIds}
           onNavigate={onNavigate}
           onReloadData={loadData}
           onAskAI={handleAskAI}

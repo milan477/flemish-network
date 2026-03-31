@@ -46,6 +46,9 @@ interface DiscoveredContact {
   status: string;
   agent_run_id: string | null;
   created_at: string;
+  reviewed_at?: string | null;
+  review_outcome?: string | null;
+  approved_person_id?: string | null;
 }
 
 interface DuplicateMatch {
@@ -225,9 +228,16 @@ async function approveContact(
       );
     }
   }
-  await supabase.from('discovered_contacts').delete().eq('id', contact.id);
+  const { error: reviewError } = await supabase
+    .from('discovered_contacts')
+    .update({
+      status: 'approved',
+      review_outcome: 'approved_new',
+      approved_person_id: person.id,
+    })
+    .eq('id', contact.id);
 
-  return true;
+  return !reviewError;
 }
 
 async function mergeIntoExisting(
@@ -324,10 +334,16 @@ async function mergeIntoExisting(
       );
     }
   }
-  // Delete from discovered_contacts
-  await supabase.from('discovered_contacts').delete().eq('id', contact.id);
+  const { error: reviewError } = await supabase
+    .from('discovered_contacts')
+    .update({
+      status: 'approved',
+      review_outcome: 'approved_merge',
+      approved_person_id: existingPerson.id,
+    })
+    .eq('id', contact.id);
 
-  return true;
+  return !reviewError;
 }
 
 // ── Merge Compare View ─────────────────────────────────────────────
@@ -684,7 +700,7 @@ export default function DiscoveredContactsPanel() {
     setActionId(contact.id);
     await supabase
       .from('discovered_contacts')
-      .update({ status: 'rejected' })
+      .update({ status: 'rejected', review_outcome: 'rejected' })
       .eq('id', contact.id);
     setContacts((prev) => prev.filter((c) => c.id !== contact.id));
     setDuplicates((prev) => {
@@ -711,7 +727,7 @@ export default function DiscoveredContactsPanel() {
     const ids = contacts.map((c) => c.id);
     await supabase
       .from('discovered_contacts')
-      .update({ status: 'rejected' })
+      .update({ status: 'rejected', review_outcome: 'rejected' })
       .in('id', ids);
     setContacts([]);
     setDuplicates(new Map());

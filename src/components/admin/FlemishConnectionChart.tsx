@@ -66,12 +66,12 @@ export default function FlemishConnectionChart({
   return (
     <InteractiveBarChart
       title="Flemish Connections"
-      subtitle="Primary institutional and network ties across the people subset."
       items={items}
       activeKey={activeConnection}
       onBarClick={onBarClick}
       onViewInNetwork={onViewInNetwork}
       emptyMessage="No flemish connection data available."
+      listClassName="max-h-[23rem] overflow-y-auto pr-1"
     />
   );
 }

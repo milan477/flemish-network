@@ -17,17 +17,13 @@ import InteractiveBarChart, {
 import CrossFilterBar from './CrossFilterBar';
 import DataQualityChart from './DataQualityChart';
 import FlemishConnectionChart from './FlemishConnectionChart';
-import AvailabilityOverview from './AvailabilityOverview';
-import ConnectionsSummary from './ConnectionsSummary';
 import {
   buildNetworkPreset,
   COMPLETENESS_FIELD_LABELS,
   EMPTY_CROSS_FILTERS,
   FRESHNESS_TIER_LABELS,
   getFreshnessTier,
-  type AvailabilityFilter,
   type CompletenessField,
-  type ConnectionStatsRow,
   type CrossFilterState,
   type FreshnessTier,
   type PersonSectorRow,
@@ -38,8 +34,6 @@ interface InteractiveStatsOverviewProps {
   orgCount: number;
   suggestions: ProfileSuggestion[];
   personSectors: PersonSectorRow[];
-  connections: ConnectionStatsRow[];
-  collectionMemberPersonIds: string[];
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
   onReloadData: () => Promise<void>;
   onAskAI: (personIds: string[]) => Promise<void>;
@@ -76,10 +70,6 @@ function hasText(value?: string | null): boolean {
   return Boolean(value && value.trim().length > 0);
 }
 
-function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 function buildCityKey(city: string, state: string) {
   return `${city}|${state}`;
 }
@@ -105,17 +95,6 @@ function countUniqueBy<T>(items: T[], getKey: (item: T) => string | null | undef
       .map((item) => getKey(item))
       .filter((value): value is string => Boolean(value))
   ).size;
-}
-
-function humanizeAvailability(key: AvailabilityFilter) {
-  switch (key) {
-    case 'lectures':
-      return 'Lectures';
-    case 'mentorship':
-      return 'Mentorship';
-    case 'visits':
-      return 'Visits';
-  }
 }
 
 function StatCard({
@@ -160,246 +139,85 @@ function StatCard({
 }
 
 interface LocationExplorerProps {
-  stateItems: InteractiveBarChartItem[];
-  stateCityItems: InteractiveBarChartItem[];
   rankedCityItems: InteractiveBarChartItem[];
-  activeState: string | null;
   activeCityKey: string | null;
-  viewMode: 'states' | 'cities';
-  onViewModeChange: (mode: 'states' | 'cities') => void;
-  onStateClick: (state: string) => void;
-  onStateCityClick: (cityKey: string) => void;
   onRankedCityClick: (cityKey: string) => void;
   onViewCity: (cityKey: string) => void;
 }
 
 function LocationExplorer({
-  stateItems,
-  stateCityItems,
   rankedCityItems,
-  activeState,
   activeCityKey,
-  viewMode,
-  onViewModeChange,
-  onStateClick,
-  onStateCityClick,
   onRankedCityClick,
   onViewCity,
 }: LocationExplorerProps) {
-  const maxState = Math.max(
-    1,
-    ...stateItems.map((item) => Math.max(item.count, item.totalCount ?? item.count))
-  );
   const maxCity = Math.max(
     1,
-    ...stateCityItems.map((item) => Math.max(item.count, item.totalCount ?? item.count)),
     ...rankedCityItems.map((item) => Math.max(item.count, item.totalCount ?? item.count))
   );
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Locations</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Switch between state-level filtering and a ranked city list.
-          </p>
-        </div>
-        <select
-          value={viewMode}
-          onChange={(event) =>
-            onViewModeChange(event.target.value as 'states' | 'cities')
-          }
-          className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-          aria-label="Location mode"
-        >
-          <option value="states">States</option>
-          <option value="cities">Cities</option>
-        </select>
+    <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 h-[34rem] flex flex-col">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-gray-900">Locations</h2>
       </div>
 
-      {viewMode === 'states' && stateItems.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-6">
-          No location data available.
-        </p>
-      ) : viewMode === 'cities' && rankedCityItems.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-6">
+      {rankedCityItems.length === 0 ? (
+        <p className="flex-1 flex items-center justify-center text-sm text-gray-400 text-center py-6">
           No city data available.
         </p>
       ) : (
-        <>
-          {viewMode === 'states' ? (
-            <>
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {stateItems.map((item) => {
-                  const totalCount = item.totalCount ?? item.count;
-                  const isActive = activeState === item.key;
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2.5">
+          {rankedCityItems.map((item) => {
+            const totalCount = item.totalCount ?? item.count;
+            const isActive = activeCityKey === item.key;
 
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => onStateClick(item.key)}
-                      className={`w-full rounded-xl border px-3 py-3 text-left transition-all ${
-                        isActive
-                          ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-800">
-                          {item.label}
-                        </span>
-                        <span className="text-sm font-semibold text-gray-900">
-                          {item.count === totalCount
-                            ? item.count
-                            : `${item.count} / ${totalCount}`}
-                        </span>
-                      </div>
-                      <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-gray-200"
-                          style={{ width: `${(totalCount / maxState) * 100}%` }}
-                        />
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-cyan-500 transition-all duration-700"
-                          style={{ width: `${(item.count / maxState) * 100}%` }}
-                        />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-5 pt-5 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium text-gray-900">
-                    {activeState ? `${activeState} Cities` : 'City Drill-Down'}
-                  </h3>
-                  {activeState && (
-                    <span className="text-xs text-gray-500">
-                      {pluralize(stateCityItems.length, 'city', 'cities')}
+            return (
+              <div key={item.key} className="group flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => onRankedCityClick(item.key)}
+                  className={`flex-1 rounded-xl border px-3 py-3 text-left transition-all ${
+                    isActive
+                      ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2 gap-3">
+                    <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-gray-800">
+                      {item.label}
                     </span>
-                  )}
-                </div>
-
-                {!activeState ? (
-                  <p className="text-sm text-gray-400 py-4">
-                    Select a state above to reveal city-level counts.
-                  </p>
-                ) : stateCityItems.length === 0 ? (
-                  <p className="text-sm text-gray-400 py-4">
-                    No city data available for {activeState}.
-                  </p>
-                ) : (
-                  <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-                    {stateCityItems.map((item) => {
-                      const totalCount = item.totalCount ?? item.count;
-                      const isActive = activeCityKey === item.key;
-
-                      return (
-                        <div key={item.key} className="group flex items-stretch gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onStateCityClick(item.key)}
-                            className={`flex-1 rounded-xl border px-3 py-3 text-left transition-all ${
-                              isActive
-                                ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-gray-800">
-                                {item.label}
-                              </span>
-                              <span className="text-sm font-semibold text-gray-900">
-                                {item.count === totalCount
-                                  ? item.count
-                                  : `${item.count} / ${totalCount}`}
-                              </span>
-                            </div>
-                            <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                              <div
-                                className="absolute inset-y-0 left-0 rounded-full bg-gray-200"
-                                style={{ width: `${(totalCount / maxCity) * 100}%` }}
-                              />
-                              <div
-                                className="absolute inset-y-0 left-0 rounded-full bg-sky-500 transition-all duration-700"
-                                style={{ width: `${(item.count / maxCity) * 100}%` }}
-                              />
-                            </div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => onViewCity(item.key)}
-                            className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            title={`View ${item.label} in network`}
-                            aria-label={`View ${item.label} in network`}
-                          >
-                            <MapPin className="w-4 h-4 mx-auto" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                    <span className="text-sm font-semibold text-gray-900 flex-shrink-0">
+                      {item.count === totalCount
+                        ? item.count
+                        : `${item.count} / ${totalCount}`}
+                    </span>
                   </div>
-                )}
+                  <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-gray-200"
+                      style={{ width: `${(totalCount / maxCity) * 100}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-sky-500 transition-all duration-700"
+                      style={{ width: `${(item.count / maxCity) * 100}%` }}
+                    />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onViewCity(item.key)}
+                  className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  title={`View ${item.label} in network`}
+                  aria-label={`View ${item.label} in network`}
+                >
+                  <MapPin className="w-4 h-4 mx-auto" />
+                </button>
               </div>
-            </>
-          ) : (
-            <div className="space-y-2.5 max-h-[29rem] overflow-y-auto pr-1">
-              {rankedCityItems.map((item) => {
-                const totalCount = item.totalCount ?? item.count;
-                const isActive = activeCityKey === item.key;
-
-                return (
-                  <div key={item.key} className="group flex items-stretch gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onRankedCityClick(item.key)}
-                      className={`flex-1 rounded-xl border px-3 py-3 text-left transition-all ${
-                        isActive
-                          ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2 gap-3">
-                        <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-gray-800">
-                          {item.label}
-                        </span>
-                        <span className="text-sm font-semibold text-gray-900 flex-shrink-0">
-                          {item.count === totalCount
-                            ? item.count
-                            : `${item.count} / ${totalCount}`}
-                        </span>
-                      </div>
-                      <div className="relative h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-gray-200"
-                          style={{ width: `${(totalCount / maxCity) * 100}%` }}
-                        />
-                        <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-sky-500 transition-all duration-700"
-                          style={{ width: `${(item.count / maxCity) * 100}%` }}
-                        />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onViewCity(item.key)}
-                      className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      title={`View ${item.label} in network`}
-                      aria-label={`View ${item.label} in network`}
-                    >
-                      <MapPin className="w-4 h-4 mx-auto" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -410,8 +228,6 @@ export default function InteractiveStatsOverview({
   orgCount,
   suggestions,
   personSectors,
-  connections,
-  collectionMemberPersonIds,
   onNavigate,
   onReloadData,
   onAskAI,
@@ -426,9 +242,6 @@ export default function InteractiveStatsOverview({
 }: InteractiveStatsOverviewProps) {
   const [crossFilters, setCrossFilters] =
     useState<CrossFilterState>(EMPTY_CROSS_FILTERS);
-  const [locationViewMode, setLocationViewMode] = useState<'states' | 'cities'>(
-    'states'
-  );
 
   const personToSectorsMap = useMemo(() => {
     const next = new Map<string, Set<string>>();
@@ -457,11 +270,6 @@ export default function InteractiveStatsOverview({
 
     return next;
   }, [personSectors]);
-
-  const inCollectionSet = useMemo(
-    () => new Set(collectionMemberPersonIds),
-    [collectionMemberPersonIds]
-  );
 
   const hasCompletenessField = useCallback(
     (person: Person, field: CompletenessField) => {
@@ -575,10 +383,6 @@ export default function InteractiveStatsOverview({
     () => applyFilters(people, 'freshnessTier'),
     [applyFilters, people]
   );
-  const availabilityPeople = useMemo(
-    () => applyFilters(people, 'availability'),
-    [applyFilters, people]
-  );
   const dataQualityPeople = useMemo(
     () => applyFilters(people, 'completenessField'),
     [applyFilters, people]
@@ -617,11 +421,6 @@ export default function InteractiveStatsOverview({
       person.locations?.city && person.locations?.state
         ? `${person.locations.city}|${person.locations.state}`
         : null
-  );
-  const totalStates = countUniqueBy(people, (person) => person.locations?.state);
-  const filteredStates = countUniqueBy(
-    filteredPeople,
-    (person) => person.locations?.state
   );
   const filteredOrganizations = new Set(
     filteredPeople
@@ -681,70 +480,6 @@ export default function InteractiveStatsOverview({
       color: SECTOR_COLORS[key] || 'bg-gray-400',
     }));
   }, [sectorFilteredCounts, sectorToPeopleMap]);
-
-  const stateItems = useMemo(() => {
-    const filteredCounts = buildCounts(
-      locationPeople
-        .map((person) => person.locations?.state || '')
-        .filter(Boolean)
-    );
-    const totalCounts = buildCounts(
-      people.map((person) => person.locations?.state || '').filter(Boolean)
-    );
-
-    return Array.from(totalCounts.keys())
-      .sort((a, b) => {
-        const filteredDelta = (filteredCounts.get(b) || 0) - (filteredCounts.get(a) || 0);
-        if (filteredDelta !== 0) return filteredDelta;
-        return (totalCounts.get(b) || 0) - (totalCounts.get(a) || 0);
-      })
-      .map<InteractiveBarChartItem>((state) => ({
-        key: state,
-        label: state,
-        count: filteredCounts.get(state) || 0,
-        totalCount: totalCounts.get(state) || 0,
-        color: 'bg-cyan-500',
-      }));
-  }, [locationPeople, people]);
-
-  const stateCityItems = useMemo(() => {
-    if (!crossFilters.state) return [];
-
-    const filteredCounts = buildCounts(
-      locationPeople
-        .filter((person) => person.locations?.state === crossFilters.state)
-        .map((person) =>
-          person.locations?.city && person.locations?.state
-            ? buildCityKey(person.locations.city, person.locations.state)
-            : ''
-        )
-        .filter(Boolean)
-    );
-    const totalCounts = buildCounts(
-      people
-        .filter((person) => person.locations?.state === crossFilters.state)
-        .map((person) =>
-          person.locations?.city && person.locations?.state
-            ? buildCityKey(person.locations.city, person.locations.state)
-            : ''
-        )
-        .filter(Boolean)
-    );
-
-    return Array.from(totalCounts.keys())
-      .sort((a, b) => {
-        const filteredDelta = (filteredCounts.get(b) || 0) - (filteredCounts.get(a) || 0);
-        if (filteredDelta !== 0) return filteredDelta;
-        return (totalCounts.get(b) || 0) - (totalCounts.get(a) || 0);
-      })
-      .map<InteractiveBarChartItem>((cityKey) => ({
-        key: cityKey,
-        label: parseCityKey(cityKey).city,
-        count: filteredCounts.get(cityKey) || 0,
-        totalCount: totalCounts.get(cityKey) || 0,
-        color: 'bg-sky-500',
-      }));
-  }, [crossFilters.state, locationPeople, people]);
 
   const rankedCityItems = useMemo(() => {
     const filteredCounts = buildCounts(
@@ -849,15 +584,6 @@ export default function InteractiveStatsOverview({
               setCrossFilters((prev) => ({ ...prev, freshnessTier: null })),
           }
         : null,
-      ...crossFilters.availability.map((key) => ({
-        key: `availability:${key}`,
-        label: humanizeAvailability(key),
-        onRemove: () =>
-          setCrossFilters((prev) => ({
-            ...prev,
-            availability: prev.availability.filter((item) => item !== key),
-          })),
-      })),
       crossFilters.completenessField
         ? {
             key: `quality:${crossFilters.completenessField.field}:${crossFilters.completenessField.has ? 'has' : 'missing'}`,
@@ -879,15 +605,6 @@ export default function InteractiveStatsOverview({
     ),
     [crossFilters]
   );
-
-  const toggleAvailability = useCallback((filter: AvailabilityFilter) => {
-    setCrossFilters((prev) => ({
-      ...prev,
-      availability: prev.availability.includes(filter)
-        ? prev.availability.filter((item) => item !== filter)
-        : [...prev.availability, filter],
-    }));
-  }, []);
 
   const toggleFreshnessTier = useCallback((tier: FreshnessTier) => {
     setCrossFilters((prev) => ({
@@ -922,11 +639,6 @@ export default function InteractiveStatsOverview({
           value={filteredCities}
           total={totalCities}
           label="Cities"
-          subtext={
-            filteredStates === totalStates
-              ? `${totalStates} states`
-              : `${filteredStates} of ${totalStates} states`
-          }
         />
         <StatCard
           icon={Clock}
@@ -979,7 +691,6 @@ export default function InteractiveStatsOverview({
 
         <InteractiveBarChart
           title="Profiles by Sector"
-          subtitle="Sector counts update as other dimensions narrow the people subset."
           items={sectorItems}
           activeKey={crossFilters.sector}
           onBarClick={(sector) =>
@@ -992,6 +703,7 @@ export default function InteractiveStatsOverview({
             handleViewSingleInNetwork({ sector })
           }
           emptyMessage="No sector data available."
+          listClassName="max-h-[23rem] overflow-y-auto pr-1"
         />
 
         <FlemishConnectionChart
@@ -1010,30 +722,8 @@ export default function InteractiveStatsOverview({
         />
 
         <LocationExplorer
-          stateItems={stateItems}
-          stateCityItems={stateCityItems}
           rankedCityItems={rankedCityItems}
-          activeState={crossFilters.state}
           activeCityKey={activeCityKey}
-          viewMode={locationViewMode}
-          onViewModeChange={setLocationViewMode}
-          onStateClick={(state) =>
-            setCrossFilters((prev) => ({
-              ...prev,
-              state: prev.state === state ? null : state,
-              city: null,
-            }))
-          }
-          onStateCityClick={(cityKey) =>
-            setCrossFilters((prev) => {
-              const { city, state } = parseCityKey(cityKey);
-              return {
-                ...prev,
-                city: prev.city === city && prev.state === state ? null : city,
-                state,
-              };
-            })
-          }
           onRankedCityClick={(cityKey) =>
             setCrossFilters((prev) => {
               const { city, state } = parseCityKey(cityKey);
@@ -1060,104 +750,86 @@ export default function InteractiveStatsOverview({
           hasField={hasCompletenessField}
         />
 
-        <div className="space-y-6">
-          <AvailabilityOverview
-            people={availabilityPeople}
-            allPeople={people}
-            activeFilters={crossFilters.availability}
-            onToggle={toggleAvailability}
-          />
-          <ConnectionsSummary
-            connections={connections}
-            people={filteredPeople}
-            allPeople={people}
-            inCollectionSet={inCollectionSet}
-          />
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-[34rem] flex flex-col overflow-hidden">
+          <h2 className="text-lg font-semibold text-gray-900 mb-5">
             Pending Updates
           </h2>
-          <p className="text-sm text-gray-500 mb-5">
-            Freshness, suggested changes, and embedding coverage.
-          </p>
 
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Contact Freshness
-            </h3>
-            <StaleContactsBar
-              people={freshnessPeople}
-              onRefresh={onReloadData}
-              onAskAI={onAskAI}
-              onMarkCurrent={onMarkCurrent}
-              aiLoading={aiLoading}
-              aiLoadingIds={aiLoadingIds}
-              noUpdateIds={noUpdateIds}
-              onTierClick={toggleFreshnessTier}
-              activeTier={crossFilters.freshnessTier}
-            />
-          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">
+                Contact Freshness
+              </h3>
+              <StaleContactsBar
+                people={freshnessPeople}
+                onRefresh={onReloadData}
+                onAskAI={onAskAI}
+                onMarkCurrent={onMarkCurrent}
+                aiLoading={aiLoading}
+                aiLoadingIds={aiLoadingIds}
+                noUpdateIds={noUpdateIds}
+                onTierClick={toggleFreshnessTier}
+                activeTier={crossFilters.freshnessTier}
+              />
+            </div>
 
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Suggested Profile Changes
-            </h3>
-            <SuggestedChanges
-              suggestions={suggestions.filter((suggestion) =>
-                filteredPeopleIds.has(suggestion.person_id)
-              )}
-              onRefresh={onSuggestionsRefresh}
-            />
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-100">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Embedding Search Index
-            </h3>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              <button
-                type="button"
-                onClick={onBackfillEmbeddings}
-                disabled={embeddingRunning}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
-              >
-                {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
-              </button>
-              {embeddingProgress && (
-                <div className="flex-1 max-w-xs">
-                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                    <span>Progress</span>
-                    <span>
-                      {embeddingProgress.processed} / {embeddingProgress.total}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-teal-500 h-2 rounded-full transition-all duration-500"
-                      style={{
-                        width: `${
-                          embeddingProgress.total > 0
-                            ? (embeddingProgress.processed /
-                                embeddingProgress.total) *
-                              100
-                            : 0
-                        }%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              {embeddingProgress &&
-                !embeddingRunning &&
-                embeddingProgress.processed > 0 && (
-                  <span className="text-xs text-green-600 font-medium">
-                    {embeddingProgress.processed} profiles indexed
-                  </span>
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-3">
+                Suggested Profile Changes
+              </h3>
+              <SuggestedChanges
+                suggestions={suggestions.filter((suggestion) =>
+                  filteredPeopleIds.has(suggestion.person_id)
                 )}
+                onRefresh={onSuggestionsRefresh}
+              />
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">
+                Embedding Search Index
+              </h3>
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={onBackfillEmbeddings}
+                  disabled={embeddingRunning}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                >
+                  {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
+                </button>
+                {embeddingProgress && (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                      <span>Progress</span>
+                      <span>
+                        {embeddingProgress.processed} / {embeddingProgress.total}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-teal-500 h-2 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${
+                            embeddingProgress.total > 0
+                              ? (embeddingProgress.processed /
+                                  embeddingProgress.total) *
+                                100
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {embeddingProgress &&
+                  !embeddingRunning &&
+                  embeddingProgress.processed > 0 && (
+                    <span className="text-xs text-green-600 font-medium">
+                      {embeddingProgress.processed} profiles indexed
+                    </span>
+                  )}
+              </div>
             </div>
           </div>
         </div>
