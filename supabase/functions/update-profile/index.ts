@@ -1,5 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  getAiAgentTaskDefinition,
+  type ProfileCheckResult,
+} from "../_shared/aiContracts.ts";
+import { callGeminiStructured } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,29 +79,31 @@ async function searchWeb(
   query: string,
   tavilyKey: string
 ): Promise<string> {
-  try {
-    const resp = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: tavilyKey,
-        query,
-        search_depth: "basic",
-        max_results: 5,
-      }),
-    });
-    const data = await resp.json();
-    if (data.results && Array.isArray(data.results)) {
-      return data.results
-        .map(
-          (r: { title?: string; content?: string; url?: string }) =>
-            `Title: ${safeStr(r.title)}\nContent: ${safeStr(r.content)}\nURL: ${safeStr(r.url)}`
-        )
-        .join("\n\n");
-    }
-  } catch {
-    // ignore search errors
+  const resp = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: tavilyKey,
+      query,
+      search_depth: "basic",
+      max_results: 5,
+    }),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Tavily search failed (${resp.status})`);
   }
+
+  const data = await resp.json();
+  if (data.results && Array.isArray(data.results)) {
+    return data.results
+      .map(
+        (r: { title?: string; content?: string; url?: string }) =>
+          `Title: ${safeStr(r.title)}\nContent: ${safeStr(r.content)}\nURL: ${safeStr(r.url)}`
+      )
+      .join("\n\n");
+  }
+
   return "";
 }
 
@@ -104,68 +111,54 @@ async function extractSuggestionsWithAI(
   person: PersonData,
   searchResults: string
 ): Promise<Suggestion[]> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
 
-  if (!supabaseUrl || !serviceKey) return [];
-
-  try {
-    const resp = await fetch(`${supabaseUrl}/functions/v1/ai-agent`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        task: "check_profile",
-        context: { person, searchResults },
-      }),
-    });
-
-    if (!resp.ok) return [];
-
-    const result = await resp.json();
-    if (!result || !result.success || !result.data) return [];
-    if (!Array.isArray(result.data.suggestions)) return [];
-
-    const validFields = new Set([
-      "title",
-      "first_name",
-      "last_name",
-      "name",
-      "current_position",
-      "occupation",
-      "email",
-      "linkedin_url",
-      "bio",
-      "phone",
-      "website_url",
-      "twitter_url",
-      "location_city",
-      "location_state",
-    ]);
-
-    return result.data.suggestions
-      .filter(
-        (s: Record<string, unknown>) =>
-          s &&
-          typeof s === "object" &&
-          s.field_name &&
-          typeof s.field_name === "string" &&
-          validFields.has(s.field_name) &&
-          s.suggested_value &&
-          typeof s.suggested_value === "string" &&
-          s.suggested_value !== safeStr(s.current_value)
-      )
-      .map((s: Record<string, unknown>) => ({
-        field_name: String(s.field_name),
-        current_value: safeStr(s.current_value),
-        suggested_value: String(s.suggested_value),
-        source: safeStr(s.source),
-      }));
-  } catch {
-    return [];
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not configured");
   }
+
+  const definition = getAiAgentTaskDefinition("check_profile");
+  const { data: result } = await callGeminiStructured<ProfileCheckResult>({
+    apiKey,
+    route: definition.modelRoute,
+    systemPrompt: definition.systemPrompt,
+    userPrompt: definition.buildUserPrompt({ person, searchResults }),
+    schema: definition.schema,
+    parse: (payload) => definition.normalizeResult(payload) as ProfileCheckResult,
+    attemptsPerModel: 2,
+  });
+
+  const validFields = new Set([
+    "title",
+    "first_name",
+    "last_name",
+    "name",
+    "current_position",
+    "occupation",
+    "email",
+    "linkedin_url",
+    "bio",
+    "phone",
+    "website_url",
+    "twitter_url",
+    "location_city",
+    "location_state",
+  ]);
+
+  return result.suggestions
+    .filter(
+      (s) =>
+        typeof s.field_name === "string" &&
+        validFields.has(s.field_name) &&
+        typeof s.suggested_value === "string" &&
+        s.suggested_value !== safeStr(s.current_value)
+    )
+    .map((s) => ({
+      field_name: s.field_name,
+      current_value: safeStr(s.current_value),
+      suggested_value: s.suggested_value,
+      source: safeStr(s.source),
+    }));
 }
 
 async function processOnePerson(
@@ -227,10 +220,11 @@ async function processOnePerson(
 
     const searchQuery = `${p.name} ${p.current_position} ${p.location_city}`.trim();
 
-    let searchResults = "";
-    if (tavilyKey) {
-      searchResults = await searchWeb(searchQuery, tavilyKey);
+    if (!tavilyKey) {
+      throw new Error("TAVILY_API_KEY is not configured");
     }
+
+    const searchResults = await searchWeb(searchQuery, tavilyKey);
 
     if (!searchResults) {
       return {
@@ -249,13 +243,13 @@ async function processOnePerson(
       suggestionsCount: suggestions.length,
       suggestions,
     };
-  } catch {
-    return {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("update-profile processOnePerson failed", {
       personId,
-      personName: "Unknown",
-      suggestionsCount: 0,
-      suggestions: [],
-    };
+      message,
+    });
+    throw new Error(message);
   }
 }
 

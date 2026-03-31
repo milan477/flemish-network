@@ -6,6 +6,13 @@ import {
   APIFY_ACTORS,
   getApifyUsage,
 } from "../_shared/apifyClient.ts";
+import {
+  buildCheckProfilePrompt,
+  CHECK_PROFILE_SCHEMA,
+  CHECK_PROFILE_SYSTEM_PROMPT,
+  normalizeProfileCheckResult,
+} from "../_shared/aiContracts.ts";
+import { callGeminiStructured, getPrimaryGeminiModel } from "../_shared/gemini.ts";
 import { searchWeb, formatResultsForLLM } from "../_shared/webSearch.ts";
 
 const corsHeaders = {
@@ -15,49 +22,9 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const GEMINI_MODEL =
-  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
-const GEMINI_FALLBACK_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_BATCH_SIZE = 5;
 const DEFAULT_MAX_AGE_MONTHS = 6;
 const DEADLINE_MS = 55_000;
-const CHECK_PROFILE_SYSTEM_PROMPT = `You are a profile accuracy checker for a Flemish-American professional network directory.
-
-Given a person's current profile data and web search results about them, identify any factual updates that should be made to their profile.
-
-Rules:
-- Only suggest changes clearly supported by the search results
-- Compare search results against each current profile field
-- Field names must be exactly one of: title, first_name, last_name, name, current_position, occupation, email, linkedin_url, bio, phone, website_url, twitter_url, location_city, location_state
-- Do not suggest a change if the current value already matches what's in the search results
-- Be conservative: only suggest changes you are confident about
-- For bio, only suggest if current bio is empty or very short and search results provide substantial information
-- The source field should briefly describe where the information was found (e.g. "LinkedIn profile", "University website", "News article")
-- If no changes are found, return an empty suggestions array`;
-const CHECK_PROFILE_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    suggestions: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          field_name: { type: "STRING" },
-          current_value: { type: "STRING" },
-          suggested_value: { type: "STRING" },
-          source: { type: "STRING" },
-        },
-        required: [
-          "field_name",
-          "current_value",
-          "suggested_value",
-          "source",
-        ],
-      },
-    },
-  },
-  required: ["suggestions"],
-};
 
 interface PersonRow {
   id: string;
@@ -128,10 +95,6 @@ function normalizeUrl(value: string): string {
     .trim();
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function canonicalizeLinkedInUrl(value: string): string {
   const normalized = safeStr(value);
   if (!normalized) return "";
@@ -166,10 +129,6 @@ function urlsMatch(currentValue: string, suggestedValue: string): boolean {
   const current = normalizeUrl(currentValue);
   const suggested = normalizeUrl(suggestedValue);
   return Boolean(current && suggested && current === suggested);
-}
-
-function isAdvisoryField(fieldName: string): boolean {
-  return fieldName.startsWith("_");
 }
 
 const US_STATE_BY_NAME: Record<string, string> = {
@@ -600,110 +559,39 @@ async function callCheckProfile(
   if (!geminiApiKey) {
     throw new Error("Missing GEMINI_API_KEY");
   }
-
-  const validFields = new Set([
-    "title",
-    "first_name",
-    "last_name",
-    "name",
-    "current_position",
-    "occupation",
-    "email",
-    "linkedin_url",
-    "bio",
-    "phone",
-    "website_url",
-    "twitter_url",
-    "location_city",
-    "location_state",
-  ]);
-
-  const requestBody = {
-    system_instruction: {
-      parts: [{ text: CHECK_PROFILE_SYSTEM_PROMPT }],
+  const userPrompt = buildCheckProfilePrompt(
+    {
+      id: person.id,
+      name: person.name,
+      current_position: safeStr(person.current_position),
+      occupation: safeStr(person.occupation),
+      email: safeStr(person.email),
+      linkedin_url: safeStr(person.linkedin_url),
+      bio: safeStr(person.bio),
+      phone: safeStr(person.phone),
+      website_url: safeStr(person.website_url),
+      twitter_url: safeStr(person.twitter_url),
+      location_city: safeStr(person.locations?.city),
+      location_state: safeStr(person.locations?.state),
     },
-    contents: [{
-      role: "user",
-      parts: [{
-        text: `Current profile:\n${JSON.stringify({
-          id: person.id,
-          name: person.name,
-          current_position: safeStr(person.current_position),
-          occupation: safeStr(person.occupation),
-          email: safeStr(person.email),
-          linkedin_url: safeStr(person.linkedin_url),
-          bio: safeStr(person.bio),
-          phone: safeStr(person.phone),
-          website_url: safeStr(person.website_url),
-          twitter_url: safeStr(person.twitter_url),
-          location_city: safeStr(person.locations?.city),
-          location_state: safeStr(person.locations?.state),
-        }, null, 2)}\n\nWeb search results:\n${searchResults}`,
-      }],
-    }],
-    generation_config: {
-      response_mime_type: "application/json",
-      response_schema: CHECK_PROFILE_SCHEMA,
-      temperature: 0.3,
-    },
+    searchResults
+  );
+
+  const { data, modelUsed } = await callGeminiStructured({
+    apiKey: geminiApiKey,
+    route: "profile_verification",
+    systemPrompt: CHECK_PROFILE_SYSTEM_PROMPT,
+    userPrompt,
+    schema: CHECK_PROFILE_SCHEMA,
+    parse: normalizeProfileCheckResult,
+    attemptsPerModel: 2,
+    emptyResponseFallback: { suggestions: [] },
+  });
+
+  return {
+    suggestions: data.suggestions,
+    modelUsed,
   };
-
-  const models = Array.from(new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]));
-  let lastError = "";
-
-  for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": geminiApiKey,
-          },
-          body: JSON.stringify(requestBody),
-        }
-      );
-
-      if (response.status === 429) {
-        lastError = `Gemini check_profile failed: 429`;
-        await sleep(model === GEMINI_MODEL ? 1200 : 2000);
-        continue;
-      }
-
-      if (!response.ok) {
-        lastError = `Gemini check_profile failed: ${response.status}`;
-        break;
-      }
-
-      const payload = await response.json();
-      const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        return { suggestions: [], modelUsed: model };
-      }
-
-      const parsed = JSON.parse(text);
-      const suggestions = Array.isArray(parsed?.suggestions) ? parsed.suggestions : [];
-
-      return {
-        modelUsed: model,
-        suggestions: suggestions
-          .filter((suggestion: Record<string, unknown>) => {
-            const fieldName = safeStr(suggestion.field_name);
-            const suggestedValue = safeStr(suggestion.suggested_value);
-            return Boolean(fieldName && suggestedValue && validFields.has(fieldName));
-          })
-          .map((suggestion: Record<string, unknown>) => ({
-            field_name: safeStr(suggestion.field_name),
-            current_value: safeStr(suggestion.current_value),
-            suggested_value: safeStr(suggestion.suggested_value),
-            source: safeStr(suggestion.source) || "web_search",
-          })),
-      };
-    }
-  }
-
-  throw new Error(lastError || "Gemini check_profile failed");
 }
 
 function diffLinkedInProfile(person: PersonRow, profile: LinkedInProfile): Suggestion[] {
@@ -1064,7 +952,10 @@ Deno.serve(async (req: Request) => {
       linkedin_scrapes_made: linkedinScrapesMade,
       web_searches_made: webSearchesMade,
       web_search_provider: webSearchProvider || "none",
-      llm_model_used: llmCallsMade > 0 ? llmModelUsed || GEMINI_MODEL : null,
+      llm_model_used:
+        llmCallsMade > 0
+          ? llmModelUsed || getPrimaryGeminiModel("profile_verification")
+          : null,
       errors: errors.length > 0 ? errors : undefined,
       steps,
     };
@@ -1078,7 +969,10 @@ Deno.serve(async (req: Request) => {
           completed_at: new Date().toISOString(),
           results: result,
           llm_calls_made: llmCallsMade,
-          llm_model_used: llmCallsMade > 0 ? llmModelUsed || GEMINI_MODEL : null,
+          llm_model_used:
+            llmCallsMade > 0
+              ? llmModelUsed || getPrimaryGeminiModel("profile_verification")
+              : null,
           web_searches_made: webSearchesMade,
           web_search_provider: webSearchProvider || "none",
           cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,
@@ -1098,7 +992,10 @@ Deno.serve(async (req: Request) => {
           completed_at: new Date().toISOString(),
           error_message: error instanceof Error ? error.message : "Unknown error",
           llm_calls_made: llmCallsMade,
-          llm_model_used: llmCallsMade > 0 ? llmModelUsed || GEMINI_MODEL : null,
+          llm_model_used:
+            llmCallsMade > 0
+              ? llmModelUsed || getPrimaryGeminiModel("profile_verification")
+              : null,
           web_searches_made: webSearchesMade,
           web_search_provider: webSearchProvider || "none",
         })

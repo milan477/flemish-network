@@ -15,6 +15,7 @@ Working rule for every task:
 
 - [x] Fix the ad hoc profile-update contract and make the modal/API behavior consistent.
   Do: pick one contract and implement it end to end. Preferred path: the single-person modal gets preview suggestions directly, while batch verification owns the durable `profile_suggestions` queue.
+  Update (2026-03-31): `update-profile` now runs the shared `check_profile` contract locally instead of calling `ai-agent` over HTTP. That edge-to-edge hop was silently returning empty suggestion arrays in production, so the modal path now uses the same shared Gemini contract/model helpers directly and surfaces real upstream failures.
   Repo touchpoints: `src/components/ProfileUpdateModal.tsx`, `supabase/functions/update-profile/index.ts`, `supabase/functions/agent-verify/index.ts`, the suggestions UI in Admin and Person Profile.
   Strategy refs: §Critical Findings -> `4. Verification and updates are duplicated and partly disconnected` (line 130), §Immediate Fixes -> `P0.2 Unify the profile-update contract` (line 293), §Verification And Updates Strategy -> `1. Collapse update-profile into the verification system` (line 1130), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
 
@@ -23,7 +24,7 @@ Working rule for every task:
   Repo touchpoints: `src/components/admin/AgentDashboard.tsx`, `supabase/functions/agent-scheduler/index.ts`, `agent_runs` writes in agent functions and UI triggers.
   Strategy refs: §Critical Findings -> `5. Several "agent" pieces are not really operating as an agent system` (line 161), §Immediate Fixes -> `P0.3 Use one orchestration path` (line 304), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
 
-- [ ] Centralize shared prompts, schemas, and model-selection rules.
+- [x] Centralize shared prompts, schemas, and model-selection rules.
   Do: move query parsing, profile-check schemas, and model routing into shared helpers used by `ai-agent`, `search-people`, and `agent-verify`; remove or freeze unused `ai-agent` tasks unless they have a live product call site.
   Repo touchpoints: `supabase/functions/ai-agent/index.ts`, `supabase/functions/search-people/index.ts`, `supabase/functions/agent-verify/index.ts`, `supabase/functions/_shared/`.
   Strategy refs: §Critical Findings -> `6. The centralized ai-agent function is not actually central` (line 177), §Immediate Fixes -> `P0.4 Remove prompt duplication` (line 318), §What To Remove Or Rename (line 1398), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).

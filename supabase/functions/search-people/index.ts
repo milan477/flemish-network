@@ -1,5 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  buildSearchPrompt,
+  normalizeSmartSearchResult,
+  SMART_SEARCH_SCHEMA,
+  SMART_SEARCH_SYSTEM_PROMPT,
+  type SmartSearchKeywords,
+} from "../_shared/aiContracts.ts";
+import { callGeminiStructured } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,25 +16,12 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const GEMINI_FLASH_MODEL =
-  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
 const EMBEDDING_MODEL = "gemini-embedding-001";
 
 const KEYWORD_WEIGHT = 0.4;
 const EMBEDDING_WEIGHT = 0.6;
 
 // ---------- types ----------
-
-interface SmartSearchKeywords {
-  name: string[];
-  occupation: string[];
-  sector: string[];
-  location_city: string[];
-  location_state: string[];
-  current_position: string[];
-  flemish_connection: string[];
-  bio: string[];
-}
 
 interface SearchResultItem {
   id: string;
@@ -79,100 +74,17 @@ async function extractKeywords(
   apiKey: string,
   query: string
 ): Promise<SmartSearchKeywords> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_FLASH_MODEL}:generateContent`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      system_instruction: {
-        parts: [
-          {
-            text: `You are a search assistant for a professional network directory of Flemish-connected people in the United States.
-
-Given a natural language search query, extract structured search keywords for each profile field. These keywords will be used for fuzzy similarity matching against profiles.
-
-Available profile fields:
-- name: person's full name
-- occupation: job type (e.g. Researcher, Executive, Creative, Engineer, Consultant)
-- sector: one of: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research
-- location_city: US city name
-- location_state: 2-letter US state code
-- current_position: job title or role description
-- flemish_connection: Belgian/Flemish institutional connection (e.g. KU Leuven, UGent, VUB, BAEF, imec)
-- bio: biographical keywords
-
-Rules:
-- Return an array of lowercase keywords for each relevant field
-- Only populate fields that the query implies; leave others as empty arrays
-- For location, expand abbreviations (e.g. "SF" -> "san francisco", "NYC" -> "new york")
-- For sector, use the exact sector names in lowercase
-- Generate synonyms and related terms to improve matching (e.g. "AI" -> ["artificial intelligence", "ai", "machine learning"])
-- Maximum 5 keywords per field`,
-          },
-        ],
-      },
-      contents: [{ role: "user", parts: [{ text: `Search query: "${query}"` }] }],
-      generation_config: {
-        response_mime_type: "application/json",
-        response_schema: {
-          type: "OBJECT",
-          properties: {
-            keywords: {
-              type: "OBJECT",
-              properties: {
-                name: { type: "ARRAY", items: { type: "STRING" } },
-                occupation: { type: "ARRAY", items: { type: "STRING" } },
-                sector: { type: "ARRAY", items: { type: "STRING" } },
-                location_city: { type: "ARRAY", items: { type: "STRING" } },
-                location_state: { type: "ARRAY", items: { type: "STRING" } },
-                current_position: { type: "ARRAY", items: { type: "STRING" } },
-                flemish_connection: { type: "ARRAY", items: { type: "STRING" } },
-                bio: { type: "ARRAY", items: { type: "STRING" } },
-              },
-              required: [
-                "name",
-                "occupation",
-                "sector",
-                "location_city",
-                "location_state",
-                "current_position",
-                "flemish_connection",
-                "bio",
-              ],
-            },
-          },
-          required: ["keywords"],
-        },
-        temperature: 0.3,
-      },
-    }),
+  const { data } = await callGeminiStructured({
+    apiKey,
+    route: "query_parsing",
+    systemPrompt: SMART_SEARCH_SYSTEM_PROMPT,
+    userPrompt: buildSearchPrompt(query),
+    schema: SMART_SEARCH_SCHEMA,
+    parse: normalizeSmartSearchResult,
+    attemptsPerModel: 2,
   });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Keyword extraction failed (${resp.status}): ${text}`);
-  }
-
-  const data = await resp.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Empty keyword extraction response");
-
-  const parsed = JSON.parse(text);
-  const kw: SmartSearchKeywords = parsed.keywords;
-
-  // Normalize all values to lowercase, filter empty
-  for (const key of Object.keys(kw) as (keyof SmartSearchKeywords)[]) {
-    if (!Array.isArray(kw[key])) kw[key] = [];
-    kw[key] = kw[key]
-      .map((v: string) => (typeof v === "string" ? v.toLowerCase().trim() : ""))
-      .filter(Boolean);
-  }
-
-  return kw;
+  return data.keywords;
 }
 
 async function getEmbedding(
@@ -344,7 +256,7 @@ Deno.serve(async (req: Request) => {
     ]);
 
     // Step 2: Get embedding candidates (if embedding succeeded)
-    let embeddingCandidates: Map<
+    const embeddingCandidates: Map<
       string,
       { similarity: number }
     > = new Map();

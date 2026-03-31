@@ -4,6 +4,9 @@
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
 ## Recent Notes (2026-03-30)
+- `supabase/functions/update-profile/index.ts` now runs the shared `check_profile` Gemini contract locally via `supabase/functions/_shared/aiContracts.ts` and `supabase/functions/_shared/gemini.ts` instead of calling `ai-agent` over HTTP. The old edge-to-edge hop was returning empty suggestion sets in production even when the same Tavily + Gemini inputs produced valid suggestions, so single-profile AI Update now uses the shared verification contract directly and returns real errors instead of silently converting them to `suggestions: []`.
+- Shared Gemini contract definitions now live in `supabase/functions/_shared/aiContracts.ts`, and shared model-routing / structured-call logic now lives in `supabase/functions/_shared/gemini.ts`. `ai-agent`, `search-people`, and `agent-verify` all read the same `smart_search` and `check_profile` prompts/schemas from those helpers, so prompt drift is no longer possible across those paths.
+- `ai-agent` now treats `parse_contacts` and `flemish_search` as frozen legacy tasks: they remain callable for backward compatibility, but only `smart_search`, `merge_text`, and `check_profile` are considered active contracts for product use.
 - `AgentDashboard` now routes manual agent runs through `agent-scheduler` instead of writing `agent_runs` and dispatching agent functions directly from the browser. `agent-scheduler` is now the single lifecycle-control path for manual triggers, user cancels, zombie cleanup, and web-search cache housekeeping.
 - `agent-scheduler` must forward the caller's function auth headers (`Authorization` / `apikey`) when dispatching downstream agent functions. Using `SUPABASE_SERVICE_ROLE_KEY` as the bearer token for edge-to-edge invocation causes `401` rejections and leaves runs stuck until zombie cleanup marks them failed.
 - `AI-strategy.md` documents a full audit of the current AI surface area (search, discovery, verification, connections, updates, embeddings), including what to keep, what to redesign, a recommended model strategy that assumes Google AI Studio Tier 1 access, and a detailed proposal to rebuild discovery around a bounded adaptive frontier crawler with evidence storage, link expansion, domain yield tracking, and geography-aware gap-driven discovery planning.
@@ -116,7 +119,7 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 - **No React Router:** Pages switched via `currentPage` state in `App.tsx` with `onNavigate` callbacks.
 - **No state management library:** All state via React hooks. Props drilled down from App.tsx.
 - **No auth:** Single-tenant with Supabase anon key. RLS allows public read, selective write. All write operations are open.
-- **AI via edge functions:** All LLM calls go through Supabase Edge Functions. The `ai-agent` function handles 4 structured task types. `search-contacts` does its own Tavily + Gemini pipeline. `update-profile` orchestrates web search + `check_profile` for enrichment.
+- **AI via edge functions:** All LLM calls go through Supabase Edge Functions. Shared query-parsing and profile-check contracts now live in `supabase/functions/_shared/aiContracts.ts`, with shared Gemini model routing / structured-call logic in `supabase/functions/_shared/gemini.ts`. `ai-agent` remains the generic structured task endpoint, while `search-people`, `agent-verify`, and `update-profile` import the same shared contracts directly. `search-contacts` still runs its own Tavily + Gemini pipeline.
 - **Locations as separate table:** `people` and `organizations` have `location_id` FK to `locations` table. Old inline `location_city`/`location_state`/`latitude`/`longitude` columns were dropped. Queries use `.select('*, locations(*)')` to join.
 - **Types in supabase.ts:** All database entity types (Person, Organization, Collection, etc.), constants, and shared interfaces live in `src/lib/supabase.ts`.
 - **Filter parser is deterministic:** `src/lib/filterParser.ts` handles NL-to-filter conversion with keyword matching — no LLM call needed.
@@ -166,16 +169,16 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 ## AI Pipeline (what actually exists)
 
 ### Model
-All edge functions use `gemini-3-flash-preview` hardcoded. No env var override exists yet. No Pro model is used.
+Gemini model selection for the shared query-parsing / profile-check / merge-text paths is now centralized in `supabase/functions/_shared/gemini.ts`. Today those routes still fall back to the legacy `GEMINI_FLASH_MODEL` / `gemini-3-flash-preview` default, with `gemini-2.5-flash-lite` as the shared low-cost fallback / merge model. No Pro model is used yet.
 
 ### Edge Function: `ai-agent`
-Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured output (JSON schema).
+Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured output (JSON schema) via the shared contract/model helpers in `supabase/functions/_shared/`.
 
 | Task | Purpose | Input Context | Output Schema |
 |---|---|---|---|
-| `parse_contacts` | Extract contacts from free text | `{ description, sectors }` | `{ message, contacts[] }` |
+| `parse_contacts` | Extract contacts from free text. Legacy frozen task. | `{ description, sectors }` | `{ message, contacts[] }` |
 | `smart_search` | NL query → keyword arrays for 8 profile fields | `{ query }` | `{ message, keywords: { name[], occupation[], sector[], location_city[], location_state[], current_position[], flemish_connection[], bio[] } }` |
-| `flemish_search` | NL query → Flemish-specific keywords | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
+| `flemish_search` | NL query → Flemish-specific keywords. Legacy frozen task. | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
 | `check_profile` | Compare person data vs web results, suggest updates | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
 
 ### Edge Function: `search-people`
@@ -197,8 +200,8 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 ### Edge Function: `update-profile`
 1. Takes `{ personId }` or `{ personIds }` → fetches person from DB
 2. Searches Tavily for `"{name} {position} {city}"`
-3. Calls `ai-agent` with `check_profile` task
-4. Inserts resulting suggestions into `profile_suggestions` table
+3. Runs the shared `check_profile` Gemini contract locally inside the function
+4. Returns inline suggestions to `ProfileUpdateModal`; it does not write durable `profile_suggestions` rows
 
 ### Edge Function: `agent-discovery`
 1. Takes optional `{ query, run_id, max_results }`
@@ -235,7 +238,6 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 
 ### Known Bugs
 - **`geocode` edge function broken:** References `people.latitude`, `people.longitude`, `people.location_city`, `people.location_state` — all dropped in location refactor migration. Needs rewrite to use `locations` table via `location_id`.
-- **`update-profile` edge function partially broken:** `processOnePerson()` reads `person.location_city` and `person.location_state` from `people.*` query — those columns no longer exist. The search query will be incomplete.
 - **12 TypeScript errors:** `DiscoveredContact` type doesn't have `location_id`/`locations` (it uses inline city/state from web search). `PersonProfile.tsx` uses non-existent `location_display` property. `CitySearch.tsx` has an unused variable.
 - **Person interface incomplete:** `src/lib/supabase.ts` Person interface is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields that exist in the DB.
 - **Build size warning:** JS bundle is 688kb (192kb gzipped), above Vite's 500kb warning threshold.
