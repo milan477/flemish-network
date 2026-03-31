@@ -13,12 +13,12 @@ Working rule for every task:
   Repo touchpoints: `src/components/admin/AdminChatbot.tsx`, `src/components/admin/DiscoveredContactsPanel.tsx`, `src/components/ProfileUpdateModal.tsx`, `src/components/admin/ContactCard.tsx`, `src/lib/flemishConnectionSync.ts`.
   Strategy refs: `AI-strategy.md` §Critical Findings -> `1. Data-contract drift is breaking AI flows` (line 50), §Immediate Fixes -> `P0.1 Fix all broken flemish_connection writes` (line 272), §What To Remove Or Rename (line 1398), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
 
-- [ ] Fix the ad hoc profile-update contract and make the modal/API behavior consistent.
+- [x] Fix the ad hoc profile-update contract and make the modal/API behavior consistent.
   Do: pick one contract and implement it end to end. Preferred path: the single-person modal gets preview suggestions directly, while batch verification owns the durable `profile_suggestions` queue.
   Repo touchpoints: `src/components/ProfileUpdateModal.tsx`, `supabase/functions/update-profile/index.ts`, `supabase/functions/agent-verify/index.ts`, the suggestions UI in Admin and Person Profile.
   Strategy refs: §Critical Findings -> `4. Verification and updates are duplicated and partly disconnected` (line 130), §Immediate Fixes -> `P0.2 Unify the profile-update contract` (line 293), §Verification And Updates Strategy -> `1. Collapse update-profile into the verification system` (line 1130), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).
 
-- [ ] Route agent triggering through one orchestration path.
+- [x] Route agent triggering through one orchestration path.
   Do: either make `AgentDashboard` always trigger work via `agent-scheduler`, or remove the scheduler entirely. Lifecycle control, zombie cleanup, run claiming, and telemetry should live in one path only.
   Repo touchpoints: `src/components/admin/AgentDashboard.tsx`, `supabase/functions/agent-scheduler/index.ts`, `agent_runs` writes in agent functions and UI triggers.
   Strategy refs: §Critical Findings -> `5. Several "agent" pieces are not really operating as an agent system` (line 161), §Immediate Fixes -> `P0.3 Use one orchestration path` (line 304), §Roadmap -> `Phase 0: Contract Cleanup` (line 1409).

@@ -61,6 +61,14 @@ export default function AgentDashboard() {
   const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
+    await supabase.functions
+      .invoke('agent-scheduler', {
+        body: { action: 'housekeeping' },
+      })
+      .catch(() => {
+        // Housekeeping is best-effort; still show current run data if it fails.
+      });
+
     const [runsRes, quotasRes, suggestionsRes] = await Promise.all([
       supabase
         .from('agent_runs')
@@ -77,32 +85,7 @@ export default function AgentDashboard() {
         .eq('status', 'pending'),
     ]);
 
-    const fetchedRuns = (runsRes.data || []) as AgentRun[];
-
-    // Client-side zombie detection: mark runs stuck as "running" for >3 minutes as failed
-    const threeMinAgo = Date.now() - 3 * 60 * 1000;
-    for (const run of fetchedRuns) {
-      if (
-        (run.status === 'running' || run.status === 'pending') &&
-        run.started_at &&
-        new Date(run.started_at).getTime() < threeMinAgo
-      ) {
-        await supabase
-          .from('agent_runs')
-          .update({
-            status: 'failed',
-            completed_at: new Date().toISOString(),
-            error_message: 'Timed out — no response from agent function',
-          })
-          .eq('id', run.id)
-          .eq('status', run.status); // prevent race condition
-        run.status = 'failed';
-        run.error_message = 'Timed out — no response from agent function';
-        run.completed_at = new Date().toISOString();
-      }
-    }
-
-    setRuns(fetchedRuns);
+    setRuns((runsRes.data || []) as AgentRun[]);
     setQuotas((quotasRes.data || []) as ApiQuota[]);
     setPendingSuggestions(suggestionsRes.count || 0);
     setLoading(false);
@@ -124,50 +107,20 @@ export default function AgentDashboard() {
     };
   }, [runs, loadData]);
 
-  const AGENT_FUNCTIONS: Record<string, string> = {
-    discovery: 'agent-discovery',
-    verification: 'agent-verify',
-    connection: 'agent-connections',
-  };
-
   const triggerAgent = useCallback(
     async (agentType: string, params?: Record<string, unknown>) => {
       setTriggerLoading(agentType);
       try {
-        // 1. Create agent_runs row directly (no scheduler middleman)
-        const { data: run, error: insertError } = await supabase
-          .from('agent_runs')
-          .insert({
+        const { error } = await supabase.functions.invoke('agent-scheduler', {
+          body: {
+            action: 'trigger',
             agent_type: agentType,
-            status: 'running',
             params: params || {},
-            started_at: new Date().toISOString(),
-            heartbeat_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single();
+          },
+        });
 
-        if (insertError || !run) throw new Error(insertError?.message || 'Failed to create run');
-
-        // 2. Call the agent function directly — don't await the response
-        //    The agent self-reports completion/failure via run_id
-        const functionName = AGENT_FUNCTIONS[agentType];
-        if (functionName) {
-          supabase.functions
-            .invoke(functionName, {
-              body: { ...params, run_id: run.id },
-            })
-            .catch(() => {
-              // If function invocation fails, mark run as failed
-              supabase
-                .from('agent_runs')
-                .update({
-                  status: 'failed',
-                  completed_at: new Date().toISOString(),
-                  error_message: 'Failed to invoke agent function',
-                })
-                .eq('id', run.id);
-            });
+        if (error) {
+          throw error;
         }
       } catch {
         // trigger failed
@@ -187,14 +140,12 @@ export default function AgentDashboard() {
 
   const cancelRun = useCallback(
     async (runId: string) => {
-      await supabase
-        .from('agent_runs')
-        .update({
-          status: 'failed',
-          completed_at: new Date().toISOString(),
-          error_message: 'Cancelled by user',
-        })
-        .eq('id', runId);
+      await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'cancel',
+          run_id: runId,
+        },
+      });
       await loadData();
     },
     [loadData]

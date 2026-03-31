@@ -152,7 +152,7 @@ export default function SuggestedChanges({
         <Inbox className="w-8 h-8 mb-2" />
         <p className="text-sm">No pending suggestions</p>
         <p className="text-xs mt-1">
-          Use "Ask AI" on stale contacts to generate suggestions
+          Use stale-contact verification to queue reviewable suggestions
         </p>
       </div>
     );

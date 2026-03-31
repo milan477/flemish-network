@@ -59,6 +59,7 @@ interface Suggestion {
 }
 
 interface ProcessedPersonResult {
+  personId: string;
   personName: string;
   suggestionsCount: number;
   suggestions: Suggestion[];
@@ -174,7 +175,12 @@ async function processOnePerson(
 ): Promise<ProcessedPersonResult> {
   try {
     if (!personId || typeof personId !== "string") {
-      return { personName: "Unknown", suggestionsCount: 0, suggestions: [] };
+      return {
+        personId: "",
+        personName: "Unknown",
+        suggestionsCount: 0,
+        suggestions: [],
+      };
     }
 
     const { data: person, error: fetchErr } = await supabase
@@ -184,7 +190,12 @@ async function processOnePerson(
       .maybeSingle();
 
     if (fetchErr || !person) {
-      return { personName: "Unknown", suggestionsCount: 0, suggestions: [] };
+      return {
+        personId,
+        personName: "Unknown",
+        suggestionsCount: 0,
+        suggestions: [],
+      };
     }
 
     const p: PersonData = {
@@ -206,7 +217,12 @@ async function processOnePerson(
     };
 
     if (!p.name) {
-      return { personName: "Unknown", suggestionsCount: 0, suggestions: [] };
+      return {
+        personId,
+        personName: "Unknown",
+        suggestionsCount: 0,
+        suggestions: [],
+      };
     }
 
     const searchQuery = `${p.name} ${p.current_position} ${p.location_city}`.trim();
@@ -217,27 +233,29 @@ async function processOnePerson(
     }
 
     if (!searchResults) {
-      return { personName: p.name, suggestionsCount: 0, suggestions: [] };
+      return {
+        personId,
+        personName: p.name,
+        suggestionsCount: 0,
+        suggestions: [],
+      };
     }
 
     const suggestions = await extractSuggestionsWithAI(p, searchResults);
 
-    if (suggestions.length > 0) {
-      const rows = suggestions.map((s) => ({
-        person_id: personId,
-        field_name: s.field_name || "",
-        current_value: s.current_value || "",
-        suggested_value: s.suggested_value || "",
-        source: s.source || "",
-        status: "pending",
-      }));
-
-      await supabase.from("profile_suggestions").insert(rows);
-    }
-
-    return { personName: p.name, suggestionsCount: suggestions.length, suggestions };
+    return {
+      personId,
+      personName: p.name,
+      suggestionsCount: suggestions.length,
+      suggestions,
+    };
   } catch {
-    return { personName: "Unknown", suggestionsCount: 0, suggestions: [] };
+    return {
+      personId,
+      personName: "Unknown",
+      suggestionsCount: 0,
+      suggestions: [],
+    };
   }
 }
 
@@ -248,12 +266,11 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const personId: string | undefined = body.personId;
-    const personIds: string[] | undefined = body.personIds;
+    const personId = safeStr(body.personId);
 
-    if (!personId && (!personIds || personIds.length === 0)) {
+    if (!personId) {
       return new Response(
-        JSON.stringify({ error: "personId or personIds is required" }),
+        JSON.stringify({ error: "personId is required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -277,30 +294,13 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const tavilyKey = Deno.env.get("TAVILY_API_KEY");
 
-    const ids = (personIds || [personId!]).filter(
-      (id) => id && typeof id === "string"
-    );
-
-    const results: ProcessedPersonResult[] = [];
-
-    for (const id of ids) {
-      const result = await processOnePerson(id, supabase, tavilyKey);
-      results.push(result);
-    }
-
-    const totalSuggestions = results.reduce(
-      (sum, r) => sum + (r.suggestionsCount || 0),
-      0
-    );
-
-    const responseBody =
-      personId && !personIds
-        ? {
-            results,
-            totalSuggestions,
-            suggestions: results[0]?.suggestions || [],
-          }
-        : { results, totalSuggestions };
+    const result = await processOnePerson(personId, supabase, tavilyKey);
+    const responseBody = {
+      personId: result.personId,
+      personName: result.personName,
+      suggestionsCount: result.suggestionsCount,
+      suggestions: result.suggestions,
+    };
 
     return new Response(JSON.stringify(responseBody), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -7,7 +7,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { supabase, displayName, type Person } from '../lib/supabase';
-import { syncPersonFlemishConnectionsAndRequeue } from '../lib/flemishConnectionSync';
 
 interface Suggestion {
   current: string;
@@ -58,6 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
   last_name: 'Last Name',
   name: 'Full Name',
   current_position: 'Position',
+  occupation: 'Occupation',
   bio: 'Bio',
   email: 'Email',
   phone: 'Phone',
@@ -66,7 +66,6 @@ const FIELD_LABELS: Record<string, string> = {
   twitter_url: 'Twitter',
   location_city: 'City',
   location_state: 'State',
-  flemish_connection: 'Flemish Connection',
 };
 
 export default function ProfileUpdateModal({
@@ -123,18 +122,13 @@ export default function ProfileUpdateModal({
     setStage('applying');
 
     const updates: Record<string, string | null> = {};
-    let selectedFlemishConnection: string | null = null;
     Object.entries(selected).forEach(([field, isSelected]) => {
       if (isSelected && suggestions[field]) {
-        if (field === 'flemish_connection') {
-          selectedFlemishConnection = suggestions[field].suggested || null;
-        } else {
-          updates[field] = suggestions[field].suggested || null;
-        }
+        updates[field] = suggestions[field].suggested || null;
       }
     });
 
-    if (Object.keys(updates).length === 0 && selectedFlemishConnection === null) {
+    if (Object.keys(updates).length === 0) {
       onApplied();
       return;
     }
@@ -160,21 +154,6 @@ export default function ProfileUpdateModal({
 
     if (error) {
       setErrorMsg(error.message);
-      setStage('error');
-      return;
-    }
-
-    try {
-      if (selectedFlemishConnection !== null) {
-        await syncPersonFlemishConnectionsAndRequeue(
-          person.id,
-          selectedFlemishConnection
-        );
-      }
-    } catch (syncError) {
-      setErrorMsg(
-        syncError instanceof Error ? syncError.message : 'Failed to sync Flemish connections'
-      );
       setStage('error');
       return;
     }
@@ -214,7 +193,7 @@ export default function ProfileUpdateModal({
           {stage === 'idle' && (
             <div className="text-center py-6">
               <p className="text-gray-600 mb-6">
-                Search the web for updated information about this person and review suggestions before applying.
+                Preview web-sourced profile suggestions for this person, then choose which updates to apply directly.
               </p>
               <button
                 onClick={runSearch}

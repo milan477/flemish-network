@@ -4,6 +4,8 @@
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
 ## Recent Notes (2026-03-30)
+- `AgentDashboard` now routes manual agent runs through `agent-scheduler` instead of writing `agent_runs` and dispatching agent functions directly from the browser. `agent-scheduler` is now the single lifecycle-control path for manual triggers, user cancels, zombie cleanup, and web-search cache housekeeping.
+- `agent-scheduler` must forward the caller's function auth headers (`Authorization` / `apikey`) when dispatching downstream agent functions. Using `SUPABASE_SERVICE_ROLE_KEY` as the bearer token for edge-to-edge invocation causes `401` rejections and leaves runs stuck until zombie cleanup marks them failed.
 - `AI-strategy.md` documents a full audit of the current AI surface area (search, discovery, verification, connections, updates, embeddings), including what to keep, what to redesign, a recommended model strategy that assumes Google AI Studio Tier 1 access, and a detailed proposal to rebuild discovery around a bounded adaptive frontier crawler with evidence storage, link expansion, domain yield tracking, and geography-aware gap-driven discovery planning.
 - `todo.md` is now organized as an execution backlog derived from `AI-strategy.md`; tasks are grouped by roadmap phase and each one includes section references back into the strategy document so future agents can jump to the underlying design notes before implementing.
 - AI-assisted create, merge, and profile-review flows no longer write `people.flemish_connection` directly. They write the person row without that scalar field, then call `syncPersonFlemishConnectionsAndRequeue()` so normalized `person_flemish_connections` rows and embeddings stay in sync.
@@ -251,6 +253,11 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 - **Provide manual testing steps for the UI.** After deploying, tell the user exactly how to verify the changes in the browser: which page to go to, which button to click, what they should see. Be specific (e.g., "Go to Admin → scroll to Embedding Search Index → click Generate Embeddings → you should see a progress bar fill up").
 - **Document any new environment variables or secrets.** If your code relies on a new env var (e.g., `GEMINI_FLASH_MODEL`), set a default in the code and also tell the user to add it to their `.env` file.
 - **Update documentation.** Update this CLAUDE.md file with any new architectural decisions, conventions, or important notes related to your changes. Update a todo item in `todo.md` if the change is related to an existing task, and mark it as done.
+
+## AI Contract Notes
+- `update-profile` is the ad hoc single-person preview path only. It returns inline suggestions for `ProfileUpdateModal` and does not write durable `profile_suggestions` rows.
+- `agent-verify` owns the durable verification queue. Admin stale-contact verification should call `agent-verify`, and reviewer UIs should treat `profile_suggestions` as batch-verification output rather than modal draft state.
+- `agent-scheduler` owns manual `agent_runs` lifecycle writes for dashboard-triggered agents. The admin UI should not insert/update `agent_runs` directly for run start, cancel, timeout, or housekeeping behavior.
 
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.

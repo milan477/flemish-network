@@ -15,6 +15,7 @@ import {
 } from '../components/admin/interactiveStatsShared';
 
 type AdminTab = 'overview' | 'agents' | 'discovered';
+const VERIFY_BATCH_SIZE = 5;
 
 interface AdminProps {
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
@@ -119,39 +120,45 @@ export default function Admin({ onNavigate }: AdminProps) {
       setAiLoadingIds(new Set(personIds));
 
       try {
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-profile`;
-        const resp = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(
-            personIds.length === 1
-              ? { personId: personIds[0] }
-              : { personIds }
-          ),
-        });
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agent-verify`;
+        const idsWithoutSuggestions = new Set<string>();
 
-        if (resp.ok) {
+        for (let index = 0; index < personIds.length; index += VERIFY_BATCH_SIZE) {
+          const batch = personIds.slice(index, index + VERIFY_BATCH_SIZE);
+          const resp = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ person_ids: batch, batch_size: batch.length }),
+          });
+
+          if (!resp.ok) {
+            continue;
+          }
+
           const data = await resp.json();
-          const zeroIds: string[] = [];
-          if (data.results && Array.isArray(data.results)) {
-            data.results.forEach(
-              (r: { suggestionsCount: number }, i: number) => {
-                if (r.suggestionsCount === 0 && personIds[i]) {
-                  zeroIds.push(personIds[i]);
-                }
-              }
-            );
+          if (!Array.isArray(data?.steps)) {
+            continue;
           }
-          if (zeroIds.length > 0) {
-            setNoUpdateIds((prev) => {
-              const next = new Set(prev);
-              zeroIds.forEach((id) => next.add(id));
-              return next;
-            });
-          }
+
+          data.steps.forEach((step: { person_id?: string; status?: string }) => {
+            if (
+              step.person_id &&
+              (step.status === 'verified' || step.status === 'no_results')
+            ) {
+              idsWithoutSuggestions.add(step.person_id);
+            }
+          });
+        }
+
+        if (idsWithoutSuggestions.size > 0) {
+          setNoUpdateIds((prev) => {
+            const next = new Set(prev);
+            idsWithoutSuggestions.forEach((id) => next.add(id));
+            return next;
+          });
         }
       } catch {
         // AI check failed
