@@ -1,5 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import type { Database } from "../_shared/database.types.ts";
+import {
+  findExistingUsLocation,
+  parseLocationCandidate,
+  safeString,
+} from "../_shared/locationPipeline.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,15 +15,24 @@ const corsHeaders = {
 };
 
 interface GeocodePair {
-  city: string;
-  state: string;
+  city?: string;
+  state?: string;
+  raw_text?: string;
+  country?: string;
 }
 
 interface GeocodeResult {
+  raw_text: string;
   city: string;
   state: string;
-  lat: number;
-  lng: number;
+  country: string;
+  location_id: string | null;
+  lat: number | null;
+  lng: number | null;
+  is_us_candidate: boolean;
+  parser_confidence: number;
+  geocoded: boolean;
+  review_required: boolean;
 }
 
 async function geocodeOne(
@@ -57,10 +72,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { pairs }: { pairs: GeocodePair[] } = await req.json();
+    const body = await req.json();
+    const pairs = Array.isArray(body?.pairs)
+      ? body.pairs as GeocodePair[]
+      : Array.isArray(body?.candidates)
+        ? body.candidates as GeocodePair[]
+        : [];
+
     if (!pairs || !Array.isArray(pairs)) {
       return new Response(
-        JSON.stringify({ error: "pairs array is required" }),
+        JSON.stringify({ error: "pairs or candidates array is required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -70,34 +91,108 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createClient<Database>(supabaseUrl, serviceKey);
 
     const capped = pairs.slice(0, 25);
     const results: GeocodeResult[] = [];
 
     for (let i = 0; i < capped.length; i++) {
-      const { city, state } = capped[i];
+      const input = capped[i];
+      const parsed = parseLocationCandidate(
+        safeString(input.raw_text),
+        safeString(input.city),
+        safeString(input.state),
+        safeString(input.country)
+      );
 
-      const { data: existing } = await supabase
-        .from("locations")
-        .select("latitude, longitude")
-        .eq("city", city)
-        .eq("state", state)
-        .maybeSingle();
-
-      if (existing) {
-        results.push({ city, state, lat: existing.latitude, lng: existing.longitude });
+      if (!parsed.label_value) {
+        results.push({
+          raw_text: safeString(input.raw_text),
+          city: "",
+          state: "",
+          country: safeString(input.country),
+          location_id: null,
+          lat: null,
+          lng: null,
+          is_us_candidate: false,
+          parser_confidence: 0,
+          geocoded: false,
+          review_required: true,
+        });
         continue;
       }
 
-      const coords = await geocodeOne(city, state);
-      if (coords) {
-        results.push({ city, state, ...coords });
+      const existing = parsed.is_us_candidate && parsed.city && parsed.state
+        ? await findExistingUsLocation(supabase, parsed.city, parsed.state)
+        : null;
 
-        await supabase
-          .from("locations")
-          .insert({ city, state, latitude: coords.lat, longitude: coords.lng });
+      if (existing) {
+        results.push({
+          raw_text: parsed.raw_text,
+          city: parsed.city,
+          state: parsed.state,
+          country: parsed.country,
+          location_id: existing.id,
+          lat: existing.latitude === null ? null : Number(existing.latitude),
+          lng: existing.longitude === null ? null : Number(existing.longitude),
+          is_us_candidate: parsed.is_us_candidate,
+          parser_confidence: parsed.parser_confidence,
+          geocoded: existing.latitude !== null && existing.longitude !== null,
+          review_required: parsed.review_required,
+        });
+        continue;
       }
+
+      if (!parsed.is_us_candidate || !parsed.city || !parsed.state) {
+        results.push({
+          raw_text: parsed.raw_text,
+          city: parsed.city,
+          state: parsed.state,
+          country: parsed.country,
+          location_id: null,
+          lat: null,
+          lng: null,
+          is_us_candidate: parsed.is_us_candidate,
+          parser_confidence: parsed.parser_confidence,
+          geocoded: false,
+          review_required: true,
+        });
+        continue;
+      }
+
+      const coords = await geocodeOne(parsed.city, parsed.state);
+      const { data: upserted, error: upsertError } = await supabase
+        .from("locations")
+        .upsert({
+          city: parsed.city,
+          state: parsed.state,
+          latitude: coords?.lat ?? null,
+          longitude: coords?.lng ?? null,
+          geocode_source: coords ? "nominatim" : null,
+          geocoded_at: coords ? new Date().toISOString() : null,
+        }, {
+          onConflict: "city,state",
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (upsertError) {
+        throw upsertError;
+      }
+
+      results.push({
+        raw_text: parsed.raw_text,
+        city: parsed.city,
+        state: parsed.state,
+        country: parsed.country,
+        location_id: upserted?.id || null,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+        is_us_candidate: parsed.is_us_candidate,
+        parser_confidence: parsed.parser_confidence,
+        geocoded: Boolean(coords),
+        review_required: parsed.review_required || !coords,
+      });
 
       if (i < capped.length - 1) {
         await new Promise((r) => setTimeout(r, 1100));

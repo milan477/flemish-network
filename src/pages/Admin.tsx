@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Bot, LayoutDashboard, Users } from 'lucide-react';
 import {
   supabase,
@@ -12,6 +13,8 @@ import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel
 import {
   type PersonSectorRow,
 } from '../components/admin/interactiveStatsShared';
+import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
+import { normalizeVerificationSuggestions } from '../lib/verification';
 
 type AdminTab = 'overview' | 'agents' | 'discovered';
 const VERIFY_BATCH_SIZE = 5;
@@ -21,11 +24,15 @@ interface AdminProps {
 }
 
 export default function Admin({ onNavigate }: AdminProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const navigate = useNavigate();
+  const { tab } = useParams<{ tab?: string }>();
+  const activeTab: AdminTab =
+    tab === 'agents' || tab === 'discovered' ? tab : 'overview';
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
+  const [derivedLabels, setDerivedLabels] = useState<DerivedLabelSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [aiLoading, setAiLoading] = useState(false);
@@ -59,9 +66,51 @@ export default function Admin({ onNavigate }: AdminProps) {
     });
 
     setSuggestions(
-      data.map((s) => ({
-        ...s,
-        person_name: nameMap[s.person_id] || 'Unknown',
+      normalizeVerificationSuggestions(data).map((suggestion) => ({
+        ...suggestion,
+        id: suggestion.id || '',
+        person_id: suggestion.person_id || '',
+        status: suggestion.status || 'pending',
+        created_at: suggestion.created_at || new Date().toISOString(),
+        person_name: nameMap[suggestion.person_id || ''] || 'Unknown',
+      }))
+    );
+  }, []);
+
+  const loadDerivedLabels = useCallback(async () => {
+    const { data } = await supabase
+      .from('derived_label_suggestions')
+      .select('*')
+      .eq('status', 'pending')
+      .not('person_id', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (!data || data.length === 0) {
+      setDerivedLabels([]);
+      return;
+    }
+
+    const personIds = [
+      ...new Set(
+        data
+          .map((label) => label.person_id)
+          .filter((personId): personId is string => typeof personId === 'string')
+      ),
+    ];
+    const { data: peopleData } = await supabase
+      .from('people')
+      .select('id, name')
+      .in('id', personIds);
+
+    const nameMap: Record<string, string> = {};
+    (peopleData || []).forEach((person: { id: string; name: string }) => {
+      nameMap[person.id] = person.name;
+    });
+
+    setDerivedLabels(
+      normalizeDerivedLabelSuggestions(data).map((label) => ({
+        ...label,
+        person_name: label.person_id ? nameMap[label.person_id] || 'Unknown' : undefined,
       }))
     );
   }, []);
@@ -97,7 +146,8 @@ export default function Admin({ onNavigate }: AdminProps) {
   useEffect(() => {
     loadData();
     loadSuggestions();
-  }, [loadData, loadSuggestions]);
+    loadDerivedLabels();
+  }, [loadData, loadSuggestions, loadDerivedLabels]);
 
   const handleAskAI = useCallback(
     async (personIds: string[]) => {
@@ -176,21 +226,28 @@ export default function Admin({ onNavigate }: AdminProps) {
   );
 
   const handleSuggestionsRefresh = useCallback(async () => {
-    await Promise.all([loadData(), loadSuggestions()]);
-  }, [loadData, loadSuggestions]);
+    await Promise.all([loadData(), loadSuggestions(), loadDerivedLabels()]);
+  }, [loadData, loadSuggestions, loadDerivedLabels]);
+
+  const handleTabChange = useCallback(
+    (nextTab: AdminTab) => {
+      navigate(nextTab === 'overview' ? '/admin' : `/admin/${nextTab}`);
+    },
+    [navigate]
+  );
 
   const handleBackfillEmbeddings = useCallback(async () => {
     setEmbeddingRunning(true);
     setEmbeddingProgress({ processed: 0, total: 0 });
 
     try {
-      // First call to get total count
-      const { count } = await supabase
-        .from('people')
-        .select('id', { count: 'exact', head: true })
-        .or('embedding.is.null,embedding_dirty_at.gt.embedding_generated_at');
+      const { data: statusData, error: statusError } = await supabase.functions.invoke('generate-embeddings', {
+        body: { backfill: true, status_only: true },
+      });
 
-      const total = count || 0;
+      if (statusError) throw statusError;
+
+      const total = statusData?.remaining || 0;
       if (total === 0) {
         setEmbeddingProgress(null);
         setEmbeddingRunning(false);
@@ -240,12 +297,12 @@ export default function Admin({ onNavigate }: AdminProps) {
           </h1>
         </div>
         <p className="text-gray-600 mb-4">
-          Monitor network statistics and manage contacts
+          Monitor network statistics, plan discovery coverage, and manage contacts
         </p>
 
         <div className="flex gap-1 border-b border-gray-200">
           <button
-            onClick={() => setActiveTab('overview')}
+            onClick={() => handleTabChange('overview')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'overview'
                 ? 'border-teal-600 text-teal-700'
@@ -256,7 +313,7 @@ export default function Admin({ onNavigate }: AdminProps) {
             Overview
           </button>
           <button
-            onClick={() => setActiveTab('agents')}
+            onClick={() => handleTabChange('agents')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'agents'
                 ? 'border-teal-600 text-teal-700'
@@ -267,7 +324,7 @@ export default function Admin({ onNavigate }: AdminProps) {
             Agents
           </button>
           <button
-            onClick={() => setActiveTab('discovered')}
+            onClick={() => handleTabChange('discovered')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'discovered'
                 ? 'border-teal-600 text-teal-700'
@@ -289,6 +346,7 @@ export default function Admin({ onNavigate }: AdminProps) {
           people={people}
           orgCount={orgCount}
           suggestions={suggestions}
+          derivedLabels={derivedLabels}
           personSectors={personSectors}
           onNavigate={onNavigate}
           onReloadData={loadData}

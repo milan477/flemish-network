@@ -56,6 +56,9 @@ export interface ProfileCheckSuggestion {
   current_value: string;
   suggested_value: string;
   source: string;
+  evidence_url?: string;
+  evidence_excerpt?: string;
+  confidence?: number;
 }
 
 export interface ProfileCheckResult {
@@ -218,6 +221,11 @@ export function normalizeProfileCheckResult(
           current_value: safeString(row.current_value),
           suggested_value: safeString(row.suggested_value),
           source: safeString(row.source) || "web_search",
+          evidence_url: safeString(row.evidence_url),
+          evidence_excerpt: safeString(row.evidence_excerpt),
+          confidence: Number.isFinite(Number(row.confidence))
+            ? Math.max(0, Math.min(1, Number(row.confidence)))
+            : undefined,
         };
       })
       .filter(
@@ -299,6 +307,8 @@ Rules:
 - Be conservative: only suggest changes you are confident about
 - For bio, only suggest if current bio is empty or very short and search results provide substantial information
 - The source field should briefly describe where the information was found (e.g. "LinkedIn profile", "University website", "News article")
+- Set evidence_url to the supporting result URL and evidence_excerpt to a short quote/paraphrase from that same result
+- Set confidence to a number between 0 and 1
 - If no changes are found, return an empty suggestions array`;
 
 const PARSE_CONTACTS_SCHEMA: JsonSchema = {
@@ -417,6 +427,9 @@ export const CHECK_PROFILE_SCHEMA: JsonSchema = {
           current_value: { type: "STRING" },
           suggested_value: { type: "STRING" },
           source: { type: "STRING" },
+          evidence_url: { type: "STRING" },
+          evidence_excerpt: { type: "STRING" },
+          confidence: { type: "NUMBER" },
         },
         required: [
           "field_name",

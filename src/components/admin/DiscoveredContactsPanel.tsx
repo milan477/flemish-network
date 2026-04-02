@@ -26,7 +26,14 @@ import {
   type Person,
   type Sector,
 } from '../../lib/supabase';
-import { syncPersonFlemishConnectionsAndRequeue } from '../../lib/flemishConnectionSync';
+import {
+  getDerivedLocationSummary,
+  normalizeDerivedLabelSuggestions,
+  type DerivedLabelSuggestion,
+} from '../../lib/derivedLabels';
+import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
+import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
+import { resolveLocationId as resolveOrCreateLocationId } from '../../lib/locations';
 
 interface DiscoveredContact {
   id: string;
@@ -46,9 +53,26 @@ interface DiscoveredContact {
   status: string;
   agent_run_id: string | null;
   created_at: string;
+  last_seen_at?: string | null;
+  last_evidence_at?: string | null;
+  evidence_count?: number | null;
+  discovery_confidence?: number | null;
   reviewed_at?: string | null;
   review_outcome?: string | null;
   approved_person_id?: string | null;
+}
+
+interface DiscoveryEvidence {
+  discovered_contact_id: string;
+  page_url: string;
+  page_title: string | null;
+  page_type: string | null;
+  evidence_excerpt: string | null;
+  raw_location_text: string | null;
+  raw_flemish_text: string | null;
+  raw_role_text: string | null;
+  extraction_confidence: number | null;
+  created_at: string;
 }
 
 interface DuplicateMatch {
@@ -76,20 +100,6 @@ function getVal(obj: Record<string, unknown>, key: string): string {
   const v = obj[key];
   if (v === null || v === undefined) return '';
   return String(v);
-}
-
-async function resolveLocationId(
-  city?: string | null,
-  state?: string | null
-): Promise<string | null> {
-  if (!city || !state) return null;
-  const { data } = await supabase
-    .from('locations')
-    .select('id')
-    .eq('city', city)
-    .eq('state', state)
-    .maybeSingle();
-  return data?.id || null;
 }
 
 async function checkDuplicates(
@@ -182,9 +192,10 @@ async function approveContact(
 ): Promise<boolean> {
   const parsed = parseTitleFromName(contact.name || '');
   const flemishConnectionText = contact.flemish_connection?.trim() || null;
-  const locationId = await resolveLocationId(
+  const locationId = await resolveOrCreateLocationId(
     contact.location_city,
-    contact.location_state
+    contact.location_state,
+    { createIfMissing: true }
   );
 
   const { data: person, error } = await supabase
@@ -211,7 +222,7 @@ async function approveContact(
 
   try {
     if (flemishConnectionText) {
-      await syncPersonFlemishConnectionsAndRequeue(person.id, flemishConnectionText);
+      await syncPersonFlemishConnections(person.id, flemishConnectionText);
     }
   } catch {
     return false;
@@ -237,6 +248,7 @@ async function approveContact(
     })
     .eq('id', contact.id);
 
+  kickEmbeddingWorker();
   return !reviewError;
 }
 
@@ -283,7 +295,9 @@ async function mergeIntoExisting(
     const state = selectedFields.includes('location_state')
       ? contact.location_state
       : existingPerson.locations?.state;
-    const locationId = await resolveLocationId(city, state);
+    const locationId = await resolveOrCreateLocationId(city, state, {
+      createIfMissing: true,
+    });
     if (locationId) {
       updates.location_id = locationId;
     }
@@ -311,7 +325,7 @@ async function mergeIntoExisting(
 
   try {
     if (selectedFields.includes('flemish_connection')) {
-      await syncPersonFlemishConnectionsAndRequeue(
+      await syncPersonFlemishConnections(
         existingPerson.id,
         mergedFlemishConnection
       );
@@ -330,7 +344,10 @@ async function mergeIntoExisting(
           person_id: existingPerson.id,
           sector_id: s.id,
         })),
-        { onConflict: 'person_id,sector_id' }
+        {
+          onConflict: 'person_id,sector_id',
+          ignoreDuplicates: true,
+        }
       );
     }
   }
@@ -343,6 +360,7 @@ async function mergeIntoExisting(
     })
     .eq('id', contact.id);
 
+  kickEmbeddingWorker();
   return !reviewError;
 }
 
@@ -636,9 +654,18 @@ export default function DiscoveredContactsPanel() {
   const [expandedSources, setExpandedSources] = useState<Set<string>>(
     new Set()
   );
+  const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(
+    new Set()
+  );
   const [duplicates, setDuplicates] = useState<Map<string, DuplicateMatch>>(
     new Map()
   );
+  const [evidenceByContact, setEvidenceByContact] = useState<
+    Map<string, DiscoveryEvidence[]>
+  >(new Map());
+  const [labelsByContact, setLabelsByContact] = useState<
+    Map<string, DerivedLabelSuggestion[]>
+  >(new Map());
   const [checkingDupes, setCheckingDupes] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{
     contact: DiscoveredContact;
@@ -651,7 +678,7 @@ export default function DiscoveredContactsPanel() {
         .from('discovered_contacts')
         .select('*')
         .eq('status', 'pending')
-        .order('created_at', { ascending: false }),
+        .order('last_seen_at', { ascending: false }),
       supabase.from('sectors').select('*'),
     ]);
 
@@ -661,6 +688,46 @@ export default function DiscoveredContactsPanel() {
     setContacts(loadedContacts);
     setSectors(loadedSectors);
     setLoading(false);
+
+    if (loadedContacts.length > 0) {
+      const contactIds = loadedContacts.map((contact) => contact.id);
+      const [evidenceRes, labelRes] = await Promise.all([
+        supabase
+          .from('discovery_evidence')
+          .select(
+            'discovered_contact_id, page_url, page_title, page_type, evidence_excerpt, raw_location_text, raw_flemish_text, raw_role_text, extraction_confidence, created_at'
+          )
+          .in('discovered_contact_id', contactIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('derived_label_suggestions')
+          .select('*')
+          .in('discovered_contact_id', contactIds)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false }),
+      ]);
+
+      const grouped = new Map<string, DiscoveryEvidence[]>();
+      (((evidenceRes.data || []) as DiscoveryEvidence[]) || []).forEach((row) => {
+        const existing = grouped.get(row.discovered_contact_id) || [];
+        existing.push(row);
+        grouped.set(row.discovered_contact_id, existing);
+      });
+      setEvidenceByContact(grouped);
+
+      const labelMap = new Map<string, DerivedLabelSuggestion[]>();
+      normalizeDerivedLabelSuggestions(labelRes.data || []).forEach((row) => {
+        const contactId = row.discovered_contact_id;
+        if (!contactId) return;
+        const existing = labelMap.get(contactId) || [];
+        existing.push(row);
+        labelMap.set(contactId, existing);
+      });
+      setLabelsByContact(labelMap);
+    } else {
+      setEvidenceByContact(new Map());
+      setLabelsByContact(new Map());
+    }
 
     // Check for duplicates
     if (loadedContacts.length > 0) {
@@ -763,6 +830,15 @@ export default function DiscoveredContactsPanel() {
     });
   };
 
+  const toggleEvidence = (id: string) => {
+    setExpandedEvidence((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -850,6 +926,13 @@ export default function DiscoveredContactsPanel() {
       {contacts.map((contact) => {
         const isActioning = actionId === contact.id || actionId === 'all';
         const dupeMatch = duplicates.get(contact.id);
+        const evidenceRows = evidenceByContact.get(contact.id) || [];
+        const derivedLabels = labelsByContact.get(contact.id) || [];
+        const evidenceCount = contact.evidence_count || evidenceRows.length;
+        const confidence =
+          typeof contact.discovery_confidence === 'number'
+            ? Math.round(contact.discovery_confidence * 100)
+            : null;
 
         return (
           <div
@@ -886,13 +969,27 @@ export default function DiscoveredContactsPanel() {
                     className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                       contact.source === 'linkedin_search'
                         ? 'bg-blue-50 text-blue-600'
-                        : 'bg-amber-50 text-amber-600'
+                        : contact.source === 'frontier_page'
+                          ? 'bg-teal-50 text-teal-700'
+                          : 'bg-amber-50 text-amber-600'
                     }`}
                   >
                     {contact.source === 'linkedin_search'
                       ? 'LinkedIn'
-                      : 'Web Search'}
+                      : contact.source === 'frontier_page'
+                        ? 'Frontier Page'
+                        : 'Web Search'}
                   </span>
+                  {evidenceCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">
+                      {evidenceCount} evidence
+                    </span>
+                  )}
+                  {confidence !== null && confidence > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded font-medium">
+                      {confidence}% confidence
+                    </span>
+                  )}
                 </div>
 
                 {/* Position */}
@@ -974,6 +1071,106 @@ export default function DiscoveredContactsPanel() {
                         {s}
                       </span>
                     ))}
+                  </div>
+                )}
+
+                {derivedLabels.length > 0 && (
+                  <div className="pt-1">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                      Derived labels
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {derivedLabels.slice(0, 6).map((label) => {
+                        const displayValue =
+                          label.label_type === 'us_location'
+                            ? getDerivedLocationSummary(label)
+                            : label.label_value;
+
+                        return (
+                          <span
+                            key={label.id}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700"
+                          >
+                            {displayValue}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {evidenceRows.length > 0 && (
+                  <div className="pt-0.5">
+                    <button
+                      onClick={() => toggleEvidence(contact.id)}
+                      className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      {expandedEvidence.has(contact.id) ? (
+                        <ChevronUp className="w-2.5 h-2.5" />
+                      ) : (
+                        <ChevronDown className="w-2.5 h-2.5" />
+                      )}
+                      Evidence
+                    </button>
+                    {expandedEvidence.has(contact.id) && (
+                      <div className="mt-2 space-y-2">
+                        {evidenceRows.slice(0, 5).map((evidence, index) => (
+                          <div
+                            key={`${evidence.page_url}-${index}`}
+                            className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-medium text-gray-700 truncate">
+                                  {evidence.page_title || evidence.page_url}
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                  {evidence.page_type || 'page'} ·{' '}
+                                  {evidence.extraction_confidence
+                                    ? `${Math.round(
+                                        evidence.extraction_confidence * 100
+                                      )}% confidence`
+                                    : 'confidence n/a'}
+                                </p>
+                              </div>
+                              <a
+                                href={evidence.page_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-blue-500 hover:text-blue-600 flex-shrink-0"
+                              >
+                                Open
+                              </a>
+                            </div>
+                            {evidence.evidence_excerpt && (
+                              <p className="mt-1.5 text-[11px] text-gray-600 leading-relaxed">
+                                {evidence.evidence_excerpt}
+                              </p>
+                            )}
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400">
+                              {evidence.raw_role_text && (
+                                <span>Role: {evidence.raw_role_text}</span>
+                              )}
+                              {evidence.raw_location_text && (
+                                <span>
+                                  Location: {evidence.raw_location_text}
+                                </span>
+                              )}
+                              {evidence.raw_flemish_text && (
+                                <span>
+                                  Flemish: {evidence.raw_flemish_text}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {evidenceRows.length > 5 && (
+                          <p className="text-[10px] text-gray-400">
+                            Showing 5 of {evidenceRows.length} evidence items.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

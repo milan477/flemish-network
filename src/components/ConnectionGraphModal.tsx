@@ -35,7 +35,10 @@ interface ConnectionGraphModalProps {
 const TYPE_STYLES: Record<string, string> = {
   colleague: 'bg-blue-50 text-blue-700 border-blue-100',
   alumni: 'bg-amber-50 text-amber-700 border-amber-100',
+  program_peer: 'bg-violet-50 text-violet-700 border-violet-100',
   local_peer: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  lab_peer: 'bg-cyan-50 text-cyan-700 border-cyan-100',
+  event_peer: 'bg-pink-50 text-pink-700 border-pink-100',
 };
 
 function formatRelationshipType(type: string): string {

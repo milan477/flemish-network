@@ -3,7 +3,21 @@
 ## What This Is
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
-## Recent Notes (2026-03-30)
+## Recent Notes (2026-04-01)
+- Frontend navigation is now URL-driven instead of in-memory. `react-router-dom` owns top-level routes (`/`, `/people/:id`, `/organizations/:id`, `/collections`, `/collections/:id`, `/admin`, `/admin/:tab`, `/contacts/new`), dashboard view/search/filter/focused-city state is encoded in the query string, admin tabs survive refresh via `/admin/:tab`, and AI search results are cached in `sessionStorage` so going from a search result into a profile and back does not rerun the expensive search in the same browser session. The dashboard also records the last network URL so “Back to directory” and the top nav can return users to their prior network context instead of always resetting to the map.
+- Phase 4 labeling, embeddings, and connections is live. Migration `20260401120000_phase4_labeling_embeddings_connections.sql` makes `locations.latitude` / `locations.longitude` nullable, adds `geocode_source` / `geocoded_at`, creates `derived_label_suggestions`, `person_text_chunks`, and `connection_suggestions`, extends `connections` with evidence columns, adds `match_person_text_chunks()`, and expands `discover_connections()` to the hard-edge set `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, and `event_peer`. Discovery and verification now upsert evidence-bearing derived labels before promotion, Admin renders them through `DerivedLabelsPanel`, discovered-contact review cards show pending label chips, and Person Profile shows soft affinity suggestions from `connection_suggestions` separately from the hard graph. `generate-embeddings` now builds labeled embedding documents plus `bio` / `position` / `combined` chunk vectors via batched Gemini embedding calls, while `search-people` rolls chunk matches back up to people and can use matched chunk text as the snippet. The `geocode` function now accepts both legacy `{pairs}` and pipeline `{candidates}` payloads, parses raw text deterministically, geocodes US candidates, and returns `parser_confidence` plus `review_required`. Production smoke tests after deployment to project `ofzuhajxwxggybkuzefq` confirmed the Phase 4 surfaces end to end: `geocode` returned cached coordinates for `Cambridge, MA`; `agent-verify` upserted 6 derived labels for `Saar Vandenbroucke`; `generate-embeddings` backfill created `person_text_chunks`; `search-people` returned nonzero `chunk_candidates`; `agent-connections` created idempotent `program_peer` / `lab_peer` links and scanned the soft-affinity lane; and one scheduler-triggered `agent-discovery` batch completed through the live orchestration path on 2026-04-01 local time / 2026-04-02 UTC.
+- Phase 3 verification unification is live. Migration `20260401100000_phase3_verification_unification.sql` extends `profile_suggestions` with `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, and `dedupe_key`, plus supporting indexes for pending-suggestion dedupe, search-click recency, and approved discovery touches. `supabase/functions/_shared/verification.ts` is now the single verification core behind both `update-profile` and `agent-verify`: it centralizes person loading, LinkedIn-first deterministic diffs, web-search + Gemini fallback, field-risk gating, evidence capture, and suggestion dedupe/refresh. The person-side verification modal and admin `SuggestedChanges` queue now consume that same contract and render method/risk/confidence/evidence details instead of the old flat `source` string. Live smoke tests after deployment on 2026-04-01 against project `ofzuhajxwxggybkuzefq` confirmed both paths: `update-profile` returned a `verified` preview payload for `Ms. Aline Aerts`, and `agent-verify` returned the new unified batch payload shape (`suggestions_updated`, `candidate_priorities`, per-step path/status) for the same person.
+- Phase 2C discovery compounding is live. Migration `20260401050000_phase2c_discovery_compounding.sql` adds `discovered_contacts.candidate_key`, internal `discovery_entity_pivots` / `discovery_entity_pivot_sources`, and the internal `ops_discovery_entity_pivots` view. `agent-discovery` now merges pending candidates by durable candidate key before falling back to the older identity heuristics, accumulates evidence-backed entity pivots from extracted role/Flemish/page-title signals, and reserves part of each blank-query seeding pass for those proven pivots. `agent-scheduler` also now exposes a privileged `planning` action, and the Admin Agents tab renders a `DiscoveryPlanningPanel` with live gap metrics, accumulated pivots, recent frontier refills, and runnable recommended discovery queries. As of the latest follow-up patch, transient Gemini and fetch failures are treated as retryable upstream errors instead of brittle hard failures: discovery extraction uses a real model chain from `_shared/gemini.ts` even when no fallback env var is set, retries `429`/`5xx`/timeout cases with backoff plus a smaller prompt budget, keeps heuristic classification if LLM classification is deferred, strips control characters like embedded null bytes from fetched page text before persistence, and requeues affected frontier rows as `upstream_retry` instead of recording a hard failure.
+- AI review/apply flows now treat `location_city` / `location_state` as suggestion-only fields, not writable `people` columns. `ProfileUpdateModal`, the admin `SuggestedChanges` queue, and the admin chatbot duplicate-merge path now resolve or create a `locations` row and write `people.location_id` instead. The admin suggestion approval flow also no longer marks a suggestion `approved` if the underlying `people` update fails.
+- `deno check supabase/functions/agent-discovery/index.ts` is now clean again. Discovery/web-search edge helpers now rely on a local Deno-side Supabase schema shim in `supabase/functions/_shared/database.types.ts`, and `_shared/discovery.ts` explicitly references the DOM libs because the edge-runtime import alone does not give stable `Document`/`DOMParser` typing under `deno check`.
+- The shared Deno-side Supabase schema shim in `supabase/functions/_shared/database.types.ts` now also covers the active search, discovery, verification, scheduler, connections, embedding, and single-profile update entrypoints, including the new `discover-contacts` alias, so `deno check` is green across every current `supabase/functions/*/index.ts` file. Because that shim is intentionally lightweight and does not encode relation metadata, joined rows like `locations`, `sectors`, and `person_flemish_connections` should keep being normalized locally inside the edge functions instead of relying on generated relation inference.
+- Phase 2B discovery learning is live. Migration `20260401030000_phase2b_discovery_learning.sql` adds gap-aware source-pack targeting (`coverage_target_keys`), domain-yield learning on `discovery_domains`, `discovery_frontier_refills`, metro/state coverage inputs (`metro_areas`, `metro_area_cities`, `coverage_targets`), and internal ops views (`ops_discovery_domain_yield`, `ops_discovery_page_type_mix`, `ops_discovery_coverage_summary`, `coverage_gaps`). `agent-discovery` now revisits due `done` frontier rows, enforces per-domain weekly budgets plus per-run caps, boosts or decays child expansion based on parent/domain yield, and conditionally harvests sitemap/RSS URLs for proven domains. Production smoke tests on 2026-04-01 confirmed both paths: one scheduler-triggered run completed against an existing queued frontier row and surfaced live `gap_targets` in the plan payload, and one custom-query run (`KU Leuven Houston`) seeded 24 new frontier URLs via Tavily and wrote a `search_seed` row into `discovery_frontier_refills`.
+- Profile edits no longer fail on `people_search_documents` RLS. Migration `20260401011000_fix_people_search_document_rls.sql` changes the internal search-document sync functions to `SECURITY DEFINER`, so `people` updates from the public client can refresh the lexical search substrate without needing public write policies on the internal table.
+- Profile tag edits no longer fail on `embedding_jobs` RLS. Migration `20260401014000_fix_embedding_jobs_rls.sql` changes the internal embedding queue helpers to `SECURITY DEFINER`, so sector/Flemish-connection edits can mark people dirty and enqueue refresh work without needing public write policies on the internal queue table.
+- Embedding refresh is now backend-owned instead of browser-owned. Migration `20260331143000_embedding_refresh_queue.sql` adds the internal `embedding_jobs` queue plus `enqueue_*` / `claim_embedding_jobs()` helpers. `generate-embeddings` now enqueues dirty people, claims batches from that queue, and requeues rows if they changed again while a batch was running. Frontend create/edit/import flows only send a best-effort worker kick after commit; they no longer try to generate one embedding per person inline from the browser.
+- Production smoke test on 2026-03-31 confirmed the queue works: the first `status_only` run enqueued 518 dirty people, a live worker batch processed 5 with 0 failures, and live `search-people` responses now report non-zero `vector_candidates` / `total_with_embeddings` again.
+- Phase 1 search upgrade is live. Migration `20260331120000_phase1_search_upgrade.sql` adds the internal `people_search_documents` lexical substrate, weighted `tsvector` + trigram indexes, and sync triggers across `people`, `person_sectors`, `person_flemish_connections`, `flemish_connections`, and `locations`. The `search-people` edge function now classifies queries into `direct_lookup`, `faceted`, or `exploratory`, retrieves lexical and vector top-K independently, fuses them with reciprocal-rank + exact-name boosts, and generates snippets from the best matching field or bio sentence.
+- `npm run benchmark:search` now runs the fixed `benchmark_search_queries_active` set through the live `search-people` edge function. It requires `VITE_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the local environment.
 - Admin Overview cards were tightened up on 2026-03-31: the standalone `Availability` and `Connections Summary` cards were removed, the `Locations` card now shows only a ranked city list (no state toggle/drilldown UI), and card subtitles/descriptions were removed so the dense list cards scroll inside the card instead of expanding the whole page.
 - Phase 0 benchmark infrastructure is now seeded in Postgres: `benchmark_search_queries` locks the fixed representative search set, `benchmark_discovery_sources` locks the initial discovery source benchmark set, and saved views (`ops_search_benchmark_clicks`, `ops_discovery_review_metrics`, `ops_benchmark_discovery_source_coverage`, `ops_phase_success_metrics`) provide a stable baseline before Phase 1+ changes.
 - Benchmark and ops datasets are now locked down from `anon` / `authenticated` reads. They are internal-only database surfaces and should be queried through privileged SQL or a future admin-only backend path, not directly from the public client.
@@ -15,6 +29,7 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - `agent-scheduler` must forward the caller's function auth headers (`Authorization` / `apikey`) when dispatching downstream agent functions. Using `SUPABASE_SERVICE_ROLE_KEY` as the bearer token for edge-to-edge invocation causes `401` rejections and leaves runs stuck until zombie cleanup marks them failed.
 - `AI-strategy.md` documents a full audit of the current AI surface area (search, discovery, verification, connections, updates, embeddings), including what to keep, what to redesign, a recommended model strategy that assumes Google AI Studio Tier 1 access, and a detailed proposal to rebuild discovery around a bounded adaptive frontier crawler with evidence storage, link expansion, domain yield tracking, and geography-aware gap-driven discovery planning.
 - `todo.md` is now organized as an execution backlog derived from `AI-strategy.md`; tasks are grouped by roadmap phase and each one includes section references back into the strategy document so future agents can jump to the underlying design notes before implementing.
+- Phase 2A discovery foundation is now live. Migration `20260331170000_phase2a_discovery_foundation.sql` adds `discovery_source_packs`, `discovery_frontier`, `discovery_domains`, `discovery_pages`, `discovery_evidence`, and claim/release RPCs. `agent-discovery` now uses search only to seed the frontier, fetches and classifies pages one by one, stores evidence per candidate, and uses LinkedIn only as limited enrichment after a page has already yielded a promising person.
 - AI-assisted create, merge, and profile-review flows no longer write `people.flemish_connection` directly. They write the person row without that scalar field, then call `syncPersonFlemishConnectionsAndRequeue()` so normalized `person_flemish_connections` rows and embeddings stay in sync.
 - The admin CSV importer now has a real cancel path during the row-write phase. Cancelling requests a stop, waits for the current DB step to finish, then rolls back contacts created in that run and restores the previous scalar fields, sector links, and Flemish connections for any contacts updated earlier in the same run.
 - Synthetic importer load-test fixtures now live in `test-csvs/`: `08_large_people_dataset.csv` contains 504 rows, and `09`-`14` are 84-row sector-specific batches. The CSV importer now maps `Sector` / `Sectors` columns directly into `person_sectors`, including multi-value cells, while still keeping the post-import bulk sector assignment control for adding the same sectors to every imported contact.
@@ -23,7 +38,6 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - The extractor now prefers real institutions over descriptive prose. Known aliases such as `University of Ghent` -> `UGent`, `Vrije Universiteit Brussel` -> `VUB`, and `imec employee` -> `imec` are canonicalized, while long descriptive phrases are excluded from the normalized join table.
 - Dashboard filtering, hybrid search, embeddings, collection suggestion query-building, and admin Flemish-connection charts now read `person_flemish_connections`/`flemish_connections` instead of a text column on `people`. The `discover_connections()` alumni pass and `match_people()` RPC also aggregate from the join table.
 - Person and organization profile tags are now navigational: sector chips open the dashboard with the sector filter applied, Flemish connection chips open the matching Flemish filter, and clicking a profile location opens the dashboard map centered on that city while preserving the focused-city list state if the user switches to list view.
-- `supabase/functions/agent-discovery/index.ts` now supports two operating modes: a blank-query seeded sweep that rotates through predefined Flemish institution/company/fellowship searches, and a custom-query mode that expands one query into several discovery variants. The function now executes up to 3 web searches and 2 LinkedIn searches per run as originally intended.
 - Discovery dedup is stronger now: cross-channel candidates merge on normalized LinkedIn/email/website/name signals before insert, and DB dedup checks `people` and `discovered_contacts` by normalized name, email, LinkedIn URL, and website URL instead of relying on a case-sensitive name lookup.
 - Discovery now reports Gemini extraction failures explicitly in `errors`/`steps` and stops burning web-search budget when the current Gemini quota is exhausted, instead of quietly returning zero contacts.
 - `supabase/functions/agent-verify/index.ts` now exists. It verifies stale profiles in a LinkedIn-first flow: Apify scrape when `linkedin_url` is present, deterministic field diffing for position/location/bio/photo, then web search + the same Gemini `check_profile` schema locally when LinkedIn is unavailable or missing. The operational default is a 5-profile batch to stay inside the edge timeout.
@@ -49,6 +63,7 @@ npm run build        # Production build (outputs to dist/)
 npm run preview      # Preview production build
 npm run lint         # ESLint
 npm run typecheck    # TypeScript type checking (tsc --noEmit -p tsconfig.app.json)
+npm run benchmark:search  # Run fixed search benchmarks against the live edge function
 ```
 
 ## Project Structure (actual, as of 2026-03-25)
@@ -77,7 +92,8 @@ src/
 │   ├── ProfileUpdateModal.tsx       # Review/approve AI-suggested profile changes
 │   └── admin/
 │       ├── AddContactPanel.tsx      # Admin quick-add contact form
-│       ├── AdminChatbot.tsx         # AI chatbot for admin (search contacts, parse contacts)
+│       ├── AdminChatbot.tsx         # Admin discovery assistant for ad hoc web prospecting
+│       ├── DiscoveryPlanningPanel.tsx # Discovery gap/pivot planning surface in the Agents tab
 │       ├── ContactCard.tsx          # Card component for admin contact results
 │       ├── CsvImport.tsx            # CSV file import with column mapping + dedup
 │       ├── DuplicateCompare.tsx     # Side-by-side duplicate contact comparison
@@ -98,11 +114,12 @@ supabase/
     ├── agent-connections/           # Deterministic colleague/alumni/local-peer discovery
     ├── agent-discovery/             # Web + LinkedIn discovery agent
     ├── agent-scheduler/             # Agent run dispatcher / zombie cleanup
+    ├── discover-contacts/           # Ad hoc web discovery for operators (current name)
     ├── agent-verify/                # LinkedIn-first profile verification
     ├── generate-embeddings/         # Batch embedding generation for people
     ├── search-people/               # Hybrid search: keyword extraction + embedding similarity, server-side scoring
     ├── suggest-people/              # Embedding + Gemini ranking for collections
-    ├── search-contacts/             # Tavily web search + Gemini extraction + dedup check
+    ├── search-contacts/             # Legacy alias to discover-contacts
     ├── update-profile/              # Web search a person + generate profile suggestions via check_profile
     └── geocode/                     # Nominatim geocoding + locations table caching
 scripts/
@@ -113,31 +130,50 @@ public/
 ```
 
 ## Page Routing
-Pages are switched via `currentPage` state in `App.tsx`. The `Page` type union is:
-```typescript
-type Page = 'dashboard' | 'person' | 'organization' | 'collections' | 'collection-detail' | 'admin' | 'add-contact';
+The frontend now uses `react-router-dom` with real browser URLs:
+```text
+/                         dashboard
+/people/:personId         person profile
+/organizations/:id        organization profile
+/collections              collection list
+/collections/:id          collection detail
+/admin                    admin overview
+/admin/:tab               admin sub-tabs (`agents`, `discovered`)
+/contacts/new             add-contact page
 ```
-Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'directory'`, `'search'`, `'missions'`, `'planner'`) are aliased to their replacements.
+Dashboard state is encoded in the query string, not component memory. Current params include:
+- `view=map|list`
+- `q=<search query>`
+- `sector=<name>`
+- `occupation=<name>`
+- repeated `fc=<flemish connection>`
+- `city=<filter city>` and `state=<filter state>`
+- `people=0`, `organizations=0`, `lectures=1`
+- `focusCity=<city>` and `focusState=<state>` for drill-in map/list focus
+
+Navigation callbacks still use `onNavigate(page, id?, preset?)`, but they now map onto routes. Legacy page names (`'directory'`, `'search'`, `'missions'`, `'planner'`) are still aliased to their replacements for older call sites.
 
 ## Architecture Decisions
-- **No React Router:** Pages switched via `currentPage` state in `App.tsx` with `onNavigate` callbacks.
+- **React Router owns navigation:** `App.tsx` uses `BrowserRouter` route matching instead of a `currentPage` state machine. Detail-page navigations carry a lightweight `from` route state so in-app back buttons can return to the exact prior screen.
+- **Dashboard state is URL + session backed:** the network view reads search/filter/view/focused-city state from query params, and expensive AI search result payloads are cached in `sessionStorage` (`src/lib/dashboardSession.ts`) so refresh/back keeps context without forcing a rerun inside the same browser session.
 - **No state management library:** All state via React hooks. Props drilled down from App.tsx.
 - **No auth:** Single-tenant with Supabase anon key. RLS allows public read, selective write. All write operations are open.
-- **AI via edge functions:** All LLM calls go through Supabase Edge Functions. Shared query-parsing and profile-check contracts now live in `supabase/functions/_shared/aiContracts.ts`, with shared Gemini model routing / structured-call logic in `supabase/functions/_shared/gemini.ts`. `ai-agent` remains the generic structured task endpoint, while `search-people`, `agent-verify`, and `update-profile` import the same shared contracts directly. `search-contacts` still runs its own Tavily + Gemini pipeline.
+- **AI via edge functions:** All LLM calls go through Supabase Edge Functions. Shared query-parsing and profile-check contracts now live in `supabase/functions/_shared/aiContracts.ts`, with shared Gemini model routing / structured-call logic in `supabase/functions/_shared/gemini.ts`. `ai-agent` remains the generic structured task endpoint, while `search-people`, `agent-verify`, and `update-profile` import the same shared contracts directly. Operator web prospecting now runs through `discover-contacts`, with `search-contacts` kept only as a legacy alias.
 - **Locations as separate table:** `people` and `organizations` have `location_id` FK to `locations` table. Old inline `location_city`/`location_state`/`latitude`/`longitude` columns were dropped. Queries use `.select('*, locations(*)')` to join.
+- **AI location suggestions are legacy-shaped:** verification and single-profile update suggestions may still arrive as `location_city` / `location_state`, but any frontend write into `people` must translate those into `location_id` first.
 - **Types in supabase.ts:** All database entity types (Person, Organization, Collection, etc.), constants, and shared interfaces live in `src/lib/supabase.ts`.
 - **Filter parser is deterministic:** `src/lib/filterParser.ts` handles NL-to-filter conversion with keyword matching — no LLM call needed.
 
-## Database Schema (current state after all 23 migrations)
+## Database Schema (current working-tree state)
 
 ### Core Tables
 | Table | Key Columns | Notes |
 |---|---|---|
-| `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `occupation`, `bio`, `profile_photo_url`, `flemish_connection`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. No inline location columns (use locations FK). |
+| `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `occupation`, `bio`, `profile_photo_url`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. No inline location columns and no scalar `flemish_connection`; Flemish ties are normalized through `person_flemish_connections`. |
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `flemish_link`, `created_at`, `updated_at` | No inline location columns. |
-| `locations` | `id`, `city`, `state`, `latitude`, `longitude` | UNIQUE(city, state). Populated from us_cities.csv import. |
+| `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude` / `longitude` are nullable so ambiguous or manually reviewed locations can still be represented before geocoding lands. |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength` | CHECK constraint requires at least one from/to pair. Person-person rows are unique per unordered pair + relationship type. |
+| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength`, `evidence_url`, `evidence_excerpt`, `evidence_source`, `evidence_key` | Hard graph edges only. Person-person rows are unique per unordered pair + relationship type; current live hard types are `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, and `event_peer`. |
 
 ### Junction Tables
 | Table | Keys |
@@ -154,7 +190,10 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 ### AI & Suggestions
 | Table | Key Columns |
 |---|---|
-| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status` (pending/approved/rejected) |
+| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key` |
+| `derived_label_suggestions` | `id`, `person_id` or `discovered_contact_id`, `label_type`, `label_value`, `normalized_value`, `confidence`, `source`, `method`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
+| `person_text_chunks` | `id`, `person_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
+| `connection_suggestions` | `id`, `from_person_id`, `to_person_id`, `suggestion_type`, `confidence`, `strength`, `source`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
 | `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at`. Tracks which search results users click for relevance feedback. |
 
@@ -168,6 +207,8 @@ Navigation callbacks use `onNavigate(page, id?, preset?)`. Legacy page names (`'
 - `people`, `organizations`: INSERT/UPDATE allowed for `anon, authenticated` (added in later migrations)
 - `collections`, `collection_members`: Full CRUD for `anon, authenticated`
 - `profile_suggestions`: SELECT, UPDATE (status changes), DELETE for `anon, authenticated`. INSERT via service role only.
+- `derived_label_suggestions`, `connection_suggestions`: SELECT and reviewer updates for `anon, authenticated`
+- `person_text_chunks`: SELECT for `anon, authenticated`; writes stay backend-owned
 - `locations`: SELECT and INSERT for `anon, authenticated`
 
 ## AI Pipeline (what actually exists)
@@ -186,20 +227,20 @@ Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured ou
 | `check_profile` | Compare person data vs web results, suggest updates | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
 
 ### Edge Function: `search-people`
-Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces the old pattern of fetching all people and scoring client-side.
-1. Takes `{ query, max_results }` — runs keyword extraction (Gemini Flash) and query embedding (gemini-embedding-001) in parallel
-2. Calls `match_people` RPC for embedding candidates (top 50 by cosine similarity, threshold 0.2)
-3. Also runs targeted SQL keyword queries to find candidates without embeddings
-4. Fetches full person data + locations + sectors for all candidates
-5. Scores each candidate: `final = 0.4 * keyword_score + 0.6 * embedding_similarity`
-6. Generates snippets server-side, returns ranked results with full person data
-7. Returns `{ results: [...], keywords: {...}, message: "...", total_with_embeddings: N }`
+Server-side routed hybrid search used by Dashboard NL queries. It now uses a real lexical substrate instead of ad hoc keyword gating.
+1. Takes `{ query, max_results }` and attempts Gemini keyword extraction plus query embedding in parallel; if Gemini/embeddings are unavailable it still runs lexical-only search
+2. Classifies the query into `direct_lookup`, `faceted`, or `exploratory` using shared routing heuristics in `supabase/functions/_shared/searchRouting.ts`
+3. Calls `search_people_lexical()` for lexical top-K from `people_search_documents`, `match_people()` for person-level vector top-K, and `match_person_text_chunks()` for chunk-level vector top-K independently
+4. Fuses those ranked lists with reciprocal-rank scoring plus exact-name, field, and matched-chunk boosts
+5. Fetches the final person rows plus denormalized search documents, then uses the winning field or chunk text to generate the snippet
+6. Returns `{ results, keywords, route, degraded, diagnostics, message, total_with_embeddings }`, with diagnostics including chunk candidate counts
 
-### Edge Function: `search-contacts`
+### Edge Function: `discover-contacts`
 1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results)
 2. Feeds search results to Gemini for structured extraction
 3. Dedup checks against `people` table (email, LinkedIn URL, name)
 4. Returns `{ message, contacts[] }` with `is_duplicate` flags
+5. `search-contacts` is now only a thin legacy alias that forwards to the same handler
 
 ### Edge Function: `update-profile`
 1. Takes `{ personId }` or `{ personIds }` → fetches person from DB
@@ -208,26 +249,36 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 4. Returns inline suggestions to `ProfileUpdateModal`; it does not write durable `profile_suggestions` rows
 
 ### Edge Function: `agent-discovery`
-1. Takes optional `{ query, run_id, max_results }`
-2. If `query` is blank, runs a seeded sweep that rotates through predefined Flemish university/company/fellowship searches; if `query` is present, expands it into several focused discovery variants
-3. Executes up to 3 web searches through the shared Tavily/Brave module and up to 2 LinkedIn searches through Apify
-4. Uses Gemini structured extraction for web results, deterministic mapping for LinkedIn results, merges overlapping candidates across channels, then dedups against both `people` and `discovered_contacts`
-5. Inserts pending candidates into `discovered_contacts` for admin review and writes full run telemetry into `agent_runs.results`
+1. Takes `{ query?, run_id, batch_size? }` and always runs as a bounded frontier batch
+2. Seeds `discovery_frontier` from either a custom query, due `discovery_source_packs`, or accumulated evidence-backed entity pivots using the shared Tavily/Brave search module
+3. Claims the next 10-20 frontier URLs via `claim_discovery_frontier()`, fetches each page individually, canonicalizes/stores the page in `discovery_pages`, and classifies it heuristically first with optional Gemini fallback for ambiguous pages
+4. Runs Gemini structured extraction only on promising pages, writes per-page evidence into `discovery_evidence`, merges new evidence into pending `discovered_contacts` via durable candidate keys plus older identity heuristics, dedups against `people`, and upserts reviewable `derived_label_suggestions` for newly inserted or refreshed candidates
+5. Uses Apify LinkedIn search only as limited post-extraction enrichment for already-promising candidates, not as a discovery seed lane
+6. Persists evidence-backed entity pivots from organizations/labs/programs/events mentioned in approved or strong-evidence candidates, scores and queues a small set of same-domain child links for future runs, updates `discovery_domains`/frontier state, and writes full telemetry into `agent_runs.results`
 
 ### Edge Function: `agent-connections`
-1. Takes optional `{ types, run_id }`, defaulting to all three deterministic relationship types
-2. Calls the `discover_connections(text[])` RPC to compute and insert `colleague`, `alumni`, and `local_peer` links directly in Postgres
-3. Writes zero-cost telemetry back to `agent_runs` with per-type counts for `connections_found`, `new_connections_created`, and `already_existed`
+1. Takes optional `{ types, run_id, generate_soft_suggestions }`, defaulting to the live hard relationship set plus soft-suggestion generation
+2. Calls the `discover_connections()` RPC to compute and insert evidence-backed hard edges directly in Postgres for `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, and `event_peer`
+3. Separately scans chunk-vector similarity to upsert `connection_suggestions` records for soft semantic affinity instead of writing noisy hard graph edges
+4. Writes telemetry back to `agent_runs` with per-type hard-edge counts plus `connection_suggestions_upserted`, anchor scan totals, and candidate-pair counts
 
 ### Edge Function: `geocode`
-1. Takes `{ pairs: [{ city, state }] }` (max 25)
-2. Checks `locations` table cache first
-3. Falls back to Nominatim API (1.1s delay between requests for rate limiting)
-4. Caches results in `locations` table
+1. Takes either legacy `{ pairs: [{ city, state }] }` or pipeline `{ candidates: [{ raw_text, city?, state? }] }` payloads (max 25)
+2. Parses raw text deterministically, checks the `locations` cache first, and flags low-confidence or ambiguous cases for review
+3. Geocodes likely US candidates through Nominatim with a per-request delay for rate limiting
+4. Caches or updates `locations` rows with nullable coordinates plus `geocode_source` / `geocoded_at`
+5. Returns structured results including `parser_confidence`, `geocoded`, `review_required`, and the resolved `location_id`
+
+### Edge Function: `generate-embeddings`
+1. Maintains person embeddings asynchronously from the server-side `embedding_jobs` queue
+2. `status_only` returns the outstanding queue count without processing
+3. `backfill: true` reconciles dirty `people` rows into the queue before claiming a batch
+4. `kick: true` claims a small batch immediately; frontend save/import flows use this only as a best-effort nudge after commit
+5. Each claimed job reads the latest person + sectors + normalized Flemish connections + location, builds a labeled embedding document, batches Gemini embedding requests where possible, stores the main person embedding plus `person_text_chunks` embeddings, and either deletes or requeues the job depending on whether `embedding_dirty_at` changed again mid-flight
 
 ### Frontend AI Functions (in `aiService.ts`)
 - `parseContacts(description, sectors)` → calls `ai-agent` parse_contacts
-- `searchContacts(query)` → calls `search-contacts` edge function
+- `discoverContacts(query)` → calls `discover-contacts` for ad hoc operator discovery. `searchContacts()` remains as a compatibility alias in the client helper.
 - `smartSearch(query)` → calls `ai-agent` smart_search
 - `flemishSearch(query)` → calls `ai-agent` flemish_search
 - `hybridSearch(query, maxResults)` → calls `search-people` edge function (server-side hybrid scoring). Primary search path for Dashboard NL queries. Falls back to client-side scoring if edge function fails.
@@ -238,18 +289,13 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 - `logSearchClick(query, personId)` → fire-and-forget insert into `search_clicks` table
 
 ### What Does NOT Exist Yet
-- Model env vars (`GEMINI_FLASH_MODEL`, `GEMINI_PRO_MODEL`) — not used consistently across the whole stack
+- Stable model env usage is still inconsistent across the whole stack. Discovery now optionally reads `GEMINI_FLASH_LITE_MODEL` for ambiguous page classification, but most older functions still fall back directly to `GEMINI_FLASH_MODEL`.
 
 ### Known Bugs
-- **`geocode` edge function broken:** References `people.latitude`, `people.longitude`, `people.location_city`, `people.location_state` — all dropped in location refactor migration. Needs rewrite to use `locations` table via `location_id`.
-- **12 TypeScript errors:** `DiscoveredContact` type doesn't have `location_id`/`locations` (it uses inline city/state from web search). `PersonProfile.tsx` uses non-existent `location_display` property. `CitySearch.tsx` has an unused variable.
-- **Person interface incomplete:** `src/lib/supabase.ts` Person interface is missing `available_for_lectures`, `open_to_mentorship`, `welcomes_visits` boolean fields that exist in the DB.
 - **Build size warning:** JS bundle is 688kb (192kb gzipped), above Vite's 500kb warning threshold.
 - **25 console.log/error/warn calls in production code:** Across 9 frontend files. Should use a proper logger or remove.
 - **9 alert() calls as error handling:** In PersonProfile, OrganizationProfile, CollectionDetail. Should replace with toast/snackbar UI.
-- **`search-contacts` dedup loads ALL people:** Fetches entire `people` table to check for duplicates by name. Will degrade as DB grows. Should use targeted queries (e.g., `WHERE name ILIKE $1`).
-- **~~Dashboard NL search loads ALL people:~~** Fixed. Dashboard now uses `search-people` edge function for server-side hybrid search (keyword + embedding). Client-side `suggestPeople()` fallback still exists but is only used if the edge function fails.
-- **`profile_suggestions.person_id` is NOT NULL:** The Discovery Agent design (Phase 3.1 in AI strategy) inserts discovered NEW contacts into `profile_suggestions` — but new contacts have no `people` row yet, so the FK constraint will reject the insert. Design blocker for discovery agent.
+- **~~Dashboard NL search loads ALL people:~~** Fixed. Dashboard now uses the routed `search-people` edge function for server-side lexical + vector fusion. The client fallback still exists only as an explicitly degraded 200-row backup if the edge function fails.
 - **`@types/leaflet` and `@types/leaflet.markercluster` in dependencies:** Should be in devDependencies in `package.json`.
 
 ## Workflow Expectations
@@ -263,7 +309,10 @@ Server-side hybrid search used by Dashboard NL queries. Single endpoint replaces
 ## AI Contract Notes
 - `update-profile` is the ad hoc single-person preview path only. It returns inline suggestions for `ProfileUpdateModal` and does not write durable `profile_suggestions` rows.
 - `agent-verify` owns the durable verification queue. Admin stale-contact verification should call `agent-verify`, and reviewer UIs should treat `profile_suggestions` as batch-verification output rather than modal draft state.
+- `derived_label_suggestions` is the review queue for canonical sectors, occupations, Flemish entities, US locations, source quality, and profile confidence. Promote those labels first, then refresh embeddings if the canonical profile changed.
 - `agent-scheduler` owns manual `agent_runs` lifecycle writes for dashboard-triggered agents. The admin UI should not insert/update `agent_runs` directly for run start, cancel, timeout, or housekeeping behavior.
+- `connection_suggestions` is soft affinity only. Do not write semantic-nearness guesses into `connections`; only evidence-backed hard relationship types belong in the graph.
+- Public join tables like `person_sectors` and `person_flemish_connections` currently expose insert/delete policies but not update policies. When client code needs idempotent writes there, use conflict-ignore insert semantics (`ignoreDuplicates`) instead of update-style upserts.
 
 ## Coding Conventions
 - TypeScript strict mode. Run `npm run typecheck` before committing.
@@ -289,8 +338,9 @@ Frontend (in `.env`):
 
 Edge functions (set in Supabase dashboard):
 - `GEMINI_API_KEY` (required for all AI features)
+- `GEMINI_FLASH_LITE_MODEL` (optional; discovery uses this for cheap ambiguous-page classification before falling back to `GEMINI_FLASH_MODEL`)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
-- `TAVILY_API_KEY` (primary web search provider for search-contacts, update-profile, and agent-discovery)
+- `TAVILY_API_KEY` (primary web search provider for discover-contacts, update-profile, and agent-discovery)
 - `BRAVE_API_KEY` (optional fallback provider used by the shared web search module)
 - `APIFY_TOKEN` (used by discovery and verification agents for LinkedIn search/scrape)
 
@@ -308,8 +358,10 @@ supabase secrets set GEMINI_API_KEY=... TAVILY_API_KEY=... BRAVE_API_KEY=... API
 Edge functions require the Supabase CLI (`npm i -g supabase`). The project ref is in the Supabase dashboard URL.
 
 ## Key Domain Concepts
-- **Flemish Connection:** A person's tie to Flanders — could be a university (KU Leuven, UGent, VUB, UAntwerp), fellowship (BAEF, Fayat), organization (imec), or city. Stored as single text field on `people`.
+- **Flemish Connection:** A person's tie to Flanders — could be a university (KU Leuven, UGent, VUB, UAntwerp), fellowship (BAEF, Fayat), organization (imec), or city. Stored in normalized `flemish_connections` plus `person_flemish_connections`, not as a text column on `people`.
 - **Sectors:** Broad fields (Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research). Stored in `sectors` table, linked via `person_sectors` junction.
 - **Occupation:** Career stage category (Student, Academic/Researcher, Professional, Executive/Leadership). Single text field on `people`.
+- **Derived Labels:** Reviewable AI-proposed tags for sectors, occupation, Flemish entities, US location, source quality, and profile confidence. Stored in `derived_label_suggestions` before optional promotion into canonical fields/tables.
+- **Connection Suggestions:** Soft semantic affinity proposals kept out of the hard graph. Stored in `connection_suggestions` and reviewed separately from `connections`.
 - **Collections:** Named groups of contacts for a specific purpose (e.g., "Contacts for LA Trade Mission"). Replaced the old Missions/Planner system.
 - **Profile Suggestions:** AI-generated field update proposals stored in `profile_suggestions`, reviewed via admin panel (approve/reject).

@@ -7,7 +7,18 @@ import {
   SMART_SEARCH_SYSTEM_PROMPT,
   type SmartSearchKeywords,
 } from "../_shared/aiContracts.ts";
+import { embedTexts } from "../_shared/embeddings.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
+import {
+  buildSearchTerms,
+  classifySearchRoute,
+  getSearchRouteConfig,
+  pickSearchSnippet,
+  type LexicalMatchHint,
+  type SearchDocumentSnippetSource,
+  type SearchRoute,
+} from "../_shared/searchRouting.ts";
+import type { Database } from "../_shared/database.types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,12 +27,18 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const EMBEDDING_MODEL = "gemini-embedding-001";
+const RRF_K = 60;
 
-const KEYWORD_WEIGHT = 0.4;
-const EMBEDDING_WEIGHT = 0.6;
-
-// ---------- types ----------
+const EMPTY_KEYWORDS: SmartSearchKeywords = {
+  name: [],
+  occupation: [],
+  sector: [],
+  location_city: [],
+  location_state: [],
+  current_position: [],
+  flemish_connection: [],
+  bio: [],
+};
 
 interface SearchResultItem {
   id: string;
@@ -39,36 +56,70 @@ interface SearchResultItem {
   last_verified_at: string | null;
   available_for_lectures: boolean | null;
   location_id: string | null;
-  locations: { city: string; state: string } | null;
+  locations: { city: string | null; state: string | null } | null;
   score: number;
   snippet: string;
 }
 
-interface FlemishConnectionLinkRow {
-  flemish_connections:
-    | { name: string | null }
-    | { name: string | null }[]
+interface LexicalCandidateRow {
+  person_id: string;
+  lexical_score: number;
+  exact_name_match: boolean;
+  name_score: number;
+  text_score: number;
+  ts_score: number;
+  match_field: string | null;
+  match_text: string | null;
+}
+
+interface VectorCandidateRow {
+  id: string;
+  similarity: number;
+}
+
+interface ChunkCandidateRow {
+  id: string;
+  person_id: string;
+  chunk_type: string;
+  chunk_index: number;
+  chunk_text: string;
+  similarity: number;
+}
+
+interface SearchDocumentRow extends SearchDocumentSnippetSource {
+  person_id: string;
+}
+
+interface PersonRow {
+  id: string;
+  name: string;
+  first_name: string | null;
+  last_name: string | null;
+  title: string | null;
+  current_position: string | null;
+  bio: string | null;
+  occupation: string | null;
+  profile_photo_url: string | null;
+  email: string | null;
+  linkedin_url: string | null;
+  last_verified_at: string | null;
+  location_id: string | null;
+  locations: { city: string | null; state: string | null } | null;
+}
+
+interface PersonQueryRow extends Omit<PersonRow, "locations"> {
+  locations:
+    | { city: string | null; state: string | null }
+    | { city: string | null; state: string | null }[]
     | null;
 }
 
-function buildFlemishConnectionText(
-  links: FlemishConnectionLinkRow[] | null | undefined
-): string {
-  const names = new Set<string>();
-
-  for (const link of links || []) {
-    const raw = link.flemish_connections;
-    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
-    for (const row of rows) {
-      const name = row?.name?.trim();
-      if (name) names.add(name);
-    }
-  }
-
-  return Array.from(names).sort().join(", ");
+function normalizeLocationRelation(
+  value: PersonQueryRow["locations"]
+): PersonRow["locations"] {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
-
-// ---------- Gemini helpers ----------
 
 async function extractKeywords(
   apiKey: string,
@@ -87,132 +138,71 @@ async function extractKeywords(
   return data.keywords;
 }
 
-async function getEmbedding(
-  apiKey: string,
-  text: string
-): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      content: { parts: [{ text }] },
-      outputDimensionality: 768,
-    }),
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Embedding API error: ${resp.status}`);
-  }
-
-  const data = await resp.json();
-  const values: number[] = data?.embedding?.values;
-  if (!values || values.length !== 768) {
-    throw new Error(`Invalid embedding dimensions: ${values?.length}`);
-  }
-
-  return values;
+async function getEmbedding(apiKey: string, text: string): Promise<number[]> {
+  const results = await embedTexts(apiKey, [{
+    text,
+    taskType: "RETRIEVAL_QUERY",
+  }]);
+  return results[0];
 }
 
-// ---------- scoring ----------
-
-function scoreAgainstKeywords(
-  person: Record<string, unknown>,
-  keywords: SmartSearchKeywords
-): number {
-  let score = 0;
-  let totalWeight = 0;
-
-  const fields: {
-    key: keyof SmartSearchKeywords;
-    personField: string;
-    weight: number;
-  }[] = [
-    { key: "name", personField: "name", weight: 3 },
-    { key: "occupation", personField: "occupation", weight: 2 },
-    { key: "sector", personField: "sectors_text", weight: 2 },
-    { key: "location_city", personField: "location_city", weight: 1.5 },
-    { key: "location_state", personField: "location_state", weight: 1 },
-    { key: "current_position", personField: "current_position", weight: 2 },
-    { key: "flemish_connection", personField: "flemish_connection", weight: 2 },
-    { key: "bio", personField: "bio", weight: 1 },
-  ];
-
-  for (const { key, personField, weight } of fields) {
-    const kws = keywords[key];
-    if (!kws || kws.length === 0) continue;
-
-    totalWeight += weight;
-
-    const val = String(person[personField] || "").toLowerCase();
-    if (!val) continue;
-
-    let fieldHits = 0;
-    for (const kw of kws) {
-      if (val.includes(kw)) fieldHits++;
-    }
-
-    score += (fieldHits / kws.length) * weight;
-  }
-
-  return totalWeight > 0 ? score / totalWeight : 0;
+function clampScore(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
 }
 
-// ---------- snippets ----------
-
-function generateSnippet(
-  person: Record<string, unknown>,
-  keywords: SmartSearchKeywords
-): string {
-  const bio = String(person.bio || "");
-  const currentPosition = String(person.current_position || "");
-
-  if (bio && keywords.bio.length > 0) {
-    const sentences = bio.split(/[.!?]+/).filter((s: string) => s.trim());
-    for (const sentence of sentences) {
-      const lower = sentence.toLowerCase();
-      if (keywords.bio.some((kw: string) => lower.includes(kw))) {
-        return sentence.trim();
-      }
-    }
-  }
-
-  if (currentPosition && keywords.current_position.length > 0) {
-    const lower = currentPosition.toLowerCase();
-    if (keywords.current_position.some((kw: string) => lower.includes(kw))) {
-      return currentPosition;
-    }
-  }
-
-  if (bio) {
-    const sentences = bio.split(/[.!?]+/).filter((s: string) => s.trim());
-    const allKw = [
-      ...keywords.name,
-      ...keywords.occupation,
-      ...keywords.sector,
-      ...keywords.location_city,
-      ...keywords.location_state,
-      ...keywords.current_position,
-      ...keywords.flemish_connection,
-      ...keywords.bio,
-    ];
-    for (const sentence of sentences) {
-      const lower = sentence.toLowerCase();
-      if (allKw.some((kw: string) => lower.includes(kw))) {
-        return sentence.trim();
-      }
-    }
-    if (sentences[0]) return sentences[0].trim();
-  }
-
-  return "";
+function reciprocalRank(rank: number | undefined): number {
+  return rank ? 1 / (RRF_K + rank) : 0;
 }
 
-// ---------- main handler ----------
+function getFieldBoost(route: SearchRoute, field: string | null): number {
+  if (!field) return 0;
+
+  if (route === "direct_lookup") {
+    return field === "flemish_connection" || field === "occupation" ? 0.015 : 0;
+  }
+
+  if (route === "faceted") {
+    return ["flemish_connection", "sector", "location", "occupation"].includes(field)
+      ? 0.02
+      : 0.008;
+  }
+
+  return field === "bio" ? 0.015 : 0.01;
+}
+
+function buildFallbackDocument(person: PersonRow): SearchDocumentRow {
+  return {
+    person_id: person.id,
+    current_position: person.current_position,
+    occupation: person.occupation,
+    bio: person.bio,
+    flemish_connection_names: null,
+    sector_names: null,
+    location_text: person.locations?.city
+      ? `${person.locations.city}, ${person.locations.state || ""}`.trim().replace(/,\s*$/, "")
+      : null,
+  };
+}
+
+function routeLabel(route: SearchRoute): string {
+  switch (route) {
+    case "direct_lookup":
+      return "direct lookup";
+    case "faceted":
+      return "faceted hybrid search";
+    default:
+      return "exploratory hybrid search";
+  }
+}
+
+function truncateSnippet(value: string, maxLength = 220): string {
+  const normalized = value.trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength - 3)}...`;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -220,10 +210,12 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiKey) {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !supabaseKey) {
       return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+        JSON.stringify({ error: "Supabase service credentials not configured" }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -231,15 +223,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const geminiKey = Deno.env.get("GEMINI_API_KEY") || null;
+    const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
     const body = await req.json();
-    const { query, max_results } = body;
-    const limit = max_results || 30;
+    const query = typeof body?.query === "string" ? body.query.trim() : "";
+    const limit =
+      typeof body?.max_results === "number" && body.max_results > 0
+        ? Math.min(body.max_results, 100)
+        : 30;
 
-    if (!query || typeof query !== "string") {
+    if (!query) {
       return new Response(
         JSON.stringify({ error: "query is required" }),
         {
@@ -249,240 +243,264 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Step 1: Run keyword extraction and embedding in parallel
-    const [keywords, queryEmbedding] = await Promise.all([
-      extractKeywords(geminiKey, query),
-      getEmbedding(geminiKey, query).catch(() => null),
+    const [keywords, queryEmbedding] = geminiKey
+      ? await Promise.all([
+          extractKeywords(geminiKey, query).catch(() => EMPTY_KEYWORDS),
+          getEmbedding(geminiKey, query).catch(() => null),
+        ])
+      : [EMPTY_KEYWORDS, null];
+
+    const route = classifySearchRoute(query, keywords);
+    const config = getSearchRouteConfig(route);
+
+    const [lexicalResponse, vectorResponse, chunkResponse] = await Promise.all([
+      supabase.rpc("search_people_lexical", {
+        search_query: query,
+        search_route: route,
+        match_count: config.lexicalTopK,
+      }),
+      (async () => {
+        if (!queryEmbedding) {
+          return { data: [] as VectorCandidateRow[], error: null };
+        }
+
+        const vectorStr = `[${queryEmbedding.join(",")}]`;
+        return await supabase.rpc("match_people", {
+          query_embedding: vectorStr,
+          match_count: config.vectorTopK,
+          similarity_threshold: config.vectorSimilarityThreshold,
+        });
+      })(),
+      (async () => {
+        if (!queryEmbedding) {
+          return { data: [] as ChunkCandidateRow[], error: null };
+        }
+
+        const vectorStr = `[${queryEmbedding.join(",")}]`;
+        return await supabase.rpc("match_person_text_chunks", {
+          query_embedding: vectorStr,
+          match_count: config.vectorTopK * 2,
+          similarity_threshold: Math.max(0.35, config.vectorSimilarityThreshold - 0.08),
+        });
+      })(),
     ]);
 
-    // Step 2: Get embedding candidates (if embedding succeeded)
-    const embeddingCandidates: Map<
-      string,
-      { similarity: number }
-    > = new Map();
-
-    if (queryEmbedding) {
-      const vectorStr = `[${queryEmbedding.join(",")}]`;
-      const { data: matches } = await supabase.rpc("match_people", {
-        query_embedding: vectorStr,
-        match_count: 50,
-        similarity_threshold: 0.2, // lower threshold — hybrid scoring will filter further
-      });
-
-      if (matches) {
-        for (const m of matches) {
-          embeddingCandidates.set(m.id, { similarity: m.similarity });
-        }
-      }
+    if (lexicalResponse.error) {
+      throw lexicalResponse.error;
     }
 
-    // Step 3: Also find keyword-only candidates not in embedding results
-    // Build a targeted query for people who match key fields
-    const keywordCandidateIds = new Set<string>();
+    if (vectorResponse.error) {
+      throw vectorResponse.error;
+    }
 
-    // Only do targeted keyword queries if we have meaningful keywords
-    const hasNameKw = keywords.name.length > 0;
-    const hasPositionKw = keywords.current_position.length > 0;
-    const hasFlemishKw = keywords.flemish_connection.length > 0;
-    const hasBioKw = keywords.bio.length > 0;
+    if (chunkResponse.error) {
+      throw chunkResponse.error;
+    }
 
-    if (hasNameKw || hasPositionKw || hasFlemishKw || hasBioKw) {
-      const orClauses: string[] = [];
-      for (const kw of keywords.name) {
-        orClauses.push(`name.ilike.%${kw}%`);
-      }
-      for (const kw of keywords.current_position) {
-        orClauses.push(`current_position.ilike.%${kw}%`);
-      }
-      for (const kw of keywords.bio.slice(0, 3)) {
-        orClauses.push(`bio.ilike.%${kw}%`);
-      }
+    const lexicalMatches = lexicalResponse.data || [];
+    const vectorMatches = vectorResponse.data || [];
+    const chunkMatches = chunkResponse.data || [];
 
-      if (orClauses.length > 0) {
-        const { data: kwMatches } = await supabase
+    const lexicalByPerson = new Map<string, LexicalCandidateRow>();
+    const lexicalRanks = new Map<string, number>();
+    lexicalMatches.forEach((candidate, index) => {
+      lexicalByPerson.set(candidate.person_id, candidate);
+      lexicalRanks.set(candidate.person_id, index + 1);
+    });
+
+    const vectorByPerson = new Map<string, VectorCandidateRow>();
+    const vectorRanks = new Map<string, number>();
+    vectorMatches.forEach((candidate, index) => {
+      vectorByPerson.set(candidate.id, candidate);
+      vectorRanks.set(candidate.id, index + 1);
+    });
+
+    const chunkByPerson = new Map<string, ChunkCandidateRow>();
+    const chunkRanks = new Map<string, number>();
+    chunkMatches.forEach((candidate, index) => {
+      const existing = chunkByPerson.get(candidate.person_id);
+      if (!existing || candidate.similarity > existing.similarity) {
+        chunkByPerson.set(candidate.person_id, candidate);
+      }
+      if (!chunkRanks.has(candidate.person_id)) {
+        chunkRanks.set(candidate.person_id, index + 1);
+      }
+    });
+
+    const candidateIds = Array.from(
+      new Set([
+        ...lexicalByPerson.keys(),
+        ...vectorByPerson.keys(),
+        ...chunkByPerson.keys(),
+      ])
+    );
+
+    if (candidateIds.length === 0) {
+      return new Response(
+        JSON.stringify({
+          results: [],
+          keywords,
+          route,
+          degraded: !queryEmbedding,
+          diagnostics: {
+            lexical_candidates: 0,
+            vector_candidates: 0,
+            chunk_candidates: 0,
+            fused_candidates: 0,
+          },
+          message: "No matching profiles found.",
+          total_with_embeddings: 0,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const [peopleResponse, documentsResponse, embeddingCountResponse] =
+      await Promise.all([
+        supabase
           .from("people")
-          .select("id")
-          .or(orClauses.join(","))
-          .limit(50);
-
-        if (kwMatches) {
-          for (const m of kwMatches) {
-            keywordCandidateIds.add(m.id);
-          }
-        }
-      }
-
-      if (hasFlemishKw) {
-        const { data: connectionMatches } = await supabase
-          .from("flemish_connections")
-          .select("id")
-          .or(
-            keywords.flemish_connection
-              .map((kw) => `name.ilike.%${kw}%`)
-              .join(",")
+          .select(
+            "id, name, first_name, last_name, title, current_position, bio, occupation, profile_photo_url, email, linkedin_url, last_verified_at, location_id, locations(city, state)"
           )
-          .limit(50);
+          .in("id", candidateIds),
+        supabase
+          .from("people_search_documents")
+          .select(
+            "person_id, current_position, occupation, bio, flemish_connection_names, sector_names, location_text"
+          )
+          .in("person_id", candidateIds),
+        supabase
+          .from("people")
+          .select("id", { count: "exact", head: true })
+          .not("embedding", "is", null),
+      ]);
 
-        const connectionIds = (connectionMatches || []).map(
-          (row: { id: string }) => row.id
-        );
-
-        if (connectionIds.length > 0) {
-          const { data: personLinks } = await supabase
-            .from("person_flemish_connections")
-            .select("person_id")
-            .in("flemish_connection_id", connectionIds);
-
-          for (const link of personLinks || []) {
-            keywordCandidateIds.add(link.person_id);
-          }
-        }
-      }
+    if (peopleResponse.error) {
+      throw peopleResponse.error;
     }
 
-    // Merge candidate IDs
-    const allCandidateIds = new Set([
-      ...embeddingCandidates.keys(),
-      ...keywordCandidateIds,
-    ]);
-
-    if (allCandidateIds.size === 0) {
-      return new Response(
-        JSON.stringify({
-          results: [],
-          keywords,
-          message: "No matching profiles found.",
-          total_with_embeddings: 0,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    if (documentsResponse.error) {
+      throw documentsResponse.error;
     }
 
-    // Step 4: Fetch full person data for all candidates
-    const candidateIdArray = Array.from(allCandidateIds);
-    const { data: people } = await supabase
-      .from("people")
-      .select("*, locations(*), person_flemish_connections(flemish_connections(name))")
-      .in("id", candidateIdArray);
-
-    if (!people || people.length === 0) {
-      return new Response(
-        JSON.stringify({
-          results: [],
-          keywords,
-          message: "No matching profiles found.",
-          total_with_embeddings: 0,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+    if (embeddingCountResponse.error) {
+      throw embeddingCountResponse.error;
     }
 
-    // Also fetch sector names for keyword scoring
-    const { data: sectorRows } = await supabase
-      .from("person_sectors")
-      .select("person_id, sectors(name)")
-      .in("person_id", candidateIdArray);
-
-    const sectorsByPerson = new Map<string, string>();
-    if (sectorRows) {
-      for (const row of sectorRows) {
-        const existing = sectorsByPerson.get(row.person_id) || "";
-        const sectorName =
-          (row.sectors as unknown as { name: string })?.name || "";
-        if (sectorName) {
-          sectorsByPerson.set(
-            row.person_id,
-            existing ? `${existing}, ${sectorName}` : sectorName
-          );
-        }
-      }
-    }
-
-    // Step 5: Score each candidate with hybrid scoring
-    const scored: {
-      person: Record<string, unknown>;
-      keywordScore: number;
-      embeddingScore: number;
-      combinedScore: number;
-      snippet: string;
-    }[] = [];
-
-    for (const person of people) {
-      // Prepare flat record for keyword scoring
-      const flat: Record<string, unknown> = {
-        ...person,
-        location_city: person.locations?.city || "",
-        location_state: person.locations?.state || "",
-        sectors_text: sectorsByPerson.get(person.id) || "",
-        flemish_connection: buildFlemishConnectionText(
-          person.person_flemish_connections as FlemishConnectionLinkRow[] | undefined
-        ),
-      };
-
-      const keywordScore = scoreAgainstKeywords(flat, keywords);
-      const embeddingScore =
-        embeddingCandidates.get(person.id)?.similarity || 0;
-
-      // Hybrid: 0.4 * keyword + 0.6 * embedding
-      // If no embedding for this person, fall back to keyword only
-      const hasEmbedding = embeddingCandidates.has(person.id);
-      const combinedScore = hasEmbedding
-        ? KEYWORD_WEIGHT * keywordScore + EMBEDDING_WEIGHT * embeddingScore
-        : keywordScore;
-
-      // Filter: require at least some relevance
-      if (combinedScore < 0.05) continue;
-
-      const snippet = generateSnippet(flat, keywords);
-      scored.push({ person, keywordScore, embeddingScore, combinedScore, snippet });
-    }
-
-    // Sort by combined score descending
-    scored.sort((a, b) => b.combinedScore - a.combinedScore);
-
-    // Take top N
-    const topResults = scored.slice(0, limit);
-
-    // Step 6: Build response
-    const results: SearchResultItem[] = topResults.map((s) => ({
-      id: s.person.id as string,
-      name: s.person.name as string,
-      first_name: s.person.first_name as string | null,
-      last_name: s.person.last_name as string | null,
-      title: s.person.title as string | null,
-      current_position: s.person.current_position as string | null,
-      bio: s.person.bio as string | null,
-      occupation: s.person.occupation as string | null,
-      flemish_connection: buildFlemishConnectionText(
-        s.person.person_flemish_connections as FlemishConnectionLinkRow[] | undefined
-      ) || null,
-      profile_photo_url: s.person.profile_photo_url as string | null,
-      email: s.person.email as string | null,
-      linkedin_url: s.person.linkedin_url as string | null,
-      last_verified_at: s.person.last_verified_at as string | null,
-      available_for_lectures: s.person.available_for_lectures as boolean | null,
-      location_id: s.person.location_id as string | null,
-      locations: s.person.locations as { city: string; state: string } | null,
-      score: Math.round(s.combinedScore * 1000) / 1000,
-      snippet: s.snippet,
+    const people = ((peopleResponse.data || []) as unknown as PersonQueryRow[]).map((person) => ({
+      ...person,
+      locations: normalizeLocationRelation(person.locations),
     }));
+    const documents = (documentsResponse.data || []) as SearchDocumentRow[];
 
-    // Count people with embeddings for diagnostics
-    const { count: embeddingCount } = await supabase
-      .from("people")
-      .select("id", { count: "exact", head: true })
-      .not("embedding", "is", null);
+    const peopleById = new Map<string, PersonRow>();
+    for (const person of people) {
+      peopleById.set(person.id, person);
+    }
+
+    const documentsByPerson = new Map<string, SearchDocumentRow>();
+    for (const document of documents) {
+      documentsByPerson.set(document.person_id, document);
+    }
+
+    const searchTerms = buildSearchTerms(query, keywords);
+    const scored = candidateIds
+      .map((personId) => {
+        const person = peopleById.get(personId);
+        if (!person) return null;
+
+        const lexical = lexicalByPerson.get(personId);
+        const vector = vectorByPerson.get(personId);
+        const bestChunk = chunkByPerson.get(personId);
+        const lexicalRank = lexicalRanks.get(personId);
+        const vectorRank = vectorRanks.get(personId);
+        const chunkRank = chunkRanks.get(personId);
+        const lexicalSignal = clampScore(lexical?.lexical_score);
+        const vectorSignal = clampScore(vector?.similarity);
+        const chunkSignal = clampScore(bestChunk?.similarity);
+        const exactBoost = lexical?.exact_name_match ? config.exactBoost : 0;
+        const nameBoost = lexical
+          ? config.nameBoost * clampScore((lexical.name_score || 0) / 1.2)
+          : 0;
+        const fieldBoost = getFieldBoost(route, lexical?.match_field || null);
+
+        const fusedScore =
+          config.lexicalWeight * reciprocalRank(lexicalRank) +
+          config.vectorWeight * reciprocalRank(vectorRank) +
+          0.5 * config.vectorWeight * reciprocalRank(chunkRank) +
+          config.lexicalSignalWeight * lexicalSignal +
+          config.vectorSignalWeight * vectorSignal +
+          0.08 * chunkSignal +
+          exactBoost +
+          nameBoost +
+          fieldBoost;
+
+        if (fusedScore < config.minimumScore) {
+          return null;
+        }
+
+        const document =
+          documentsByPerson.get(personId) || buildFallbackDocument(person);
+        const hint: LexicalMatchHint | undefined = lexical
+          ? {
+              match_field: lexical.match_field,
+              match_text: lexical.match_text,
+            }
+          : undefined;
+        const lexicalSnippet = pickSearchSnippet(document, searchTerms, query, hint);
+        const snippet = bestChunk?.chunk_text &&
+            (!lexical || bestChunk.similarity >= vectorSignal || !lexicalSnippet)
+          ? truncateSnippet(bestChunk.chunk_text)
+          : lexicalSnippet;
+
+        return {
+          person,
+          document,
+          fusedScore,
+          snippet,
+        };
+      })
+      .filter((value): value is NonNullable<typeof value> => Boolean(value))
+      .sort((a, b) => b.fusedScore - a.fusedScore)
+      .slice(0, limit);
+
+    const results: SearchResultItem[] = scored.map(({ person, document, fusedScore, snippet }) => ({
+      id: person.id,
+      name: person.name,
+      first_name: person.first_name,
+      last_name: person.last_name,
+      title: person.title,
+      current_position: person.current_position,
+      bio: person.bio,
+      occupation: person.occupation,
+      flemish_connection: document.flemish_connection_names || null,
+      profile_photo_url: person.profile_photo_url,
+      email: person.email,
+      linkedin_url: person.linkedin_url,
+      last_verified_at: person.last_verified_at,
+      available_for_lectures: null,
+      location_id: person.location_id,
+      locations: person.locations,
+      score: Math.round(fusedScore * 1000) / 1000,
+      snippet,
+    }));
 
     return new Response(
       JSON.stringify({
         results,
         keywords,
-        message: `Found ${results.length} relevant people using hybrid search.`,
-        total_with_embeddings: embeddingCount || 0,
+        route,
+        degraded: !queryEmbedding,
+        diagnostics: {
+          lexical_candidates: lexicalMatches.length,
+          vector_candidates: vectorMatches.length,
+          chunk_candidates: chunkMatches.length,
+          fused_candidates: candidateIds.length,
+        },
+        message: `Found ${results.length} relevant people using ${routeLabel(route)}.`,
+        total_with_embeddings: embeddingCountResponse.count || 0,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

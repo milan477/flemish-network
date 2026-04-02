@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseAdminClient } from "./database.types.ts";
 
 export interface WebSearchResult {
   title: string;
@@ -14,12 +14,36 @@ export interface WebSearchResponse {
   quota_exhausted: boolean;
 }
 
+function coerceCachedResults(value: unknown): WebSearchResult[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.title !== "string" ||
+      typeof record.content !== "string" ||
+      typeof record.url !== "string"
+    ) {
+      return [];
+    }
+
+    return [{
+      title: record.title,
+      content: record.content,
+      url: record.url,
+      raw_content: typeof record.raw_content === "string" ? record.raw_content : undefined,
+    }];
+  });
+}
+
 /**
  * Shared web search module with Tavily/Brave cascading, quota tracking, and 30-day caching.
  */
 export async function searchWeb(
   query: string,
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAdminClient,
   options?: { skipCache?: boolean }
 ): Promise<WebSearchResponse> {
   const tavilyKey = Deno.env.get("TAVILY_API_KEY");
@@ -47,7 +71,7 @@ export async function searchWeb(
 
     if (cached) {
       return {
-        results: cached.results as WebSearchResult[],
+        results: coerceCachedResults(cached.results),
         provider: cached.provider,
         cached: true,
         quota_exhausted: false,
@@ -186,7 +210,7 @@ async function callBrave(
 }
 
 async function getOrCreateQuota(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAdminClient,
   provider: string,
   month: string,
   defaultLimit: number
@@ -214,7 +238,7 @@ async function getOrCreateQuota(
 }
 
 async function incrementQuota(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAdminClient,
   provider: string,
   month: string
 ): Promise<void> {
@@ -223,7 +247,7 @@ async function incrementQuota(
 }
 
 async function cacheResults(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAdminClient,
   queryHash: string,
   queryText: string,
   provider: string,
@@ -248,12 +272,17 @@ async function cacheResults(
  */
 export function formatResultsForLLM(results: WebSearchResult[]): string {
   return results
-    .map((r) => {
-      // Prefer raw_content (full page text) over snippet, truncate to 2000 chars per result
+    .map((r, index) => {
+      // Prefer raw_content (full page text) over snippet, truncate to keep the prompt bounded.
       const body = r.raw_content && r.raw_content.length > r.content.length
-        ? r.raw_content.slice(0, 2000)
+        ? r.raw_content.slice(0, 1600)
         : r.content;
-      return `Source: ${r.url}\nTitle: ${r.title}\nContent: ${body}`;
+      return [
+        `Result ${index + 1}`,
+        `URL: ${r.url}`,
+        `Title: ${r.title}`,
+        `Content: ${body}`,
+      ].join("\n");
     })
     .join("\n\n---\n\n");
 }

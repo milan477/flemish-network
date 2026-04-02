@@ -12,6 +12,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import DiscoveryPlanningPanel from './DiscoveryPlanningPanel';
 
 interface AgentRun {
   id: string;
@@ -178,12 +179,22 @@ export default function AgentDashboard() {
     if (!run.results) return '—';
     const r = run.results;
     const parts: string[] = [];
+    if (typeof r.frontier_claimed === 'number') parts.push(`${r.frontier_claimed} claimed`);
+    if (typeof r.pages_fetched === 'number') parts.push(`${r.pages_fetched} pages`);
     if (typeof r.profiles_found === 'number') parts.push(`${r.profiles_found} found`);
     if (typeof r.suggestions_created === 'number') parts.push(`${r.suggestions_created} suggestions`);
+    if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) parts.push(`${r.suggestions_merged} merged`);
     if (typeof r.profiles_checked === 'number') parts.push(`${r.profiles_checked} checked`);
     if (typeof r.profiles_verified === 'number') parts.push(`${r.profiles_verified} verified`);
     if (typeof r.connections_found === 'number') parts.push(`${r.connections_found} connections`);
     if (typeof r.new_connections_created === 'number') parts.push(`${r.new_connections_created} new`);
+    if (typeof r.connection_suggestions_upserted === 'number' && r.connection_suggestions_upserted > 0) {
+      parts.push(`${r.connection_suggestions_upserted} affinities`);
+    }
+    if (typeof r.child_links_queued === 'number' && r.child_links_queued > 0) parts.push(`${r.child_links_queued} queued`);
+    if (typeof r.sitemap_urls_seeded === 'number' && r.sitemap_urls_seeded > 0) parts.push(`${r.sitemap_urls_seeded} sitemap`);
+    if (typeof r.rss_urls_seeded === 'number' && r.rss_urls_seeded > 0) parts.push(`${r.rss_urls_seeded} rss`);
+    if (Array.isArray(r.entity_pivots_used) && r.entity_pivots_used.length > 0) parts.push(`${r.entity_pivots_used.length} pivots`);
     if (typeof r.duplicates_skipped === 'number' && r.duplicates_skipped > 0) parts.push(`${r.duplicates_skipped} dupes`);
     return parts.length > 0 ? parts.join(', ') : '—';
   };
@@ -277,8 +288,8 @@ export default function AgentDashboard() {
         </div>
         {showQueryInput && (
           <p className="mt-3 text-xs text-gray-500">
-            Leave the query blank to run a seeded discovery sweep across Flemish institutions,
-            fellowships, and companies. Add a query to focus the run on a specific topic or group.
+            Leave the query blank to run a seeded discovery sweep across source packs and proven
+            entity pivots. Add a query to focus the run on a specific topic, group, or metro.
           </p>
         )}
       </div>
@@ -338,6 +349,11 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      <DiscoveryPlanningPanel
+        onRunDiscovery={(query) => triggerAgent('discovery', query ? { query } : {})}
+        isRunning={triggerLoading === 'discovery'}
+      />
 
       {/* Run History Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -503,6 +519,8 @@ const STEP_LABELS: Record<string, string> = {
   cross_dedup: 'Cross-Channel Dedup',
   db_dedup: 'Database Dedup',
   insert: 'Insert Contacts',
+  discovery_plan: 'Discovery Plan',
+  frontier_claim: 'Claim Frontier',
 };
 
 const STEP_STATUS_STYLE: Record<string, string> = {
@@ -600,6 +618,22 @@ function RunStepsDetail({
 
 function renderStepSummary(step: StepLog): string {
   const d = step.detail;
+  if (step.step.startsWith('seed_search_')) {
+    return `${d.provider || 'none'} · ${d.seeded_count || 0} seeded`;
+  }
+  if (step.step.startsWith('page_classification_')) {
+    return `${d.page_type || 'unknown'} · ${d.method || 'heuristic'} · ${d.confidence || 0}`;
+  }
+  if (step.step.startsWith('page_extraction_')) {
+    return `${d.extracted_candidates || 0} extracted · ${d.inserted_contacts || 0} inserted · ${d.child_links_queued || 0} queued`;
+  }
+  if (step.step.startsWith('domain_harvest_')) {
+    return `${d.sitemap_seeded || 0} sitemap · ${d.rss_seeded || 0} rss`;
+  }
+  if (step.step.startsWith('linkedin_enrichment_')) {
+    return d.matched ? 'match found' : 'no confident match';
+  }
+
   switch (step.step) {
     case 'web_search':
       return `${d.provider} · ${d.results_count} results${d.cached ? ' (cached)' : ''}`;
@@ -615,6 +649,10 @@ function renderStepSummary(step: StepLog): string {
       return `${d.duplicates_found} dupes · ${d.new_contacts} new`;
     case 'insert':
       return `${d.inserted}/${d.attempted} inserted`;
+    case 'discovery_plan':
+      return `${d.queued_frontier_before || 0} queued · ${d.seed_queries ? (d.seed_queries as unknown[]).length : 0} searches`;
+    case 'frontier_claim':
+      return `${d.claimed_count || 0} claimed`;
     default:
       return '';
   }

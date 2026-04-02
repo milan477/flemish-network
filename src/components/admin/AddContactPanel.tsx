@@ -29,7 +29,7 @@ import {
   getPersonFlemishConnectionNames,
 } from '../../lib/flemishConnections';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
-import { generateEmbedding } from '../../lib/aiService';
+import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
 import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
@@ -466,8 +466,7 @@ function ManualAddForm({
       return;
     }
 
-    // Fire-and-forget embedding generation for the new contact
-    generateEmbedding(person.id);
+    kickEmbeddingWorker();
 
     setSaving(false);
     setSuccess(true);

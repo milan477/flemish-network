@@ -10,6 +10,7 @@ import OccupationOverview, {
   classifyPerson,
 } from './OccupationOverview';
 import StaleContactsBar from './StaleContactsBar';
+import DerivedLabelsPanel from './DerivedLabelsPanel';
 import SuggestedChanges, { type ProfileSuggestion } from './SuggestedChanges';
 import InteractiveBarChart, {
   type InteractiveBarChartItem,
@@ -28,11 +29,13 @@ import {
   type FreshnessTier,
   type PersonSectorRow,
 } from './interactiveStatsShared';
+import type { DerivedLabelSuggestion } from '../../lib/derivedLabels';
 
 interface InteractiveStatsOverviewProps {
   people: Person[];
   orgCount: number;
   suggestions: ProfileSuggestion[];
+  derivedLabels: DerivedLabelSuggestion[];
   personSectors: PersonSectorRow[];
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
   onReloadData: () => Promise<void>;
@@ -227,6 +230,7 @@ export default function InteractiveStatsOverview({
   people,
   orgCount,
   suggestions,
+  derivedLabels,
   personSectors,
   onNavigate,
   onReloadData,
@@ -780,6 +784,18 @@ export default function InteractiveStatsOverview({
               <SuggestedChanges
                 suggestions={suggestions.filter((suggestion) =>
                   filteredPeopleIds.has(suggestion.person_id)
+                )}
+                onRefresh={onSuggestionsRefresh}
+              />
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-100">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">
+                Derived Labels
+              </h3>
+              <DerivedLabelsPanel
+                labels={derivedLabels.filter((label) =>
+                  label.person_id ? filteredPeopleIds.has(label.person_id) : false
                 )}
                 onRefresh={onSuggestionsRefresh}
               />
