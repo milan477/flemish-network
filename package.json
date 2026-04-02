@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "benchmark:search": "tsx scripts/benchmark_search.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
@@ -20,6 +21,7 @@
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
     "react-leaflet-cluster": "^3.0.0",
+    "react-router-dom": "^6.30.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -66,7 +66,7 @@ export async function parseContacts(
   return result;
 }
 
-export interface SearchedContact {
+export interface DiscoveredWebContact {
   name: string;
   bio: string;
   occupation: string;
@@ -85,33 +85,37 @@ export interface SearchedContact {
   existing_person_id: string;
 }
 
-export interface SearchContactsResult {
+export type SearchedContact = DiscoveredWebContact;
+
+export interface DiscoverContactsResult {
   message: string;
-  contacts: SearchedContact[];
+  contacts: DiscoveredWebContact[];
 }
 
-export async function searchContacts(
+export async function discoverContacts(
   query: string
-): Promise<SearchContactsResult> {
-  const { data, error } = await supabase.functions.invoke('search-contacts', {
+): Promise<DiscoverContactsResult> {
+  const { data, error } = await supabase.functions.invoke('discover-contacts', {
     body: { query },
   });
 
   if (error) {
-    throw new Error(`Search request failed: ${error.message}`);
+    throw new Error(`Discovery request failed: ${error.message}`);
   }
 
-  const result = data as SearchContactsResult;
+  const result = data as DiscoverContactsResult;
 
   if (!result || (!result.message && !result.contacts)) {
-    throw new Error('Invalid search response');
+    throw new Error('Invalid discovery response');
   }
 
   return {
-    message: result.message || 'Search complete.',
+    message: result.message || 'Discovery complete.',
     contacts: Array.isArray(result.contacts) ? result.contacts : [],
   };
 }
+
+export const searchContacts = discoverContacts;
 
 export interface SmartSearchKeywords {
   name: string[];
@@ -247,13 +251,6 @@ export async function flemishSearch(
   return result;
 }
 
-/** Fire-and-forget: trigger embedding generation for a person */
-export function generateEmbedding(personId: string): void {
-  supabase.functions.invoke('generate-embeddings', {
-    body: { personId },
-  }).catch(() => {/* fire-and-forget */});
-}
-
 export interface SuggestPeopleResult {
   id: string;
   name: string;
@@ -346,12 +343,18 @@ export interface HybridSearchResponse {
   keywords: SmartSearchKeywords;
   message: string;
   total_with_embeddings: number;
+  route?: 'direct_lookup' | 'faceted' | 'exploratory';
+  degraded?: boolean;
+  diagnostics?: {
+    lexical_candidates: number;
+    vector_candidates: number;
+    fused_candidates: number;
+  };
 }
 
 /**
- * Server-side hybrid search combining keyword scoring (0.4) + embedding similarity (0.6).
- * Replaces the old pattern of fetching all people and scoring client-side.
- * Falls back to client-side scoring if the edge function fails.
+ * Server-side routed hybrid search using lexical retrieval + vector fusion.
+ * Falls back to a degraded client-side path only if the edge function fails.
  */
 export async function hybridSearch(
   query: string,
@@ -375,7 +378,13 @@ export async function hybridSearch(
       .limit(200);
 
     if (!people) {
-      return { results: [], keywords: res.keywords, message: res.message, total_with_embeddings: 0 };
+      return {
+        results: [],
+        keywords: res.keywords,
+        message: 'Search is running in degraded fallback mode and returned no matches.',
+        total_with_embeddings: 0,
+        degraded: true,
+      };
     }
 
     const scored = (people as Person[])
@@ -413,7 +422,13 @@ export async function hybridSearch(
       snippet: '',
     }));
 
-    return { results, keywords: res.keywords, message: res.message, total_with_embeddings: 0 };
+    return {
+      results,
+      keywords: res.keywords,
+      message: 'Search is running in degraded fallback mode; results are limited to the first 200 profiles.',
+      total_with_embeddings: 0,
+      degraded: true,
+    };
   }
 }
 

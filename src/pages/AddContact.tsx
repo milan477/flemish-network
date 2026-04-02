@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { supabase, type Sector } from '../lib/supabase';
 import AddContactPanel from '../components/admin/AddContactPanel';
+import { getLastDashboardLocation } from '../lib/dashboardSession';
+import { useSmartBack } from '../lib/useSmartBack';
 
 interface AddContactProps {
   onNavigate: (page: string) => void;
 }
 
 export default function AddContact({ onNavigate }: AddContactProps) {
+  void onNavigate;
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
 
   useEffect(() => {
     supabase.from('sectors').select('*').then(({ data }) => {
@@ -19,7 +23,7 @@ export default function AddContact({ onNavigate }: AddContactProps) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <button
-        onClick={() => onNavigate('dashboard')}
+        onClick={goBack}
         className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Map as MapIcon, List, X, Search as SearchIcon } from 'lucide-react';
 import {
   supabase,
@@ -8,17 +9,19 @@ import {
   type MapCluster,
   type MapFilters,
   type FilterPreset,
-  type SearchCommand,
   type ActiveAiFilter,
   type FlemishConnection,
-  DEFAULT_MAP_FILTERS,
   OCCUPATION_CATEGORY_KEYWORDS,
 } from '../lib/supabase';
 import MapVisualization from '../components/MapVisualization';
 import DirectoryGrid from '../components/DirectoryGrid';
 import FilterPanel from '../components/FilterPanel';
 import UnifiedSearchBar from '../components/UnifiedSearchBar';
-import { lookupCity, ensureLocationsLoaded, addToCache } from '../lib/locations';
+import {
+  lookupCity,
+  ensureLocationsLoaded,
+  addToCache,
+} from '../lib/locations';
 import { geocodeBatch } from '../lib/geocoding';
 import { parseFiltersFromQuery } from '../lib/filterParser';
 import {
@@ -26,20 +29,23 @@ import {
   hybridSearch,
   type HybridSearchResultItem,
 } from '../lib/aiService';
+import {
+  type DashboardViewMode,
+  type DashboardRouteState,
+  buildDashboardSearchParams,
+  parseDashboardRouteState,
+} from '../lib/appRouting';
+import {
+  getCachedDashboardSearch,
+  setCachedDashboardSearch,
+  setLastDashboardLocation,
+} from '../lib/dashboardSession';
 
 interface DashboardProps {
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
-  filterPreset: FilterPreset | null;
-  onConsumePreset: () => void;
-  searchCommand: SearchCommand | null;
-  onConsumeSearchCommand: () => void;
-  onSearchingChange: (searching: boolean) => void;
-  onClearSearchInput: () => void;
 }
 
-type ViewMode = 'map' | 'list';
-
-// Snippets are now generated server-side by the search-people edge function.
+// Snippets are generated server-side by the search-people edge function.
 // This helper converts HybridSearchResultItem[] to Person-like objects for display.
 
 function buildClusters(
@@ -52,26 +58,26 @@ function buildClusters(
   if (filters.showPeople) {
     for (const person of people) {
       if (!person.locations?.city || !person.locations?.state) continue;
-      
-      // Try the global geocoding cache first - this is our "source of truth" for city positions
-      const coords = lookupCity(person.locations?.city, person.locations?.state);
-      
-      let lat = coords?.lat;
-      let lng = coords?.lng;
-      
-      // Only fall back to person's record if we have no cached city coordinates
+
+      // Try the global geocoding cache first - this is our source of truth for city positions.
+      const coords = lookupCity(person.locations.city, person.locations.state);
+
+      let lat: number | null | undefined = coords?.lat;
+      let lng: number | null | undefined = coords?.lng;
+
+      // Only fall back to the entity record if we have no cached city coordinates.
       if (lat == null || lng == null) {
-        lat = person.locations?.latitude;
-        lng = person.locations?.longitude;
+        lat = person.locations.latitude;
+        lng = person.locations.longitude;
       }
 
       if (lat == null || lng == null) continue;
 
-      const key = `${person.locations?.city}|${person.locations?.state}`;
+      const key = `${person.locations.city}|${person.locations.state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
-          city: person.locations?.city,
-          state: person.locations?.state,
+          city: person.locations.city,
+          state: person.locations.state,
           lat: Number(lat),
           lng: Number(lng),
           people: [],
@@ -83,166 +89,246 @@ function buildClusters(
   }
 
   if (filters.showOrganizations) {
-    for (const org of organizations) {
-      if (!org.locations?.city || !org.locations?.state) continue;
-      
-      const coords = lookupCity(org.locations?.city, org.locations?.state);
-      
-      let lat = coords?.lat;
-      let lng = coords?.lng;
-      
+    for (const organization of organizations) {
+      if (!organization.locations?.city || !organization.locations?.state) continue;
+
+      const coords = lookupCity(
+        organization.locations.city,
+        organization.locations.state
+      );
+
+      let lat: number | null | undefined = coords?.lat;
+      let lng: number | null | undefined = coords?.lng;
+
       if (lat == null || lng == null) {
-        lat = org.locations?.latitude;
-        lng = org.locations?.longitude;
+        lat = organization.locations.latitude;
+        lng = organization.locations.longitude;
       }
 
       if (lat == null || lng == null) continue;
 
-      const key = `${org.locations?.city}|${org.locations?.state}`;
+      const key = `${organization.locations.city}|${organization.locations.state}`;
       if (!clusterMap.has(key)) {
         clusterMap.set(key, {
-          city: org.locations?.city,
-          state: org.locations?.state,
+          city: organization.locations.city,
+          state: organization.locations.state,
           lat: Number(lat),
           lng: Number(lng),
           people: [],
           organizations: [],
         });
       }
-      clusterMap.get(key)!.organizations.push(org);
+      clusterMap.get(key)!.organizations.push(organization);
     }
   }
 
   return Array.from(clusterMap.values());
 }
 
-export default function Dashboard({
-  onNavigate,
-  filterPreset,
-  onConsumePreset,
-  searchCommand,
-  onConsumeSearchCommand,
-  onSearchingChange,
-  onClearSearchInput,
-}: DashboardProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('map');
-  const [filters, setFilters] = useState<MapFilters>({ ...DEFAULT_MAP_FILTERS });
+function matchesLocation(
+  entity: Pick<Person, 'locations'> | Pick<Organization, 'locations'>,
+  filters: Pick<MapFilters, 'city' | 'state'>
+): boolean {
+  if (!filters.city && !filters.state) return true;
+
+  const cityMatches = filters.city
+    ? entity.locations?.city === filters.city
+    : true;
+  const stateMatches = filters.state
+    ? entity.locations?.state === filters.state
+    : true;
+
+  return cityMatches && stateMatches;
+}
+
+function toSearchParams(state: DashboardRouteState): URLSearchParams {
+  return buildDashboardSearchParams(state);
+}
+
+export default function Dashboard({ onNavigate }: DashboardProps) {
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const routeState = useMemo(
+    () => parseDashboardRouteState(searchParams),
+    [searchParams]
+  );
+  const { view: viewMode, query: activeQuery, filters, focusedCity } = routeState;
+
   const [people, setPeople] = useState<Person[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [clusters, setClusters] = useState<MapCluster[]>([]);
   const [flemishOptions, setFlemishOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(true);
-  const [stats, setStats] = useState({ people: 0, organizations: 0, cities: 0 });
-  const [focusedCity, setFocusedCity] = useState<{ city: string; state: string } | null>(null);
+  const [stats, setStats] = useState({
+    people: 0,
+    organizations: 0,
+    cities: 0,
+  });
 
   const [nameMatches, setNameMatches] = useState<Person[]>([]);
   const [aiResults, setAiResults] = useState<Person[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
-  const [activeQuery, setActiveQuery] = useState('');
-
   const [snippets, setSnippets] = useState<Map<string, string>>(new Map());
   const [focusTrigger, setFocusTrigger] = useState(0);
-
   const [activeFilters, setActiveFilters] = useState<ActiveAiFilter[]>([]);
 
   const loadIdRef = useRef(0);
-  const lastSearchTimestamp = useRef(0);
+  const searchRequestIdRef = useRef(0);
+
+  const updateRouteState = useCallback(
+    (
+      updater: (current: DashboardRouteState) => DashboardRouteState,
+      options?: { replace?: boolean }
+    ) => {
+      const nextState = updater(routeState);
+      setSearchParams(toSearchParams(nextState), {
+        replace: options?.replace,
+      });
+    },
+    [routeState, setSearchParams]
+  );
+
+  const clearSearchResults = useCallback(() => {
+    setNameMatches([]);
+    setAiResults([]);
+    setSnippets(new Map());
+  }, []);
 
   const handleClearSearchQuery = useCallback(() => {
-    setActiveQuery('');
-    setNameMatches([]);
-    setAiResults([]);
-    setSnippets(new Map());
-    onClearSearchInput();
-  }, [onClearSearchInput]);
+    clearSearchResults();
+    updateRouteState((current) => ({
+      ...current,
+      query: '',
+    }));
+  }, [clearSearchResults, updateRouteState]);
 
-  const handleSearch = useCallback(async (query: string) => {
-    if (!query) {
-      handleClearSearchQuery();
-      return;
-    }
+  const runSearch = useCallback(
+    async (query: string) => {
+      const requestId = ++searchRequestIdRef.current;
+      const cached = getCachedDashboardSearch(query);
 
-    // Direct navigation if from autocomplete
-    if (query.startsWith('id:')) {
-      const [, id, type] = query.split(':');
-      onNavigate(type, id);
-      return;
-    }
-
-    setActiveQuery(query);
-    setViewMode('list');
-    setNameMatches([]);
-    setAiResults([]);
-    setSnippets(new Map());
-
-    const words = query.trim().split(/\s+/);
-    const isDirectSearch = words.length <= 4;
-
-    setAiLoading(true);
-    onSearchingChange(true);
-
-    try {
-      // Run name matching and hybrid search in parallel
-      const nameMatchPromise = isDirectSearch
-        ? (async () => {
-            const searchTerms = query.toLowerCase().replace(/^dr\.?\s+/, '').split(' ');
-            const mainTerm = searchTerms[searchTerms.length - 1];
-            const { data } = await supabase
-              .from('people')
-              .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
-              .or(`name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`)
-              .limit(20);
-            return (data as Person[]) || [];
-          })()
-        : Promise.resolve([]);
-
-      const hybridPromise = hybridSearch(query);
-
-      const [nameResults, hybridResult] = await Promise.all([nameMatchPromise, hybridPromise]);
-
-      setNameMatches(nameResults);
-
-      // Apply deterministic filters from query
-      const parsed = parseFiltersFromQuery(query, filters);
-      setFilters(parsed.filters);
-
-      // Convert hybrid results to Person-like objects for display
-      const aiPeople = hybridResult.results.map((r: HybridSearchResultItem) => ({
-        ...r,
-        // Ensure the shape matches what PersonCard expects
-      } as unknown as Person));
-
-      setAiResults(aiPeople);
-
-      // Set snippets from server-side results
-      const newSnippets = new Map<string, string>();
-      for (const r of hybridResult.results) {
-        if (r.snippet) newSnippets.set(r.id, r.snippet);
+      if (cached) {
+        setNameMatches(cached.nameMatches);
+        setAiResults(cached.aiResults);
+        setSnippets(new Map(cached.snippets));
+        setAiLoading(false);
+        return;
       }
-      setSnippets(newSnippets);
-    } catch {
-      // search failed
-    } finally {
-      setAiLoading(false);
-      onSearchingChange(false);
-    }
-  }, [filters, onSearchingChange, handleClearSearchQuery]);
+
+      clearSearchResults();
+
+      const words = query.trim().split(/\s+/);
+      const isDirectSearch = words.length <= 4;
+
+      setAiLoading(true);
+
+      try {
+        const nameMatchPromise = isDirectSearch
+          ? (async () => {
+              const searchTerms = query
+                .toLowerCase()
+                .replace(/^dr\.?\s+/, '')
+                .split(' ');
+              const mainTerm = searchTerms[searchTerms.length - 1];
+              const { data } = await supabase
+                .from('people')
+                .select(
+                  '*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+                )
+                .or(
+                  `name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`
+                )
+                .limit(20);
+              return (data as Person[]) || [];
+            })()
+          : Promise.resolve([]);
+
+        const hybridPromise = hybridSearch(query);
+        const [nameResults, hybridResult] = await Promise.all([
+          nameMatchPromise,
+          hybridPromise,
+        ]);
+
+        if (requestId !== searchRequestIdRef.current) return;
+
+        const nameResultIds = new Set(nameResults.map((person) => person.id));
+        const fusedResults = hybridResult.results.filter(
+          (result) => !nameResultIds.has(result.id)
+        );
+        const aiPeople = fusedResults.map(
+          (result: HybridSearchResultItem) => result as unknown as Person
+        );
+        const nextSnippets = new Map<string, string>();
+
+        for (const result of fusedResults) {
+          if (result.snippet) nextSnippets.set(result.id, result.snippet);
+        }
+
+        setNameMatches(nameResults);
+        setAiResults(aiPeople);
+        setSnippets(nextSnippets);
+
+        setCachedDashboardSearch({
+          query,
+          nameMatches: nameResults,
+          aiResults: aiPeople,
+          snippets: Array.from(nextSnippets.entries()),
+        });
+      } catch {
+        if (requestId !== searchRequestIdRef.current) return;
+        clearSearchResults();
+      } finally {
+        if (requestId === searchRequestIdRef.current) {
+          setAiLoading(false);
+        }
+      }
+    },
+    [clearSearchResults]
+  );
+
+  const handleSearch = useCallback(
+    (query: string) => {
+      if (!query) {
+        handleClearSearchQuery();
+        return;
+      }
+
+      if (query.startsWith('id:')) {
+        const [, id, type] = query.split(':');
+        onNavigate(type, id);
+        return;
+      }
+
+      const parsed = parseFiltersFromQuery(query, filters);
+      clearSearchResults();
+
+      updateRouteState((current) => ({
+        ...current,
+        query: query.trim(),
+        view: 'list',
+        filters: parsed.filters,
+        focusedCity: null,
+      }));
+    },
+    [clearSearchResults, filters, handleClearSearchQuery, onNavigate, updateRouteState]
+  );
 
   const loadData = useCallback(
-    async (currentFilters: MapFilters, activeAiFilters: ActiveAiFilter[]) => {
+    async (currentFilters: MapFilters, currentQuery: string, aiFilters: ActiveAiFilter[]) => {
       const thisId = ++loadIdRef.current;
       setLoading(true);
-      setFocusedCity(null);
       await ensureLocationsLoaded();
 
       let peopleData: Person[] = [];
       let orgsData: Organization[] = [];
 
       if (currentFilters.showPeople) {
-        let q = supabase
+        let query = supabase
           .from('people')
-          .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))');
+          .select(
+            '*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+          );
 
         if (currentFilters.sector) {
           const { data: sectorRows } = await supabase
@@ -256,21 +342,25 @@ export default function Dashboard({
               .from('person_sectors')
               .select('person_id')
               .eq('sector_id', sectorRows.id);
-            const ids = personIds?.map((r) => r.person_id) || [];
-            if (ids.length > 0) {
-              q = q.in('id', ids);
-            } else {
-              q = q.eq('id', '00000000-0000-0000-0000-000000000000');
-            }
+            const ids = personIds?.map((row) => row.person_id) || [];
+            query =
+              ids.length > 0
+                ? query.in('id', ids)
+                : query.eq('id', '00000000-0000-0000-0000-000000000000');
           } else {
-            q = q.eq('id', '00000000-0000-0000-0000-000000000000');
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
           }
         }
 
         if (currentFilters.occupation) {
-          const catKeywords = OCCUPATION_CATEGORY_KEYWORDS[currentFilters.occupation];
-          if (catKeywords && catKeywords.length > 0) {
-            q = q.or(catKeywords.map((kw) => `occupation.ilike.%${kw}%`).join(','));
+          const categoryKeywords =
+            OCCUPATION_CATEGORY_KEYWORDS[currentFilters.occupation];
+          if (categoryKeywords && categoryKeywords.length > 0) {
+            query = query.or(
+              categoryKeywords
+                .map((keyword) => `occupation.ilike.%${keyword}%`)
+                .join(',')
+            );
           }
         }
 
@@ -291,84 +381,95 @@ export default function Dashboard({
               .in('flemish_connection_id', connectionIds);
 
             const personIds = Array.from(
-              new Set((matchedPeople || []).map((row: { person_id: string }) => row.person_id))
+              new Set(
+                (matchedPeople || []).map(
+                  (row: { person_id: string }) => row.person_id
+                )
+              )
             );
 
-            if (personIds.length > 0) {
-              q = q.in('id', personIds);
-            } else {
-              q = q.eq('id', '00000000-0000-0000-0000-000000000000');
-            }
+            query =
+              personIds.length > 0
+                ? query.in('id', personIds)
+                : query.eq('id', '00000000-0000-0000-0000-000000000000');
           } else {
-            q = q.eq('id', '00000000-0000-0000-0000-000000000000');
+            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
           }
         }
 
         if (currentFilters.availableForLectures) {
-          q = q.eq('available_for_lectures', true);
+          query = query.eq('available_for_lectures', true);
         }
 
-        const { data } = await q;
-        peopleData = data || [];
+        const { data } = await query;
+        peopleData = (data || []).filter((person) =>
+          matchesLocation(person, currentFilters)
+        );
       }
 
       if (currentFilters.showOrganizations) {
-        const { data } = await supabase.from('organizations').select('*, locations(*)');
-        let rawOrgs = (data || []) as Organization[];
+        const { data } = await supabase
+          .from('organizations')
+          .select('*, locations(*)');
+        let rawOrganizations = (data || []) as Organization[];
 
-        // Apply text search if query exists
-        if (activeQuery) {
-          const q = activeQuery.toLowerCase();
-          rawOrgs = rawOrgs.filter(o => 
-            o.name.toLowerCase().includes(q) || 
-            (o.description && o.description.toLowerCase().includes(q)) ||
-            (o.type && o.type.toLowerCase().includes(q))
+        if (currentQuery) {
+          const normalizedQuery = currentQuery.toLowerCase();
+          rawOrganizations = rawOrganizations.filter(
+            (organization) =>
+              organization.name.toLowerCase().includes(normalizedQuery) ||
+              (organization.description &&
+                organization.description.toLowerCase().includes(normalizedQuery)) ||
+              (organization.type &&
+                organization.type.toLowerCase().includes(normalizedQuery))
           );
         }
 
         if (currentFilters.sector) {
-          rawOrgs = rawOrgs.filter(
-            (o) =>
-              fuzzyMatch(currentFilters.sector, o.type || '') ||
-              fuzzyMatch(currentFilters.sector, o.description || '')
+          rawOrganizations = rawOrganizations.filter(
+            (organization) =>
+              fuzzyMatch(currentFilters.sector, organization.type || '') ||
+              fuzzyMatch(currentFilters.sector, organization.description || '')
           );
         }
 
         if (currentFilters.occupation) {
-          rawOrgs = rawOrgs.filter(
-            (o) =>
-              fuzzyMatch(currentFilters.occupation, o.type || '') ||
-              fuzzyMatch(currentFilters.occupation, o.description || '')
+          rawOrganizations = rawOrganizations.filter(
+            (organization) =>
+              fuzzyMatch(currentFilters.occupation, organization.type || '') ||
+              fuzzyMatch(currentFilters.occupation, organization.description || '')
           );
         }
 
         if (currentFilters.flemishConnections.length > 0) {
-          rawOrgs = rawOrgs.filter((o) =>
+          rawOrganizations = rawOrganizations.filter((organization) =>
             currentFilters.flemishConnections.some(
-              (fc) =>
-                fuzzyMatch(fc, o.flemish_link || '') ||
-                fuzzyMatch(fc, o.name || '') ||
-                fuzzyMatch(fc, o.description || '')
+              (connection) =>
+                fuzzyMatch(connection, organization.flemish_link || '') ||
+                fuzzyMatch(connection, organization.name || '') ||
+                fuzzyMatch(connection, organization.description || '')
             )
           );
         }
 
         if (currentFilters.availableForLectures) {
-          rawOrgs = [];
+          rawOrganizations = [];
         }
 
-        orgsData = rawOrgs;
+        orgsData = rawOrganizations.filter((organization) =>
+          matchesLocation(organization, currentFilters)
+        );
       }
 
       if (thisId !== loadIdRef.current) return;
 
-      if (activeAiFilters.length > 0) {
-        peopleData = peopleData.filter((p) =>
-          activeAiFilters.every((af) =>
+      if (aiFilters.length > 0) {
+        peopleData = peopleData.filter((person) =>
+          aiFilters.every((filter) =>
             scorePersonAgainstFilter(
-              p as unknown as Record<string, unknown>,
-              af.keywords,
-              af.fields as readonly string[]
+              person as unknown as Record<string, unknown>,
+              filter.keywords,
+              filter.fields as readonly string[]
             )
           )
         );
@@ -380,7 +481,7 @@ export default function Dashboard({
       const builtClusters = buildClusters(peopleData, orgsData, currentFilters);
       setClusters(builtClusters);
 
-      const uniqueCities = new Set(builtClusters.map((c) => c.city));
+      const uniqueCities = new Set(builtClusters.map((cluster) => cluster.city));
       setStats({
         people: peopleData.length,
         organizations: orgsData.length,
@@ -390,66 +491,66 @@ export default function Dashboard({
       setLoading(false);
 
       const allEntities = [
-        ...peopleData.map((p) => ({
-          id: p.id,
-          table: 'people' as const,
-          city: p.locations?.city,
-          state: p.locations?.state,
-          lat: p.locations?.latitude,
-          lng: p.locations?.longitude,
+        ...peopleData.map((person) => ({
+          city: person.locations?.city,
+          state: person.locations?.state,
         })),
-        ...orgsData.map((o) => ({
-          id: o.id,
-          table: 'organizations' as const,
-          city: o.locations?.city,
-          state: o.locations?.state,
-          lat: o.locations?.latitude,
-          lng: o.locations?.longitude,
+        ...orgsData.map((organization) => ({
+          city: organization.locations?.city,
+          state: organization.locations?.state,
         })),
       ];
 
-      const needsGeocoding = allEntities.filter((e) => {
-        if (!e.city || !e.state) return false;
-        // If we have a cached location for this city, we're good.
-        // If not, we NEED to geocode it, even if the entity has coordinates (they might be stale).
-        return !lookupCity(e.city, e.state);
+      const needsGeocoding = allEntities.filter((entity) => {
+        if (!entity.city || !entity.state) return false;
+        return !lookupCity(entity.city, entity.state);
       });
 
-      if (needsGeocoding.length > 0) {
-        const uniquePairs = new window.Map<string, { city: string; state: string }>();
-        for (const e of needsGeocoding) {
-          const key = `${e.city},${e.state}`;
-          if (!uniquePairs.has(key)) uniquePairs.set(key, { city: e.city!, state: e.state! });
+      if (needsGeocoding.length === 0) return;
+
+      const uniquePairs = new window.Map<string, { city: string; state: string }>();
+      for (const entity of needsGeocoding) {
+        const key = `${entity.city},${entity.state}`;
+        if (!uniquePairs.has(key)) {
+          uniquePairs.set(key, {
+            city: entity.city!,
+            state: entity.state!,
+          });
         }
+      }
 
-        const geocoded = await geocodeBatch(Array.from(uniquePairs.values()));
+      const geocoded = await geocodeBatch(Array.from(uniquePairs.values()));
 
-        if (geocoded.size > 0 && thisId === loadIdRef.current) {
-          for (const [key, coords] of geocoded) {
-            const [c, s] = key.split(',');
-            addToCache(c, s, coords.lat, coords.lng);
-            
-            // Proactively save to DB so other users benefit
-            supabase.from('locations').upsert({
-              city: c,
-              state: s,
+      if (geocoded.size > 0 && thisId === loadIdRef.current) {
+        for (const [key, coords] of geocoded) {
+          const [city, state] = key.split(',');
+          addToCache(city, state, coords.lat, coords.lng);
+
+          supabase
+            .from('locations')
+            .upsert({
+              city,
+              state,
               latitude: coords.lat,
-              longitude: coords.lng
-            }).then();
-          }
-
-          // Force rebuild with new coordinates
-          const updatedClusters = buildClusters(peopleData, orgsData, currentFilters);
-          setClusters(updatedClusters);
-          setStats((prev) => ({
-            ...prev,
-            cities: new Set(updatedClusters.map((c) => c.city)).size,
-          }));
+              longitude: coords.lng,
+            })
+            .then();
         }
+
+        const updatedClusters = buildClusters(peopleData, orgsData, currentFilters);
+        setClusters(updatedClusters);
+        setStats((previous) => ({
+          ...previous,
+          cities: new Set(updatedClusters.map((cluster) => cluster.city)).size,
+        }));
       }
     },
     []
   );
+
+  useEffect(() => {
+    setLastDashboardLocation(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     supabase
@@ -465,75 +566,90 @@ export default function Dashboard({
   }, []);
 
   useEffect(() => {
-    loadData(filters, activeFilters);
-  }, [filters, activeFilters, loadData]);
+    loadData(filters, activeQuery, activeFilters);
+  }, [activeFilters, activeQuery, filters, loadData]);
 
   useEffect(() => {
-    if (!filterPreset) return;
-    const newFilters = { ...DEFAULT_MAP_FILTERS };
-    if (filterPreset.sector) newFilters.sector = filterPreset.sector;
-    if (filterPreset.occupation) newFilters.occupation = filterPreset.occupation;
-    if (filterPreset.flemishConnections) newFilters.flemishConnections = filterPreset.flemishConnections;
-
-    setActiveQuery('');
-    setNameMatches([]);
-    setAiResults([]);
-
-    setSnippets(new Map());
-    setActiveFilters([]);
-
-    setFilters(newFilters);
-
-    if (filterPreset.focusCity) {
-      setTimeout(() => {
-        setFocusedCity(filterPreset.focusCity!);
-        setViewMode('map');
-      }, 100);
+    if (!activeQuery) {
+      clearSearchResults();
+      setAiLoading(false);
+      return;
     }
 
-    onConsumePreset();
-  }, [filterPreset, onConsumePreset]);
+    runSearch(activeQuery);
+  }, [activeQuery, clearSearchResults, runSearch]);
 
   useEffect(() => {
-    if (!searchCommand || searchCommand.timestamp <= lastSearchTimestamp.current) return;
-    lastSearchTimestamp.current = searchCommand.timestamp;
-    onConsumeSearchCommand();
-    handleSearch(searchCommand.query);
-    setFocusTrigger((prev) => prev + 1);
-  }, [searchCommand, onConsumeSearchCommand, handleSearch]);
+    const state = location.state as { focusSearch?: boolean } | null;
+    if (state?.focusSearch) {
+      setFocusTrigger((previous) => previous + 1);
+    }
+  }, [location.key, location.state]);
 
-  const handleFiltersChange = useCallback((next: MapFilters) => {
-    setFilters(next);
-  }, []);
+  const handleFiltersChange = useCallback(
+    (next: MapFilters) => {
+      updateRouteState((current) => ({
+        ...current,
+        filters: next,
+      }));
+    },
+    [updateRouteState]
+  );
 
   const handleRemoveFilter = useCallback((filterId: string) => {
-    setActiveFilters((prev) => prev.filter((f) => f.id !== filterId));
+    setActiveFilters((previous) =>
+      previous.filter((filter) => filter.id !== filterId)
+    );
   }, []);
 
   const handleRemoveSearchQueryFilter = useCallback(() => {
     handleClearSearchQuery();
   }, [handleClearSearchQuery]);
 
-  const handleViewInDirectory = (city: string, state: string) => {
-    setFocusedCity({ city, state });
-    setViewMode('list');
-  };
+  const handleViewModeChange = useCallback(
+    (nextView: DashboardViewMode) => {
+      updateRouteState((current) => ({
+        ...current,
+        view: nextView,
+        focusedCity: nextView === 'map' ? null : current.focusedCity,
+      }));
+    },
+    [updateRouteState]
+  );
+
+  const handleViewInDirectory = useCallback(
+    (city: string, state: string) => {
+      updateRouteState((current) => ({
+        ...current,
+        view: 'list',
+        focusedCity: { city, state },
+      }));
+    },
+    [updateRouteState]
+  );
+
+  const clearFocusedCity = useCallback(() => {
+    updateRouteState((current) => ({
+      ...current,
+      focusedCity: null,
+    }));
+  }, [updateRouteState]);
 
   const isSearchActive = activeQuery.length > 0;
 
   const displayedPeople = focusedCity
     ? people.filter(
-        (p) =>
-          p.locations?.city === focusedCity.city &&
-          p.locations?.state === focusedCity.state
+        (person) =>
+          person.locations?.city === focusedCity.city &&
+          person.locations?.state === focusedCity.state
       )
     : people;
 
-  const displayedOrgs = focusedCity
+  const displayedOrganizations = focusedCity
     ? organizations.filter(
-        (o) =>
-          o.locations?.city === focusedCity.city &&
-          o.locations?.state === focusedCity.state
+        (organization) =>
+          organization.locations?.city === focusedCity.city &&
+          organization.locations?.state === focusedCity.state
       )
     : organizations;
 
@@ -543,10 +659,7 @@ export default function Dashboard({
         <div className="absolute top-4 left-4 right-4 z-[2000] pointer-events-none flex items-start justify-between">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200 p-1 flex pointer-events-auto">
             <button
-              onClick={() => {
-                setViewMode('map');
-                setFocusedCity(null);
-              }}
+              onClick={() => handleViewModeChange('map')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 viewMode === 'map'
                   ? 'bg-yellow-400 text-gray-900 shadow-sm'
@@ -557,7 +670,7 @@ export default function Dashboard({
               <span>Network Map</span>
             </button>
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => handleViewModeChange('list')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
                 viewMode === 'list'
                   ? 'bg-yellow-400 text-gray-900 shadow-sm'
@@ -578,15 +691,19 @@ export default function Dashboard({
               className="flex-1 max-w-2xl"
             />
 
-            
-            {/* Search Context Chips */}
-            {(isSearchActive || filters.sector || filters.occupation || filters.flemishConnections.length > 0) && (
+            {(isSearchActive ||
+              filters.sector ||
+              filters.occupation ||
+              filters.flemishConnections.length > 0) && (
               <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
                 {activeQuery && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full text-xs font-medium shadow-sm">
                     <SearchIcon className="w-3 h-3" />
                     <span>Query: {activeQuery}</span>
-                    <button onClick={handleClearSearchQuery} className="hover:text-sky-900 transition-colors">
+                    <button
+                      onClick={handleClearSearchQuery}
+                      className="hover:text-sky-900 transition-colors"
+                    >
                       <X className="w-3 h-3" />
                     </button>
                   </div>
@@ -594,8 +711,10 @@ export default function Dashboard({
                 {filters.sector && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-full text-xs font-medium shadow-sm">
                     <span>Sector: {filters.sector}</span>
-                    <button 
-                      onClick={() => setFilters({ ...filters, sector: '' })} 
+                    <button
+                      onClick={() =>
+                        handleFiltersChange({ ...filters, sector: '' })
+                      }
                       className="hover:text-yellow-900 transition-colors"
                     >
                       <X className="w-3 h-3" />
@@ -605,22 +724,31 @@ export default function Dashboard({
                 {filters.occupation && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium shadow-sm">
                     <span>Type: {filters.occupation}</span>
-                    <button 
-                      onClick={() => setFilters({ ...filters, occupation: '' })} 
+                    <button
+                      onClick={() =>
+                        handleFiltersChange({ ...filters, occupation: '' })
+                      }
                       className="hover:text-purple-900 transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 )}
-                {filters.flemishConnections.map(fc => (
-                  <div key={fc} className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-xs font-medium shadow-sm">
-                    <span>Link: {fc}</span>
-                    <button 
-                      onClick={() => setFilters({ 
-                        ...filters, 
-                        flemishConnections: filters.flemishConnections.filter(c => c !== fc) 
-                      })} 
+                {filters.flemishConnections.map((connection) => (
+                  <div
+                    key={connection}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-xs font-medium shadow-sm"
+                  >
+                    <span>Link: {connection}</span>
+                    <button
+                      onClick={() =>
+                        handleFiltersChange({
+                          ...filters,
+                          flemishConnections: filters.flemishConnections.filter(
+                            (item) => item !== connection
+                          ),
+                        })
+                      }
                       className="hover:text-orange-900 transition-colors"
                     >
                       <X className="w-3 h-3" />
@@ -631,7 +759,7 @@ export default function Dashboard({
             )}
           </div>
 
-          <div className="w-20" /> {/* Spacer to balance Map/List toggle */}
+          <div className="w-20" />
         </div>
 
         {viewMode === 'map' ? (
@@ -651,13 +779,13 @@ export default function Dashboard({
                 <DirectoryGrid
                   nameMatches={nameMatches}
                   aiResults={aiResults}
-                  organizations={displayedOrgs}
+                  organizations={displayedOrganizations}
                   loading={loading}
                   aiLoading={aiLoading}
                   onNavigate={onNavigate}
                   searchQuery={activeQuery}
                   focusedCity={focusedCity}
-                  onClearFocus={() => setFocusedCity(null)}
+                  onClearFocus={clearFocusedCity}
                   onClearSearch={handleClearSearchQuery}
                   snippets={snippets}
                 />
@@ -665,12 +793,12 @@ export default function Dashboard({
                 <DirectoryGrid
                   nameMatches={[]}
                   aiResults={[]}
-                  organizations={displayedOrgs}
+                  organizations={displayedOrganizations}
                   loading={loading}
                   aiLoading={false}
                   onNavigate={onNavigate}
                   focusedCity={focusedCity}
-                  onClearFocus={() => setFocusedCity(null)}
+                  onClearFocus={clearFocusedCity}
                   allPeople={displayedPeople}
                 />
               )}

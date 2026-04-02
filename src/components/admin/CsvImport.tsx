@@ -17,7 +17,7 @@ import {
   Tags,
 } from "lucide-react";
 import { supabase, US_STATES, type Sector } from "../../lib/supabase";
-import { generateEmbedding } from "../../lib/aiService";
+import { kickEmbeddingWorker } from "../../lib/embeddingRefresh";
 import { syncPersonFlemishConnections } from "../../lib/flemishConnectionSync";
 import {
   parseCSV,
@@ -843,9 +843,8 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         return;
       }
 
-      // Auto-trigger embedding generation for all imported/updated contacts
-      for (const pid of summary.personIds) {
-        generateEmbedding(pid);
+      if (summary.personIds.length > 0) {
+        kickEmbeddingWorker(20);
       }
 
       setImportSummary(summary);

@@ -8,7 +8,10 @@ import {
   Users,
 } from 'lucide-react';
 import { supabase, parseTitleFromName, type Sector, type Person } from '../../lib/supabase';
-import { searchContacts } from '../../lib/aiService';
+import { discoverContacts } from '../../lib/aiService';
+import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
+import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
+import { resolveLocationId } from '../../lib/locations';
 import ContactCard, {
   ContactCardEdit,
   type DiscoveredContact,
@@ -26,24 +29,18 @@ interface AdminChatbotProps {
   onContactAdded: () => void;
 }
 
-async function resolveLocationId(city?: string, state?: string): Promise<string | null> {
-  if (!city || !state) return null;
-  const { data } = await supabase
-    .from('locations')
-    .select('id')
-    .eq('city', city)
-    .eq('state', state)
-    .maybeSingle();
-  return data?.id || null;
-}
-
 async function addContactToDb(
   contact: DiscoveredContact,
   allSectors: Sector[]
 ): Promise<boolean> {
   const hasEmail = !!(contact.email && contact.email.includes('@'));
   const parsed = parseTitleFromName(contact.name || '');
-  const locationId = await resolveLocationId(contact.location_city, contact.location_state);
+  const locationId = await resolveLocationId(
+    contact.location_city,
+    contact.location_state,
+    { createIfMissing: true }
+  );
+  const flemishConnectionText = contact.flemish_connection?.trim() || null;
   const { data: person, error } = await supabase
     .from('people')
     .insert({
@@ -55,7 +52,6 @@ async function addContactToDb(
       occupation: contact.occupation || null,
       location_id: locationId,
       bio: contact.bio || null,
-      flemish_connection: contact.flemish_connection || null,
       email: contact.email || null,
       email_verified: hasEmail ? false : null,
       linkedin_url: contact.linkedin_url || null,
@@ -66,6 +62,14 @@ async function addContactToDb(
     .maybeSingle();
 
   if (error || !person) return false;
+
+  try {
+    if (flemishConnectionText) {
+      await syncPersonFlemishConnections(person.id, flemishConnectionText);
+    }
+  } catch {
+    return false;
+  }
 
   if (contact.sectors && contact.sectors.length > 0) {
     const matchedSectors = allSectors.filter((s) =>
@@ -80,11 +84,12 @@ async function addContactToDb(
       );
     }
   }
+  kickEmbeddingWorker();
   return true;
 }
 
 async function updateExistingContact(
-  existingId: string,
+  existingPerson: Person,
   contact: DiscoveredContact,
   selectedFields: string[],
   allSectors: Sector[]
@@ -95,7 +100,41 @@ async function updateExistingContact(
   for (const field of selectedFields) {
     const val = contactObj[field];
     if (val !== undefined && val !== null && val !== '') {
-      updates[field] = val;
+      if (
+        field !== 'flemish_connection' &&
+        field !== 'location_city' &&
+        field !== 'location_state'
+      ) {
+        updates[field] = val;
+      }
+    }
+  }
+
+  if (
+    selectedFields.includes('location_city') ||
+    selectedFields.includes('location_state')
+  ) {
+    const city = selectedFields.includes('location_city')
+      ? contact.location_city
+      : existingPerson.locations?.city;
+    const state = selectedFields.includes('location_state')
+      ? contact.location_state
+      : existingPerson.locations?.state;
+
+    if ((city && !state) || (!city && state)) {
+      return false;
+    }
+
+    if (city && state) {
+      const locationId = await resolveLocationId(city, state, {
+        createIfMissing: true,
+      });
+      if (!locationId) {
+        return false;
+      }
+      updates.location_id = locationId;
+    } else {
+      updates.location_id = null;
     }
   }
 
@@ -103,14 +142,32 @@ async function updateExistingContact(
     updates.email_verified = false;
   }
 
-  if (Object.keys(updates).length === 0) return true;
+  if (
+    Object.keys(updates).length === 0 &&
+    !selectedFields.includes('flemish_connection')
+  ) {
+    return true;
+  }
 
-  const { error } = await supabase
-    .from('people')
-    .update(updates)
-    .eq('id', existingId);
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase
+      .from('people')
+      .update(updates)
+      .eq('id', existingPerson.id);
 
-  if (error) return false;
+    if (error) return false;
+  }
+
+  try {
+    if (selectedFields.includes('flemish_connection')) {
+      await syncPersonFlemishConnections(
+        existingPerson.id,
+        contact.flemish_connection || null
+      );
+    }
+  } catch {
+    return false;
+  }
 
   if (contact.sectors && contact.sectors.length > 0) {
     const matchedSectors = allSectors.filter((s) =>
@@ -120,7 +177,7 @@ async function updateExistingContact(
       const { data: existing } = await supabase
         .from('person_sectors')
         .select('sector_id')
-        .eq('person_id', existingId);
+        .eq('person_id', existingPerson.id);
       const existingIds = new Set(
         (existing || []).map((r: { sector_id: string }) => r.sector_id)
       );
@@ -128,7 +185,7 @@ async function updateExistingContact(
       if (toInsert.length > 0) {
         await supabase.from('person_sectors').insert(
           toInsert.map((s) => ({
-            person_id: existingId,
+            person_id: existingPerson.id,
             sector_id: s.id,
           }))
         );
@@ -136,6 +193,7 @@ async function updateExistingContact(
     }
   }
 
+  kickEmbeddingWorker();
   return true;
 }
 
@@ -148,7 +206,7 @@ export default function AdminChatbot({
       id: 'welcome',
       role: 'assistant',
       content:
-        'I can search the web and find contacts for you. Try:\n\n- A name: "Jan De Vries"\n- A group: "Flemish AI researchers in Boston"\n- A description: "Belgian students at Stanford"',
+        'I can run web discovery and surface likely contacts for review. Try:\n\n- A name: "Jan De Vries"\n- A group: "Flemish AI researchers in Boston"\n- A description: "Belgian students at Stanford"',
     },
   ]);
   const [input, setInput] = useState('');
@@ -190,12 +248,12 @@ export default function AdminChatbot({
     setExistingPerson(null);
 
     try {
-      const result = await searchContacts(trimmed);
+      const result = await discoverContacts(trimmed);
 
       if (result.contacts.length === 0) {
         addBot(
           result.message ||
-            "I couldn't find any contacts matching that query. Try a more specific name or description."
+            "I couldn't find any discovery candidates matching that query. Try a more specific name or description."
         );
         setDiscoveredContacts([]);
       } else {
@@ -213,7 +271,7 @@ export default function AdminChatbot({
       }
     } catch {
       addBot(
-        'I had trouble searching for contacts. Please try again with a different query.'
+        'I had trouble running web discovery. Please try again with a different query.'
       );
       setDiscoveredContacts([]);
     }
@@ -262,7 +320,7 @@ export default function AdminChatbot({
     if (!compareContact || !existingPerson) return;
     setAddingId(compareContact.id);
     const ok = await updateExistingContact(
-      existingPerson.id,
+      existingPerson,
       compareContact,
       selectedFields,
       sectors
@@ -271,9 +329,9 @@ export default function AdminChatbot({
     if (ok) {
       setAddedIds((prev) => new Set([...prev, compareContact.id]));
       onContactAdded();
+      setCompareContact(null);
+      setExistingPerson(null);
     }
-    setCompareContact(null);
-    setExistingPerson(null);
   };
 
   const handleAddNewFromCompare = async () => {
@@ -336,7 +394,7 @@ export default function AdminChatbot({
               <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-3">
                 <Loader2 className="w-4 h-4 animate-spin text-yellow-500" />
                 <span className="text-sm text-gray-500">
-                  Searching the web...
+                  Running discovery...
                 </span>
               </div>
             </div>
@@ -355,7 +413,7 @@ export default function AdminChatbot({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSend();
                 }}
-                placeholder="Search for a person or group..."
+                placeholder="Discover a person or group..."
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
                 disabled={processing}
               />
@@ -393,7 +451,7 @@ export default function AdminChatbot({
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-gray-500" />
                 <h3 className="text-sm font-semibold text-gray-900">
-                  Discovered Contacts
+                  Discovery Results
                 </h3>
                 <span className="text-xs text-gray-400">
                   ({discoveredContacts.length})
@@ -444,8 +502,7 @@ export default function AdminChatbot({
               No contacts yet
             </p>
             <p className="text-xs text-gray-400 text-center leading-relaxed">
-              Search for a person or group in the chat to see discovered contacts
-              here
+              Run a discovery query in the chat to see candidate contacts here
             </p>
           </div>
         )}

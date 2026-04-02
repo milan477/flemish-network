@@ -115,7 +115,7 @@ export default function StaleContactsBar({
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
-                <span>Check All with AI</span>
+                <span>Queue Verification</span>
               </button>
               <button
                 onClick={() => setExpanded(!expanded)}
@@ -239,7 +239,7 @@ export default function StaleContactsBar({
                           ) : (
                             <Sparkles className="w-3 h-3" />
                           )}
-                          <span>Ask AI</span>
+                          <span>Verify</span>
                         </button>
                         <button
                           onClick={() => handleConfirmCurrent(person.id)}

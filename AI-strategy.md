@@ -851,6 +851,173 @@ Track:
 
 Without coverage tracking, autonomous discovery becomes random repetition.
 
+#### 13. Add geographic coverage intelligence and gap-seeking
+
+This is a good addition, but it needs to be framed correctly.
+
+A choropleth or heatmap is not the strategy.
+
+The strategy is:
+
+- measure geographic coverage
+- identify plausible gaps
+- use those gaps to bias discovery planning
+
+The visualization is just the operator interface for that logic.
+
+What the system should support:
+
+- US choropleth by state for macro coverage
+- metro-level coverage view for actual actionability
+- gap reports such as `15 contacts in Boston, 0 in Houston`
+- recommended discovery runs for underrepresented regions
+
+Important caveat:
+
+- states are useful for overview
+- metros are better for action
+
+This network is likely to cluster around cities, universities, research hubs, and employer ecosystems. A state-level map is useful for a broad picture, but discovery planning should usually be driven at the metro or city-cluster level.
+
+For example:
+
+- `Massachusetts` is too coarse
+- `Boston-Cambridge` is actionable
+- `Texas` is too coarse
+- `Houston`, `Austin`, and `Dallas` are different discovery targets
+
+If this is implemented only as a state heatmap, it will look informative while still being too blunt for real discovery planning.
+
+#### 14. Gap detection should be based on expected presence, not just low counts
+
+The dangerous version of this idea is:
+
+- "0 contacts in place X, therefore place X is a discovery failure"
+
+That is too naive.
+
+Some places may genuinely have low expected relevance. A useful gap score should combine:
+
+- current approved contact count
+- pending discovery count
+- known organization presence
+- known university and research presence
+- sector relevance
+- office priority weighting
+- recent discovery activity
+
+In other words, the system should ask:
+
+- "is this place undercovered relative to how likely it is to contain relevant people?"
+
+Not:
+
+- "is the count low?"
+
+Examples:
+
+- `Houston` may deserve attention because of energy, medical, and research ecosystems
+- `Boston-Cambridge` may deserve high expected coverage because of universities, biotech, and research density
+- a low-count rural area may not be a meaningful gap at all
+
+This matters because otherwise the discovery planner will waste time chasing empty geography.
+
+#### 15. Geographic gaps should steer the frontier and the search planner
+
+Once you have a gap score, use it to drive actual discovery behavior.
+
+It should affect:
+
+- which domains are revisited
+- which seed queries are generated
+- which entity pivots are expanded first
+- which source packs are refreshed sooner
+- which approved contacts generate follow-up exploration
+
+Examples of useful behavior:
+
+- if `Houston` is undercovered, prioritize institutions, labs, hospitals, startups, and Belgian/Flemish associations tied to Houston
+- if `Chicago` is undercovered in finance, bias discovery toward finance employers, alumni pages, event rosters, and speaker pages in that metro
+- if `Seattle` is undercovered but has many known `imec` or Belgian-tech adjacencies, prioritize team pages and conference pages in that ecosystem
+
+This should not become:
+
+- `search for "Belgian people in Houston"` over and over
+
+It should become:
+
+- targeted domain and entity expansion inside undercovered ecosystems
+
+That is the important difference.
+
+#### 16. Add a discovery-planning surface for operators
+
+This is where the heatmap becomes genuinely useful.
+
+I would add a planning panel that shows:
+
+- state choropleth for macro coverage
+- top undercovered metros
+- gap score per metro
+- approved contacts, pending contacts, and recent discovery activity by geography
+- recommended next discovery actions
+
+Recommended actions could look like:
+
+- `Run frontier expansion for Boston biotech domains`
+- `Refresh Houston medical and energy source packs`
+- `Expand Chicago finance event and alumni pages`
+- `Revisit Seattle domains with high prior yield but low current coverage`
+
+This turns geographic analytics into an operator tool, not just a reporting widget.
+
+#### 17. Suggested data model for geographic coverage
+
+I would keep this simple at first.
+
+You do not need a fully separate geography subsystem to get value.
+
+Minimum useful pieces:
+
+- `people` joined to `locations`
+- a derived metro mapping layer
+- a `coverage_targets` table or config
+- a derived `coverage_gaps` materialized view
+
+`coverage_targets` could include:
+
+- geography key
+- geography type (`state`, `metro`)
+- priority weight
+- sector emphasis
+- optional notes from the office
+
+`coverage_gaps` could compute:
+
+- approved people count
+- pending discovered count
+- verified people count
+- sector distribution
+- recent activity
+- expected coverage score
+- gap score
+
+This is enough to rank geographies without making the model guess blindly.
+
+#### 18. Suggested discovery metrics for geographic coverage
+
+This should not only produce a map. It should produce measurable outcomes.
+
+Useful metrics:
+
+- approved contacts per priority metro
+- gap-closure rate for top 10 undercovered metros
+- percentage of approved discoveries coming from gap-driven discovery runs
+- median time to first accepted contact in a newly targeted metro
+- sector coverage by metro for priority sectors
+
+If the heatmap does not change discovery behavior or improve these metrics, then it is only a dashboard feature.
+
 ### What To Scrap
 
 - the current "3 web + 2 LinkedIn" mental model as the discovery architecture
@@ -940,6 +1107,7 @@ Phase 2B deliverables:
 - per-domain budgets
 - revisit policy
 - domain yield scoring
+- geographic coverage views and gap scoring
 
 Phase 2C deliverables:
 
@@ -947,6 +1115,7 @@ Phase 2C deliverables:
 - sitemap/RSS harvesting for proven domains
 - better multi-page candidate merging
 - domain-level discovery analytics
+- gap-driven discovery planning and recommended runs
 
 ## Verification And Updates Strategy
 
@@ -1308,6 +1477,8 @@ Track these before and after each phase:
 - percentage of approved contacts coming from non-source-pack discovery
 - percentage of approved contacts with 2 or more evidence pages
 - median time from frontier seed to reviewed candidate
+- gap-closure rate for top undercovered metros
+- percentage of approved discoveries coming from gap-driven runs
 - reviewer approval rate for discovered contacts
 - reviewer approval rate for profile suggestions
 - duplicate rate in discovered contacts

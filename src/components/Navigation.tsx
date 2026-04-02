@@ -3,16 +3,13 @@ import { User, MapPin, Library, Shield, Plus, Search } from 'lucide-react';
 interface NavigationProps {
   currentPage: string;
   onNavigate: (page: string, id?: string) => void;
-  searchInputValue: string;
-  onSearchInputChange: (value: string) => void;
-  onSearchSubmit: (query: string) => void;
-  isSearching: boolean;
+  onOpenSearch: () => void;
 }
 
 export default function Navigation({
   currentPage,
   onNavigate,
-  onSearchSubmit,
+  onOpenSearch,
 }: NavigationProps) {
   const navItems = [
     { id: 'dashboard', label: 'Network', icon: MapPin },
@@ -63,7 +60,7 @@ export default function Navigation({
           <div className="flex items-center space-x-3">
             {currentPage !== 'dashboard' && (
               <button
-                onClick={() => onSearchSubmit('')}
+                onClick={onOpenSearch}
                 className="flex items-center justify-center w-9 h-9 rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
                 title="Search the network"
               >

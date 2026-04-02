@@ -24,6 +24,8 @@ import {
 } from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import { getLastDashboardLocation } from '../lib/dashboardSession';
+import { useSmartBack } from '../lib/useSmartBack';
 
 interface OrganizationProfileProps {
   organizationId: string;
@@ -54,6 +56,7 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string; ring: string }> 
 };
 
 export default function OrganizationProfile({ organizationId, onNavigate }: OrganizationProfileProps) {
+  const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [orgSectors, setOrgSectors] = useState<{ id: string; name: string }[]>([]);
@@ -196,8 +199,9 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
 
       await loadOrganization();
       setEditing(false);
-    } catch (err: any) {
-      setSaveError(`Organization info saved, but error updating sectors: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setSaveError(`Organization info saved, but error updating sectors: ${message}`);
       await loadOrganization();
       setEditing(false);
     }
@@ -243,7 +247,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
         <h2 className="text-2xl font-semibold text-gray-900 mb-4">Organization not found</h2>
         <button
-          onClick={() => onNavigate('directory')}
+          onClick={goBack}
           className="text-yellow-600 hover:text-yellow-700 font-medium"
         >
           Return to directory
@@ -255,7 +259,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <button
-        onClick={() => onNavigate('directory')}
+        onClick={goBack}
         className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />

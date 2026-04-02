@@ -16,7 +16,7 @@ export interface Person {
   current_position?: string;
   organization_id?: string;
   location_id?: string;
-  locations?: { id: string; city: string; state: string; latitude: number; longitude: number; };
+  locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
   occupation?: string;
   bio?: string;
   profile_photo_url?: string;
@@ -81,7 +81,7 @@ export interface Organization {
   logo_url?: string;
   website_url?: string;
   location_id?: string;
-  locations?: { id: string; city: string; state: string; latitude: number; longitude: number; };
+  locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
   flemish_link?: string;
   created_at: string;
   updated_at: string;

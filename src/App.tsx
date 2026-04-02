@@ -1,4 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 import Navigation from './components/Navigation';
 import Dashboard from './pages/Dashboard';
 import PersonProfile from './pages/PersonProfile';
@@ -6,95 +14,161 @@ import OrganizationProfile from './pages/OrganizationProfile';
 import Collections from './pages/Collections';
 import Admin from './pages/Admin';
 import AddContact from './pages/AddContact';
-import type { FilterPreset, SearchCommand } from './lib/supabase';
+import type { FilterPreset } from './lib/supabase';
+import {
+  buildDashboardLocation,
+  buildDashboardStateFromPreset,
+  getCurrentPageFromPathname,
+  normalizePage,
+} from './lib/appRouting';
+import { getLastDashboardLocation } from './lib/dashboardSession';
 
-type Page = 'dashboard' | 'person' | 'organization' | 'collections' | 'collection-detail' | 'admin' | 'add-contact';
+function PersonProfileRoute({
+  onNavigate,
+}: {
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
+}) {
+  const { personId = '' } = useParams();
+  return <PersonProfile personId={personId} onNavigate={onNavigate} />;
+}
 
-function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
-  const [selectedId, setSelectedId] = useState<string>('');
-  const [pendingPreset, setPendingPreset] = useState<FilterPreset | null>(null);
-  const [searchInputValue, setSearchInputValue] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchCommand, setSearchCommand] = useState<SearchCommand | null>(null);
+function OrganizationProfileRoute({
+  onNavigate,
+}: {
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
+}) {
+  const { organizationId = '' } = useParams();
+  return (
+    <OrganizationProfile
+      organizationId={organizationId}
+      onNavigate={onNavigate}
+    />
+  );
+}
 
-  const handleNavigate = useCallback((page: string, id?: string, preset?: FilterPreset) => {
-    if (page === 'directory' || page === 'search') {
-      setCurrentPage('dashboard');
-    } else if (page === 'missions' || page === 'planner') {
-      setCurrentPage('collections');
-    } else {
-      setCurrentPage(page as Page);
-    }
-    if (id) setSelectedId(id);
-    if (preset) setPendingPreset(preset);
-  }, []);
+function CollectionsIndexRoute({
+  onNavigate,
+}: {
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
+}) {
+  return <Collections onNavigate={onNavigate} />;
+}
 
-  const consumePreset = useCallback(() => {
-    setPendingPreset(null);
-  }, []);
+function CollectionDetailRoute({
+  onNavigate,
+}: {
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
+}) {
+  const { collectionId = '' } = useParams();
+  return (
+    <Collections
+      collectionId={collectionId}
+      onNavigate={onNavigate}
+      showDetail
+    />
+  );
+}
 
-  const handleSearchSubmit = useCallback((query: string) => {
-    setSearchCommand({ query, timestamp: Date.now() });
-    setCurrentPage('dashboard');
-  }, []);
+export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentPage = getCurrentPageFromPathname(location.pathname);
 
-  const consumeSearchCommand = useCallback(() => {
-    setSearchCommand(null);
-  }, []);
+  const handleNavigate = useCallback(
+    (page: string, id?: string, preset?: FilterPreset) => {
+      const normalizedPage = normalizePage(page);
+      const currentLocation = `${location.pathname}${location.search}`;
 
-  const handleClearSearch = useCallback(() => {
-    setSearchInputValue('');
-    setSearchCommand(null);
-  }, []);
+      if (normalizedPage === 'dashboard') {
+        if (preset) {
+          navigate(buildDashboardLocation(buildDashboardStateFromPreset(preset)));
+          return;
+        }
+
+        navigate(getLastDashboardLocation() || '/');
+        return;
+      }
+
+      if (normalizedPage === 'collections') {
+        navigate('/collections');
+        return;
+      }
+
+      if (normalizedPage === 'collection-detail' && id) {
+        navigate(`/collections/${id}`, {
+          state: { from: currentLocation },
+        });
+        return;
+      }
+
+      if (normalizedPage === 'admin') {
+        navigate('/admin');
+        return;
+      }
+
+      if (normalizedPage === 'add-contact') {
+        navigate('/contacts/new', {
+          state: { from: currentLocation },
+        });
+        return;
+      }
+
+      if (normalizedPage === 'person' && id) {
+        navigate(`/people/${id}`, {
+          state: { from: currentLocation },
+        });
+        return;
+      }
+
+      if (normalizedPage === 'organization' && id) {
+        navigate(`/organizations/${id}`, {
+          state: { from: currentLocation },
+        });
+      }
+    },
+    [location.pathname, location.search, navigate]
+  );
+
+  const handleOpenSearch = useCallback(() => {
+    navigate(getLastDashboardLocation() || '/', {
+      state: { focusSearch: true },
+    });
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation
         currentPage={currentPage}
         onNavigate={handleNavigate}
-        searchInputValue={searchInputValue}
-        onSearchInputChange={setSearchInputValue}
-        onSearchSubmit={handleSearchSubmit}
-        isSearching={isSearching}
+        onOpenSearch={handleOpenSearch}
       />
 
-      {currentPage === 'dashboard' && (
-        <Dashboard
-          onNavigate={handleNavigate}
-          filterPreset={pendingPreset}
-          onConsumePreset={consumePreset}
-          searchCommand={searchCommand}
-          onConsumeSearchCommand={consumeSearchCommand}
-          onSearchingChange={setIsSearching}
-          onClearSearchInput={handleClearSearch}
+      <Routes>
+        <Route path="/" element={<Dashboard onNavigate={handleNavigate} />} />
+        <Route
+          path="/people/:personId"
+          element={<PersonProfileRoute onNavigate={handleNavigate} />}
         />
-      )}
-
-      {currentPage === 'person' && (
-        <PersonProfile personId={selectedId} onNavigate={handleNavigate} />
-      )}
-
-      {currentPage === 'organization' && (
-        <OrganizationProfile
-          organizationId={selectedId}
-          onNavigate={handleNavigate}
+        <Route
+          path="/organizations/:organizationId"
+          element={<OrganizationProfileRoute onNavigate={handleNavigate} />}
         />
-      )}
-
-      {(currentPage === 'collections' || currentPage === 'collection-detail') && (
-        <Collections
-          collectionId={selectedId}
-          onNavigate={handleNavigate}
-          showDetail={currentPage === 'collection-detail'}
+        <Route
+          path="/collections"
+          element={<CollectionsIndexRoute onNavigate={handleNavigate} />}
         />
-      )}
-
-      {currentPage === 'admin' && <Admin onNavigate={handleNavigate} />}
-
-      {currentPage === 'add-contact' && <AddContact onNavigate={handleNavigate} />}
+        <Route
+          path="/collections/:collectionId"
+          element={<CollectionDetailRoute onNavigate={handleNavigate} />}
+        />
+        <Route path="/admin" element={<Admin onNavigate={handleNavigate} />} />
+        <Route path="/admin/:tab" element={<Admin onNavigate={handleNavigate} />} />
+        <Route
+          path="/contacts/new"
+          element={<AddContact onNavigate={handleNavigate} />}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
   );
 }
-
-export default App;
