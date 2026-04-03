@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 const cache = new Map<string, { lat: number; lng: number }>();
 
 export async function geocodeBatch(
@@ -7,20 +9,15 @@ export async function geocodeBatch(
 
   if (uncached.length > 0) {
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/geocode`;
-      const resp = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ pairs: uncached }),
+      const { data, error } = await supabase.functions.invoke('geocode', {
+        body: { pairs: uncached },
       });
 
-      if (resp.ok) {
-        const data = await resp.json();
+      if (!error && Array.isArray(data?.results)) {
         for (const r of data.results) {
-          cache.set(`${r.city},${r.state}`, { lat: r.lat, lng: r.lng });
+          if (typeof r.city === 'string' && typeof r.state === 'string') {
+            cache.set(`${r.city},${r.state}`, { lat: r.lat, lng: r.lng });
+          }
         }
       }
     } catch {

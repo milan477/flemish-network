@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ChevronLeft,
   Trash2,
@@ -27,6 +27,7 @@ import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiService';
 import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
+import { useAuth } from '../lib/auth';
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -39,6 +40,7 @@ export default function CollectionDetail({
   onNavigate,
   onBack,
 }: CollectionDetailProps) {
+  const { canEdit } = useAuth();
   const [collection, setCollection] = useState<Collection | null>(null);
   const [members, setMembers] = useState<CollectionMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,13 +51,11 @@ export default function CollectionDetail({
   const [suggestions, setSuggestions] = useState<SuggestPeopleResult[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestMessage, setSuggestMessage] = useState('');
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    fetchCollectionData();
-  }, [collectionId]);
-
-  const fetchCollectionData = async () => {
+  const fetchCollectionData = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch collection info
@@ -82,7 +82,11 @@ export default function CollectionDetail({
     } finally {
       setLoading(false);
     }
-  };
+  }, [collectionId]);
+
+  useEffect(() => {
+    void fetchCollectionData();
+  }, [fetchCollectionData]);
 
   const handleRemoveMember = async (memberId: string) => {
     if (!window.confirm('Remove this person from the collection?')) return;
@@ -154,25 +158,35 @@ export default function CollectionDetail({
     if (!collection) return;
     setSuggestLoading(true);
     setShowSuggestions(true);
+    setSuggestError(null);
+    setSuggestMessage('');
 
     // Build query from collection description + top member bios
     const queryParts: string[] = [];
     if (collection.description) queryParts.push(collection.description);
     members.slice(0, 5).forEach((m) => {
       if (m.person?.current_position) queryParts.push(m.person.current_position);
+      if (m.person?.occupation) queryParts.push(m.person.occupation);
+      if (m.person?.bio) queryParts.push(m.person.bio);
       const flemishText = getPersonFlemishConnectionText(m.person);
       if (flemishText) queryParts.push(flemishText);
     });
     const query = queryParts.join('. ') || collection.name;
 
     try {
-      const results = await suggestPeopleEmbedding(query, {
+      const response = await suggestPeopleEmbedding(query, {
         collection_id: collectionId,
         max_results: 10,
       });
-      setSuggestions(results);
-    } catch {
+      setSuggestions(response.suggestions);
+      setSuggestMessage(response.message);
+    } catch (error) {
       setSuggestions([]);
+      setSuggestError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load suggested people right now.'
+      );
     }
 
     setSuggestLoading(false);
@@ -237,13 +251,15 @@ export default function CollectionDetail({
             <h1 className="text-3xl font-bold text-gray-900">
               {collection.name}
             </h1>
-            <button
-              onClick={() => setShowEditModal(true)}
-              className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-all"
-              title="Edit collection name/description"
-            >
-              <Pencil className="w-5 h-5" />
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-all"
+                title="Edit collection name/description"
+              >
+                <Pencil className="w-5 h-5" />
+              </button>
+            )}
           </div>
           {collection.description && (
             <p className="text-gray-600 max-w-2xl">{collection.description}</p>
@@ -278,13 +294,15 @@ export default function CollectionDetail({
               </button>
             </>
           )}
-          <button
-            onClick={handleDeleteCollection}
-            className="flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete Collection
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleDeleteCollection}
+              className="flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Collection
+            </button>
+          )}
         </div>
       </div>
 
@@ -293,21 +311,23 @@ export default function CollectionDetail({
           <h2 className="text-lg font-semibold text-gray-900">
             Members ({members.length})
           </h2>
-          <button
-            onClick={handleFindSimilar}
-            disabled={suggestLoading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {suggestLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            Find Similar People
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleFindSimilar}
+              disabled={suggestLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {suggestLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              Find Similar People
+            </button>
+          )}
         </div>
 
-        {showSuggestions && (
+        {showSuggestions && canEdit && (
           <div className="px-6 py-4 bg-yellow-50/50 border-b border-yellow-100">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900">
@@ -320,6 +340,14 @@ export default function CollectionDetail({
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {suggestError && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {suggestError}
+              </div>
+            )}
+            {!suggestError && suggestMessage && (
+              <p className="mb-3 text-sm text-gray-600">{suggestMessage}</p>
+            )}
             {suggestLoading ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -349,18 +377,20 @@ export default function CollectionDetail({
                       <span className="text-xs text-gray-400">
                         {(s.similarity * 100).toFixed(0)}%
                       </span>
-                      <button
-                        onClick={() => handleAddSuggestion(s.id)}
-                        disabled={addingIds.has(s.id)}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-md transition-colors disabled:opacity-50"
-                      >
-                        {addingIds.has(s.id) ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Plus className="w-3 h-3" />
-                        )}
-                        Add
-                      </button>
+                      {canEdit && (
+                        <button
+                          onClick={() => handleAddSuggestion(s.id)}
+                          disabled={addingIds.has(s.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-md transition-colors disabled:opacity-50"
+                        >
+                          {addingIds.has(s.id) ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Plus className="w-3 h-3" />
+                          )}
+                          Add
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -378,7 +408,9 @@ export default function CollectionDetail({
               Your collection is empty
             </h3>
             <p className="text-gray-500 mb-6">
-              Search for people in the network and add them to this collection.
+              {canEdit
+                ? 'Search for people in the network and add them to this collection.'
+                : 'This collection does not have any members yet.'}
             </p>
             <button
               onClick={() => onNavigate('dashboard')}
@@ -466,8 +498,14 @@ export default function CollectionDetail({
                         </div>
                       ) : (
                         <div
-                          onClick={() => startEditingNotes(member)}
-                          className="group cursor-pointer p-3 bg-gray-50 rounded-lg border border-transparent hover:border-gray-200 transition-all min-h-[64px]"
+                          onClick={() => {
+                            if (canEdit) startEditingNotes(member);
+                          }}
+                          className={`group p-3 bg-gray-50 rounded-lg border border-transparent min-h-[64px] ${
+                            canEdit
+                              ? 'cursor-pointer hover:border-gray-200 transition-all'
+                              : ''
+                          }`}
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -483,13 +521,15 @@ export default function CollectionDetail({
                     </div>
 
                     <div className="flex items-start justify-end">
-                      <button
-                        onClick={() => handleRemoveMember(member.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Remove from collection"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          onClick={() => handleRemoveMember(member.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remove from collection"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -499,7 +539,7 @@ export default function CollectionDetail({
         )}
       </div>
 
-      {showEditModal && (
+      {showEditModal && canEdit && (
         <CollectionModal
           collection={collection}
           onClose={() => setShowEditModal(false)}

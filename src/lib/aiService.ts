@@ -1,6 +1,86 @@
 import { supabase } from './supabase';
-import { type Person } from './supabase';
+import { US_STATES, type Person } from './supabase';
 import { getPersonFlemishConnectionText } from './flemishConnections';
+
+const SEARCH_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'at',
+  'for',
+  'from',
+  'in',
+  'near',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+]);
+
+const SECTOR_SYNONYMS: Record<string, string[]> = {
+  ai: ['ai', 'artificial intelligence'],
+  artificial: ['artificial intelligence'],
+  biotech: ['biotech', 'biotechnology'],
+  biotechnology: ['biotech', 'biotechnology'],
+  finance: ['finance', 'financial'],
+  education: ['education', 'educator'],
+  research: ['research', 'researcher'],
+  culture: ['culture', 'arts'],
+  arts: ['arts', 'culture'],
+};
+
+const STATE_NAMES = new Set(US_STATES.map((state) => state.name.toLowerCase()));
+const STATE_CODES = new Set(US_STATES.map((state) => state.code.toLowerCase()));
+
+function uniqueTerms(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function buildFallbackTerms(query: string): string[] {
+  const normalized = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .trim();
+
+  if (!normalized) return [];
+
+  const tokens = normalized
+    .split(/\s+/)
+    .filter((token) => token.length > 1 && !SEARCH_STOP_WORDS.has(token));
+  const bigrams: string[] = [];
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    bigrams.push(`${tokens[index]} ${tokens[index + 1]}`);
+  }
+
+  return uniqueTerms([...tokens, ...bigrams]);
+}
+
+function buildFallbackKeywords(query: string): SmartSearchKeywords {
+  const terms = buildFallbackTerms(query);
+  const stateTerms = terms.filter(
+    (term) => STATE_NAMES.has(term) || STATE_CODES.has(term)
+  );
+  const nonStateTerms = terms.filter((term) => !stateTerms.includes(term));
+  const sectorTerms = uniqueTerms([
+    ...nonStateTerms,
+    ...nonStateTerms.flatMap((term) => SECTOR_SYNONYMS[term] || []),
+  ]);
+  const likelyNameTerms = nonStateTerms.length <= 3 ? nonStateTerms : [];
+
+  return {
+    name: likelyNameTerms,
+    occupation: nonStateTerms,
+    sector: sectorTerms,
+    location_city: nonStateTerms.filter((term) => term.length >= 3),
+    location_state: stateTerms,
+    current_position: nonStateTerms,
+    flemish_connection: nonStateTerms,
+    bio: nonStateTerms,
+  };
+}
 
 export interface ParsedContact {
   name: string;
@@ -136,7 +216,16 @@ export interface SmartSearchResult {
 export async function smartSearch(
   query: string
 ): Promise<SmartSearchResult> {
-  const result = await callAI<SmartSearchResult>('smart_search', { query });
+  let result: SmartSearchResult;
+
+  try {
+    result = await callAI<SmartSearchResult>('smart_search', { query });
+  } catch {
+    return {
+      message: 'Using deterministic fallback query parsing.',
+      keywords: buildFallbackKeywords(query),
+    };
+  }
 
   if (!result.message || !result.keywords) {
     throw new Error('Invalid smart_search response');
@@ -258,6 +347,11 @@ export interface SuggestPeopleResult {
   similarity: number;
 }
 
+export interface SuggestPeopleResponse {
+  message: string;
+  suggestions: SuggestPeopleResult[];
+}
+
 /**
  * Suggest people via server-side embedding search + Gemini Pro ranking.
  * Falls back to client-side keyword scoring if the edge function is unavailable.
@@ -265,7 +359,7 @@ export interface SuggestPeopleResult {
 export async function suggestPeopleEmbedding(
   query: string,
   options?: { collection_id?: string; exclude_ids?: string[]; max_results?: number }
-): Promise<SuggestPeopleResult[]> {
+): Promise<SuggestPeopleResponse> {
   try {
     const { data, error } = await supabase.functions.invoke('suggest-people', {
       body: {
@@ -279,16 +373,52 @@ export async function suggestPeopleEmbedding(
     if (error) throw error;
     if (!data?.suggestions) throw new Error('No suggestions returned');
 
-    return data.suggestions as SuggestPeopleResult[];
-  } catch {
+    return {
+      message:
+        typeof data.message === 'string'
+          ? data.message
+          : `Found ${data.suggestions.length} relevant people.`,
+      suggestions: data.suggestions as SuggestPeopleResult[],
+    };
+  } catch (error) {
     // Fallback to client-side scoring
     const fallback = await suggestPeople(query);
-    return fallback.map((item) => ({
-      id: item.person.id,
-      name: item.person.name,
-      reason: item.reason,
-      similarity: item.score,
-    }));
+    const excludeSet = new Set(options?.exclude_ids || []);
+
+    if (options?.collection_id) {
+      const { data: members } = await supabase
+        .from('collection_members')
+        .select('person_id')
+        .eq('collection_id', options.collection_id);
+
+      (members || []).forEach((member) => {
+        if (typeof member.person_id === 'string') {
+          excludeSet.add(member.person_id);
+        }
+      });
+    }
+
+    const filteredFallback = fallback
+      .filter((item) => !excludeSet.has(item.person.id))
+      .slice(0, options?.max_results || 15);
+
+    if (filteredFallback.length > 0) {
+      return {
+        message: `Found ${filteredFallback.length} people by fallback scoring.`,
+        suggestions: filteredFallback.map((item) => ({
+          id: item.person.id,
+          name: item.person.name,
+          reason: item.reason,
+          similarity: item.score,
+        })),
+      };
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unable to load suggested people right now.';
+    throw new Error(message);
   }
 }
 
@@ -370,7 +500,7 @@ export async function hybridSearch(
 
     return data as HybridSearchResponse;
   } catch {
-    // Fallback: client-side scoring (same as before, but only as degraded path)
+    // Fallback: client-side scoring using deterministic query parsing if edge functions are unavailable.
     const res = await smartSearch(query);
     const { data: people } = await supabase
       .from('people')

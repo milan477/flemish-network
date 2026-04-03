@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   buildSearchPrompt,
   normalizeSmartSearchResult,
@@ -7,6 +6,11 @@ import {
   SMART_SEARCH_SYSTEM_PROMPT,
   type SmartSearchKeywords,
 } from "../_shared/aiContracts.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
 import { embedTexts } from "../_shared/embeddings.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 import {
@@ -18,7 +22,6 @@ import {
   type SearchDocumentSnippetSource,
   type SearchRoute,
 } from "../_shared/searchRouting.ts";
-import type { Database } from "../_shared/database.types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -210,21 +213,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      return new Response(
-        JSON.stringify({ error: "Supabase service credentials not configured" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
     const geminiKey = Deno.env.get("GEMINI_API_KEY") || null;
-    const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "viewer");
 
     const body = await req.json();
     const query = typeof body?.query === "string" ? body.query.trim() : "";
@@ -510,7 +501,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: (err as Error).message || "Internal error" }),
       {
-        status: 500,
+        status: err instanceof HttpError ? err.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

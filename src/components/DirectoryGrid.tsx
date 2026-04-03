@@ -6,6 +6,7 @@ import AddToCollectionDropdown from './AddToCollectionDropdown';
 import { exportPeopleToCsv } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
+import { useAuth } from '../lib/auth';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -20,6 +21,7 @@ interface DirectoryGridProps {
   onClearSearch?: () => void;
   snippets?: Map<string, string>;
   allPeople?: Person[];
+  searchError?: string | null;
 }
 
 function PersonCard({
@@ -34,6 +36,7 @@ function PersonCard({
   searchQuery?: string;
 }) {
   const [showCollections, setShowCollections] = useState(false);
+  const { canEdit } = useAuth();
 
   return (
     <div className={`relative group/card bg-white rounded-xl shadow-sm hover:shadow-md border border-gray-100 transition-all duration-200 hover:-translate-y-0.5 ${showCollections ? 'z-30' : 'z-0'}`}>
@@ -83,29 +86,31 @@ function PersonCard({
         </div>
       </button>
 
-      <div className="absolute top-4 right-4 z-10">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowCollections(!showCollections);
-          }}
-          className={`p-1.5 rounded-lg transition-all ${
-            showCollections 
-              ? 'bg-yellow-100 text-yellow-600' 
-              : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50 group-hover/card:text-gray-400'
-          }`}
-          title="Add to collection"
-        >
-          <Library className="w-4 h-4" />
-        </button>
+      {canEdit && (
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowCollections(!showCollections);
+            }}
+            className={`p-1.5 rounded-lg transition-all ${
+              showCollections
+                ? 'bg-yellow-100 text-yellow-600'
+                : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50 group-hover/card:text-gray-400'
+            }`}
+            title="Add to collection"
+          >
+            <Library className="w-4 h-4" />
+          </button>
 
-        {showCollections && (
-          <AddToCollectionDropdown 
-            personIds={[person.id]} 
-            onClose={() => setShowCollections(false)} 
-          />
-        )}
-      </div>
+          {showCollections && (
+            <AddToCollectionDropdown
+              personIds={[person.id]}
+              onClose={() => setShowCollections(false)}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -138,8 +143,9 @@ function ExportCsvButton({ people }: { people: Person[] }) {
 
 function BulkAddButton({ people }: { people: Person[] }) {
   const [showDropdown, setShowDropdown] = useState(false);
+  const { canEdit } = useAuth();
 
-  if (people.length <= 1) return null;
+  if (people.length <= 1 || !canEdit) return null;
 
   return (
     <div className="relative">
@@ -178,6 +184,7 @@ export default function DirectoryGrid({
   onClearSearch,
   snippets,
   allPeople,
+  searchError,
 }: DirectoryGridProps) {
   if (loading) {
     return (
@@ -212,6 +219,12 @@ export default function DirectoryGrid({
 
       {isSearchMode && (
         <>
+          {searchError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {searchError}
+            </div>
+          )}
+
           {nameMatches.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">

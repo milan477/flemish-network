@@ -1,6 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database, SupabaseAdminClient } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
+import type { SupabaseAdminClient } from "../_shared/database.types.ts";
+import { EMBEDDING_MODEL } from "../_shared/embeddings.ts";
+import { getGeminiModelSummary } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +16,7 @@ const corsHeaders = {
 };
 
 type AgentType = "discovery" | "verification" | "connection";
-type SchedulerAction = "trigger" | "cancel" | "housekeeping" | "planning";
+type SchedulerAction = "trigger" | "cancel" | "housekeeping" | "planning" | "metrics";
 
 const AGENT_FUNCTIONS: Record<AgentType, string> = {
   discovery: "agent-discovery",
@@ -23,25 +29,21 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !supabaseKey) {
-    return new Response(
-      JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
-  const supabase = createClient<Database>(supabaseUrl, supabaseKey);
-
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    if (!supabaseUrl) {
+      throw new HttpError(500, "Missing SUPABASE_URL");
+    }
+
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const body = req.method === "POST" ? await req.json() : {};
     const action = (body.action as SchedulerAction | undefined) || "trigger";
 
-    if (!["trigger", "cancel", "housekeeping", "planning"].includes(action)) {
+    if (!["trigger", "cancel", "housekeeping", "planning", "metrics"].includes(action)) {
       return new Response(
-        JSON.stringify({ error: "Invalid action. Must be one of: trigger, cancel, housekeeping, planning" }),
+        JSON.stringify({ error: "Invalid action. Must be one of: trigger, cancel, housekeeping, planning, metrics" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -61,6 +63,15 @@ Deno.serve(async (req: Request) => {
         status: "ok",
         housekeeping,
         planning,
+      });
+    }
+
+    if (action === "metrics") {
+      const metrics = await loadOpsMetrics(supabase);
+      return jsonResponse({
+        status: "ok",
+        housekeeping,
+        metrics,
       });
     }
 
@@ -127,7 +138,10 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     return new Response(
       JSON.stringify({ error: err instanceof Error ? err.message : "Internal error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: err instanceof HttpError ? err.status : 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   }
 });
@@ -332,6 +346,46 @@ async function loadDiscoveryPlanning(
     recent_refills: recentRefillsRes.data || [],
     top_entity_pivots: pivots,
     recommended_actions: recommendedActions,
+  };
+}
+
+async function loadOpsMetrics(
+  supabase: SupabaseAdminClient,
+): Promise<Record<string, unknown>> {
+  const [metricsRes, searchBenchmarksRes, discoverySourcesRes] = await Promise.all([
+    supabase
+      .from("ops_phase_success_metrics")
+      .select("metric_key, metric_value, unit, description"),
+    supabase
+      .from("ops_search_benchmark_clicks")
+      .select("slug, query_text, intent, click_count, unique_people_clicked, last_clicked_at")
+      .order("query_text", { ascending: true }),
+    supabase
+      .from("ops_benchmark_discovery_source_coverage")
+      .select("slug, label, source_family, approved_contacts, rejected_contacts, last_reviewed_at")
+      .order("approved_contacts", { ascending: false })
+      .order("label", { ascending: true }),
+  ]);
+
+  if (metricsRes.error) {
+    throw new Error(`Failed to load phase success metrics: ${metricsRes.error.message}`);
+  }
+  if (searchBenchmarksRes.error) {
+    throw new Error(`Failed to load search benchmark metrics: ${searchBenchmarksRes.error.message}`);
+  }
+  if (discoverySourcesRes.error) {
+    throw new Error(`Failed to load discovery source metrics: ${discoverySourcesRes.error.message}`);
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    model_defaults: {
+      ...getGeminiModelSummary(),
+      embedding_model: EMBEDDING_MODEL,
+    },
+    phase_metrics: metricsRes.data || [],
+    search_benchmarks: searchBenchmarksRes.data || [],
+    discovery_sources: discoverySourcesRes.data || [],
   };
 }
 

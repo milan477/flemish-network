@@ -8,7 +8,8 @@ export type AppPage =
   | 'collections'
   | 'collection-detail'
   | 'admin'
-  | 'add-contact';
+  | 'add-contact'
+  | 'account';
 
 export type DashboardViewMode = 'map' | 'list';
 
@@ -147,6 +148,7 @@ export function getCurrentPageFromPathname(pathname: string): AppPage {
   if (pathname.startsWith('/collections')) return 'collections';
   if (pathname.startsWith('/admin')) return 'admin';
   if (pathname.startsWith('/contacts/new')) return 'add-contact';
+  if (pathname.startsWith('/account')) return 'account';
   if (pathname.startsWith('/people')) return 'dashboard';
   if (pathname.startsWith('/organizations')) return 'dashboard';
   return 'dashboard';

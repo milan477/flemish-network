@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Library, Plus, Check, Loader2, Minus } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
+import { useAuth } from '../lib/auth';
 
 interface AddToCollectionDropdownProps {
   personIds: string[];
@@ -13,6 +14,7 @@ export default function AddToCollectionDropdown({
   onClose,
   onSuccess,
 }: AddToCollectionDropdownProps) {
+  const { canEdit } = useAuth();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [membershipCount, setMembershipCount] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -22,20 +24,9 @@ export default function AddToCollectionDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isBulk = personIds.length > 1;
+  const personIdsKey = useMemo(() => JSON.stringify(personIds), [personIds]);
 
-  useEffect(() => {
-    fetchData();
-    
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        onClose?.();
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [JSON.stringify(personIds)]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch all collections
@@ -65,7 +56,20 @@ export default function AddToCollectionDropdown({
     } finally {
       setLoading(false);
     }
-  };
+  }, [personIds]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    void fetchData();
+    
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        onClose?.();
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [canEdit, fetchData, onClose, personIdsKey]);
 
   const toggleCollection = async (collectionId: string) => {
     setProcessingId(collectionId);
@@ -149,6 +153,10 @@ export default function AddToCollectionDropdown({
       setLoading(false);
     }
   };
+
+  if (!canEdit) {
+    return null;
+  }
 
   return (
     <div 

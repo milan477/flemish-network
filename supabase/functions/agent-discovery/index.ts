@@ -1,12 +1,21 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { searchWeb } from "../_shared/webSearch.ts";
-import type { Database, SupabaseAdminClient } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
+import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   buildDiscoveryDerivedLabels,
   upsertDerivedLabelSuggestions,
 } from "../_shared/derivedLabels.ts";
-import { getGeminiModelChain } from "../_shared/gemini.ts";
+import {
+  createGeminiContextCache,
+  deleteGeminiContextCache,
+  getGeminiModelChain,
+  getPrimaryGeminiModel,
+} from "../_shared/gemini.ts";
 import {
   APIFY_ACTORS,
   ApifyError,
@@ -37,13 +46,6 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-const EXTRACTION_MODEL =
-  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
-const CLASSIFICATION_MODEL =
-  Deno.env.get("GEMINI_FLASH_LITE_MODEL") ||
-  Deno.env.get("GEMINI_FLASH_MODEL") ||
-  "gemini-3-flash-preview";
-
 const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 20;
 const MAX_SEARCH_QUERIES = 6;
@@ -64,6 +66,8 @@ const EXTRACTION_FALLBACK_TIMEOUT_MS = 10_000;
 const EXTRACTION_TIMEOUT_RETRY_HOURS = 6;
 const GEMINI_MAX_ATTEMPTS_PER_MODEL = 2;
 const MAX_EXTRACTION_MODELS = 2;
+const EXTRACTION_CACHE_MIN_CHARS = 2200;
+const EXTRACTION_CACHE_TTL_SECONDS = 15 * 60;
 
 const PAGE_CLASSIFICATION_SCHEMA = {
   type: "OBJECT",
@@ -1246,7 +1250,11 @@ async function callGeminiJson<T>(
   systemPrompt: string,
   userPrompt: string,
   schema: Record<string, unknown>,
-  options?: { timeoutMs?: number; attemptsPerModel?: number },
+  options?: {
+    timeoutMs?: number;
+    attemptsPerModel?: number;
+    cachedContentName?: string;
+  },
 ): Promise<T> {
   const timeoutMs = options?.timeoutMs || GEMINI_REQUEST_TIMEOUT_MS;
   const attemptsPerModel = options?.attemptsPerModel || GEMINI_MAX_ATTEMPTS_PER_MODEL;
@@ -1265,15 +1273,27 @@ async function callGeminiJson<T>(
             "Content-Type": "application/json",
             "x-goog-api-key": apiKey,
           },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-            generation_config: {
-              response_mime_type: "application/json",
-              response_schema: schema,
-              temperature: 0.1,
-            },
-          }),
+          body: JSON.stringify(
+            options?.cachedContentName
+              ? {
+                cachedContent: options.cachedContentName,
+                contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                generation_config: {
+                  response_mime_type: "application/json",
+                  response_schema: schema,
+                  temperature: 0.1,
+                },
+              }
+              : {
+                system_instruction: { parts: [{ text: systemPrompt }] },
+                contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                generation_config: {
+                  response_mime_type: "application/json",
+                  response_schema: schema,
+                  temperature: 0.1,
+                },
+              },
+          ),
           signal: controller.signal,
         },
       );
@@ -1334,7 +1354,7 @@ ${page.text.slice(0, 4000)}
     reason: string;
   }>(
     geminiKey,
-    CLASSIFICATION_MODEL,
+    getPrimaryGeminiModel("page_classification"),
     PAGE_CLASSIFICATION_PROMPT,
     prompt,
     PAGE_CLASSIFICATION_SCHEMA,
@@ -1396,12 +1416,12 @@ async function extractContactsFromPage(
 
   const attempts = [
     {
-      model: extractionModels[0] || EXTRACTION_MODEL,
+      model: extractionModels[0] || getPrimaryGeminiModel("contact_extraction"),
       maxChars: primaryMaxChars,
       timeoutMs: EXTRACTION_PRIMARY_TIMEOUT_MS,
     },
     {
-      model: extractionModels[0] || EXTRACTION_MODEL,
+      model: extractionModels[0] || getPrimaryGeminiModel("contact_extraction"),
       maxChars: fallbackMaxChars,
       timeoutMs: EXTRACTION_FALLBACK_TIMEOUT_MS,
     },
@@ -1421,9 +1441,23 @@ async function extractContactsFromPage(
   );
 
   let lastError: unknown = null;
+  let fallbackCacheName: string | null = null;
+  const repeatedPrimaryModel =
+    attempts.filter((attempt) => attempt.model === attempts[0]?.model).length > 1
+      ? attempts[0]?.model
+      : null;
+  const fallbackCachePrompt = `Page URL: ${page.canonicalUrl}
+Page title: ${page.title}
+Page type: ${classification.pageType}
 
-  for (const attempt of attempts) {
-    const prompt = `Page URL: ${page.canonicalUrl}
+Page content:
+${page.text.slice(0, fallbackMaxChars)}
+`;
+
+  try {
+    for (let index = 0; index < attempts.length; index += 1) {
+      const attempt = attempts[index];
+      const prompt = `Page URL: ${page.canonicalUrl}
 Page title: ${page.title}
 Page type: ${classification.pageType}
 
@@ -1431,22 +1465,49 @@ Page content:
 ${page.text.slice(0, attempt.maxChars)}
 `;
 
-    try {
-      const parsed = await callGeminiJson<{ contacts: Record<string, unknown>[] }>(
-        geminiKey,
-        attempt.model,
-        PAGE_EXTRACTION_PROMPT,
-        prompt,
-        PAGE_EXTRACTION_SCHEMA,
-        { timeoutMs: attempt.timeoutMs },
-      );
+      try {
+        const shouldUseFallbackCache =
+          repeatedPrimaryModel === attempt.model &&
+          index > 0 &&
+          fallbackMaxChars >= EXTRACTION_CACHE_MIN_CHARS;
 
-      return (Array.isArray(parsed.contacts) ? parsed.contacts : [])
-        .map((contact) => normalizeExtractedPageContact(contact, page.canonicalUrl))
-        .filter((contact) => normalizeWhitespace(contact.name).length > 0)
-        .filter((contact) => isLikelyUS(contact));
-    } catch (error) {
-      lastError = error;
+        if (shouldUseFallbackCache && !fallbackCacheName) {
+          const cacheKey = await hashString(page.canonicalUrl);
+          fallbackCacheName = await createGeminiContextCache({
+            apiKey: geminiKey,
+            model: attempt.model,
+            contentsText: fallbackCachePrompt,
+            systemPrompt: PAGE_EXTRACTION_PROMPT,
+            displayName: `discovery-extract-${cacheKey.slice(0, 12)}`,
+            ttlSeconds: EXTRACTION_CACHE_TTL_SECONDS,
+          });
+        }
+
+        const parsed = await callGeminiJson<{ contacts: Record<string, unknown>[] }>(
+          geminiKey,
+          attempt.model,
+          PAGE_EXTRACTION_PROMPT,
+          shouldUseFallbackCache
+            ? "Extract discovery candidates from the cached page context."
+            : prompt,
+          PAGE_EXTRACTION_SCHEMA,
+          {
+            timeoutMs: attempt.timeoutMs,
+            cachedContentName: shouldUseFallbackCache ? fallbackCacheName || undefined : undefined,
+          },
+        );
+
+        return (Array.isArray(parsed.contacts) ? parsed.contacts : [])
+          .map((contact) => normalizeExtractedPageContact(contact, page.canonicalUrl))
+          .filter((contact) => normalizeWhitespace(contact.name).length > 0)
+          .filter((contact) => isLikelyUS(contact));
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  } finally {
+    if (fallbackCacheName) {
+      await deleteGeminiContextCache(geminiKey, fallbackCacheName).catch(() => undefined);
     }
   }
 
@@ -3248,34 +3309,18 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
-
-  if (!supabaseUrl || !supabaseKey) {
-    return new Response(
-      JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  if (!geminiKey) {
-    return new Response(
-      JSON.stringify({ error: "Missing GEMINI_API_KEY" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+  let supabase: SupabaseAdminClient | null = null;
   let runId: string | undefined;
 
   try {
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) {
+      throw new HttpError(500, "Missing GEMINI_API_KEY");
+    }
+
+    supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const body = await req.json();
     const query = normalizeWhitespace(safeString(body.query));
     runId = safeString(body.run_id) || undefined;
@@ -3540,14 +3585,14 @@ Deno.serve(async (req: Request) => {
       linkedin_searches_made: linkedinSearchesMade,
       web_search_provider: webSearchProvider,
       llm_model_used: {
-        extraction: EXTRACTION_MODEL,
-        classification: CLASSIFICATION_MODEL,
+        extraction: getPrimaryGeminiModel("contact_extraction"),
+        classification: getPrimaryGeminiModel("page_classification"),
       },
       errors: errors.length > 0 ? errors : undefined,
       steps,
     };
 
-    if (runId) {
+    if (runId && supabase) {
       const costEstimate = llmCallsMade * 0.001 + linkedinSearchesMade * 0.1;
       await supabase
         .from("agent_runs")
@@ -3556,7 +3601,7 @@ Deno.serve(async (req: Request) => {
           completed_at: new Date().toISOString(),
           results: result,
           llm_calls_made: llmCallsMade,
-          llm_model_used: EXTRACTION_MODEL,
+          llm_model_used: getPrimaryGeminiModel("contact_extraction"),
           web_searches_made: webSearchesMade,
           web_search_provider: webSearchProvider,
           cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,
@@ -3568,7 +3613,7 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    if (runId) {
+    if (runId && supabase) {
       try {
         await releaseClaimedFrontier(supabase, runId);
       } catch {
@@ -3597,7 +3642,7 @@ Deno.serve(async (req: Request) => {
         linkedin_searches_made: 0,
       }),
       {
-        status: 500,
+        status: error instanceof HttpError ? error.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );

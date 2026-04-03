@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
 import {
   getVerificationApifyAvailability,
   loadVerificationPerson,
@@ -25,6 +28,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const body = await req.json().catch(() => ({}));
     const personId = safeStr(body.personId);
 
@@ -38,21 +44,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-
-    if (!supabaseUrl || !serviceKey) {
-      return new Response(
-        JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    const supabase = createClient<Database>(supabaseUrl, serviceKey);
     const person = await loadVerificationPerson(supabase, personId);
 
     if (!person) {
@@ -94,7 +86,7 @@ Deno.serve(async (req: Request) => {
         error: error instanceof Error ? error.message : "Internal error",
       }),
       {
-        status: 500,
+        status: error instanceof HttpError ? error.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );

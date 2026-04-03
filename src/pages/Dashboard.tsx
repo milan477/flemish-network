@@ -172,6 +172,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [snippets, setSnippets] = useState<Map<string, string>>(new Map());
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [activeFilters, setActiveFilters] = useState<ActiveAiFilter[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const loadIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
@@ -197,6 +198,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   const handleClearSearchQuery = useCallback(() => {
     clearSearchResults();
+    setSearchError(null);
     updateRouteState((current) => ({
       ...current,
       query: '',
@@ -217,6 +219,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       }
 
       clearSearchResults();
+      setSearchError(null);
 
       const words = query.trim().split(/\s+/);
       const isDirectSearch = words.length <= 4;
@@ -275,9 +278,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           aiResults: aiPeople,
           snippets: Array.from(nextSnippets.entries()),
         });
-      } catch {
+      } catch (error) {
         if (requestId !== searchRequestIdRef.current) return;
         clearSearchResults();
+        setSearchError(
+          error instanceof Error
+            ? error.message
+            : 'AI search is currently unavailable.'
+        );
       } finally {
         if (requestId === searchRequestIdRef.current) {
           setAiLoading(false);
@@ -302,6 +310,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
       const parsed = parseFiltersFromQuery(query, filters);
       clearSearchResults();
+      setSearchError(null);
 
       updateRouteState((current) => ({
         ...current,
@@ -788,6 +797,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onClearFocus={clearFocusedCity}
                   onClearSearch={handleClearSearchQuery}
                   snippets={snippets}
+                  searchError={searchError}
                 />
               ) : (
                 <DirectoryGrid
@@ -800,6 +810,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   focusedCity={focusedCity}
                   onClearFocus={clearFocusedCity}
                   allPeople={displayedPeople}
+                  searchError={searchError}
                 />
               )}
             </div>

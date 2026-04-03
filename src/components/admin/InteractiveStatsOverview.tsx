@@ -1,7 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Building2, Clock, MapPin, Users } from 'lucide-react';
-import type { Person } from '../../lib/supabase';
-import type { FilterPreset } from '../../lib/supabase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Building2, Clock, Loader2, MapPin, Users } from 'lucide-react';
+import { supabase, type FilterPreset, type Person } from '../../lib/supabase';
 import {
   getPersonFlemishConnections,
   personHasFlemishConnection,
@@ -48,6 +47,24 @@ interface InteractiveStatsOverviewProps {
   onBackfillEmbeddings: () => Promise<void>;
   embeddingProgress: { processed: number; total: number } | null;
   embeddingRunning: boolean;
+}
+
+interface EmbeddingBatchRun {
+  gemini_batch_name: string;
+  display_name: string;
+  status: string;
+  request_count: number;
+  people_count: number;
+  batch_state: string | null;
+  batch_stats: {
+    requestCount?: number | string;
+    successfulRequestCount?: number | string;
+    failedRequestCount?: number | string;
+    pendingRequestCount?: number | string;
+  } | null;
+  started_at: string;
+  completed_at: string | null;
+  last_error: string | null;
 }
 
 type ExcludedDimension =
@@ -98,6 +115,23 @@ function countUniqueBy<T>(items: T[], getKey: (item: T) => string | null | undef
       .map((item) => getKey(item))
       .filter((value): value is string => Boolean(value))
   ).size;
+}
+
+function formatBatchNumber(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return '0';
+  const asNumber = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(asNumber)) return '0';
+  return asNumber.toLocaleString();
+}
+
+function formatBatchDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function StatCard({
@@ -246,6 +280,9 @@ export default function InteractiveStatsOverview({
 }: InteractiveStatsOverviewProps) {
   const [crossFilters, setCrossFilters] =
     useState<CrossFilterState>(EMPTY_CROSS_FILTERS);
+  const [embeddingBatchRuns, setEmbeddingBatchRuns] = useState<EmbeddingBatchRun[]>([]);
+  const [embeddingBatchLoading, setEmbeddingBatchLoading] = useState(true);
+  const [embeddingBatchStarting, setEmbeddingBatchStarting] = useState(false);
 
   const personToSectorsMap = useMemo(() => {
     const next = new Map<string, Set<string>>();
@@ -260,6 +297,43 @@ export default function InteractiveStatsOverview({
 
     return next;
   }, [personSectors]);
+
+  const loadEmbeddingBatches = useCallback(async () => {
+    setEmbeddingBatchLoading(true);
+    const { data } = await supabase.functions.invoke('generate-embeddings', {
+      body: { action: 'list_batches' },
+    });
+    setEmbeddingBatchRuns((data?.batches || []) as EmbeddingBatchRun[]);
+    setEmbeddingBatchLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadEmbeddingBatches();
+  }, [loadEmbeddingBatches]);
+
+  useEffect(() => {
+    const hasActiveBatch = embeddingBatchRuns.some(
+      (run) => run.status === 'running' || run.status === 'succeeded'
+    );
+
+    if (!hasActiveBatch) return;
+
+    const interval = setInterval(loadEmbeddingBatches, 15000);
+    return () => clearInterval(interval);
+  }, [embeddingBatchRuns, loadEmbeddingBatches]);
+
+  const handleStartEmbeddingBatch = useCallback(async () => {
+    setEmbeddingBatchStarting(true);
+    await supabase.functions.invoke('generate-embeddings', {
+      body: {
+        action: 'start_batch',
+        backfill: true,
+        batch_size: 40,
+      },
+    });
+    setEmbeddingBatchStarting(false);
+    await loadEmbeddingBatches();
+  }, [loadEmbeddingBatches]);
 
   const sectorToPeopleMap = useMemo(() => {
     const next = new Map<string, Set<string>>();
@@ -617,6 +691,8 @@ export default function InteractiveStatsOverview({
     }));
   }, []);
 
+  const latestEmbeddingBatch = embeddingBatchRuns[0] || null;
+
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -806,14 +882,35 @@ export default function InteractiveStatsOverview({
                 Embedding Search Index
               </h3>
               <div className="flex flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={onBackfillEmbeddings}
-                  disabled={embeddingRunning}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
-                >
-                  {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={onBackfillEmbeddings}
+                    disabled={embeddingRunning}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                  >
+                    {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStartEmbeddingBatch}
+                    disabled={embeddingBatchStarting}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors disabled:opacity-50"
+                  >
+                    {embeddingBatchStarting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Starting Batch...
+                      </>
+                    ) : (
+                      'Run Offline Batch'
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Use the normal queue for immediate indexing. The offline batch path is optional and
+                  intended for larger refreshes that can run asynchronously.
+                </p>
                 {embeddingProgress && (
                   <div>
                     <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
@@ -845,6 +942,66 @@ export default function InteractiveStatsOverview({
                       {embeddingProgress.processed} profiles indexed
                     </span>
                   )}
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-gray-700">
+                        Recent Offline Batch
+                      </p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {embeddingBatchLoading
+                          ? 'Loading batch status...'
+                          : latestEmbeddingBatch
+                          ? `${latestEmbeddingBatch.status} · ${formatBatchDate(
+                              latestEmbeddingBatch.started_at
+                            )}`
+                          : 'No offline embedding batches yet.'}
+                      </p>
+                    </div>
+                    {latestEmbeddingBatch && (
+                      <span
+                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                          latestEmbeddingBatch.status === 'ingested'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : latestEmbeddingBatch.status === 'failed' ||
+                              latestEmbeddingBatch.status === 'cancelled'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {latestEmbeddingBatch.status}
+                      </span>
+                    )}
+                  </div>
+                  {latestEmbeddingBatch && (
+                    <div className="mt-3 text-xs text-gray-600 space-y-1">
+                      <p>
+                        {formatBatchNumber(latestEmbeddingBatch.people_count)} people ·{' '}
+                        {formatBatchNumber(latestEmbeddingBatch.request_count)} requests
+                      </p>
+                      {latestEmbeddingBatch.batch_stats && (
+                        <p>
+                          Success {formatBatchNumber(
+                            latestEmbeddingBatch.batch_stats.successfulRequestCount
+                          )}{' '}
+                          · Failed{' '}
+                          {formatBatchNumber(
+                            latestEmbeddingBatch.batch_stats.failedRequestCount
+                          )}{' '}
+                          · Pending{' '}
+                          {formatBatchNumber(
+                            latestEmbeddingBatch.batch_stats.pendingRequestCount
+                          )}
+                        </p>
+                      )}
+                      {latestEmbeddingBatch.last_error && (
+                        <p className="text-red-600 max-h-10 overflow-hidden">
+                          {latestEmbeddingBatch.last_error}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

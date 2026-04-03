@@ -10,13 +10,15 @@ import InteractiveStatsOverview from '../components/admin/InteractiveStatsOvervi
 import { type ProfileSuggestion } from '../components/admin/SuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
+import AccessManagementPanel from '../components/admin/AccessManagementPanel';
 import {
   type PersonSectorRow,
 } from '../components/admin/interactiveStatsShared';
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
 import { normalizeVerificationSuggestions } from '../lib/verification';
+import { useAuth } from '../lib/auth';
 
-type AdminTab = 'overview' | 'agents' | 'discovered';
+type AdminTab = 'overview' | 'agents' | 'discovered' | 'access';
 const VERIFY_BATCH_SIZE = 5;
 
 interface AdminProps {
@@ -24,10 +26,13 @@ interface AdminProps {
 }
 
 export default function Admin({ onNavigate }: AdminProps) {
+  const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
   const activeTab: AdminTab =
-    tab === 'agents' || tab === 'discovered' ? tab : 'overview';
+    tab === 'agents' || tab === 'discovered' || (tab === 'access' && isAdmin)
+      ? (tab as AdminTab)
+      : 'overview';
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
@@ -149,31 +154,30 @@ export default function Admin({ onNavigate }: AdminProps) {
     loadDerivedLabels();
   }, [loadData, loadSuggestions, loadDerivedLabels]);
 
+  useEffect(() => {
+    if (tab === 'access' && !isAdmin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [isAdmin, navigate, tab]);
+
   const handleAskAI = useCallback(
     async (personIds: string[]) => {
       setAiLoading(true);
       setAiLoadingIds(new Set(personIds));
 
       try {
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/agent-verify`;
         const idsWithoutSuggestions = new Set<string>();
 
         for (let index = 0; index < personIds.length; index += VERIFY_BATCH_SIZE) {
           const batch = personIds.slice(index, index + VERIFY_BATCH_SIZE);
-          const resp = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ person_ids: batch, batch_size: batch.length }),
+          const { data, error } = await supabase.functions.invoke('agent-verify', {
+            body: { person_ids: batch, batch_size: batch.length },
           });
 
-          if (!resp.ok) {
+          if (error) {
             continue;
           }
 
-          const data = await resp.json();
           if (!Array.isArray(data?.steps)) {
             continue;
           }
@@ -334,12 +338,27 @@ export default function Admin({ onNavigate }: AdminProps) {
             <Users className="w-4 h-4" />
             Discovered
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => handleTabChange('access')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'access'
+                  ? 'border-teal-600 text-teal-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Access
+            </button>
+          )}
         </div>
       </div>
 
       {activeTab === 'agents' && <AgentDashboard />}
 
       {activeTab === 'discovered' && <DiscoveredContactsPanel />}
+
+      {activeTab === 'access' && isAdmin && <AccessManagementPanel />}
 
       {activeTab === 'overview' && (
         <InteractiveStatsOverview

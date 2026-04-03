@@ -1,6 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database, SupabaseAdminClient } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
+import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   buildVerificationDerivedLabels,
   upsertDerivedLabelSuggestions,
@@ -122,21 +126,7 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-
-  if (!supabaseUrl || !serviceKey) {
-    return new Response(
-      JSON.stringify({ error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  const supabase = createClient<Database>(supabaseUrl, serviceKey);
+  let supabase: SupabaseAdminClient | null = null;
   let runId: string | undefined;
   let llmCallsMade = 0;
   let webSearchesMade = 0;
@@ -145,6 +135,10 @@ Deno.serve(async (req: Request) => {
   let llmModelUsed = "";
 
   try {
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const body = await req.json().catch(() => ({}));
     const batchSizeRaw = Number(body.batch_size ?? DEFAULT_BATCH_SIZE);
     const maxAgeMonthsRaw = Number(body.max_age_months ?? DEFAULT_MAX_AGE_MONTHS);
@@ -358,7 +352,7 @@ Deno.serve(async (req: Request) => {
       steps,
     };
 
-    if (runId) {
+    if (runId && supabase) {
       const costEstimate =
         llmCallsMade * 0.001 + linkedinScrapesMade * 0.003 + webSearchesMade * 0.0005;
       await supabase
@@ -383,7 +377,7 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    if (runId) {
+    if (runId && supabase) {
       const { error: updateError } = await supabase
         .from("agent_runs")
         .update({
@@ -416,7 +410,7 @@ Deno.serve(async (req: Request) => {
         web_searches_made: webSearchesMade,
       }),
       {
-        status: 500,
+        status: error instanceof HttpError ? error.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import {
   Navigate,
+  Outlet,
   Route,
   Routes,
   useLocation,
@@ -14,6 +15,9 @@ import OrganizationProfile from './pages/OrganizationProfile';
 import Collections from './pages/Collections';
 import Admin from './pages/Admin';
 import AddContact from './pages/AddContact';
+import Login from './pages/Login';
+import AuthCallback from './pages/AuthCallback';
+import Account from './pages/Account';
 import type { FilterPreset } from './lib/supabase';
 import {
   buildDashboardLocation,
@@ -22,6 +26,7 @@ import {
   normalizePage,
 } from './lib/appRouting';
 import { getLastDashboardLocation } from './lib/dashboardSession';
+import { RequireAuth, RequireRole, useAuth } from './lib/auth';
 
 function PersonProfileRoute({
   onNavigate,
@@ -69,6 +74,33 @@ function CollectionDetailRoute({
   );
 }
 
+function ProtectedLayout({
+  currentPage,
+  onNavigate,
+  onOpenSearch,
+}: {
+  currentPage: string;
+  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
+  onOpenSearch: () => void;
+}) {
+  const { staffUser, signOut, canEdit } = useAuth();
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navigation
+        currentPage={currentPage}
+        onNavigate={onNavigate}
+        onOpenSearch={onOpenSearch}
+        staffUser={staffUser}
+        canEdit={canEdit}
+        canAccessAdmin={canEdit}
+        onSignOut={signOut}
+      />
+      <Outlet />
+    </div>
+  );
+}
+
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -113,6 +145,11 @@ export default function App() {
         return;
       }
 
+      if (normalizedPage === 'account') {
+        navigate('/account');
+        return;
+      }
+
       if (normalizedPage === 'person' && id) {
         navigate(`/people/${id}`, {
           state: { from: currentLocation },
@@ -136,39 +173,51 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        onOpenSearch={handleOpenSearch}
-      />
-
-      <Routes>
-        <Route path="/" element={<Dashboard onNavigate={handleNavigate} />} />
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route element={<RequireAuth />}>
         <Route
-          path="/people/:personId"
-          element={<PersonProfileRoute onNavigate={handleNavigate} />}
-        />
-        <Route
-          path="/organizations/:organizationId"
-          element={<OrganizationProfileRoute onNavigate={handleNavigate} />}
-        />
-        <Route
-          path="/collections"
-          element={<CollectionsIndexRoute onNavigate={handleNavigate} />}
-        />
-        <Route
-          path="/collections/:collectionId"
-          element={<CollectionDetailRoute onNavigate={handleNavigate} />}
-        />
-        <Route path="/admin" element={<Admin onNavigate={handleNavigate} />} />
-        <Route path="/admin/:tab" element={<Admin onNavigate={handleNavigate} />} />
-        <Route
-          path="/contacts/new"
-          element={<AddContact onNavigate={handleNavigate} />}
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </div>
+          element={
+            <ProtectedLayout
+              currentPage={currentPage}
+              onNavigate={handleNavigate}
+              onOpenSearch={handleOpenSearch}
+            />
+          }
+        >
+          <Route path="/" element={<Dashboard onNavigate={handleNavigate} />} />
+          <Route
+            path="/people/:personId"
+            element={<PersonProfileRoute onNavigate={handleNavigate} />}
+          />
+          <Route
+            path="/organizations/:organizationId"
+            element={<OrganizationProfileRoute onNavigate={handleNavigate} />}
+          />
+          <Route
+            path="/collections"
+            element={<CollectionsIndexRoute onNavigate={handleNavigate} />}
+          />
+          <Route
+            path="/collections/:collectionId"
+            element={<CollectionDetailRoute onNavigate={handleNavigate} />}
+          />
+          <Route path="/account" element={<Account />} />
+          <Route element={<RequireRole role="editor" />}>
+            <Route path="/admin" element={<Admin onNavigate={handleNavigate} />} />
+            <Route
+              path="/admin/:tab"
+              element={<Admin onNavigate={handleNavigate} />}
+            />
+            <Route
+              path="/contacts/new"
+              element={<AddContact onNavigate={handleNavigate} />}
+            />
+          </Route>
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

@@ -60,6 +60,19 @@ interface WebSearchCacheRow extends RowRecord {
   searched_at: string | null;
 }
 
+interface StaffUserRow extends RowRecord {
+  id: string;
+  user_id: string | null;
+  email: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: string;
+  status: string;
+  last_sign_in_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 interface PeopleRow extends RowRecord {
   id: string;
   name: string;
@@ -162,6 +175,24 @@ interface EmbeddingJobRow extends RowRecord {
   claimed_dirty_at: string | null;
   claim_token: string | null;
   attempts: number;
+  last_error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface EmbeddingBatchRunRow extends RowRecord {
+  id: string;
+  gemini_batch_name: string;
+  display_name: string;
+  status: string;
+  request_count: number;
+  people_count: number;
+  manifest: Record<string, unknown>[] | null;
+  batch_state: string | null;
+  batch_stats: Record<string, unknown> | null;
+  started_at: string | null;
+  completed_at: string | null;
+  last_polled_at: string | null;
   last_error: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -593,12 +624,60 @@ interface OpsDiscoveryDomainYieldRow extends RowRecord {
   last_rss_at: string | null;
 }
 
+interface OpsSearchBenchmarkClickRow extends RowRecord {
+  slug: string;
+  query_text: string;
+  intent: string | null;
+  click_count: number | null;
+  unique_people_clicked: number | null;
+  last_clicked_at: string | null;
+}
+
+interface OpsBenchmarkDiscoverySourceCoverageRow extends RowRecord {
+  slug: string;
+  label: string;
+  source_family: string | null;
+  domain_pattern: string | null;
+  approved_contacts: number | null;
+  approved_new_contacts: number | null;
+  merged_contacts: number | null;
+  rejected_contacts: number | null;
+  last_reviewed_at: string | null;
+}
+
+interface OpsDiscoveryReviewMetricsRow extends RowRecord {
+  pending_contacts: number | null;
+  reviewed_contacts: number | null;
+  approved_contacts: number | null;
+  approved_new_contacts: number | null;
+  merged_into_existing_contacts: number | null;
+  rejected_contacts: number | null;
+  approval_rate_pct: number | string | null;
+  median_review_hours: number | string | null;
+}
+
+interface OpsConnectionSuggestionMetricsRow extends RowRecord {
+  reviewed_suggestions: number | null;
+  approved_suggestions: number | null;
+  rejected_suggestions: number | null;
+  dismissed_suggestions: number | null;
+  acceptance_rate_pct: number | string | null;
+}
+
+interface OpsPhaseSuccessMetricRow extends RowRecord {
+  metric_key: string;
+  metric_value: number | string | null;
+  unit: string;
+  description: string;
+}
+
 export type Database = {
   public: {
     Tables: {
       agent_runs: Table<AgentRunRow>;
       api_quotas: Table<ApiQuotaRow>;
       web_search_cache: Table<WebSearchCacheRow>;
+      staff_users: Table<StaffUserRow>;
       people: Table<PeopleRow>;
       locations: Table<LocationRow>;
       sectors: Table<SectorRow>;
@@ -608,6 +687,7 @@ export type Database = {
       profile_suggestions: Table<ProfileSuggestionRow>;
       search_clicks: Table<SearchClickRow>;
       embedding_jobs: Table<EmbeddingJobRow>;
+      embedding_batch_runs: Table<EmbeddingBatchRunRow>;
       connections: Table<ConnectionRow>;
       people_search_documents: Table<PeopleSearchDocumentRow>;
       person_text_chunks: Table<PersonTextChunkRow>;
@@ -625,6 +705,11 @@ export type Database = {
     };
     Views: {
       coverage_gaps: View<CoverageGapRow>;
+      ops_search_benchmark_clicks: View<OpsSearchBenchmarkClickRow>;
+      ops_discovery_review_metrics: View<OpsDiscoveryReviewMetricsRow>;
+      ops_benchmark_discovery_source_coverage: View<OpsBenchmarkDiscoverySourceCoverageRow>;
+      ops_connection_suggestion_metrics: View<OpsConnectionSuggestionMetricsRow>;
+      ops_phase_success_metrics: View<OpsPhaseSuccessMetricRow>;
       ops_discovery_domain_yield: View<OpsDiscoveryDomainYieldRow>;
       ops_discovery_page_type_mix: View<OpsDiscoveryPageTypeMixRow>;
       ops_discovery_coverage_summary: View<OpsDiscoveryCoverageSummaryRow>;
@@ -637,6 +722,16 @@ export type Database = {
           p_month: string;
         };
         Returns: null;
+      };
+      can_request_staff_login: {
+        Args: {
+          p_email: string;
+        };
+        Returns: boolean;
+      };
+      activate_staff_user_session: {
+        Args: Record<string, never>;
+        Returns: StaffUserRow;
       };
       claim_discovery_frontier: {
         Args: {

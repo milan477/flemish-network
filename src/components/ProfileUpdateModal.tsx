@@ -64,22 +64,14 @@ export default function ProfileUpdateModal({
     setWarnings([]);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-profile`;
-      const resp = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ personId: person.id }),
+      const { data, error } = await supabase.functions.invoke('update-profile', {
+        body: { personId: person.id },
       });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(err.error || 'Request failed');
+      if (error) {
+        throw new Error(error.message);
       }
 
-      const data = await resp.json();
       const nextSuggestions = normalizeVerificationSuggestions(data?.suggestions);
       const nextWarnings = Array.isArray(data?.warnings)
         ? data.warnings.filter((warning: unknown): warning is string => typeof warning === 'string')

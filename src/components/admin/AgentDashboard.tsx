@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import DiscoveryPlanningPanel from './DiscoveryPlanningPanel';
+import OpsMetricsPanel from './OpsMetricsPanel';
 
 interface AgentRun {
   id: string;
@@ -354,6 +355,8 @@ export default function AgentDashboard() {
         onRunDiscovery={(query) => triggerAgent('discovery', query ? { query } : {})}
         isRunning={triggerLoading === 'discovery'}
       />
+
+      <OpsMetricsPanel />
 
       {/* Run History Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

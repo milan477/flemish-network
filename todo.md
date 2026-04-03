@@ -13,6 +13,12 @@ Working rule for every task:
   Update (2026-04-01): Added `react-router-dom` routes for the dashboard, people, organizations, collections, admin tabs, and add-contact flow. Dashboard state now serializes into the URL, admin tabs use `/admin/:tab`, and session-backed search caching plus smart back-navigation preserve context when moving into profile/detail pages and back.
   Repo touchpoints: `src/App.tsx`, `src/main.tsx`, `src/pages/Dashboard.tsx`, `src/pages/Admin.tsx`, `src/components/Navigation.tsx`, `src/lib/appRouting.ts`, `src/lib/dashboardSession.ts`.
 
+- [x] Add staff-only authentication, account management, and role gates for the application shell.
+  Do: require approved staff sign-in before the app loads, add a self-service account page, separate app-user auth from directory contacts, gate editor/admin tools in both the UI and the backend, and remove public access to internal edge functions and storage writes.
+  Update (2026-04-02): Added `public.staff_users` plus auth RPCs and tighter RLS in migration `20260402153000_staff_auth_access_control.sql`; wrapped the frontend in `AuthProvider`; added `/login`, `/auth/callback`, and `/account`; turned the top-right nav avatar into a real account menu; hid viewer-ineligible editing controls across collections/profile/admin surfaces; and deployed staff-role checks into the live edge functions (`search-people`, `geocode`, `ai-agent`, `discover-contacts`, `search-contacts`, `suggest-people`, `update-profile`, `agent-verify`, `agent-scheduler`, `agent-discovery`, `agent-connections`, `generate-embeddings`). Remote smoke tests confirmed those endpoints now reject unauthenticated and anon-token requests with `401`, and the linked project’s `staff_users` table is live but still needs the first admin email inserted before anyone can sign in.
+  Repo touchpoints: `src/lib/auth.tsx`, `src/pages/Login.tsx`, `src/pages/AuthCallback.tsx`, `src/pages/Account.tsx`, `src/App.tsx`, `src/components/Navigation.tsx`, `src/pages/Admin.tsx`, `src/components/admin/AccessManagementPanel.tsx`, `supabase/migrations/20260402153000_staff_auth_access_control.sql`, `supabase/functions/_shared/auth.ts`, role-gated edge functions.
+  Strategy refs: follow-up security hardening task; not derived from `AI-strategy.md`.
+
 ## Phase 0 — Contract Cleanup
 
 - [x] Remove dead `people.flemish_connection` writes from every AI-assisted create, merge, and review flow.
@@ -234,6 +240,7 @@ Working rule for every task:
 - [x] Add bio-chunk vectors once lexical + single-vector search is stable.
   Do: create `person_text_chunks`, embed chunks, retrieve top chunks, roll results back up to people, and reuse matched chunk text for snippets/evidence.
   Update (2026-04-01): Phase 4 adds `person_text_chunks`, the `match_person_text_chunks()` RPC, and HNSW chunk-vector indexing. `generate-embeddings` now writes `bio`, `position`, and `combined` chunks, while `search-people` retrieves chunk matches separately, folds them into the fused ranking, and uses matched chunk text as the returned snippet when that signal wins.
+  Update (2026-04-03): `suggest-people` now also uses the chunk-vector lane instead of relying only on legacy person-level matches, so collection recommendations stay aligned with the live embedding/search stack and no longer fail silently when the older retrieval path underperforms or errors.
   Repo touchpoints: new migration(s), `generate-embeddings`, `search-people`.
   Strategy refs: §Embeddings Strategy -> `2. Add bio-chunk vectors` (line 1270), `Devil's Advocate` (line 1314), §Roadmap -> `Phase 4: Labeling, Embeddings, Connections` (line 1459).
 
@@ -243,19 +250,22 @@ Working rule for every task:
   Repo touchpoints: `discover_connections()` SQL/RPC, connection migrations/views, profile/graph UI.
   Strategy refs: §Connections Strategy (line 1201), `What To Change` (line 1213), `Scope` (line 1238), §Roadmap -> `Phase 4: Labeling, Embeddings, Connections` (line 1459).
 
-## Cross-Cutting Model, Ops, and Evaluation Work
+## Phase 5 – Cross-Cutting Model, Ops, and Evaluation Work
 
-- [ ] Move production defaults to stable Gemini 2.5 models.
+- [x] Move production defaults to stable Gemini 2.5 models.
   Do: replace preview-first hardcoded defaults with shared env/config-based model selection using `gemini-2.5-flash-lite`, `gemini-2.5-flash`, and `gemini-2.5-pro`; keep Gemini 3.x preview models opt-in for evaluation lanes only.
+  Update (2026-04-02): `_shared/gemini.ts` now owns stable route defaults across the active stack: query parsing and page classification default to `gemini-2.5-flash-lite`, extraction and verification default to `gemini-2.5-flash`, and merge/offline evaluation routes default to `gemini-2.5-pro`, while preview models remain opt-in through per-route env overrides. `discover-contacts`, `suggest-people`, `agent-discovery`, `search-people`, `agent-verify`, `update-profile`, and `ai-agent` now all read that shared routing instead of carrying preview-first hardcoded fallbacks.
   Repo touchpoints: all AI edge functions, shared model helper, env docs.
   Strategy refs: §Critical Findings -> `8. The current model strategy leans too hard on preview models` (line 220), §Model Strategy -> `Production Defaults` (line 1363), `Why Not Make Gemini 3.x Preview The Core` (line 1379).
 
-- [ ] Add the caching and batch patterns the strategy depends on.
+- [x] Add the caching and batch patterns the strategy depends on.
   Do: use context caching for repeated large prompt/evidence prefixes and Gemini Batch API for large embedding refreshes or other offline high-volume jobs.
+  Update (2026-04-02): `_shared/gemini.ts` now exposes explicit Gemini context-cache helpers, and `agent-discovery` uses them opportunistically on repeated extraction retries instead of forcing caching into every path. `generate-embeddings` keeps the existing queue-first worker for immediate refreshes, but now also supports an optional async Gemini Batch API lane backed by internal `embedding_batch_runs`, with Admin showing recent offline batch status in the existing Embedding Search Index card.
   Repo touchpoints: shared AI helpers, embedding jobs, offline admin tooling.
   Strategy refs: §Caching And Batch Strategy (line 1385).
 
-- [ ] Track the success metrics phase by phase in Admin or saved ops queries.
+- [x] Track the success metrics phase by phase in Admin or saved ops queries.
   Do: implement dashboards or materialized views for search benchmark success, discovery recall/yield, multi-evidence rate, review approval rates, duplicate rate, verified-US-location rate, gap-closure rate, and connection suggestion acceptance.
+  Update (2026-04-02): Migration `20260402103000_phase5_model_ops_metrics.sql` adds internal `ops_connection_suggestion_metrics`, expands `ops_phase_success_metrics` to cover search benchmark success, discovery source recall/yield, multi-evidence rate, review approval rates, duplicate rate, embedding/location coverage, gap closure, and connection suggestion acceptance, and adds internal `embedding_batch_runs` for offline embedding batch bookkeeping. The Admin Agents tab now renders a compact `OpsMetricsPanel` with live model-default summaries plus those phase metrics through the privileged `agent-scheduler` `metrics` action.
   Repo touchpoints: admin analytics, SQL views/materialized views, benchmark fixtures.
   Strategy refs: §Success Metrics (line 1469), §Final Recommendation (line 1491).

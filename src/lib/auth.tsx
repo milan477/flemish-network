@@ -1,0 +1,238 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { ShieldAlert } from 'lucide-react';
+import { supabase, type AppRole, type StaffUser } from './supabase';
+
+interface AuthContextValue {
+  session: Session | null;
+  staffUser: StaffUser | null;
+  loading: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
+  refreshStaffUser: () => Promise<void>;
+  signOut: () => Promise<void>;
+  hasRole: (role: AppRole) => boolean;
+  canEdit: boolean;
+  isAdmin: boolean;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const ROLE_RANK: Record<AppRole, number> = {
+  viewer: 1,
+  editor: 2,
+  admin: 3,
+};
+
+function FullScreenSpinner({ label }: { label: string }) {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
+        <p className="text-sm text-gray-500">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function normalizeAuthError(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) return 'Authentication failed.';
+  if (trimmed.includes('not approved')) {
+    return 'This email address is not approved for the Flemish Network workspace.';
+  }
+  if (trimmed.includes('disabled')) {
+    return 'This account has been disabled.';
+  }
+  return trimmed;
+}
+
+async function loadApprovedStaffUser(session: Session): Promise<StaffUser> {
+  const { error: activateError } = await supabase.rpc('activate_staff_user_session');
+  if (activateError) {
+    throw new Error(normalizeAuthError(activateError.message));
+  }
+
+  const { data, error } = await supabase
+    .from('staff_users')
+    .select('id, user_id, email, full_name, avatar_url, role, status, last_sign_in_at, created_at, updated_at')
+    .eq('user_id', session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(normalizeAuthError(error.message));
+  }
+
+  if (!data) {
+    throw new Error('Unable to load your staff profile.');
+  }
+
+  return data as StaffUser;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [staffUser, setStaffUser] = useState<StaffUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const hydrateSession = useCallback(async (nextSession: Session | null) => {
+    setLoading(true);
+    setSession(nextSession);
+
+    if (!nextSession) {
+      setStaffUser(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const approvedStaffUser = await loadApprovedStaffUser(nextSession);
+      setStaffUser(approvedStaffUser);
+      setAuthError(null);
+    } catch (error) {
+      setStaffUser(null);
+      setAuthError(
+        error instanceof Error ? error.message : 'Authentication failed.'
+      );
+      await supabase.auth.signOut();
+      setSession(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      void hydrateSession(data.session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      queueMicrotask(() => {
+        if (!active) return;
+        void hydrateSession(nextSession);
+      });
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [hydrateSession]);
+
+  const refreshStaffUser = useCallback(async () => {
+    const {
+      data: { session: currentSession },
+    } = await supabase.auth.getSession();
+    await hydrateSession(currentSession);
+  }, [hydrateSession]);
+
+  const signOut = useCallback(async () => {
+    setAuthError(null);
+    await supabase.auth.signOut();
+    setStaffUser(null);
+    setSession(null);
+  }, []);
+
+  const hasRole = useCallback(
+    (role: AppRole) => {
+      if (!staffUser) return false;
+      return ROLE_RANK[staffUser.role] >= ROLE_RANK[role];
+    },
+    [staffUser]
+  );
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      session,
+      staffUser,
+      loading,
+      authError,
+      clearAuthError: () => setAuthError(null),
+      refreshStaffUser,
+      signOut,
+      hasRole,
+      canEdit: hasRole('editor'),
+      isAdmin: hasRole('admin'),
+    }),
+    [session, staffUser, loading, authError, refreshStaffUser, signOut, hasRole]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used inside AuthProvider');
+  }
+  return context;
+}
+
+export function RequireAuth() {
+  const { session, staffUser, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return <FullScreenSpinner label="Checking your staff session..." />;
+  }
+
+  if (!session || !staffUser) {
+    const redirect = `${location.pathname}${location.search}`;
+    return (
+      <Navigate
+        to={`/login?redirect=${encodeURIComponent(redirect)}`}
+        replace
+      />
+    );
+  }
+
+  return <Outlet />;
+}
+
+export function RequireRole({ role }: { role: AppRole }) {
+  const { loading, hasRole } = useAuth();
+
+  if (loading) {
+    return <FullScreenSpinner label="Checking your access level..." />;
+  }
+
+  if (!hasRole(role)) {
+    return (
+      <div className="min-h-[calc(100vh-64px)] bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+            <ShieldAlert className="h-6 w-6 text-red-500" />
+          </div>
+          <h1 className="text-xl font-semibold text-gray-900">Access denied</h1>
+          <p className="mt-2 text-sm text-gray-500">
+            Your account does not have permission to use this section.
+          </p>
+          <Link
+            to="/"
+            className="mt-6 inline-flex rounded-lg bg-yellow-400 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-yellow-500"
+          >
+            Return to Network
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return <Outlet />;
+}

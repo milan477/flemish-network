@@ -1,6 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database, SupabaseAdminClient } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
+import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -342,22 +346,15 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !supabaseKey) {
-    return jsonResponse(
-      { error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" },
-      500,
-    );
-  }
-
-  const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+  let supabase: SupabaseAdminClient | null = null;
 
   let runId: string | undefined;
   let requestedTypes: ConnectionType[] = [...ALLOWED_TYPES];
 
   try {
+    supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const body = await req.json().catch(() => ({}));
     runId = typeof body.run_id === "string" && body.run_id.trim()
       ? body.run_id.trim()
@@ -468,7 +465,7 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse(result);
   } catch (error) {
-    if (runId) {
+    if (runId && supabase) {
       await supabase
         .from("agent_runs")
         .update({
@@ -487,7 +484,7 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Internal error" },
-      500,
+      error instanceof HttpError ? error.status : 500,
     );
   }
 });

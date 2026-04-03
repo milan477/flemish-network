@@ -3,7 +3,12 @@
 ## What This Is
 A web platform for the Delegation of Flanders to the USA that maps and makes searchable the Flemish professional network across the United States. Replaces fragmented Excel-based tracking with a unified, AI-powered system. Target users: Fayat fellowship coordinators, Flanders Investment & Trade staff, diplomats, and Flemish professionals themselves.
 
-## Recent Notes (2026-04-01)
+## Recent Notes (2026-04-02)
+- Collection "Suggested People" is back on the current embedding stack. `suggest-people` no longer relies only on the older `match_people()` path; it now also consumes `match_person_text_chunks()`, rolls chunk matches back up to candidate people before Gemini reranking, and returns explicit error/message text to the frontend. `CollectionDetail` now includes occupation/bio context in its query seed and shows backend failures instead of silently rendering an empty suggestion state. Dashboard AI search also now surfaces backend search errors inline instead of collapsing to a blank "No results" state.
+- Staff auth and role-based access control is live. Migration `20260402153000_staff_auth_access_control.sql` adds `staff_users`, role/status enums, self-service auth RPCs (`can_request_staff_login`, `activate_staff_user_session`), stricter RLS on the main app tables, and staff-only storage policies for `profile-photos`; follow-up migration `20260402170000_make_profile_photos_bucket_private.sql` also flips the bucket itself to `public = false` so photo reads are no longer publicly exposed. The frontend now has `/login`, `/auth/callback`, and `/account`, wraps the app in `AuthProvider`, shows a real account menu in `Navigation`, hides editor-only controls from viewers, and adds an admin-only `Access` tab for managing approved staff users. The remote project `ofzuhajxwxggybkuzefq` has already been migrated and the affected edge functions redeployed; smoke tests confirmed unauthenticated and anon-token calls to `search-people`, `discover-contacts`, and `agent-scheduler` now return `401`. The remote `staff_users` table is currently empty, so the first admin email still needs to be inserted before anyone can complete sign-in.
+- Phase 5 cross-cutting model, ops, and evaluation work is live. Migration `20260402103000_phase5_model_ops_metrics.sql` adds the internal `embedding_batch_runs` table plus internal `ops_connection_suggestion_metrics` and an expanded `ops_phase_success_metrics` view covering search benchmark success, discovery source recall/yield, multi-evidence rate, review approval rates, duplicate rate, embedding/location coverage, gap closure, and connection suggestion acceptance. `agent-scheduler` now exposes a privileged `metrics` action, the Admin Agents tab renders a compact `OpsMetricsPanel` showing the current model routes plus those live Phase 5 metrics, and the existing Admin Overview `Embedding Search Index` card now offers an optional offline Gemini Batch API lane alongside the normal queue-based embedding refresh path.
+- Shared Gemini model routing now defaults to stable Gemini 2.5 models instead of preview-first fallbacks. `_shared/gemini.ts` now maps `query_parsing` and `page_classification` to `gemini-2.5-flash-lite`, `contact_extraction` and `profile_verification` to `gemini-2.5-flash`, and `lightweight_text_merge` / `offline_evaluation` to `gemini-2.5-pro`, while preview models stay opt-in through explicit per-route env overrides. `discover-contacts` and `suggest-people` now use those shared routes too, so the active stack no longer has stray `gemini-3-flash-preview` defaults.
+- `_shared/gemini.ts` now also exposes explicit Gemini context-cache helpers. The current implementation uses them selectively inside `agent-discovery` on repeated extraction retries only, rather than forcing cache creation into every LLM call path. `generate-embeddings` still keeps the queue as the default online refresh mechanism, but can now also start, poll, cancel, and ingest optional async Gemini embedding batches through `embedding_batch_runs`.
 - Frontend navigation is now URL-driven instead of in-memory. `react-router-dom` owns top-level routes (`/`, `/people/:id`, `/organizations/:id`, `/collections`, `/collections/:id`, `/admin`, `/admin/:tab`, `/contacts/new`), dashboard view/search/filter/focused-city state is encoded in the query string, admin tabs survive refresh via `/admin/:tab`, and AI search results are cached in `sessionStorage` so going from a search result into a profile and back does not rerun the expensive search in the same browser session. The dashboard also records the last network URL so “Back to directory” and the top nav can return users to their prior network context instead of always resetting to the map.
 - Phase 4 labeling, embeddings, and connections is live. Migration `20260401120000_phase4_labeling_embeddings_connections.sql` makes `locations.latitude` / `locations.longitude` nullable, adds `geocode_source` / `geocoded_at`, creates `derived_label_suggestions`, `person_text_chunks`, and `connection_suggestions`, extends `connections` with evidence columns, adds `match_person_text_chunks()`, and expands `discover_connections()` to the hard-edge set `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, and `event_peer`. Discovery and verification now upsert evidence-bearing derived labels before promotion, Admin renders them through `DerivedLabelsPanel`, discovered-contact review cards show pending label chips, and Person Profile shows soft affinity suggestions from `connection_suggestions` separately from the hard graph. `generate-embeddings` now builds labeled embedding documents plus `bio` / `position` / `combined` chunk vectors via batched Gemini embedding calls, while `search-people` rolls chunk matches back up to people and can use matched chunk text as the snippet. The `geocode` function now accepts both legacy `{pairs}` and pipeline `{candidates}` payloads, parses raw text deterministically, geocodes US candidates, and returns `parser_confidence` plus `review_required`. Production smoke tests after deployment to project `ofzuhajxwxggybkuzefq` confirmed the Phase 4 surfaces end to end: `geocode` returned cached coordinates for `Cambridge, MA`; `agent-verify` upserted 6 derived labels for `Saar Vandenbroucke`; `generate-embeddings` backfill created `person_text_chunks`; `search-people` returned nonzero `chunk_candidates`; `agent-connections` created idempotent `program_peer` / `lab_peer` links and scanned the soft-affinity lane; and one scheduler-triggered `agent-discovery` batch completed through the live orchestration path on 2026-04-01 local time / 2026-04-02 UTC.
 - Phase 3 verification unification is live. Migration `20260401100000_phase3_verification_unification.sql` extends `profile_suggestions` with `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, and `dedupe_key`, plus supporting indexes for pending-suggestion dedupe, search-click recency, and approved discovery touches. `supabase/functions/_shared/verification.ts` is now the single verification core behind both `update-profile` and `agent-verify`: it centralizes person loading, LinkedIn-first deterministic diffs, web-search + Gemini fallback, field-risk gating, evidence capture, and suggestion dedupe/refresh. The person-side verification modal and admin `SuggestedChanges` queue now consume that same contract and render method/risk/confidence/evidence details instead of the old flat `source` string. Live smoke tests after deployment on 2026-04-01 against project `ofzuhajxwxggybkuzefq` confirmed both paths: `update-profile` returned a `verified` preview payload for `Ms. Aline Aerts`, and `agent-verify` returned the new unified batch payload shape (`suggestions_updated`, `candidate_priorities`, per-step path/status) for the same person.
@@ -51,10 +56,10 @@ A web platform for the Delegation of Flanders to the USA that maps and makes sea
 - **Frontend:** React 18 + TypeScript, Vite 5, Tailwind CSS 3, Lucide React (icons)
 - **Backend:** Supabase (PostgreSQL + Edge Functions in Deno/TypeScript)
 - **Map:** Leaflet + react-leaflet + react-leaflet-cluster (marker clustering)
-- **AI:** Google Gemini (`gemini-3-flash-preview`, hardcoded in edge functions)
+- **AI:** Google Gemini with stable Gemini 2.5 defaults (`gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-pro`) plus `gemini-embedding-001`
 - **Web Search:** Tavily API (free tier, 1000 calls/mo) with Brave Search fallback via the shared web search module.
 - **Geocoding:** Nominatim / OpenStreetMap (cached in `locations` table via `geocode` edge function)
-- **No router library** — routing is manual via `useState<Page>` in `App.tsx`
+- **Routing:** `react-router-dom` with dashboard/admin state persisted in the URL
 
 ## Commands
 ```bash
@@ -140,6 +145,9 @@ The frontend now uses `react-router-dom` with real browser URLs:
 /admin                    admin overview
 /admin/:tab               admin sub-tabs (`agents`, `discovered`)
 /contacts/new             add-contact page
+/login                    magic-link sign-in for approved staff
+/auth/callback            session landing page after the Supabase auth redirect
+/account                  signed-in staff profile page
 ```
 Dashboard state is encoded in the query string, not component memory. Current params include:
 - `view=map|list`
@@ -157,7 +165,7 @@ Navigation callbacks still use `onNavigate(page, id?, preset?)`, but they now ma
 - **React Router owns navigation:** `App.tsx` uses `BrowserRouter` route matching instead of a `currentPage` state machine. Detail-page navigations carry a lightweight `from` route state so in-app back buttons can return to the exact prior screen.
 - **Dashboard state is URL + session backed:** the network view reads search/filter/view/focused-city state from query params, and expensive AI search result payloads are cached in `sessionStorage` (`src/lib/dashboardSession.ts`) so refresh/back keeps context without forcing a rerun inside the same browser session.
 - **No state management library:** All state via React hooks. Props drilled down from App.tsx.
-- **No auth:** Single-tenant with Supabase anon key. RLS allows public read, selective write. All write operations are open.
+- **Supabase Auth now gates the app:** the public-facing app shell is gone. Staff sign in through Supabase magic links, then the app loads `public.staff_users` as the authorization source of truth. Role ranking is `viewer < editor < admin`, the login screen checks `can_request_staff_login(email)` before sending OTPs, `activate_staff_user_session()` links the auth user to their approved staff row on first successful sign-in, and the Admin `Access` tab manages the allowlist.
 - **AI via edge functions:** All LLM calls go through Supabase Edge Functions. Shared query-parsing and profile-check contracts now live in `supabase/functions/_shared/aiContracts.ts`, with shared Gemini model routing / structured-call logic in `supabase/functions/_shared/gemini.ts`. `ai-agent` remains the generic structured task endpoint, while `search-people`, `agent-verify`, and `update-profile` import the same shared contracts directly. Operator web prospecting now runs through `discover-contacts`, with `search-contacts` kept only as a legacy alias.
 - **Locations as separate table:** `people` and `organizations` have `location_id` FK to `locations` table. Old inline `location_city`/`location_state`/`latitude`/`longitude` columns were dropped. Queries use `.select('*, locations(*)')` to join.
 - **AI location suggestions are legacy-shaped:** verification and single-profile update suggestions may still arrive as `location_city` / `location_state`, but any frontend write into `people` must translate those into `location_id` first.
@@ -174,6 +182,7 @@ Navigation callbacks still use `onNavigate(page, id?, preset?)`, but they now ma
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude` / `longitude` are nullable so ambiguous or manually reviewed locations can still be represented before geocoding lands. |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
 | `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength`, `evidence_url`, `evidence_excerpt`, `evidence_source`, `evidence_key` | Hard graph edges only. Person-person rows are unique per unordered pair + relationship type; current live hard types are `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, and `event_peer`. |
+| `staff_users` | `id`, `user_id` (FK→auth.users), `email`, `full_name`, `avatar_url`, `role`, `status`, `last_sign_in_at`, `created_at`, `updated_at` | App-user auth and authorization table. This is intentionally separate from `people`; app users are not linked to directory contacts. Roles are `viewer`, `editor`, `admin`; statuses are `invited`, `active`, `disabled`. |
 
 ### Junction Tables
 | Table | Keys |
@@ -203,18 +212,16 @@ Navigation callbacks still use `onNavigate(page, id?, preset?)`, but they now ma
 | `plans`, `plan_actions`, `plan_suggested_people` | Planner feature removed. Tables remain but are unused. |
 
 ### RLS Summary
-- All tables: SELECT allowed for `anon, authenticated`
-- `people`, `organizations`: INSERT/UPDATE allowed for `anon, authenticated` (added in later migrations)
-- `collections`, `collection_members`: Full CRUD for `anon, authenticated`
-- `profile_suggestions`: SELECT, UPDATE (status changes), DELETE for `anon, authenticated`. INSERT via service role only.
-- `derived_label_suggestions`, `connection_suggestions`: SELECT and reviewer updates for `anon, authenticated`
-- `person_text_chunks`: SELECT for `anon, authenticated`; writes stay backend-owned
-- `locations`: SELECT and INSERT for `anon, authenticated`
+- The main directory app is no longer public. Core reads now require an authenticated active staff session via `is_active_staff()`.
+- Writer/admin surfaces are role-gated in SQL using `has_staff_role('editor')` or `has_staff_role('admin')`; `people`, `organizations`, `collections`, discovery review tables, and internal ops tables are no longer writable by `anon`.
+- `staff_users` supports self read/update for the signed-in row, while admins can read and manage every approved staff account.
+- `person_text_chunks`, `people_search_documents`, embedding queues, and most internal ops/benchmark views stay backend- or staff-only even when frontend features depend on them indirectly through edge functions.
+- `storage.objects` for the `profile-photos` bucket is now staff-read / editor-write instead of public-write.
 
 ## AI Pipeline (what actually exists)
 
 ### Model
-Gemini model selection for the shared query-parsing / profile-check / merge-text paths is now centralized in `supabase/functions/_shared/gemini.ts`. Today those routes still fall back to the legacy `GEMINI_FLASH_MODEL` / `gemini-3-flash-preview` default, with `gemini-2.5-flash-lite` as the shared low-cost fallback / merge model. No Pro model is used yet.
+Gemini model selection for the shared stack now lives in `supabase/functions/_shared/gemini.ts`, with stable 2.5 production defaults by route. `query_parsing` and `page_classification` default to `gemini-2.5-flash-lite`, `contact_extraction` and `profile_verification` default to `gemini-2.5-flash`, and `lightweight_text_merge` plus `offline_evaluation` default to `gemini-2.5-pro`. Preview Gemini 3.x models are no longer the operational default; use the per-route env overrides only for evaluation lanes. Embeddings still default to `gemini-embedding-001` through `_shared/embeddings.ts`, and switching `GEMINI_EMBEDDING_MODEL` away from that still implies a full re-embed plan.
 
 ### Edge Function: `ai-agent`
 Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured output (JSON schema) via the shared contract/model helpers in `supabase/functions/_shared/`.
@@ -274,7 +281,9 @@ Server-side routed hybrid search used by Dashboard NL queries. It now uses a rea
 2. `status_only` returns the outstanding queue count without processing
 3. `backfill: true` reconciles dirty `people` rows into the queue before claiming a batch
 4. `kick: true` claims a small batch immediately; frontend save/import flows use this only as a best-effort nudge after commit
-5. Each claimed job reads the latest person + sectors + normalized Flemish connections + location, builds a labeled embedding document, batches Gemini embedding requests where possible, stores the main person embedding plus `person_text_chunks` embeddings, and either deletes or requeues the job depending on whether `embedding_dirty_at` changed again mid-flight
+5. `action: 'start_batch'` is the optional offline lane: it claims a larger batch, creates an async Gemini Batch API job, persists the manifest in internal `embedding_batch_runs`, and later ingests the returned embeddings back into `people` and `person_text_chunks`
+6. `action: 'list_batches' | 'poll_batch' | 'cancel_batch'` lets the admin UI refresh or manage those offline batch runs without exposing the internal table to the public client
+7. Each claimed online or offline job reads the latest person + sectors + normalized Flemish connections + location, builds a labeled embedding document, stores the main person embedding plus `person_text_chunks` embeddings, and either deletes or requeues the job depending on whether `embedding_dirty_at` changed again mid-flight
 
 ### Frontend AI Functions (in `aiService.ts`)
 - `parseContacts(description, sectors)` → calls `ai-agent` parse_contacts
@@ -289,7 +298,7 @@ Server-side routed hybrid search used by Dashboard NL queries. It now uses a rea
 - `logSearchClick(query, personId)` → fire-and-forget insert into `search_clicks` table
 
 ### What Does NOT Exist Yet
-- Stable model env usage is still inconsistent across the whole stack. Discovery now optionally reads `GEMINI_FLASH_LITE_MODEL` for ambiguous page classification, but most older functions still fall back directly to `GEMINI_FLASH_MODEL`.
+- The Admin metrics surface is intentionally compact. Detailed benchmark/source drilldowns still live in the underlying internal ops views rather than a heavier bespoke dashboard UI.
 
 ### Known Bugs
 - **Build size warning:** JS bundle is 688kb (192kb gzipped), above Vite's 500kb warning threshold.
@@ -338,7 +347,16 @@ Frontend (in `.env`):
 
 Edge functions (set in Supabase dashboard):
 - `GEMINI_API_KEY` (required for all AI features)
-- `GEMINI_FLASH_LITE_MODEL` (optional; discovery uses this for cheap ambiguous-page classification before falling back to `GEMINI_FLASH_MODEL`)
+- `GEMINI_FLASH_MODEL` (optional override; default production workhorse is `gemini-2.5-flash`)
+- `GEMINI_FLASH_LITE_MODEL` (optional override; default low-cost routing/classification model is `gemini-2.5-flash-lite`)
+- `GEMINI_PRO_MODEL` (optional override; default high-judgment merge/evaluation model is `gemini-2.5-pro`)
+- `GEMINI_QUERY_MODEL`, `GEMINI_QUERY_FALLBACK_MODEL` (optional per-route overrides for search parsing)
+- `GEMINI_CLASSIFICATION_MODEL`, `GEMINI_CLASSIFICATION_FALLBACK_MODEL` (optional per-route overrides for discovery page classification)
+- `GEMINI_EXTRACTION_MODEL`, `GEMINI_EXTRACTION_FALLBACK_MODEL` (optional per-route overrides for structured extraction)
+- `GEMINI_PROFILE_MODEL`, `GEMINI_PROFILE_FALLBACK_MODEL` (optional per-route overrides for verification)
+- `GEMINI_MERGE_MODEL`, `GEMINI_MERGE_FALLBACK_MODEL` (optional per-route overrides for text merge / reconciliation)
+- `GEMINI_EVAL_MODEL`, `GEMINI_EVAL_FALLBACK_MODEL` (optional per-route overrides for offline reranking/evaluation)
+- `GEMINI_EMBEDDING_MODEL` (optional; defaults to `gemini-embedding-001` and should only be changed with a full re-embed plan)
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required for DB access in edge functions)
 - `TAVILY_API_KEY` (primary web search provider for discover-contacts, update-profile, and agent-discovery)
 - `BRAVE_API_KEY` (optional fallback provider used by the shared web search module)

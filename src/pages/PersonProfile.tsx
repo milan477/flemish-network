@@ -49,6 +49,7 @@ import ConnectionGraphModal, { type GraphConnection } from '../components/Connec
 import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
+import { useAuth } from '../lib/auth';
 
 interface PersonProfileProps {
   personId: string;
@@ -213,6 +214,7 @@ function reconcileConnections(
 }
 
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
+  const { canEdit } = useAuth();
   const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
@@ -601,39 +603,43 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                 <div className="flex flex-wrap items-center gap-3 mt-4" data-print-hide>
                   {!editing && (
                     <>
-                      <button
-                        onClick={startEditing}
-                        className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
-                      >
-                        <Pencil className="w-4 h-4" />
-                        <span>Edit Profile</span>
-                      </button>
-                      <button
-                        onClick={() => setShowUpdateModal(true)}
-                        className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
-                      >
-                        <RotateCw className="w-4 h-4" />
-                        <span>AI Update</span>
-                      </button>
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowCollections(!showCollections)}
-                          className={`px-5 py-2 font-medium rounded-lg transition-colors flex items-center space-x-2 ${
-                            showCollections 
-                              ? 'bg-yellow-100 text-yellow-700' 
-                              : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
-                          }`}
-                        >
-                          <Library className="w-4 h-4" />
-                          <span>Add to Collection</span>
-                        </button>
-                        {showCollections && (
-                          <AddToCollectionDropdown 
-                            personIds={[personId]} 
-                            onClose={() => setShowCollections(false)} 
-                          />
-                        )}
-                      </div>
+                      {canEdit && (
+                        <>
+                          <button
+                            onClick={startEditing}
+                            className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                          >
+                            <Pencil className="w-4 h-4" />
+                            <span>Edit Profile</span>
+                          </button>
+                          <button
+                            onClick={() => setShowUpdateModal(true)}
+                            className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                          >
+                            <RotateCw className="w-4 h-4" />
+                            <span>AI Update</span>
+                          </button>
+                          <div className="relative">
+                            <button
+                              onClick={() => setShowCollections(!showCollections)}
+                              className={`px-5 py-2 font-medium rounded-lg transition-colors flex items-center space-x-2 ${
+                                showCollections
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+                              }`}
+                            >
+                              <Library className="w-4 h-4" />
+                              <span>Add to Collection</span>
+                            </button>
+                            {showCollections && (
+                              <AddToCollectionDropdown
+                                personIds={[personId]}
+                                onClose={() => setShowCollections(false)}
+                              />
+                            )}
+                          </div>
+                        </>
+                      )}
                       {person.email && (
                         <a
                           href={`mailto:${person.email}`}

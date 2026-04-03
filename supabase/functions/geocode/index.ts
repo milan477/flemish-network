@@ -1,6 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../_shared/database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
 import {
   findExistingUsLocation,
   parseLocationCandidate,
@@ -72,6 +75,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "viewer");
+
     const body = await req.json();
     const pairs = Array.isArray(body?.pairs)
       ? body.pairs as GeocodePair[]
@@ -88,10 +94,6 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient<Database>(supabaseUrl, serviceKey);
 
     const capped = pairs.slice(0, 25);
     const results: GeocodeResult[] = [];
@@ -206,7 +208,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({ error: (err as Error).message }),
       {
-        status: 500,
+        status: err instanceof HttpError ? err.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

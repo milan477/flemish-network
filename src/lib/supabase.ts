@@ -5,7 +5,28 @@ import { DEFAULT_FLEMISH_CONNECTIONS } from './flemishConnections';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
+
+export type AppRole = 'viewer' | 'editor' | 'admin';
+
+export interface StaffUser {
+  id: string;
+  user_id?: string | null;
+  email: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  role: AppRole;
+  status: 'invited' | 'active' | 'disabled';
+  last_sign_in_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Person {
   id: string;

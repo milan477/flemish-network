@@ -26,6 +26,7 @@ import CitySearch from '../components/CitySearch';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
+import { useAuth } from '../lib/auth';
 
 interface OrganizationProfileProps {
   organizationId: string;
@@ -56,6 +57,7 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string; ring: string }> 
 };
 
 export default function OrganizationProfile({ organizationId, onNavigate }: OrganizationProfileProps) {
+  const { canEdit } = useAuth();
   const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -406,13 +408,15 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                         <button onClick={() => setSaveError(null)} className="ml-2 text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button>
                       </div>
                     )}
-                    <button
-                      onClick={startEditing}
-                      className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
-                    >
-                      <Pencil className="w-4 h-4" />
-                      <span>Edit Organization</span>
-                    </button>
+                    {canEdit && (
+                      <button
+                        onClick={startEditing}
+                        className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        <span>Edit Organization</span>
+                      </button>
+                    )}
                     {organization.website_url && (
                       <a
                         href={organization.website_url}

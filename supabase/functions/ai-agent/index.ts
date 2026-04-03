@@ -4,6 +4,11 @@ import {
   getAiAgentTaskDefinition,
   isAiAgentTask,
 } from "../_shared/aiContracts.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "../_shared/auth.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 
 const corsHeaders = {
@@ -19,6 +24,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "viewer");
+
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
       return new Response(
@@ -82,7 +90,7 @@ Deno.serve(async (req: Request) => {
         error: (err as Error).message || "Internal error",
       }),
       {
-        status: 500,
+        status: err instanceof HttpError ? err.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

@@ -1,6 +1,7 @@
 import { normalizeWhitespace, safeString } from "./locationPipeline.ts";
 
-export const EMBEDDING_MODEL = "gemini-embedding-001";
+export const EMBEDDING_MODEL =
+  Deno.env.get("GEMINI_EMBEDDING_MODEL") || "gemini-embedding-001";
 export const EMBEDDING_DIM = 768;
 
 export type EmbeddingTaskType = "RETRIEVAL_QUERY" | "RETRIEVAL_DOCUMENT";
@@ -37,6 +38,10 @@ function getEmbeddingUrl(method: "single" | "batch"): string {
   return method === "batch"
     ? `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents`
     : `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
+}
+
+function getAsyncEmbeddingBatchUrl(): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:asyncBatchEmbedContent`;
 }
 
 function normalizeSentenceBoundaries(value: string): string[] {
@@ -248,6 +253,101 @@ async function embedBatch(
   return rawEmbeddings.map((item: unknown) =>
     validateEmbedding(extractEmbeddingValues(item))
   );
+}
+
+export async function createAsyncEmbeddingBatch(
+  apiKey: string,
+  requests: Array<{
+    request: {
+      model?: string;
+      content: { parts: Array<{ text: string }> };
+      taskType: EmbeddingTaskType;
+      title?: string;
+      outputDimensionality: number;
+    };
+    metadata?: Record<string, unknown>;
+  }>,
+  displayName: string,
+): Promise<string> {
+  const response = await fetch(getAsyncEmbeddingBatchUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      batch: {
+        displayName,
+        inputConfig: {
+          requests: {
+            requests: requests.map((item) => ({
+              request: {
+                model: item.request.model || `models/${EMBEDDING_MODEL}`,
+                content: item.request.content,
+                taskType: item.request.taskType,
+                title: item.request.title || undefined,
+                outputDimensionality: item.request.outputDimensionality,
+              },
+              metadata: item.metadata || undefined,
+            })),
+          },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Async embedding batch API error ${response.status}: ${await response.text()}`);
+  }
+
+  const payload = await response.json();
+  const batchName = typeof payload?.name === "string" ? payload.name : "";
+
+  if (!batchName) {
+    throw new Error("Async embedding batch did not return a batch name");
+  }
+
+  return batchName;
+}
+
+export async function getAsyncEmbeddingBatch(
+  apiKey: string,
+  batchName: string,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${batchName}`,
+    {
+      method: "GET",
+      headers: {
+        "x-goog-api-key": apiKey,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Async embedding batch lookup failed ${response.status}: ${await response.text()}`);
+  }
+
+  return await response.json() as Record<string, unknown>;
+}
+
+export async function cancelAsyncEmbeddingBatch(
+  apiKey: string,
+  batchName: string,
+): Promise<void> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${batchName}:cancel`,
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": apiKey,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Async embedding batch cancel failed ${response.status}: ${await response.text()}`);
+  }
 }
 
 export async function embedTexts(

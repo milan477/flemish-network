@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Library, User, Calendar, ChevronRight } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
 import CollectionModal from '../components/CollectionModal';
 import CollectionDetail from '../components/CollectionDetail';
+import { useAuth } from '../lib/auth';
 
 interface CollectionsProps {
   collectionId?: string;
@@ -15,18 +16,13 @@ export default function Collections({
   onNavigate,
   showDetail = false,
 }: CollectionsProps) {
+  const { canEdit } = useAuth();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(!showDetail);
   const [showModal, setShowModal] = useState(false);
   const [editingCollection, setEditingCollection] = useState<Collection | undefined>();
 
-  useEffect(() => {
-    if (!showDetail) {
-      fetchCollections();
-    }
-  }, [showDetail]);
-
-  const fetchCollections = async () => {
+  const fetchCollections = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -50,15 +46,21 @@ export default function Collections({
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!showDetail) {
+      void fetchCollections();
+    }
+  }, [fetchCollections, showDetail]);
 
   const handleCreateNew = () => {
     setEditingCollection(undefined);
     setShowModal(true);
   };
 
-  const handleSaveCollection = (_collection: Collection) => {
-    fetchCollections();
+  const handleSaveCollection = () => {
+    void fetchCollections();
   };
 
   if (showDetail && collectionId) {
@@ -86,13 +88,15 @@ export default function Collections({
           </p>
         </div>
 
-        <button
-          onClick={handleCreateNew}
-          className="flex items-center px-6 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-xl transition-all shadow-sm hover:shadow-md"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          New Collection
-        </button>
+        {canEdit && (
+          <button
+            onClick={handleCreateNew}
+            className="flex items-center px-6 py-3 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-xl transition-all shadow-sm hover:shadow-md"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            New Collection
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -106,15 +110,18 @@ export default function Collections({
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-3">No collections yet</h2>
           <p className="text-gray-600 mb-8 leading-relaxed">
-            Create your first collection to start organizing members of the network. 
-            You can add people directly from their profiles or from the network directory.
+            {canEdit
+              ? 'Create your first collection to start organizing members of the network. You can add people directly from their profiles or from the network directory.'
+              : 'No collections have been created yet.'}
           </p>
-          <button
-            onClick={handleCreateNew}
-            className="px-8 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-md"
-          >
-            Create Your First Collection
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleCreateNew}
+              className="px-8 py-3 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-md"
+            >
+              Create Your First Collection
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -158,7 +165,7 @@ export default function Collections({
         </div>
       )}
 
-      {showModal && (
+      {showModal && canEdit && (
         <CollectionModal
           collection={editingCollection}
           onClose={() => setShowModal(false)}

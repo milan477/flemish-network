@@ -1,6 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { Database, SupabaseAdminClient } from "./database.types.ts";
+import {
+  createAdminClient,
+  HttpError,
+  requireStaffRole,
+} from "./auth.ts";
+import type { SupabaseAdminClient } from "./database.types.ts";
+import { callGeminiStructured } from "./gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,8 +13,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
-
-const GEMINI_MODEL = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
 
 interface ExtractedContact {
   name: string;
@@ -172,64 +175,44 @@ async function callGemini(
   searchResults: string,
   query: string
 ): Promise<{ message: string; contacts: ExtractedContact[] }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
   const userPrompt = `Discovery query: "${query}"
 
 Web results:
 ${searchResults}
 
 Extract structured discovery candidates from these results.`;
+  const { data } = await callGeminiStructured({
+    apiKey,
+    route: "contact_extraction",
+    systemPrompt: SYSTEM_PROMPT,
+    userPrompt,
+    schema: GEMINI_SCHEMA,
+    temperature: 0.2,
+    attemptsPerModel: 3,
+    parse: (payload: unknown) => {
+      const parsed =
+        payload && typeof payload === "object"
+          ? (payload as Record<string, unknown>)
+          : {};
 
-  let lastError = "";
+      return {
+        message: safeStr(parsed.message),
+        contacts: Array.isArray(parsed.contacts)
+          ? parsed.contacts
+            .map((contact) =>
+              normalizeContact(
+                contact && typeof contact === "object"
+                  ? (contact as Record<string, unknown>)
+                  : {},
+              )
+            )
+            .filter((contact) => contact.name.trim().length > 0)
+          : [],
+      };
+    },
+  });
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          generation_config: {
-            response_mime_type: "application/json",
-            response_schema: GEMINI_SCHEMA,
-            temperature: 0.2,
-          },
-        }),
-      });
-
-      if (!resp.ok) {
-        lastError = await resp.text();
-        continue;
-      }
-
-      const data = await resp.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        lastError = "Empty Gemini response";
-        continue;
-      }
-
-      const parsed = JSON.parse(text);
-      if (typeof parsed.message !== "string" || !Array.isArray(parsed.contacts)) {
-        lastError = "Response does not match schema";
-        continue;
-      }
-
-      const contacts: ExtractedContact[] = parsed.contacts
-        .map((c: Record<string, unknown>) => normalizeContact(c))
-        .filter((c: ExtractedContact) => c.name.trim().length > 0);
-
-      return { message: parsed.message, contacts };
-    } catch (err) {
-      lastError = (err as Error).message;
-    }
-  }
-
-  throw new Error(`Gemini extraction failed: ${lastError}`);
+  return data;
 }
 
 async function checkDuplicates(
@@ -340,6 +323,9 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
   }
 
   try {
+    const supabase = createAdminClient();
+    await requireStaffRole(req, supabase, "editor");
+
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
       return new Response(
@@ -396,27 +382,6 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
       `${query} (prefer evidence-bearing bios and Flemish/Belgian ties)`
     );
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseKey) {
-      return new Response(
-        JSON.stringify({
-          message: geminiResult.message,
-          contacts: geminiResult.contacts.map((c) => ({
-            ...c,
-            is_duplicate: false,
-            duplicate_reason: "",
-            existing_person_id: "",
-          })),
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const supabase = createClient<Database>(supabaseUrl, supabaseKey);
     const contactsWithDupes = await checkDuplicates(geminiResult.contacts, supabase);
 
     return new Response(
@@ -434,7 +399,7 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
         error: err instanceof Error ? err.message : "Internal error",
       }),
       {
-        status: 500,
+        status: err instanceof HttpError ? err.status : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );

@@ -1,13 +1,18 @@
 export type GeminiModelRoute =
   | "query_parsing"
+  | "page_classification"
   | "contact_extraction"
   | "profile_verification"
-  | "lightweight_text_merge";
+  | "lightweight_text_merge"
+  | "offline_evaluation";
 
-const LEGACY_FLASH_DEFAULT =
-  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3-flash-preview";
-const LEGACY_LITE_DEFAULT =
+const FLASH_DEFAULT =
+  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-2.5-flash";
+const FLASH_LITE_DEFAULT =
+  Deno.env.get("GEMINI_FLASH_LITE_MODEL") ||
   Deno.env.get("GEMINI_LITE_MODEL") || "gemini-2.5-flash-lite";
+const PRO_DEFAULT =
+  Deno.env.get("GEMINI_PRO_MODEL") || "gemini-2.5-pro";
 
 function unique(values: Array<string | null | undefined>): string[] {
   return Array.from(
@@ -24,30 +29,44 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
     case "query_parsing":
       return unique([
         Deno.env.get("GEMINI_QUERY_MODEL"),
-        LEGACY_FLASH_DEFAULT,
+        FLASH_LITE_DEFAULT,
         Deno.env.get("GEMINI_QUERY_FALLBACK_MODEL"),
-        LEGACY_LITE_DEFAULT,
+        FLASH_DEFAULT,
+      ]);
+    case "page_classification":
+      return unique([
+        Deno.env.get("GEMINI_CLASSIFICATION_MODEL"),
+        FLASH_LITE_DEFAULT,
+        Deno.env.get("GEMINI_CLASSIFICATION_FALLBACK_MODEL"),
+        FLASH_DEFAULT,
       ]);
     case "contact_extraction":
       return unique([
         Deno.env.get("GEMINI_EXTRACTION_MODEL"),
-        LEGACY_FLASH_DEFAULT,
+        FLASH_DEFAULT,
         Deno.env.get("GEMINI_EXTRACTION_FALLBACK_MODEL"),
-        LEGACY_LITE_DEFAULT,
+        FLASH_LITE_DEFAULT,
       ]);
     case "profile_verification":
       return unique([
         Deno.env.get("GEMINI_PROFILE_MODEL"),
-        LEGACY_FLASH_DEFAULT,
+        FLASH_DEFAULT,
         Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL"),
-        LEGACY_LITE_DEFAULT,
+        PRO_DEFAULT,
       ]);
     case "lightweight_text_merge":
       return unique([
         Deno.env.get("GEMINI_MERGE_MODEL"),
-        LEGACY_LITE_DEFAULT,
+        PRO_DEFAULT,
         Deno.env.get("GEMINI_MERGE_FALLBACK_MODEL"),
-        LEGACY_FLASH_DEFAULT,
+        FLASH_DEFAULT,
+      ]);
+    case "offline_evaluation":
+      return unique([
+        Deno.env.get("GEMINI_EVAL_MODEL"),
+        PRO_DEFAULT,
+        Deno.env.get("GEMINI_EVAL_FALLBACK_MODEL"),
+        FLASH_DEFAULT,
       ]);
   }
 }
@@ -60,6 +79,103 @@ export function getPrimaryGeminiModel(route: GeminiModelRoute): string {
   return model;
 }
 
+export function getGeminiModelSummary(): Record<GeminiModelRoute, string[]> {
+  return {
+    query_parsing: getGeminiModelChain("query_parsing"),
+    page_classification: getGeminiModelChain("page_classification"),
+    contact_extraction: getGeminiModelChain("contact_extraction"),
+    profile_verification: getGeminiModelChain("profile_verification"),
+    lightweight_text_merge: getGeminiModelChain("lightweight_text_merge"),
+    offline_evaluation: getGeminiModelChain("offline_evaluation"),
+  };
+}
+
+interface GeminiContextCacheOptions {
+  apiKey: string;
+  model: string;
+  contentsText: string;
+  displayName?: string;
+  systemPrompt?: string;
+  ttlSeconds?: number;
+}
+
+function buildGeminiGenerateContentUrl(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
+
+function buildGeminiCacheUrl(name?: string): string {
+  return name
+    ? `https://generativelanguage.googleapis.com/v1beta/${name}`
+    : "https://generativelanguage.googleapis.com/v1beta/cachedContents";
+}
+
+function buildCacheSystemInstruction(systemPrompt?: string) {
+  const normalized = systemPrompt?.trim();
+  if (!normalized) return undefined;
+  return {
+    parts: [{ text: normalized }],
+  };
+}
+
+export async function createGeminiContextCache({
+  apiKey,
+  model,
+  contentsText,
+  displayName,
+  systemPrompt,
+  ttlSeconds = 900,
+}: GeminiContextCacheOptions): Promise<string> {
+  const response = await fetch(buildGeminiCacheUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      model: `models/${model}`,
+      displayName: displayName?.trim() || undefined,
+      contents: [{
+        role: "user",
+        parts: [{ text: contentsText }],
+      }],
+      systemInstruction: buildCacheSystemInstruction(systemPrompt),
+      ttl: `${Math.max(60, Math.floor(ttlSeconds))}s`,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini context cache failed (${response.status}): ${await response.text()}`);
+  }
+
+  const payload = await response.json();
+  const cacheName = typeof payload?.name === "string" ? payload.name : "";
+
+  if (!cacheName) {
+    throw new Error("Gemini context cache did not return a cache name");
+  }
+
+  return cacheName;
+}
+
+export async function deleteGeminiContextCache(
+  apiKey: string,
+  cacheName: string,
+): Promise<void> {
+  const normalized = cacheName.trim();
+  if (!normalized) return;
+
+  const response = await fetch(buildGeminiCacheUrl(normalized), {
+    method: "DELETE",
+    headers: {
+      "x-goog-api-key": apiKey,
+    },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Failed to delete Gemini cache ${normalized}: ${await response.text()}`);
+  }
+}
+
 interface StructuredGeminiCallOptions<T> {
   apiKey: string;
   route: GeminiModelRoute;
@@ -70,6 +186,7 @@ interface StructuredGeminiCallOptions<T> {
   temperature?: number;
   attemptsPerModel?: number;
   emptyResponseFallback?: T;
+  cachedContentName?: string;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -86,6 +203,7 @@ export async function callGeminiStructured<T>({
   temperature = 0.3,
   attemptsPerModel = 2,
   emptyResponseFallback,
+  cachedContentName,
 }: StructuredGeminiCallOptions<T>): Promise<{ data: T; modelUsed: string }> {
   const models = getGeminiModelChain(route);
   let lastError = `No Gemini models configured for route "${route}"`;
@@ -94,24 +212,36 @@ export async function callGeminiStructured<T>({
     for (let attempt = 0; attempt < attemptsPerModel; attempt += 1) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          buildGeminiGenerateContentUrl(model),
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "x-goog-api-key": apiKey,
             },
-            body: JSON.stringify({
-              system_instruction: {
-                parts: [{ text: systemPrompt }],
-              },
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              generation_config: {
-                response_mime_type: "application/json",
-                response_schema: schema,
-                temperature,
-              },
-            }),
+            body: JSON.stringify(
+              cachedContentName
+                ? {
+                  contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                  cachedContent: cachedContentName,
+                  generation_config: {
+                    response_mime_type: "application/json",
+                    response_schema: schema,
+                    temperature,
+                  },
+                }
+                : {
+                  system_instruction: {
+                    parts: [{ text: systemPrompt }],
+                  },
+                  contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                  generation_config: {
+                    response_mime_type: "application/json",
+                    response_schema: schema,
+                    temperature,
+                  },
+                },
+            ),
           }
         );
 
