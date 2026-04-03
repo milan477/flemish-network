@@ -1,0 +1,42 @@
+project_id = "flemish-network"
+
+# These functions already enforce staff auth inside their handlers via
+# `requireStaffRole()`. Supabase's legacy built-in JWT gate rejects the
+# project's newer asymmetric auth tokens before the function code can run, so
+# disable that outer check consistently across deploys.
+
+[functions.ai-agent]
+verify_jwt = false
+
+[functions.agent-connections]
+verify_jwt = false
+
+[functions.agent-discovery]
+verify_jwt = false
+
+[functions.agent-scheduler]
+verify_jwt = false
+
+[functions.agent-verify]
+verify_jwt = false
+
+[functions.discover-contacts]
+verify_jwt = false
+
+[functions.generate-embeddings]
+verify_jwt = false
+
+[functions.geocode]
+verify_jwt = false
+
+[functions.search-contacts]
+verify_jwt = false
+
+[functions.search-people]
+verify_jwt = false
+
+[functions.suggest-people]
+verify_jwt = false
+
+[functions.update-profile]
+verify_jwt = false

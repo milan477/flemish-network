@@ -111,6 +111,15 @@ function normalizeConfidence(value: number): number {
   return Math.max(0, Math.min(0.99, Number(value.toFixed(2))));
 }
 
+function emptyDiscoveryRow(): DiscoveryRow {
+  return {
+    relationship_type: "colleague",
+    connections_found: 0,
+    new_connections_created: 0,
+    already_existed: 0,
+  };
+}
+
 async function heartbeat(
   supabase: SupabaseAdminClient,
   runId?: string,
@@ -120,6 +129,46 @@ async function heartbeat(
     .from("agent_runs")
     .update({ heartbeat_at: new Date().toISOString() })
     .eq("id", runId);
+}
+
+async function discoverConnectionsByType(
+  supabase: SupabaseAdminClient,
+  types: ConnectionType[],
+  runId?: string,
+): Promise<Record<ConnectionType, DiscoveryRow>> {
+  const byType: Record<ConnectionType, DiscoveryRow> = {
+    colleague: { ...emptyDiscoveryRow(), relationship_type: "colleague" },
+    alumni: { ...emptyDiscoveryRow(), relationship_type: "alumni" },
+    program_peer: { ...emptyDiscoveryRow(), relationship_type: "program_peer" },
+    local_peer: { ...emptyDiscoveryRow(), relationship_type: "local_peer" },
+    lab_peer: { ...emptyDiscoveryRow(), relationship_type: "lab_peer" },
+    event_peer: { ...emptyDiscoveryRow(), relationship_type: "event_peer" },
+  };
+
+  for (const type of types) {
+    const { data, error } = await supabase.rpc("discover_connections", {
+      p_types: [type],
+    });
+
+    if (error) {
+      throw new Error(`Failed discovering ${type} connections: ${error.message}`);
+    }
+
+    const row = ((data || []) as DiscoveryRow[]).find((item) =>
+      item.relationship_type === type
+    );
+
+    byType[type] = {
+      relationship_type: type,
+      connections_found: Number(row?.connections_found || 0),
+      new_connections_created: Number(row?.new_connections_created || 0),
+      already_existed: Number(row?.already_existed || 0),
+    };
+
+    await heartbeat(supabase, runId);
+  }
+
+  return byType;
 }
 
 async function maybeGenerateConnectionSuggestions(
@@ -363,62 +412,11 @@ Deno.serve(async (req: Request) => {
 
     await heartbeat(supabase, runId);
 
-    const { data, error } = await supabase.rpc("discover_connections", {
-      p_types: requestedTypes,
-    });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    await heartbeat(supabase, runId);
-
-    const rows = ((data || []) as DiscoveryRow[]).filter(Boolean);
-    const byType: Record<ConnectionType, {
-      connections_found: number;
-      new_connections_created: number;
-      already_existed: number;
-    }> = {
-      colleague: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-      alumni: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-      program_peer: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-      local_peer: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-      lab_peer: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-      event_peer: {
-        connections_found: 0,
-        new_connections_created: 0,
-        already_existed: 0,
-      },
-    };
-
-    for (const row of rows) {
-      if (!ALLOWED_TYPES.includes(row.relationship_type)) continue;
-      byType[row.relationship_type] = {
-        connections_found: Number(row.connections_found || 0),
-        new_connections_created: Number(row.new_connections_created || 0),
-        already_existed: Number(row.already_existed || 0),
-      };
-    }
+    const discoveredByType = await discoverConnectionsByType(
+      supabase,
+      requestedTypes,
+      runId,
+    );
 
     const connectionSuggestions = body.generate_soft_suggestions === false
       ? { created: 0, anchors_scanned: 0, candidate_pairs: 0 }
@@ -427,18 +425,18 @@ Deno.serve(async (req: Request) => {
     const result = {
       types_requested: requestedTypes,
       connections_found: requestedTypes.reduce(
-        (sum, type) => sum + byType[type].connections_found,
+        (sum, type) => sum + discoveredByType[type].connections_found,
         0,
       ),
       new_connections_created: requestedTypes.reduce(
-        (sum, type) => sum + byType[type].new_connections_created,
+        (sum, type) => sum + discoveredByType[type].new_connections_created,
         0,
       ),
       already_existed: requestedTypes.reduce(
-        (sum, type) => sum + byType[type].already_existed,
+        (sum, type) => sum + discoveredByType[type].already_existed,
         0,
       ),
-      by_type: byType,
+      by_type: discoveredByType,
       connection_suggestions_upserted: connectionSuggestions.created,
       connection_suggestion_anchors_scanned: connectionSuggestions.anchors_scanned,
       connection_suggestion_candidate_pairs: connectionSuggestions.candidate_pairs,
