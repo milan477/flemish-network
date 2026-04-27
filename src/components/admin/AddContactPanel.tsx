@@ -490,7 +490,7 @@ function ManualAddForm({
     }));
   };
 
-  const set = (field: keyof ManualForm, value: string) => {
+  const setField = (field: keyof ManualForm, value: string) => {
     setForm((f) => {
       const next = { ...f, [field]: value };
 
@@ -528,7 +528,7 @@ function ManualAddForm({
           <div className="relative">
             <select
               value={form.title}
-              onChange={(e) => set('title', e.target.value)}
+              onChange={(e) => setField('title', e.target.value)}
               className={`${INPUT_CLS} appearance-none pr-8`}
             >
               {TITLE_OPTIONS.map((t) => (
@@ -546,7 +546,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.firstName}
-            onChange={(e) => set('firstName', e.target.value)}
+            onChange={(e) => setField('firstName', e.target.value)}
             className={INPUT_CLS}
             placeholder="Jan"
           />
@@ -557,7 +557,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.lastName}
-            onChange={(e) => set('lastName', e.target.value)}
+            onChange={(e) => setField('lastName', e.target.value)}
             className={INPUT_CLS}
             placeholder="De Vries"
           />
@@ -571,7 +571,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.current_position}
-            onChange={(e) => set('current_position', e.target.value)}
+            onChange={(e) => setField('current_position', e.target.value)}
             className={INPUT_CLS}
             placeholder="AI Researcher at MIT"
           />
@@ -583,7 +583,7 @@ function ManualAddForm({
           <div className="relative">
             <select
               value={form.occupation}
-              onChange={(e) => set('occupation', e.target.value)}
+              onChange={(e) => setField('occupation', e.target.value)}
               className={`${INPUT_CLS} appearance-none pr-8`}
             >
               <option value="">Select Occupation</option>
@@ -625,7 +625,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.phone}
-            onChange={(e) => set('phone', e.target.value)}
+            onChange={(e) => setField('phone', e.target.value)}
             className={INPUT_CLS}
             placeholder="+1 555 123 4567"
           />
@@ -637,7 +637,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.email}
-            onChange={(e) => set('email', e.target.value)}
+            onChange={(e) => setField('email', e.target.value)}
             className={INPUT_CLS}
             placeholder="jan@example.com"
             type="email"
@@ -650,7 +650,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.linkedin_url}
-            onChange={(e) => set('linkedin_url', e.target.value)}
+            onChange={(e) => setField('linkedin_url', e.target.value)}
             className={INPUT_CLS}
             placeholder="linkedin.com/in/jandevries"
           />
@@ -665,7 +665,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.website_url}
-            onChange={(e) => set('website_url', e.target.value)}
+            onChange={(e) => setField('website_url', e.target.value)}
             className={INPUT_CLS}
             placeholder="jandevries.com"
           />
@@ -680,7 +680,7 @@ function ManualAddForm({
           </label>
           <input
             value={form.twitter_url}
-            onChange={(e) => set('twitter_url', e.target.value)}
+            onChange={(e) => setField('twitter_url', e.target.value)}
             className={INPUT_CLS}
             placeholder="x.com/jandevries"
           />
@@ -693,7 +693,7 @@ function ManualAddForm({
         </label>
         <textarea
           value={form.bio}
-          onChange={(e) => set('bio', e.target.value)}
+          onChange={(e) => setField('bio', e.target.value)}
           className={`${INPUT_CLS} resize-none`}
           rows={3}
           placeholder="Brief description..."
