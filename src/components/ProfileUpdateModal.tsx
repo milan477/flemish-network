@@ -22,6 +22,8 @@ import {
   VERIFICATION_FIELD_LABELS,
   type VerificationSuggestion,
 } from '../lib/verification';
+import { extractEdgeError } from '../lib/edgeError';
+import StructuredErrorBanner from './admin/StructuredErrorBanner';
 
 interface ProfileUpdateModalProps {
   person: Person;
@@ -47,6 +49,7 @@ export default function ProfileUpdateModal({
   const [suggestions, setSuggestions] = useState<VerificationSuggestion[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [errorMsg, setErrorMsg] = useState('');
+  const [structuredError, setStructuredError] = useState<unknown>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
 
   const actionableSuggestions = suggestions.filter((suggestion) =>
@@ -61,6 +64,7 @@ export default function ProfileUpdateModal({
   const runSearch = async () => {
     setStage('searching');
     setErrorMsg('');
+    setStructuredError(null);
     setWarnings([]);
 
     try {
@@ -69,7 +73,7 @@ export default function ProfileUpdateModal({
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw await extractEdgeError(error, 'Failed to run verification preview');
       }
 
       const nextSuggestions = normalizeVerificationSuggestions(data?.suggestions);
@@ -90,6 +94,7 @@ export default function ProfileUpdateModal({
       setStage('results');
     } catch (err) {
       setErrorMsg((err as Error).message || 'Failed to run verification preview');
+      setStructuredError(err);
       setStage('error');
     }
   };
@@ -97,6 +102,7 @@ export default function ProfileUpdateModal({
   const applySelected = async () => {
     setStage('applying');
     setErrorMsg('');
+    setStructuredError(null);
 
     const updates: Record<string, string | null> = {};
     selectedSuggestions.forEach((suggestion) => {
@@ -401,7 +407,15 @@ export default function ProfileUpdateModal({
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
                 <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
-              <p className="font-medium text-red-700">{errorMsg || 'Verification failed'}</p>
+              {structuredError ? (
+                <StructuredErrorBanner
+                  error={structuredError}
+                  title="Verification failed"
+                  className="mx-auto max-w-xl text-left"
+                />
+              ) : (
+                <p className="font-medium text-red-700">{errorMsg || 'Verification failed'}</p>
+              )}
               <button
                 onClick={() => setStage('idle')}
                 className="mt-5 rounded-lg bg-gray-100 px-5 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-200"

@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   buildVerificationDerivedLabels,
@@ -18,6 +18,9 @@ import {
   runVerificationForPerson,
   type VerificationStep,
 } from "../_shared/verification.ts";
+import { createLogger } from "../_shared/log.ts";
+
+const log = createLogger("agent-verify");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -121,7 +124,7 @@ function getPrimaryEvidence(
   };
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -384,6 +387,7 @@ Deno.serve(async (req: Request) => {
           status: "failed",
           completed_at: new Date().toISOString(),
           error_message: error instanceof Error ? error.message : "Unknown error",
+          error_kind: agentRunErrorKindFor(error),
           llm_calls_made: llmCallsMade,
           llm_model_used:
             llmCallsMade > 0
@@ -395,7 +399,7 @@ Deno.serve(async (req: Request) => {
         .eq("id", runId);
 
       if (updateError) {
-        console.error("agent-verify failed to persist run failure", {
+        log.withRun(runId).error("persist_run_failure_failed", {
           runId,
           message: updateError.message,
         });
@@ -404,15 +408,15 @@ Deno.serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal error",
+        ...structuredErrorBody(error),
         llm_calls_made: llmCallsMade,
         linkedin_scrapes_made: linkedinScrapesMade,
         web_searches_made: webSearchesMade,
       }),
       {
-        status: error instanceof HttpError ? error.status : 500,
+        status: statusForError(error),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   }
-});
+}));

@@ -5,9 +5,8 @@ import {
   getPersonFlemishConnections,
   personHasFlemishConnection,
 } from '../../lib/flemishConnections';
-import OccupationOverview, {
-  classifyPerson,
-} from './OccupationOverview';
+import OccupationOverview from './OccupationOverview';
+import { classifyPerson } from './occupationCategories';
 import StaleContactsBar from './StaleContactsBar';
 import DerivedLabelsPanel from './DerivedLabelsPanel';
 import SuggestedChanges, { type ProfileSuggestion } from './SuggestedChanges';

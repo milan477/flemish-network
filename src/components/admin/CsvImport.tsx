@@ -89,6 +89,10 @@ interface UpdatedPersonSnapshot {
 
 const IMPORT_CANCELLED = "IMPORT_CANCELLED";
 
+function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
+}
+
 const SECTOR_VALUE_ALIASES = new Map<string, string>([
   ["ai", "artificial intelligence"],
   ["machine learning", "artificial intelligence"],
@@ -724,15 +728,15 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
                 ensureNotCancelled();
                 await assignRowSectors(dupe.existingId, row, i + 1, fullName);
-              } catch (err: any) {
-                if (err?.message === IMPORT_CANCELLED) {
+              } catch (err) {
+                if (err instanceof Error && err.message === IMPORT_CANCELLED) {
                   throw err;
                 }
                 summary.failed++;
                 summary.errors.push({
                   row: i + 1,
                   name: fullName,
-                  reason: err?.message || "Failed to sync linked data",
+                  reason: getErrorMessage(err, "Failed to sync linked data"),
                 });
                 setImportProgress({ current: i + 1, total });
                 continue;
@@ -785,15 +789,15 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               }
               ensureNotCancelled();
               await assignRowSectors(person.id, row, i + 1, fullName);
-            } catch (err: any) {
-              if (err?.message === IMPORT_CANCELLED) {
+            } catch (err) {
+              if (err instanceof Error && err.message === IMPORT_CANCELLED) {
                 throw err;
               }
               summary.failed++;
               summary.errors.push({
                 row: i + 1,
                 name: fullName,
-                reason: err?.message || "Failed to sync linked data",
+                reason: getErrorMessage(err, "Failed to sync linked data"),
               });
               setImportProgress({ current: i + 1, total });
               continue;
@@ -812,8 +816,8 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
           setImportProgress({ current: i + 1, total });
         }
-      } catch (err: any) {
-        if (err?.message !== IMPORT_CANCELLED) {
+      } catch (err) {
+        if (!(err instanceof Error) || err.message !== IMPORT_CANCELLED) {
           throw err;
         }
       }
@@ -826,10 +830,12 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           setError(
             `Import cancelled. Rolled back ${createdPersonIds.length} created contact${createdPersonIds.length !== 1 ? "s" : ""} and ${updatedSnapshots.size} updated contact${updatedSnapshots.size !== 1 ? "s" : ""}.`,
           );
-        } catch (rollbackErr: any) {
+        } catch (rollbackErr) {
           setError(
-            rollbackErr?.message ||
+            getErrorMessage(
+              rollbackErr,
               "Import cancellation failed while rolling back changes",
+            ),
           );
         } finally {
           setRollbackInProgress(false);
@@ -854,12 +860,12 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
     try {
       await runImport();
-    } catch (err: any) {
+    } catch (err) {
       setRollbackInProgress(false);
       setCancelRequested(false);
       cancelRequestedRef.current = false;
       setImportProgress({ current: 0, total: 0 });
-      setError(err?.message || "Import failed");
+      setError(getErrorMessage(err, "Import failed"));
       setStep("confirm");
     }
   };

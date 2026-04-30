@@ -36,7 +36,7 @@ npm run benchmark:search  # Run fixed search benchmarks against live search-peop
   - `CLAUDE.md` — new architectural decisions or non-obvious constraints
   - `docs/SCHEMA.md` — any table/column/RLS/view changes
   - `docs/AI-PIPELINE.md` — any edge function behavior, model routing, or AI contract changes
-  - `AI-strategy.md` — significant AI architectural decisions or strategy shifts
+  - `docs/AI-strategy.md` — significant AI architectural decisions or strategy shifts
   - `todo.md` — mark completed tasks, add new ones from the session
 
 ## Architecture Decisions
@@ -51,17 +51,13 @@ npm run benchmark:search  # Run fixed search benchmarks against live search-peop
 - **Embedding refresh is backend-owned:** `embedding_jobs` queue, not browser-side inline generation. Frontend kicks with `generate-embeddings?kick=true` after saves.
 - **`agent-connections` runs one relationship type per invocation** to stay under the DB statement timeout on first-run backfills.
 - **Filter parser is deterministic:** `src/lib/filterParser.ts` — no LLM call needed.
+- **Structured errors are the Phase 6.3 contract:** Edge functions return `{ error: { code, message, hint? } }` via `_shared/httpError.ts`; frontend callers preserve these as `EdgeFunctionError` and admin surfaces render them with `StructuredErrorBanner`.
+- **System Health is the Phase 6.4 operator surface:** `/admin/system` reads `agent_runs`, `embedding_jobs`, and `embedding_batch_runs`, starts/cancels work through edge functions, and maps visible errors to `docs/RUNBOOK.md`.
+- **Edge logs are structured:** use `_shared/log.ts` with `[fn:<name>] [run:<id>] [evt:<event>]` prefixes for Supabase log searches.
 - **`_shared/database.types.ts`** is a lightweight Deno-side schema shim. It does not encode relation metadata, so joined rows (`locations`, `sectors`, `person_flemish_connections`) must be normalized locally inside edge functions.
 
 ## AI Contract Notes
-- `update-profile` → ad hoc single-person preview only. Returns inline suggestions to `ProfileUpdateModal`; never writes durable `profile_suggestions` rows.
-- `agent-verify` → owns the durable verification queue. Admin stale-contact flows must call this, not `update-profile`.
-- `derived_label_suggestions` → review queue for sectors, occupation, Flemish entities, locations, and confidence. Promote here first, then refresh embeddings.
-- `agent-scheduler` → owns `agent_runs` lifecycle (start, cancel, timeout, cleanup). UI must not insert/update these rows directly.
-- `connection_suggestions` → soft affinity only. Hard `connections` table gets only evidence-backed relationship types (`colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`).
-- `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
-- `ai-agent` tasks `parse_contacts` and `flemish_search` are frozen legacy. Active contracts: `smart_search`, `merge_text`, `check_profile`.
-- `search-contacts` is a legacy alias for `discover-contacts`. Use `discover-contacts` for new code.
+See `docs/AI-PIPELINE.md` § Behavioral Contracts for full rules on which function owns which responsibility.
 
 ## Coding Conventions
 - TypeScript strict mode. 2-space indentation. Run `npm run typecheck` before committing.
@@ -71,10 +67,6 @@ npm run benchmark:search  # Run fixed search benchmarks against live search-peop
 - Edge functions: `jsr:` and `npm:` imports only (NOT `https://esm.sh/`). Always include `corsHeaders` object and OPTIONS handler.
 - Keep secrets out of client code. Never log credentials.
 
-## Commit & PR Guidelines
-- Short, lowercase, descriptive commit messages (`csv imports`, `agent infrastructure`). One concern per commit when practical.
-- PRs should explain user-visible behavior, note any schema or environment changes, and include screenshots for UI changes.
-
 ## Database Conventions
 - Migrations in `supabase/migrations/` with `YYYYMMDDHHMMSS_description.sql` naming.
 - `snake_case` plural table names. All tables: `id uuid DEFAULT gen_random_uuid() PRIMARY KEY` + `created_at timestamptz DEFAULT now()`.
@@ -82,30 +74,10 @@ npm run benchmark:search  # Run fixed search benchmarks against live search-peop
 - Location data always goes via `locations` table + `location_id` FK.
 
 ## Environment Variables
-Frontend (`.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-
-Edge functions (Supabase dashboard secrets):
-- `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — required
-- `TAVILY_API_KEY` — primary web search; `BRAVE_API_KEY` — fallback
-- `APIFY_TOKEN` — LinkedIn scrape (discovery + verification agents)
-- `GEMINI_FLASH_MODEL`, `GEMINI_FLASH_LITE_MODEL`, `GEMINI_PRO_MODEL` — optional model overrides (defaults: `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro`)
-- Per-route overrides: `GEMINI_QUERY_MODEL`, `GEMINI_CLASSIFICATION_MODEL`, `GEMINI_EXTRACTION_MODEL`, `GEMINI_PROFILE_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` (each with `_FALLBACK_MODEL` variant)
-- `GEMINI_EMBEDDING_MODEL` — default `gemini-embedding-001`; changing requires a full re-embed plan
+Frontend (`.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. See `docs/ENV.md` for all edge-function secrets.
 
 ## Routes
-```
-/                     dashboard (URL state: view, q, sector, occupation, fc×N, city, state, people, organizations, lectures, focusCity, focusState)
-/people/:id           person profile
-/organizations/:id    organization profile
-/collections          collection list
-/collections/:id      collection detail
-/admin                admin overview
-/admin/:tab           admin sub-tabs (agents, discovered)
-/contacts/new         add-contact
-/login                staff magic-link sign-in
-/auth/callback        auth redirect landing
-/account              staff profile
-```
+See `docs/ROUTES.md` for the full route table.
 
 ## Key Domain Concepts
 - **Flemish Connection:** A person's tie to Flanders — university (KU Leuven, UGent, VUB, UAntwerp), fellowship (BAEF, Fayat), org (imec), or city. Stored in `flemish_connections` + `person_flemish_connections`.
@@ -119,9 +91,10 @@ Edge functions (Supabase dashboard secrets):
 ## Reference Docs
 Read these when working on the relevant area — they are not auto-loaded but contain the full detail. Keep them up to date (see Workflow Expectations above).
 - `docs/SCHEMA.md` — full database schema (tables, columns, RLS, ops/internal views)
-- `docs/AI-PIPELINE.md` — detailed edge function flows, model routing, frontend AI functions, known bugs
-- `AI-strategy.md` — full AI audit, model strategy, and design rationale for all phases
-- `todo.md` — execution backlog by roadmap phase with strategy section refs
+- `docs/AI-PIPELINE.md` — detailed edge function flows, model routing, behavioral contracts, known bugs
+- `docs/AI-STRATEGY.md` — full AI audit, model strategy, and design rationale for all phases
+- `docs/ENV.md` — all environment variables and secrets
+- `docs/ROUTES.md` — frontend route table
 
 ## graphify
 

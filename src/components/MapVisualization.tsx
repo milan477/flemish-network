@@ -11,7 +11,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 // Fix for default Leaflet icons in Vite
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as L.Icon.Default & { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
@@ -111,7 +111,7 @@ export default function MapVisualization({
     let totalCount = 0;
     
     markers.forEach(m => {
-      const mc = (m.options as any).mapCluster as MapCluster;
+      const mc = (m.options as L.MarkerOptions & { mapCluster?: MapCluster }).mapCluster;
       if (mc) {
         totalCount += mc.people.length + mc.organizations.length;
       }
@@ -195,7 +195,7 @@ export default function MapVisualization({
                   key={key}
                   position={[cluster.lat, cluster.lng]}
                   icon={createCityIcon(cluster)}
-                  {...({ mapCluster: cluster } as any)}
+                  {...({ mapCluster: cluster } satisfies { mapCluster: MapCluster })}
                   eventHandlers={{
                     popupopen: () => setSelectedCityKey(key),
                     popupclose: () => setSelectedCityKey(null),

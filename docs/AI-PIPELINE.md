@@ -1,5 +1,34 @@
 # AI Pipeline Reference
 
+## Behavioral Contracts
+Rules for which function owns which responsibility — violating these causes data corruption or auth failures.
+
+- `update-profile` → ad hoc single-person preview only. Returns inline suggestions to `ProfileUpdateModal`; **never** writes durable `profile_suggestions` rows.
+- `agent-verify` → owns the durable verification queue. Admin stale-contact flows must call this, not `update-profile`.
+- `derived_label_suggestions` → review queue for sectors, occupation, Flemish entities, locations, and confidence. Promote here first, then refresh embeddings.
+- `agent-scheduler` → owns `agent_runs` lifecycle (start, cancel, timeout, cleanup). UI must not insert/update these rows directly.
+- `connection_suggestions` → soft affinity only. Hard `connections` table gets only evidence-backed relationship types (`colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`).
+- `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
+- `ai-agent` tasks `parse_contacts` and `flemish_search` are frozen legacy. Active contracts: `smart_search`, `merge_text`, `check_profile`.
+- `search-contacts` is a legacy alias for `discover-contacts`. Use `discover-contacts` for new code.
+
+## Error Contract
+Phase 6.3 standardizes edge-function failures as `{ error: { code, message, hint? } }`.
+
+- `code` is one of `auth_failed`, `forbidden`, `invalid_input`, `not_found`, `quota_exhausted`, `network`, `db_timeout`, `agent_failure`, `unknown`.
+- Agent run persistence maps this to `agent_runs.error_kind`, whose database enum intentionally excludes UI-only `forbidden`/`not_found`.
+- `src/lib/aiService.ts` preserves structured edge errors as `EdgeFunctionError` so admin surfaces can render `message` and `hint`.
+- Edge function handlers should be wrapped with `_shared/httpError.ts` `wrapHandler(fn)` and use `jsonError(...)` for expected validation failures.
+
+## Observability Contract
+Phase 6.4 adds an operator-facing Admin -> System surface and structured function logs.
+
+- `src/components/admin/SystemHealthPanel.tsx` reads `agent_runs` and `embedding_jobs`, and loads embedding batch status through `generate-embeddings` `action: 'list_batches'`, to show last success/failure, currently running work, stuck runs, embedding queue depth, oldest pending embedding job, and today's API usage.
+- Operators start discovery, verification, connection, and embedding work from Admin -> System. Agent runs still go through `agent-scheduler`; embeddings go through `generate-embeddings`.
+- Operators cancel running/stuck agent runs through `agent-scheduler` `action: 'cancel'`; housekeeping uses `action: 'housekeeping'`.
+- Edge logs should use `_shared/log.ts` so every line is grep-able as `[fn:<name>] [run:<id>] [evt:<event>] ...`.
+- `docs/RUNBOOK.md` is keyed to `agent_runs.error_kind` / structured error `code`.
+
 ## Gemini Model Routing
 Defined in `supabase/functions/_shared/gemini.ts`. Production defaults:
 
@@ -88,10 +117,11 @@ Pure-SQL wrapper around `discover_connections()` RPC. No LLM or web search.
 ## Edge Function: `agent-scheduler`
 Single lifecycle-control path for all agent runs.
 
-- Actions: `run` (dispatch), `cancel`, `cleanup` (zombie), `metrics`, `planning`
+- Actions: `trigger` (dispatch), `cancel`, `housekeeping` (zombie/cache cleanup), `metrics`, `planning`
 - Dispatches downstream functions while forwarding the caller's `Authorization`/`apikey` headers.
 - Exposes `metrics` action consumed by `OpsMetricsPanel` in Admin Agents tab.
 - Exposes `planning` action consumed by `DiscoveryPlanningPanel` (gap metrics, entity pivots, refill history).
+- Exposes `housekeeping` and `cancel` actions consumed by Admin -> System.
 
 ## Edge Function: `geocode`
 1. Accepts `{ pairs: [{ city, state }] }` (legacy) or `{ candidates: [{ raw_text, city?, state? }] }` (max 25).
@@ -120,7 +150,7 @@ Collection suggestion via embeddings + Gemini reranking.
 2. Calls `match_people()` (person-level vector) and `match_person_text_chunks()` (chunk-level vector).
 3. Rolls chunk matches back up to candidate people.
 4. Gemini reranks candidates.
-5. Returns explicit error/message text on failure (does not silently return empty list).
+5. Returns explicit structured error/message text on failure (does not silently return empty list).
 
 ## Frontend AI Functions (`src/lib/aiService.ts`)
 
@@ -138,6 +168,5 @@ Collection suggestion via embeddings + Gemini reranking.
 
 ## Known Bugs
 - **Build size:** JS bundle is ~688kb (192kb gzipped), above Vite's 500kb warning threshold.
-- **25 console.log/error/warn calls in production code** across 9 frontend files. Should use a proper logger or be removed.
-- **9 `alert()` calls as error handling** in PersonProfile, OrganizationProfile, CollectionDetail. Should be replaced with toast/snackbar UI.
+- **Historical frontend error handling remains mixed outside Phase 6.3 surfaces.** New user-facing flows should use `src/lib/toast.ts`; admin edge-function errors should render `StructuredErrorBanner`.
 - **`@types/leaflet` and `@types/leaflet.markercluster` in `dependencies`** instead of `devDependencies` in `package.json`.

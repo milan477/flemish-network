@@ -162,7 +162,12 @@ function clamp(value: number, min: number, max: number): number {
 
 export function safeString(value: unknown): string {
   if (value === null || value === undefined) return "";
-  return String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+  return Array.from(String(value))
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127 || code === 9 || code === 10 || code === 13;
+    })
+    .join("");
 }
 
 export function normalizeWhitespace(value: string): string {

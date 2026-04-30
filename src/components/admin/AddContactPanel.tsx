@@ -460,8 +460,8 @@ function ManualAddForm({
 
     try {
       await syncPersonFlemishConnections(person.id, flemishStr);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save Flemish connections');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save Flemish connections');
       setSaving(false);
       return;
     }

@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import {
   getVerificationApifyAvailability,
   loadVerificationPerson,
@@ -22,7 +22,7 @@ function safeStr(value: unknown): string {
   return String(value).trim();
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -35,26 +35,14 @@ Deno.serve(async (req: Request) => {
     const personId = safeStr(body.personId);
 
     if (!personId) {
-      return new Response(
-        JSON.stringify({ error: "personId is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      return jsonError(400, "invalid_input", "personId is required");
     }
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     const person = await loadVerificationPerson(supabase, personId);
 
     if (!person) {
-      return new Response(
-        JSON.stringify({ error: "Person not found" }),
-        {
-          status: 404,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      return jsonError(404, "not_found", "Person not found");
     }
 
     const apifyAvailable = await getVerificationApifyAvailability();
@@ -81,14 +69,6 @@ Deno.serve(async (req: Request) => {
       },
     );
   } catch (error) {
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal error",
-      }),
-      {
-        status: error instanceof HttpError ? error.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return errorToResponse(error);
   }
-});
+}));

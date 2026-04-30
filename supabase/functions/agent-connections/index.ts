@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 
 const corsHeaders = {
@@ -390,7 +390,7 @@ async function maybeGenerateConnectionSuggestions(
   };
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -471,6 +471,7 @@ Deno.serve(async (req: Request) => {
           completed_at: new Date().toISOString(),
           heartbeat_at: new Date().toISOString(),
           error_message: error instanceof Error ? error.message : "Unknown error",
+          error_kind: agentRunErrorKindFor(error),
           llm_calls_made: 0,
           llm_model_used: null,
           web_searches_made: 0,
@@ -480,9 +481,6 @@ Deno.serve(async (req: Request) => {
         .eq("id", runId);
     }
 
-    return jsonResponse(
-      { error: error instanceof Error ? error.message : "Internal error" },
-      error instanceof HttpError ? error.status : 500,
-    );
+    return jsonResponse(structuredErrorBody(error), statusForError(error));
   }
-});
+}));

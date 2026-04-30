@@ -28,6 +28,7 @@ import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiServi
 import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
 import { useAuth } from '../lib/auth';
+import { notifyError } from '../lib/toast';
 
 interface CollectionDetailProps {
   collectionId: string;
@@ -77,8 +78,9 @@ export default function CollectionDetail({
 
       if (memError) throw memError;
       setMembers(memData || []);
-    } catch {
-      // fetch failed
+    } catch (err) {
+      console.warn('[CollectionDetail] failed to load collection', err);
+      notifyError(err, { hint: 'Could not load this collection.' });
     } finally {
       setLoading(false);
     }
@@ -99,8 +101,8 @@ export default function CollectionDetail({
 
       if (error) throw error;
       setMembers(members.filter((m) => m.id !== memberId));
-    } catch {
-      // remove failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not remove this person from the collection.' });
     }
   };
 
@@ -125,8 +127,8 @@ export default function CollectionDetail({
         )
       );
       setEditingNotes(null);
-    } catch {
-      // save failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not save notes.' });
     } finally {
       setIsSavingNotes(false);
     }
@@ -149,8 +151,8 @@ export default function CollectionDetail({
 
       if (error) throw error;
       onBack();
-    } catch {
-      // delete failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not delete the collection.' });
     }
   };
 
@@ -202,8 +204,8 @@ export default function CollectionDetail({
       // Remove from suggestions, refresh members
       setSuggestions((prev) => prev.filter((s) => s.id !== personId));
       await fetchCollectionData();
-    } catch {
-      // add failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not add this person to the collection.' });
     }
     setAddingIds((prev) => {
       const next = new Set(prev);

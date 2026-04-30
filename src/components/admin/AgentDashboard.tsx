@@ -12,8 +12,10 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { notifyError } from '../../lib/toast';
 import DiscoveryPlanningPanel from './DiscoveryPlanningPanel';
 import OpsMetricsPanel from './OpsMetricsPanel';
+import StructuredErrorBanner from './StructuredErrorBanner';
 
 interface AgentRun {
   id: string;
@@ -24,6 +26,7 @@ interface AgentRun {
   completed_at: string | null;
   results: Record<string, unknown> | null;
   error_message: string | null;
+  error_kind: string | null;
   llm_calls_made: number;
   web_searches_made: number;
   web_search_provider: string | null;
@@ -67,8 +70,10 @@ export default function AgentDashboard() {
       .invoke('agent-scheduler', {
         body: { action: 'housekeeping' },
       })
-      .catch(() => {
-        // Housekeeping is best-effort; still show current run data if it fails.
+      .catch((err) => {
+        // Housekeeping is best-effort; still show current run data if it fails,
+        // but surface a console warning so a permanently-down scheduler is visible.
+        console.warn('[AgentDashboard] housekeeping kick failed (non-fatal)', err);
       });
 
     const [runsRes, quotasRes, suggestionsRes] = await Promise.all([
@@ -124,8 +129,8 @@ export default function AgentDashboard() {
         if (error) {
           throw error;
         }
-      } catch {
-        // trigger failed
+      } catch (err) {
+        notifyError(err, { hint: 'Could not trigger the selected agent.' });
       }
       setTriggerLoading(null);
       await loadData();
@@ -142,13 +147,18 @@ export default function AgentDashboard() {
 
   const cancelRun = useCallback(
     async (runId: string) => {
-      await supabase.functions.invoke('agent-scheduler', {
-        body: {
-          action: 'cancel',
-          run_id: runId,
-        },
-      });
-      await loadData();
+      try {
+        const { error } = await supabase.functions.invoke('agent-scheduler', {
+          body: {
+            action: 'cancel',
+            run_id: runId,
+          },
+        });
+        if (error) throw error;
+        await loadData();
+      } catch (err) {
+        notifyError(err, { hint: 'Could not cancel this agent run.' });
+      }
     },
     [loadData]
   );
@@ -457,6 +467,23 @@ export default function AgentDashboard() {
                             steps={run.results!.steps as StepLog[]}
                             params={run.params}
                             errors={run.results!.errors as string[] | undefined}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    {run.status === 'failed' && run.error_message && (
+                      <tr>
+                        <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
+                          <StructuredErrorBanner
+                            title="Agent run failed"
+                            error={{
+                              name: 'AgentRunError',
+                              message: run.error_message,
+                              code: run.error_kind || 'unknown',
+                              hint: run.error_kind
+                                ? `See docs/RUNBOOK.md entry [${run.error_kind}] when available.`
+                                : undefined,
+                            }}
                           />
                         </td>
                       </tr>

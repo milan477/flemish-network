@@ -5,6 +5,7 @@ import {
   HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   buildDiscoveryDerivedLabels,
@@ -38,6 +39,9 @@ import {
   type PageClassification,
   type ScoredChildLink,
 } from "../_shared/discovery.ts";
+import { createLogger } from "../_shared/log.ts";
+
+const log = createLogger("agent-discovery");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1507,7 +1511,9 @@ ${page.text.slice(0, attempt.maxChars)}
     }
   } finally {
     if (fallbackCacheName) {
-      await deleteGeminiContextCache(geminiKey, fallbackCacheName).catch(() => undefined);
+      await deleteGeminiContextCache(geminiKey, fallbackCacheName).catch((error) => {
+        log.warn("delete_gemini_context_cache_failed", error);
+      });
     }
   }
 
@@ -3304,7 +3310,7 @@ async function processFrontierRow(
   };
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -3319,7 +3325,8 @@ Deno.serve(async (req: Request) => {
     }
 
     supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    const adminClient = supabase;
+    await requireStaffRole(req, adminClient, "editor");
 
     const body = await req.json();
     const query = normalizeWhitespace(safeString(body.query));
@@ -3331,7 +3338,7 @@ Deno.serve(async (req: Request) => {
 
     const heartbeat = async () => {
       if (!runId) return;
-      await supabase
+      await adminClient
         .from("agent_runs")
         .update({ heartbeat_at: new Date().toISOString() })
         .eq("id", runId);
@@ -3451,7 +3458,7 @@ Deno.serve(async (req: Request) => {
       }
       await Promise.all(
         [...claimedByDomain.entries()].map(([domain, count]) =>
-          bumpDomainStats(supabase, domain, { pagesQueued: -count })
+          bumpDomainStats(adminClient, domain, { pagesQueued: -count })
         ),
       );
     }
@@ -3616,8 +3623,8 @@ Deno.serve(async (req: Request) => {
     if (runId && supabase) {
       try {
         await releaseClaimedFrontier(supabase, runId);
-      } catch {
-        // Best-effort cleanup for abandoned claims.
+      } catch (cleanupError) {
+        log.withRun(runId).warn("release_claimed_frontier_failed", cleanupError);
       }
 
       try {
@@ -3627,24 +3634,25 @@ Deno.serve(async (req: Request) => {
             status: "failed",
             completed_at: new Date().toISOString(),
             error_message: error instanceof Error ? error.message : "Unknown error",
+            error_kind: agentRunErrorKindFor(error),
           })
           .eq("id", runId);
-      } catch {
-        // Ignore agent run update failures while returning the original error.
+      } catch (updateError) {
+        log.withRun(runId).warn("persist_run_failure_failed", updateError);
       }
     }
 
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal error",
+        ...structuredErrorBody(error),
         llm_calls_made: 0,
         web_searches_made: 0,
         linkedin_searches_made: 0,
       }),
       {
-        status: error instanceof HttpError ? error.status : 500,
+        status: statusForError(error),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },
     );
   }
-});
+}));

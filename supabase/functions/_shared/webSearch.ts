@@ -1,4 +1,7 @@
 import type { SupabaseAdminClient } from "./database.types.ts";
+import { createLogger } from "./log.ts";
+
+const log = createLogger("webSearch");
 
 export interface WebSearchResult {
   title: string;
@@ -92,8 +95,8 @@ export async function searchWeb(
           await cacheResults(supabase, queryHash, query, "tavily", results);
         }
         return { results, provider: "tavily", cached: false, quota_exhausted: false };
-      } catch {
-        // Tavily failed, try Brave
+      } catch (error) {
+        log.warn("tavily_failed_trying_brave", error);
       }
     }
   }
@@ -109,8 +112,8 @@ export async function searchWeb(
           await cacheResults(supabase, queryHash, query, "brave", results);
         }
         return { results, provider: "brave", cached: false, quota_exhausted: false };
-      } catch {
-        // Brave also failed
+      } catch (error) {
+        log.warn("brave_failed", error);
       }
     }
   }

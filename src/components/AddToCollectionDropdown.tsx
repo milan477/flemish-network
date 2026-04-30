@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Library, Plus, Check, Loader2, Minus } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { notifyError } from '../lib/toast';
 
 interface AddToCollectionDropdownProps {
   personIds: string[];
@@ -51,8 +52,8 @@ export default function AddToCollectionDropdown({
         counts[m.collection_id] = (counts[m.collection_id] || 0) + 1;
       });
       setMembershipCount(counts);
-    } catch {
-      // fetch failed
+    } catch (err) {
+      console.warn('[AddToCollectionDropdown] failed to load memberships', err);
     } finally {
       setLoading(false);
     }
@@ -111,8 +112,8 @@ export default function AddToCollectionDropdown({
         setMembershipCount(prev => ({ ...prev, [collectionId]: personIds.length }));
       }
       onSuccess?.();
-    } catch {
-      // toggle failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not update collection membership.' });
     } finally {
       setProcessingId(null);
     }
@@ -147,8 +148,8 @@ export default function AddToCollectionDropdown({
       setNewCollectionName('');
       setShowCreateInline(false);
       onSuccess?.();
-    } catch {
-      // create failed
+    } catch (err) {
+      notifyError(err, { hint: 'Could not create the collection.' });
     } finally {
       setLoading(false);
     }

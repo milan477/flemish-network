@@ -11,6 +11,14 @@ export type AppPage =
   | 'add-contact'
   | 'account';
 
+export type AdminTab = 'overview' | 'agents' | 'discovered' | 'system' | 'access';
+
+export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = false): AdminTab {
+  if (tab === 'agents' || tab === 'discovered' || tab === 'system') return tab;
+  if (tab === 'access' && canAccessAdminOnlyTabs) return 'access';
+  return 'overview';
+}
+
 export type DashboardViewMode = 'map' | 'list';
 
 export interface DashboardRouteState {

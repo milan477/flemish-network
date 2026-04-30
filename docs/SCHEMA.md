@@ -50,9 +50,11 @@
 | `discovery_source_packs` | `id`, `name`, `urls` (JSONB), `coverage_target_keys` (JSONB), `priority` |
 | `discovery_frontier_refills` | `id`, `trigger`, `query`, `urls_added`, `created_at` |
 | `discovery_entity_pivots` | `id`, `entity_name`, `entity_type`, `confidence`, `evidence_count`, `domain` |
-| `embedding_jobs` | `id`, `person_id` (FK), `status`, `claimed_at`, `embedding_dirty_at` |
+| `embedding_jobs` | `person_id` (PK/FK), `status`, `queued_at`, `claimed_at`, `attempts`, `last_error` |
 | `embedding_batch_runs` | `id`, `status`, `batch_id`, `manifest` (JSONB), `started_at`, `completed_at` |
-| `agent_runs` | `id`, `agent`, `status`, `started_at`, `completed_at`, `results` (JSONB) |
+| `agent_runs` | `id`, `agent_type`, `status`, `started_at`, `completed_at`, `results` (JSONB), `error_message`, `error_kind` |
+
+`agent_runs.error_kind` is the Phase 6.3 operator-facing failure class. Allowed values: `quota_exhausted`, `auth_failed`, `network`, `db_timeout`, `invalid_input`, `agent_failure`, `unknown`. Failed runs should set both `error_message` and `error_kind`; running/completed runs normally leave `error_kind` null.
 
 ## Benchmark / Ops (internal, staff-only)
 
@@ -73,7 +75,7 @@
 - Core reads require an authenticated active staff session via `is_active_staff()`.
 - Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`.
 - `staff_users` supports self read/update for the signed-in row; admins manage all rows.
-- `person_text_chunks`, `people_search_documents`, embedding queues, and ops/benchmark views are backend-only — never expose to public client.
+- `person_text_chunks`, `people_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs` and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System queue/batch health; writes still go through queue RPCs and `generate-embeddings`.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
 - `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.
 

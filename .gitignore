@@ -5,6 +5,7 @@ dist/
 .env.*
 .claude/settings.local.json
 .claude/projects/
+supabase-secrets.txt
 
 # keep graph outputs, skip heavy/local-only files
 graphify-out/cache/            # optional: commit for shared extraction speed, skip to keep repo small

@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import { embedTexts } from "../_shared/embeddings.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 
@@ -161,7 +161,7 @@ Order by relevance. Include only genuinely relevant candidates.`;
   return data;
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -169,14 +169,10 @@ Deno.serve(async (req: Request) => {
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonError(500, "agent_failure", "GEMINI_API_KEY not configured", "Set GEMINI_API_KEY in edge function secrets.");
     }
 
     const supabase = createAdminClient();
-    const rawSupabase = supabase as unknown as any;
     await requireStaffRole(req, supabase, "editor");
 
     const body = await req.json();
@@ -184,10 +180,7 @@ Deno.serve(async (req: Request) => {
     const limit = max_results || 15;
 
     if (!query || typeof query !== "string") {
-      return new Response(
-        JSON.stringify({ error: "query is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonError(400, "invalid_input", "query is required");
     }
 
     // Step 1: Embed the query
@@ -195,9 +188,11 @@ Deno.serve(async (req: Request) => {
     try {
       queryEmbedding = await getEmbedding(geminiKey, query);
     } catch (err) {
-      return new Response(
-        JSON.stringify({ error: `Query embedding failed: ${(err as Error).message}` }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return jsonError(
+        500,
+        "agent_failure",
+        `Query embedding failed: ${(err as Error).message}`,
+        "Verify GEMINI_API_KEY and that the embedding model is reachable.",
       );
     }
 
@@ -254,7 +249,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: candidatePeople, error: peopleError } = await rawSupabase
+    const { data: candidatePeople, error: peopleError } = await supabase
       .from("people")
       .select(
         "id, name, first_name, last_name, current_position, location_id, bio, occupation, person_flemish_connections(flemish_connections(name))",
@@ -278,7 +273,7 @@ Deno.serve(async (req: Request) => {
 
     // Also exclude existing collection members if collection_id provided
     if (collection_id) {
-      const { data: members } = await rawSupabase
+      const { data: members } = await supabase
         .from("collection_members")
         .select("person_id")
         .eq("collection_id", collection_id);
@@ -364,7 +359,8 @@ Deno.serve(async (req: Request) => {
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-    } catch {
+    } catch (rerankError) {
+      console.warn("[suggest-people] Gemini rerank failed; using similarity fallback", rerankError);
       // If reranking fails, fall back to raw vector similarity.
       suggestions = filtered.slice(0, limit).map((m) => ({
         id: m.id,
@@ -382,12 +378,6 @@ Deno.serve(async (req: Request) => {
       );
     }
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: (err as Error).message || "Internal error" }),
-      {
-        status: err instanceof HttpError ? err.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorToResponse(err);
   }
-});
+}));

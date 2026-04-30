@@ -9,6 +9,7 @@ import {
   HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 
 const corsHeaders = {
@@ -18,7 +19,7 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -29,15 +30,13 @@ Deno.serve(async (req: Request) => {
 
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "GEMINI_API_KEY is not configured. Add it as an edge function secret.",
-        }),
+      throw new HttpError(
+        500,
+        "GEMINI_API_KEY is not configured.",
         {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+          code: "agent_failure",
+          hint: "Set GEMINI_API_KEY in edge function secrets.",
+        },
       );
     }
 
@@ -46,15 +45,10 @@ Deno.serve(async (req: Request) => {
     const context: Record<string, unknown> = body.context || {};
 
     if (!task || !isAiAgentTask(task)) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Unknown task: ${task}. Valid tasks: ${getAiAgentTasks().join(", ")}`,
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+      throw new HttpError(
+        400,
+        `Unknown task: ${task}. Valid tasks: ${getAiAgentTasks().join(", ")}`,
+        { code: "invalid_input" },
       );
     }
 
@@ -84,15 +78,13 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (err) {
+    const body = structuredErrorBody(err);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: (err as Error).message || "Internal error",
-      }),
+      JSON.stringify({ success: false, ...body }),
       {
-        status: err instanceof HttpError ? err.status : 500,
+        status: statusForError(err),
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
-});
+}));

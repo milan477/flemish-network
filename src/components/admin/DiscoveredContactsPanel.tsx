@@ -33,6 +33,7 @@ import {
 } from '../../lib/derivedLabels';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
+import { notifyError } from '../../lib/toast';
 import { resolveLocationId as resolveOrCreateLocationId } from '../../lib/locations';
 
 interface DiscoveredContact {
@@ -224,7 +225,8 @@ async function approveContact(
     if (flemishConnectionText) {
       await syncPersonFlemishConnections(person.id, flemishConnectionText);
     }
-  } catch {
+  } catch (err) {
+    notifyError(err, { hint: 'Could not save Flemish connections for this discovered contact.' });
     return false;
   }
 
@@ -330,7 +332,8 @@ async function mergeIntoExisting(
         mergedFlemishConnection
       );
     }
-  } catch {
+  } catch (err) {
+    notifyError(err, { hint: 'Could not merge Flemish connections into the existing contact.' });
     return false;
   }
 

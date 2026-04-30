@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import {
   Navigate,
   Outlet,
@@ -9,6 +9,7 @@ import {
   useParams,
 } from 'react-router-dom';
 import Navigation from './components/Navigation';
+import ErrorBoundary from './components/ErrorBoundary';
 import Dashboard from './pages/Dashboard';
 import PersonProfile from './pages/PersonProfile';
 import OrganizationProfile from './pages/OrganizationProfile';
@@ -172,10 +173,14 @@ export default function App() {
     });
   }, [navigate]);
 
+  const wrap = (scope: string, node: ReactNode) => (
+    <ErrorBoundary scope={scope}>{node}</ErrorBoundary>
+  );
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/login" element={wrap('login', <Login />)} />
+      <Route path="/auth/callback" element={wrap('auth-callback', <AuthCallback />)} />
       <Route element={<RequireAuth />}>
         <Route
           element={
@@ -186,33 +191,51 @@ export default function App() {
             />
           }
         >
-          <Route path="/" element={<Dashboard onNavigate={handleNavigate} />} />
+          <Route
+            path="/"
+            element={wrap('dashboard', <Dashboard onNavigate={handleNavigate} />)}
+          />
           <Route
             path="/people/:personId"
-            element={<PersonProfileRoute onNavigate={handleNavigate} />}
+            element={wrap('person', <PersonProfileRoute onNavigate={handleNavigate} />)}
           />
           <Route
             path="/organizations/:organizationId"
-            element={<OrganizationProfileRoute onNavigate={handleNavigate} />}
+            element={wrap(
+              'organization',
+              <OrganizationProfileRoute onNavigate={handleNavigate} />
+            )}
           />
           <Route
             path="/collections"
-            element={<CollectionsIndexRoute onNavigate={handleNavigate} />}
+            element={wrap(
+              'collections',
+              <CollectionsIndexRoute onNavigate={handleNavigate} />
+            )}
           />
           <Route
             path="/collections/:collectionId"
-            element={<CollectionDetailRoute onNavigate={handleNavigate} />}
+            element={wrap(
+              'collection-detail',
+              <CollectionDetailRoute onNavigate={handleNavigate} />
+            )}
           />
-          <Route path="/account" element={<Account />} />
+          <Route path="/account" element={wrap('account', <Account />)} />
           <Route element={<RequireRole role="editor" />}>
-            <Route path="/admin" element={<Admin onNavigate={handleNavigate} />} />
+            <Route
+              path="/admin"
+              element={wrap('admin', <Admin onNavigate={handleNavigate} />)}
+            />
             <Route
               path="/admin/:tab"
-              element={<Admin onNavigate={handleNavigate} />}
+              element={wrap('admin', <Admin onNavigate={handleNavigate} />)}
             />
             <Route
               path="/contacts/new"
-              element={<AddContact onNavigate={handleNavigate} />}
+              element={wrap(
+                'add-contact',
+                <AddContact onNavigate={handleNavigate} />
+              )}
             />
           </Route>
         </Route>

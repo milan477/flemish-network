@@ -8,9 +8,9 @@ import {
 } from "../_shared/aiContracts.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import { embedTexts } from "../_shared/embeddings.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 import {
@@ -207,7 +207,7 @@ function truncateSnippet(value: string, maxLength = 220): string {
   return `${normalized.slice(0, maxLength - 3)}...`;
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -225,19 +225,19 @@ Deno.serve(async (req: Request) => {
         : 30;
 
     if (!query) {
-      return new Response(
-        JSON.stringify({ error: "query is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return jsonError(400, "invalid_input", "query is required");
     }
 
     const [keywords, queryEmbedding] = geminiKey
       ? await Promise.all([
-          extractKeywords(geminiKey, query).catch(() => EMPTY_KEYWORDS),
-          getEmbedding(geminiKey, query).catch(() => null),
+          extractKeywords(geminiKey, query).catch((error) => {
+            console.warn("[search-people] keyword extraction failed; using empty keywords", error);
+            return EMPTY_KEYWORDS;
+          }),
+          getEmbedding(geminiKey, query).catch((error) => {
+            console.warn("[search-people] query embedding failed; running lexical-only", error);
+            return null;
+          }),
         ])
       : [EMPTY_KEYWORDS, null];
 
@@ -498,12 +498,6 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: (err as Error).message || "Internal error" }),
-      {
-        status: err instanceof HttpError ? err.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorToResponse(err);
   }
-});
+}));

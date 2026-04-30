@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import {
   findExistingUsLocation,
   parseLocationCandidate,
@@ -63,13 +63,13 @@ async function geocodeOne(
         lng: parseFloat(data[0].lon),
       };
     }
-  } catch {
-    // geocoding failed for this pair
+  } catch (error) {
+    console.warn("[geocode] Nominatim lookup failed", { city, state, error });
   }
   return null;
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -86,13 +86,7 @@ Deno.serve(async (req: Request) => {
         : [];
 
     if (!pairs || !Array.isArray(pairs)) {
-      return new Response(
-        JSON.stringify({ error: "pairs or candidates array is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return jsonError(400, "invalid_input", "pairs or candidates array is required");
     }
 
     const capped = pairs.slice(0, 25);
@@ -205,12 +199,6 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: (err as Error).message }),
-      {
-        status: err instanceof HttpError ? err.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorToResponse(err);
   }
-});
+}));

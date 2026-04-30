@@ -4,9 +4,13 @@ import {
   HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import { EMBEDDING_MODEL } from "../_shared/embeddings.ts";
 import { getGeminiModelSummary } from "../_shared/gemini.ts";
+import { createLogger } from "../_shared/log.ts";
+
+const log = createLogger("agent-scheduler");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +28,7 @@ const AGENT_FUNCTIONS: Record<AgentType, string> = {
   connection: "agent-connections",
 };
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -42,9 +46,10 @@ Deno.serve(async (req: Request) => {
     const action = (body.action as SchedulerAction | undefined) || "trigger";
 
     if (!["trigger", "cancel", "housekeeping", "planning", "metrics"].includes(action)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid action. Must be one of: trigger, cancel, housekeeping, planning, metrics" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return jsonError(
+        400,
+        "invalid_input",
+        "Invalid action. Must be one of: trigger, cancel, housekeeping, planning, metrics",
       );
     }
 
@@ -78,10 +83,7 @@ Deno.serve(async (req: Request) => {
     if (action === "cancel") {
       const runId = typeof body.run_id === "string" ? body.run_id : "";
       if (!runId) {
-        return new Response(
-          JSON.stringify({ error: "run_id is required for cancel" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonError(400, "invalid_input", "run_id is required for cancel");
       }
 
       const { data: cancelledRun, error: cancelError } = await supabase
@@ -90,6 +92,7 @@ Deno.serve(async (req: Request) => {
           status: "failed",
           completed_at: new Date().toISOString(),
           error_message: "Cancelled by user",
+          error_kind: "agent_failure",
         })
         .eq("id", runId)
         .in("status", ["pending", "running"])
@@ -97,10 +100,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (cancelError) {
-        return new Response(
-          JSON.stringify({ error: "Failed to cancel run", detail: cancelError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return jsonError(500, "agent_failure", `Failed to cancel run: ${cancelError.message}`);
       }
 
       return jsonResponse({
@@ -114,11 +114,10 @@ Deno.serve(async (req: Request) => {
     const params = body.params || {};
 
     if (!agentType || !AGENT_FUNCTIONS[agentType]) {
-      return new Response(
-        JSON.stringify({
-          error: `Invalid agent_type. Must be one of: ${Object.keys(AGENT_FUNCTIONS).join(", ")}`,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return jsonError(
+        400,
+        "invalid_input",
+        `Invalid agent_type. Must be one of: ${Object.keys(AGENT_FUNCTIONS).join(", ")}`,
       );
     }
 
@@ -136,15 +135,9 @@ Deno.serve(async (req: Request) => {
       housekeeping,
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Internal error" }),
-      {
-        status: err instanceof HttpError ? err.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorToResponse(err);
   }
-});
+}));
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -448,13 +441,15 @@ async function triggerAgentRun(
     method: "POST",
     headers: dispatchHeaders,
     body: JSON.stringify({ ...params, run_id: runId }),
-  }).catch(() => {
-    supabase
+  }).catch(async (dispatchError) => {
+    log.withRun(runId).warn("downstream_dispatch_failed", dispatchError);
+    await supabase
       .from("agent_runs")
       .update({
         status: "failed",
         completed_at: new Date().toISOString(),
         error_message: "Failed to dispatch to agent function",
+        error_kind: "network",
       })
       .eq("id", runId);
   });
@@ -473,6 +468,7 @@ async function markZombieRuns(
       status: "failed",
       completed_at: new Date().toISOString(),
       error_message: "Zombie: no heartbeat",
+      error_kind: "db_timeout",
     })
     .eq("status", "running")
     .lt("heartbeat_at", twoMinutesAgo)

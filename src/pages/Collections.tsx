@@ -41,8 +41,8 @@ export default function Collections({
       }));
 
       setCollections(formattedData);
-    } catch {
-      // fetch failed silently
+    } catch (err) {
+      console.warn('[Collections] failed to load collections', err);
     } finally {
       setLoading(false);
     }

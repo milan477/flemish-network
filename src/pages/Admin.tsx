@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bot, LayoutDashboard, Users } from 'lucide-react';
+import { Activity, Bot, LayoutDashboard, Users } from 'lucide-react';
 import {
   supabase,
   type FilterPreset,
@@ -11,14 +11,15 @@ import { type ProfileSuggestion } from '../components/admin/SuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 import AccessManagementPanel from '../components/admin/AccessManagementPanel';
+import SystemHealthPanel from '../components/admin/SystemHealthPanel';
 import {
   type PersonSectorRow,
 } from '../components/admin/interactiveStatsShared';
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { useAuth } from '../lib/auth';
-
-type AdminTab = 'overview' | 'agents' | 'discovered' | 'access';
+import { notifyError } from '../lib/toast';
+import { normalizeAdminTab, type AdminTab } from '../lib/appRouting';
 const VERIFY_BATCH_SIZE = 5;
 
 interface AdminProps {
@@ -29,10 +30,7 @@ export default function Admin({ onNavigate }: AdminProps) {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
-  const activeTab: AdminTab =
-    tab === 'agents' || tab === 'discovered' || (tab === 'access' && isAdmin)
-      ? (tab as AdminTab)
-      : 'overview';
+  const activeTab = normalizeAdminTab(tab, isAdmin);
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
@@ -167,6 +165,7 @@ export default function Admin({ onNavigate }: AdminProps) {
 
       try {
         const idsWithoutSuggestions = new Set<string>();
+        let failedBatches = 0;
 
         for (let index = 0; index < personIds.length; index += VERIFY_BATCH_SIZE) {
           const batch = personIds.slice(index, index + VERIFY_BATCH_SIZE);
@@ -175,6 +174,7 @@ export default function Admin({ onNavigate }: AdminProps) {
           });
 
           if (error) {
+            failedBatches += 1;
             continue;
           }
 
@@ -199,8 +199,14 @@ export default function Admin({ onNavigate }: AdminProps) {
             return next;
           });
         }
-      } catch {
-        // AI check failed
+        if (failedBatches > 0) {
+          notifyError('Some verification batches failed.', {
+            hint: `${failedBatches} batch${failedBatches === 1 ? '' : 'es'} could not be checked.`,
+          });
+        }
+      } catch (err) {
+        console.warn('[Admin] AI suggestion check failed (non-fatal)', err);
+        notifyError(err, { hint: 'Could not complete the AI suggestion check.' });
       }
 
       setAiLoading(false);
@@ -277,8 +283,8 @@ export default function Admin({ onNavigate }: AdminProps) {
           break;
         }
       }
-    } catch {
-      // backfill failed
+    } catch (err) {
+      notifyError(err, { hint: 'Embedding backfill failed.' });
     }
 
     setEmbeddingRunning(false);
@@ -338,6 +344,17 @@ export default function Admin({ onNavigate }: AdminProps) {
             <Users className="w-4 h-4" />
             Discovered
           </button>
+          <button
+            onClick={() => handleTabChange('system')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'system'
+                ? 'border-teal-600 text-teal-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            System
+          </button>
           {isAdmin && (
             <button
               onClick={() => handleTabChange('access')}
@@ -357,6 +374,8 @@ export default function Admin({ onNavigate }: AdminProps) {
       {activeTab === 'agents' && <AgentDashboard />}
 
       {activeTab === 'discovered' && <DiscoveredContactsPanel />}
+
+      {activeTab === 'system' && <SystemHealthPanel />}
 
       {activeTab === 'access' && isAdmin && <AccessManagementPanel />}
 

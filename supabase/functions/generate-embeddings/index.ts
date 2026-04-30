@@ -1,9 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "../_shared/auth.ts";
+import { jsonError, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   EMBEDDING_DIM,
@@ -125,7 +125,7 @@ function firstRelationRow<T>(
   return value ?? null;
 }
 
-function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -862,7 +862,7 @@ async function syncBatchRun(
   return data as EmbeddingBatchRunRow;
 }
 
-Deno.serve(async (req: Request) => {
+Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -870,7 +870,7 @@ Deno.serve(async (req: Request) => {
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
-      return jsonResponse({ error: "GEMINI_API_KEY not configured" }, 500);
+      return jsonError(500, "agent_failure", "GEMINI_API_KEY not configured", "Set GEMINI_API_KEY in edge function secrets.");
     }
 
     const supabase = createAdminClient();
@@ -936,12 +936,12 @@ Deno.serve(async (req: Request) => {
 
     if (action === "cancel_batch") {
       if (!batchName) {
-        return jsonResponse({ error: "batch_name is required" }, 400);
+        return jsonError(400, "invalid_input", "batch_name is required");
       }
 
       const [existingRun] = await loadBatchRuns(supabase, 1, batchName);
       if (!existingRun) {
-        return jsonResponse({ error: "Batch not found" }, 404);
+        return jsonError(404, "not_found", "Batch not found");
       }
 
       await cancelAsyncEmbeddingBatch(geminiKey, batchName);
@@ -975,12 +975,12 @@ Deno.serve(async (req: Request) => {
 
     if (action === "poll_batch") {
       if (!batchName) {
-        return jsonResponse({ error: "batch_name is required" }, 400);
+        return jsonError(400, "invalid_input", "batch_name is required");
       }
 
       const [existingRun] = await loadBatchRuns(supabase, 1, batchName);
       if (!existingRun) {
-        return jsonResponse({ error: "Batch not found" }, 404);
+        return jsonError(404, "not_found", "Batch not found");
       }
 
       const synced = await syncBatchRun(supabase, geminiKey, existingRun);
@@ -1162,12 +1162,9 @@ Deno.serve(async (req: Request) => {
       remaining: await getOutstandingJobCount(supabase),
     });
   } catch (err) {
-    return jsonResponse(
-      { error: (err as Error).message || "Internal error" },
-      err instanceof HttpError ? err.status : 500
-    );
+    return jsonResponse(structuredErrorBody(err), statusForError(err));
   }
-});
+}));
 
 async function processClaimedJobs(
   supabase: SupabaseAdminClient,

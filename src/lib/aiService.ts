@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { US_STATES, type Person } from './supabase';
 import { getPersonFlemishConnectionText } from './flemishConnections';
+import { extractEdgeError, EdgeFunctionError } from './edgeError';
 
 const SEARCH_STOP_WORDS = new Set([
   'a',
@@ -101,7 +102,8 @@ export interface ParseContactsResult {
 interface AIResponse<T> {
   success: boolean;
   data?: T;
-  error?: string;
+  // Phase 6.3: error is now a structured { code, message, hint? } envelope.
+  error?: { code: string; message: string; hint?: string } | string;
 }
 
 async function callAI<T>(
@@ -113,13 +115,18 @@ async function callAI<T>(
   });
 
   if (error) {
-    throw new Error(`AI request failed: ${error.message}`);
+    throw await extractEdgeError(error, 'AI request failed');
   }
 
   const result = data as AIResponse<T>;
 
   if (!result || !result.success || !result.data) {
-    throw new Error(result?.error || 'AI request failed');
+    if (result?.error && typeof result.error === 'object') {
+      throw new EdgeFunctionError(result.error.message, result.error.code, result.error.hint);
+    }
+    throw new Error(
+      typeof result?.error === 'string' ? result.error : 'AI request failed'
+    );
   }
 
   return result.data;
@@ -180,7 +187,7 @@ export async function discoverContacts(
   });
 
   if (error) {
-    throw new Error(`Discovery request failed: ${error.message}`);
+    throw await extractEdgeError(error, 'Discovery request failed');
   }
 
   const result = data as DiscoverContactsResult;
@@ -244,8 +251,31 @@ export async function smartSearch(
 
 export const AI_SCORE_THRESHOLD = 0.08;
 
+function getIndexedString(
+  person: Record<string, unknown>,
+  field: string
+): string {
+  const value = person[field];
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).toLowerCase()
+    : '';
+}
+
+function getNestedString(
+  person: Record<string, unknown>,
+  parent: string,
+  child: string
+): string {
+  const parentValue = person[parent];
+  if (!parentValue || typeof parentValue !== 'object') return '';
+  const childValue = (parentValue as Record<string, unknown>)[child];
+  return typeof childValue === 'string' || typeof childValue === 'number'
+    ? String(childValue).toLowerCase()
+    : '';
+}
+
 export function scorePersonAgainstKeywords(
-  person: Record<string, any>,
+  person: Record<string, unknown>,
   keywords: SmartSearchKeywords
 ): number {
   let score = 0;
@@ -271,11 +301,11 @@ export function scorePersonAgainstKeywords(
     let val = '';
     if (personField.includes('.')) {
       const [parent, child] = personField.split('.');
-      val = String(person[parent]?.[child] || '').toLowerCase();
+      val = getNestedString(person, parent, child);
     } else {
       val = personField === 'flemish_connection'
-        ? getPersonFlemishConnectionText(person as Person).toLowerCase()
-        : String(person[personField] || '').toLowerCase();
+        ? getPersonFlemishConnectionText(person as unknown as Person).toLowerCase()
+        : getIndexedString(person, personField);
     }
     
     if (!val) continue;
@@ -292,7 +322,7 @@ export function scorePersonAgainstKeywords(
 }
 
 export function scorePersonAgainstFilter(
-  person: Record<string, any>,
+  person: Record<string, unknown>,
   keywords: Record<string, string[]>,
   fields: readonly string[]
 ): boolean {
@@ -300,8 +330,8 @@ export function scorePersonAgainstFilter(
     const kws = keywords[field];
     if (!kws || kws.length === 0) continue;
     const val = field === 'flemish_connection'
-      ? getPersonFlemishConnectionText(person as Person).toLowerCase()
-      : String(person[field] || '').toLowerCase();
+      ? getPersonFlemishConnectionText(person as unknown as Person).toLowerCase()
+      : getIndexedString(person, field);
     if (!val) continue;
     for (const kw of kws) {
       if (val.includes(kw)) return true;
@@ -370,7 +400,7 @@ export async function suggestPeopleEmbedding(
       },
     });
 
-    if (error) throw error;
+    if (error) throw await extractEdgeError(error, 'People suggestion request failed');
     if (!data?.suggestions) throw new Error('No suggestions returned');
 
     return {
@@ -414,6 +444,7 @@ export async function suggestPeopleEmbedding(
       };
     }
 
+    if (error instanceof EdgeFunctionError) throw error;
     const message =
       error instanceof Error
         ? error.message
@@ -432,9 +463,9 @@ export async function suggestPeople(query: string): Promise<{ person: Person; re
     if (error || !people) throw error || new Error('No people found');
 
     return (people || [])
-      .map((p: any) => ({
+      .map((p) => ({
         person: p as Person,
-        score: scorePersonAgainstKeywords(p, res.keywords),
+        score: scorePersonAgainstKeywords(p as Record<string, unknown>, res.keywords),
         reason: res.message,
       }))
       .filter((item) => item.score > 0.05)
@@ -495,7 +526,7 @@ export async function hybridSearch(
       body: { query, max_results: maxResults },
     });
 
-    if (error) throw error;
+    if (error) throw await extractEdgeError(error, 'Search request failed');
     if (!data?.results || !data?.keywords) throw new Error('Invalid response');
 
     return data as HybridSearchResponse;

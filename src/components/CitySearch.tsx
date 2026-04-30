@@ -19,7 +19,6 @@ interface LocationSuggestion {
 }
 
 export default function CitySearch({
-  value: _value,
   cityStateDisplay,
   onChange,
   placeholder = "Search city...",
@@ -33,8 +32,8 @@ export default function CitySearch({
 
   // Sync incoming display string if query is empty
   useEffect(() => {
-    if (cityStateDisplay && !query) {
-      setQuery(cityStateDisplay);
+    if (cityStateDisplay) {
+      setQuery((current) => current || cityStateDisplay);
     }
   }, [cityStateDisplay]);
 

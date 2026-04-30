@@ -20,8 +20,8 @@ export async function geocodeBatch(
           }
         }
       }
-    } catch {
-      // geocoding unavailable
+    } catch (err) {
+      console.warn('[geocoding] geocode edge function unavailable', err);
     }
   }
 

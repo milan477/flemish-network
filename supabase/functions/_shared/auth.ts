@@ -13,13 +13,43 @@ export interface StaffUserContext {
   status: string;
 }
 
+export type HttpErrorCode =
+  | "auth_failed"
+  | "forbidden"
+  | "invalid_input"
+  | "not_found"
+  | "quota_exhausted"
+  | "network"
+  | "db_timeout"
+  | "agent_failure"
+  | "unknown";
+
 export class HttpError extends Error {
   status: number;
+  code: HttpErrorCode;
+  hint?: string;
 
-  constructor(status: number, message: string) {
+  constructor(
+    status: number,
+    message: string,
+    options?: { code?: HttpErrorCode; hint?: string },
+  ) {
     super(message);
     this.status = status;
+    this.code = options?.code || defaultCodeForStatus(status);
+    this.hint = options?.hint;
   }
+}
+
+function defaultCodeForStatus(status: number): HttpErrorCode {
+  if (status === 401) return "auth_failed";
+  if (status === 403) return "forbidden";
+  if (status === 404) return "not_found";
+  if (status === 400 || status === 422) return "invalid_input";
+  if (status === 429) return "quota_exhausted";
+  if (status === 504 || status === 408) return "db_timeout";
+  if (status >= 500) return "agent_failure";
+  return "unknown";
 }
 
 const ROLE_RANK: Record<StaffRole, number> = {

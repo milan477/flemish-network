@@ -363,11 +363,14 @@ async function buildLocationSeed(
     ? await findExistingUsLocation(supabase, parsed.city, parsed.state)
     : null;
 
+  const normalizedValue = normalizeText(parsed.label_value);
+  if (!normalizedValue) return null;
+
   return {
     ...subject,
     label_type: "us_location",
     label_value: buildLocationLabelValue(parsed.city, parsed.state, parsed.raw_text),
-    normalized_value: parsed.label_value,
+    normalized_value: normalizedValue,
     raw_value: parsed.raw_text || null,
     confidence: clampConfidence(
       Math.min(0.98, parsed.parser_confidence * 0.75 + input.confidence * 0.25),
@@ -389,7 +392,11 @@ async function buildLocationSeed(
       longitude: existingLocation?.longitude ?? null,
     },
     agent_run_id: subject.agent_run_id || null,
-    dedupe_key: "",
+    dedupe_key: buildDedupeKey(
+      buildSubjectKey(subject.person_id, subject.discovered_contact_id),
+      "us_location",
+      normalizedValue,
+    ),
   };
 }
 

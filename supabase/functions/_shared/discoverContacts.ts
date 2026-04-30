@@ -1,11 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  HttpError,
   requireStaffRole,
 } from "./auth.ts";
+import { errorToResponse, jsonError, wrapHandler } from "./httpError.ts";
 import type { SupabaseAdminClient } from "./database.types.ts";
 import { callGeminiStructured } from "./gemini.ts";
+import { createLogger } from "./log.ts";
+
+const log = createLogger("discoverContacts");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -165,7 +168,8 @@ async function searchWeb(
       .join("\n\n---\n\n");
 
     return { results: formatted, urls };
-  } catch {
+  } catch (error) {
+    log.warn("tavily_search_failed", error);
     return { results: "", urls: [] };
   }
 }
@@ -252,7 +256,8 @@ async function checkDuplicates(
         .select("id, name, email, linkedin_url")
         .or(orParts.join(","));
       existing = (data || []) as typeof existing;
-    } catch {
+    } catch (error) {
+      log.warn("duplicate_lookup_failed", error);
       existing = [];
     }
   }
@@ -301,8 +306,8 @@ async function checkDuplicates(
           duplicate_reason = "Name matches existing contact";
           existing_person_id = safeStr(nameMatches[0].id);
         }
-      } catch {
-        // name check unavailable
+      } catch (error) {
+        log.warn("duplicate_name_check_failed", error);
       }
     }
 
@@ -317,7 +322,7 @@ async function checkDuplicates(
   return results;
 }
 
-export async function handleDiscoverContactsRequest(req: Request): Promise<Response> {
+export const handleDiscoverContactsRequest = wrapHandler(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -328,13 +333,7 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return jsonError(500, "agent_failure", "GEMINI_API_KEY not configured", "Set GEMINI_API_KEY in edge function secrets.");
     }
 
     const tavilyKey = Deno.env.get("TAVILY_API_KEY");
@@ -342,13 +341,7 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
     const query = safeStr(body.query);
 
     if (!query.trim()) {
-      return new Response(
-        JSON.stringify({ error: "query is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return jsonError(400, "invalid_input", "query is required");
     }
 
     const searchQuery = `${query.trim()} (flemish/belgian professional)`;
@@ -394,14 +387,6 @@ export async function handleDiscoverContactsRequest(req: Request): Promise<Respo
       }
     );
   } catch (err) {
-    return new Response(
-      JSON.stringify({
-        error: err instanceof Error ? err.message : "Internal error",
-      }),
-      {
-        status: err instanceof HttpError ? err.status : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return errorToResponse(err);
   }
-}
+});

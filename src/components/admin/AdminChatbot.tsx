@@ -12,6 +12,7 @@ import { discoverContacts } from '../../lib/aiService';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
 import { resolveLocationId } from '../../lib/locations';
+import { notifyError } from '../../lib/toast';
 import ContactCard, {
   ContactCardEdit,
   type DiscoveredContact,
@@ -67,7 +68,8 @@ async function addContactToDb(
     if (flemishConnectionText) {
       await syncPersonFlemishConnections(person.id, flemishConnectionText);
     }
-  } catch {
+  } catch (err) {
+    notifyError(err, { hint: 'Could not save Flemish connections for this new contact.' });
     return false;
   }
 
@@ -165,7 +167,8 @@ async function updateExistingContact(
         contact.flemish_connection || null
       );
     }
-  } catch {
+  } catch (err) {
+    notifyError(err, { hint: 'Could not save Flemish connections for this existing contact.' });
     return false;
   }
 
@@ -269,7 +272,8 @@ export default function AdminChatbot({
         addBot(msg);
         setDiscoveredContacts(contacts);
       }
-    } catch {
+    } catch (err) {
+      notifyError(err, { hint: 'Discovery failed. Check edge-function secrets and upstream search access.' });
       addBot(
         'I had trouble running web discovery. Please try again with a different query.'
       );
