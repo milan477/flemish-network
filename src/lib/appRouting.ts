@@ -117,8 +117,12 @@ export function buildDashboardSearchParams(
 ): URLSearchParams {
   const params = new URLSearchParams();
 
-  if (state.view !== 'map') params.set('view', state.view);
   if (state.query) params.set('q', state.query);
+  if (state.view === 'list') {
+    params.set('view', 'list');
+  } else if (state.query) {
+    params.set('view', 'map');
+  }
   if (!state.filters.showPeople) params.set('people', '0');
   if (!state.filters.showOrganizations) params.set('organizations', '0');
   if (state.filters.sector) params.set('sector', state.filters.sector);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFiltersFromQuery } from '../filterParser';
+import { isLocationOnlyQuery, parseFiltersFromQuery } from '../filterParser';
 import { DEFAULT_MAP_FILTERS } from '../supabase';
 
 const base = () => ({ ...DEFAULT_MAP_FILTERS, flemishConnections: [] });
@@ -69,6 +69,12 @@ describe('parseFiltersFromQuery', () => {
     it('detects multi-word "new orleans"', () => {
       const { filters } = parseFiltersFromQuery('new orleans culture', base());
       expect(filters.city).toBe('New Orleans');
+    });
+
+    it('identifies pure location searches', () => {
+      expect(isLocationOnlyQuery('los angeles')).toBe(true);
+      expect(isLocationOnlyQuery('  New   York  ')).toBe(true);
+      expect(isLocationOnlyQuery('los angeles biotech')).toBe(false);
     });
   });
 

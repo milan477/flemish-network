@@ -133,6 +133,24 @@ const MAJOR_CITIES: Record<string, string[]> = {
 const LECTURE_KEYWORDS = ['speaker', 'speakers', 'lecturer', 'lecturers', 'available for lectures', 'talks'];
 const RESET_KEYWORDS = ['reset', 'clear', 'show all'];
 
+function normalizeQueryTerm(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+export function isLocationOnlyQuery(query: string): boolean {
+  const q = normalizeQueryTerm(query);
+  if (!q) return false;
+
+  return (
+    Object.values(US_STATES).some((aliases) =>
+      aliases.some((alias) => normalizeQueryTerm(alias) === q)
+    ) ||
+    Object.values(MAJOR_CITIES).some((aliases) =>
+      aliases.some((alias) => normalizeQueryTerm(alias) === q)
+    )
+  );
+}
+
 export function parseFiltersFromQuery(query: string, currentFilters: MapFilters): FilterResult {
   const q = query.toLowerCase().trim();
 

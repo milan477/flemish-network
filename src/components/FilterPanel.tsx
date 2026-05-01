@@ -45,6 +45,7 @@ export default function FilterPanel({
   const activeFilterCount = [
     filters.sector,
     filters.occupation,
+    filters.city || filters.state,
     filters.flemishConnections.length > 0 ? 'yes' : '',
     filters.availableForLectures ? 'yes' : '',
     !filters.showPeople ? 'hide' : '',

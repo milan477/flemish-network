@@ -5,6 +5,13 @@ interface LocationCoords {
   lng: number;
 }
 
+interface StaticLocationRow {
+  city?: string;
+  state?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
 let cache: Map<string, LocationCoords> | null = null;
 let loadPromise: Promise<void> | null = null;
 const locationIdCache = new Map<string, string>();
@@ -15,11 +22,44 @@ for (const state of US_STATES) {
   STATE_NAME_TO_CODE.set(state.code.toLowerCase(), state.code);
 }
 
+async function loadBundledLocations() {
+  try {
+    const response = await fetch('/cities.json');
+    if (!response.ok) return;
+
+    const locations = await response.json();
+    if (!Array.isArray(locations)) return;
+
+    for (const loc of locations as StaticLocationRow[]) {
+      if (
+        !loc.city ||
+        !loc.state ||
+        typeof loc.latitude !== 'number' ||
+        typeof loc.longitude !== 'number'
+      ) {
+        continue;
+      }
+
+      const key = `${loc.city},${loc.state}`;
+      if (!cache?.has(key)) {
+        cache?.set(key, {
+          lat: loc.latitude,
+          lng: loc.longitude,
+        });
+      }
+    }
+  } catch {
+    // The database-backed locations remain the source of truth if the bundled file is unavailable.
+  }
+}
+
 async function fetchLocations() {
+  cache = new Map();
+
   const { data } = await supabase
     .from('locations')
     .select('city, state, latitude, longitude');
-  cache = new Map();
+
   for (const loc of data || []) {
     if (loc.latitude == null || loc.longitude == null) continue;
     cache.set(`${loc.city},${loc.state}`, {
@@ -27,6 +67,8 @@ async function fetchLocations() {
       lng: loc.longitude,
     });
   }
+
+  await loadBundledLocations();
 }
 
 export async function ensureLocationsLoaded(): Promise<void> {

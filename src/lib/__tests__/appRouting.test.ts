@@ -99,6 +99,18 @@ describe('appRouting - dashboard URL roundtrip', () => {
     expect(parsed.view).toBe('map');
   });
 
+  it('encodes view=map when a query is present so it roundtrips', () => {
+    const state: DashboardRouteState = {
+      view: 'map',
+      query: 'los angeles',
+      filters: { ...DEFAULT_MAP_FILTERS },
+      focusedCity: null,
+    };
+    const params = buildDashboardSearchParams(state);
+    expect(params.get('view')).toBe('map');
+    expect(roundtrip(state)).toEqual(state);
+  });
+
   it('parseBooleanParam treats "0"/"false" as false, anything else as true', () => {
     const trueParsed = parseDashboardRouteState(
       new URLSearchParams('people=1&organizations=true')

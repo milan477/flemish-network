@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { Map as MapIcon, List, X, Search as SearchIcon } from 'lucide-react';
+import { Map as MapIcon, List, X, Search as SearchIcon, MapPin } from 'lucide-react';
 import {
   supabase,
   fuzzyMatch,
@@ -23,7 +23,7 @@ import {
   addToCache,
 } from '../lib/locations';
 import { geocodeBatch } from '../lib/geocoding';
-import { parseFiltersFromQuery } from '../lib/filterParser';
+import { isLocationOnlyQuery, parseFiltersFromQuery } from '../lib/filterParser';
 import {
   scorePersonAgainstFilter,
   hybridSearch,
@@ -308,13 +308,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         return;
       }
 
-      const parsed = parseFiltersFromQuery(query, filters);
+      const trimmedQuery = query.trim();
+      const parsed = parseFiltersFromQuery(trimmedQuery, filters);
+      const nextQuery = isLocationOnlyQuery(trimmedQuery) ? '' : trimmedQuery;
+
       clearSearchResults();
       setSearchError(null);
 
       updateRouteState((current) => ({
         ...current,
-        query: query.trim(),
+        query: nextQuery,
         view: 'list',
         filters: parsed.filters,
         focusedCity: null,
@@ -703,6 +706,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             {(isSearchActive ||
               filters.sector ||
               filters.occupation ||
+              filters.city ||
+              filters.state ||
               filters.flemishConnections.length > 0) && (
               <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
                 {activeQuery && (
@@ -738,6 +743,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         handleFiltersChange({ ...filters, occupation: '' })
                       }
                       className="hover:text-purple-900 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {(filters.city || filters.state) && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-medium shadow-sm">
+                    <MapPin className="w-3 h-3" />
+                    <span>
+                      Location:{' '}
+                      {[filters.city, filters.state].filter(Boolean).join(', ')}
+                    </span>
+                    <button
+                      onClick={() =>
+                        handleFiltersChange({ ...filters, city: '', state: '' })
+                      }
+                      className="hover:text-emerald-900 transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
