@@ -22,6 +22,7 @@ import {
 import {
   supabase,
   parseTitleFromName,
+  personNamePartsForInsert,
   displayName,
   type Person,
   type Sector,
@@ -203,9 +204,11 @@ async function approveContact(
     .from('people')
     .insert({
       name: contact.name,
-      title: parsed.title || null,
-      first_name: parsed.firstName || null,
-      last_name: parsed.lastName || null,
+      ...personNamePartsForInsert({
+        title: parsed.title,
+        firstName: parsed.firstName,
+        lastName: parsed.lastName,
+      }),
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
       location_id: locationId,

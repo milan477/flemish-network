@@ -1,11 +1,30 @@
+import * as XLSX from 'xlsx';
 import { supabase, displayName, type Person } from './supabase';
 import { getPersonFlemishConnectionText } from './flemishConnections';
 
-// ---------- CSV Export ----------
+// ---------- People Export ----------
 
-interface PersonWithSectors extends Person {
+export interface PersonWithSectors extends Person {
   sectorNames?: string[];
 }
+
+const PEOPLE_EXPORT_HEADERS = [
+  'Title',
+  'First Name',
+  'Last Name',
+  'Position',
+  'Organization',
+  'About',
+  'City',
+  'State',
+  'Sector(s)',
+  'Flemish Connections',
+  'Email',
+  'Phone',
+  'LinkedIn',
+  'Website',
+  'X URL',
+];
 
 function escapeCsvField(value: string): string {
   if (!value) return '';
@@ -15,8 +34,8 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
-function personToCsvRow(person: PersonWithSectors): string {
-  const fields = [
+function personToExportFields(person: PersonWithSectors): string[] {
+  return [
     person.title || '',
     person.first_name || '',
     person.last_name || '',
@@ -33,17 +52,15 @@ function personToCsvRow(person: PersonWithSectors): string {
     person.website_url || '',
     person.twitter_url || '',
   ];
-  return fields.map(escapeCsvField).join(',');
 }
 
-const CSV_HEADER = [
-  'Title', 'First Name', 'Last Name', 'Position', 'Organization', 'About',
-  'City', 'State', 'Sector(s)', 'Flemish Connections',
-  'Email', 'Phone', 'LinkedIn', 'Website', 'X URL',
-].join(',');
+function personToCsvRow(person: PersonWithSectors): string {
+  return personToExportFields(person).map(escapeCsvField).join(',');
+}
 
-export async function exportPeopleToCsv(people: Person[], filename?: string): Promise<void> {
-  // Fetch sectors for all people in one query
+async function enrichPeopleForExport(people: Person[]): Promise<PersonWithSectors[]> {
+  if (people.length === 0) return [];
+
   const personIds = people.map((p) => p.id);
   const { data: sectorRows } = await supabase
     .from('person_sectors')
@@ -60,13 +77,50 @@ export async function exportPeopleToCsv(people: Person[], filename?: string): Pr
     }
   }
 
-  const enriched: PersonWithSectors[] = people.map((p) => ({
+  return people.map((p) => ({
     ...p,
     sectorNames: sectorMap.get(p.id) || [],
   }));
+}
 
-  const csv = [CSV_HEADER, ...enriched.map(personToCsvRow)].join('\n');
-  downloadFile(csv, filename || 'flemish-network-export.csv', 'text/csv;charset=utf-8;');
+function filenameWithExtension(filename: string | undefined, defaultFilename: string, extension: string): string {
+  const base = filename || defaultFilename;
+  return base.replace(/\.[^.]+$/, '') + extension;
+}
+
+function setWorksheetColumnWidths(ws: XLSX.WorkSheet, rows: string[][]): void {
+  ws['!cols'] = PEOPLE_EXPORT_HEADERS.map((_, index) => {
+    const maxLength = rows.reduce((max, row) => Math.max(max, row[index]?.length || 0), 0);
+    return { wch: Math.min(Math.max(maxLength + 2, 10), 42) };
+  });
+}
+
+const CSV_HEADER = PEOPLE_EXPORT_HEADERS.join(',');
+
+export function buildPeopleCsv(people: PersonWithSectors[]): string {
+  return [CSV_HEADER, ...people.map(personToCsvRow)].join('\n');
+}
+
+export function buildPeopleWorksheetData(people: PersonWithSectors[]): string[][] {
+  return [PEOPLE_EXPORT_HEADERS, ...people.map(personToExportFields)];
+}
+
+export async function exportPeopleToCsv(people: Person[], filename?: string): Promise<void> {
+  const enriched = await enrichPeopleForExport(people);
+
+  const csv = buildPeopleCsv(enriched);
+  downloadFile(csv, filenameWithExtension(filename, 'flemish-network-export.csv', '.csv'), 'text/csv;charset=utf-8;');
+}
+
+export async function exportPeopleToExcel(people: Person[], filename?: string): Promise<void> {
+  const enriched = await enrichPeopleForExport(people);
+  const worksheetData = buildPeopleWorksheetData(enriched);
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  setWorksheetColumnWidths(worksheet, worksheetData.slice(1));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'People');
+  XLSX.writeFile(workbook, filenameWithExtension(filename, 'flemish-network-export.xlsx', '.xlsx'));
 }
 
 // ---------- Collection Briefing (print) ----------

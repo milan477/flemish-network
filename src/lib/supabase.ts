@@ -31,9 +31,9 @@ export interface StaffUser {
 export interface Person {
   id: string;
   name: string;
-  title?: string;
-  first_name?: string;
-  last_name?: string;
+  title?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   current_position?: string;
   organization_id?: string;
   location_id?: string;
@@ -92,6 +92,23 @@ export function parseTitleFromName(fullName: string): { title: string; firstName
   const firstName = parts[0] || '';
   const lastName = parts.slice(1).join(' ');
   return { title, firstName, lastName };
+}
+
+export function personNamePartsForInsert(parts: {
+  title?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}): { title?: string; first_name?: string; last_name?: string } {
+  const result: { title?: string; first_name?: string; last_name?: string } = {};
+  const title = parts.title?.trim();
+  const firstName = parts.firstName?.trim();
+  const lastName = parts.lastName?.trim();
+
+  if (title) result.title = title;
+  if (firstName) result.first_name = firstName;
+  if (lastName) result.last_name = lastName;
+
+  return result;
 }
 
 export interface Organization {

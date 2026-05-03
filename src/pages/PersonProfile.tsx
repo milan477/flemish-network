@@ -385,9 +385,9 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
 
     const updatePayload = {
       name: computedName,
-      title: title, // DB has NOT NULL DEFAULT ''
-      first_name: first, // DB has NOT NULL DEFAULT ''
-      last_name: last, // DB has NOT NULL DEFAULT ''
+      title: title,
+      first_name: first,
+      last_name: last,
       current_position: editForm.current_position || null,
       occupation: editForm.occupation || null,
       location_id: editForm.location_id || null,

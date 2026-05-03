@@ -537,16 +537,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         for (const [key, coords] of geocoded) {
           const [city, state] = key.split(',');
           addToCache(city, state, coords.lat, coords.lng);
-
-          supabase
-            .from('locations')
-            .upsert({
-              city,
-              state,
-              latitude: coords.lat,
-              longitude: coords.lng,
-            })
-            .then();
         }
 
         const updatedClusters = buildClusters(peopleData, orgsData, currentFilters);

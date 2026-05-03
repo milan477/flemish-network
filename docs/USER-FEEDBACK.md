@@ -40,6 +40,8 @@ Implementation notes:
 
 ## 2026-05-01 - Excel-Friendly Result Export
 
+**FIXED**
+
 Source comment, Dutch:
 > Als ik resultaten van een zoekopdracht wil exporteren in een CSV krijg ik een vrij structuurloze Excel terug flemish-network-export (1).csv
 

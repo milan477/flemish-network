@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import {
   supabase,
+  personNamePartsForInsert,
   OCCUPATION_OPTIONS,
   type Sector,
   type Person,
@@ -387,9 +388,11 @@ function ManualAddForm({
       .from('people')
       .insert({
         name: fullName,
-        title: form.title || null,
-        first_name: first,
-        last_name: last || null,
+        ...personNamePartsForInsert({
+          title: form.title,
+          firstName: first,
+          lastName: last,
+        }),
         current_position: form.current_position || null,
         occupation: form.occupation || null,
         location_id: form.location_id || null,

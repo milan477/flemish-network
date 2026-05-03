@@ -16,7 +16,12 @@ import {
   RefreshCw,
   Tags,
 } from "lucide-react";
-import { supabase, US_STATES, type Sector } from "../../lib/supabase";
+import {
+  supabase,
+  personNamePartsForInsert,
+  US_STATES,
+  type Sector,
+} from "../../lib/supabase";
 import { kickEmbeddingWorker } from "../../lib/embeddingRefresh";
 import { syncPersonFlemishConnections } from "../../lib/flemishConnectionSync";
 import {
@@ -762,9 +767,11 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             .from("people")
             .insert({
               name: fullName,
-              title: row.title || null,
-              first_name: first,
-              last_name: last || null,
+              ...personNamePartsForInsert({
+                title: row.title,
+                firstName: first,
+                lastName: last,
+              }),
               current_position: row.current_position || null,
               occupation: row.occupation || null,
               location_id: locationId || null,

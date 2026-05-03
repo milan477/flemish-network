@@ -7,7 +7,13 @@ import {
   Search,
   Users,
 } from 'lucide-react';
-import { supabase, parseTitleFromName, type Sector, type Person } from '../../lib/supabase';
+import {
+  supabase,
+  parseTitleFromName,
+  personNamePartsForInsert,
+  type Sector,
+  type Person,
+} from '../../lib/supabase';
 import { discoverContacts } from '../../lib/aiService';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
@@ -46,9 +52,11 @@ async function addContactToDb(
     .from('people')
     .insert({
       name: contact.name,
-      title: parsed.title || null,
-      first_name: parsed.firstName || null,
-      last_name: parsed.lastName || null,
+      ...personNamePartsForInsert({
+        title: parsed.title,
+        firstName: parsed.firstName,
+        lastName: parsed.lastName,
+      }),
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
       location_id: locationId,

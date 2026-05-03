@@ -202,6 +202,7 @@ export async function discoverContacts(
   };
 }
 
+/** @deprecated Use discoverContacts. Retained for older scripts importing this helper. */
 export const searchContacts = discoverContacts;
 
 export interface SmartSearchKeywords {

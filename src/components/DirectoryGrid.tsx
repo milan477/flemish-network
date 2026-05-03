@@ -1,9 +1,9 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Download, Lightbulb } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Lightbulb } from 'lucide-react';
 import { useState } from 'react';
 import { displayName } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
 import AddToCollectionDropdown from './AddToCollectionDropdown';
-import { exportPeopleToCsv } from '../lib/exportService';
+import PeopleExportMenu from './PeopleExportMenu';
 import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
 import { useAuth } from '../lib/auth';
@@ -115,32 +115,6 @@ function PersonCard({
   );
 }
 
-function ExportCsvButton({ people }: { people: Person[] }) {
-  const [exporting, setExporting] = useState(false);
-
-  if (people.length === 0) return null;
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      await exportPeopleToCsv(people);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleExport}
-      disabled={exporting}
-      className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200 hover:border-gray-400 hover:text-gray-800 transition-colors disabled:opacity-50"
-    >
-      {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-      <span>Export CSV</span>
-    </button>
-  );
-}
-
 function BulkAddButton({ people }: { people: Person[] }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const { canEdit } = useAuth();
@@ -236,7 +210,7 @@ export default function DirectoryGrid({
                   <span className="text-sm text-gray-400">({nameMatches.length})</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <ExportCsvButton people={nameMatches} />
+                  <PeopleExportMenu people={nameMatches} />
                   <BulkAddButton people={nameMatches} />
                 </div>
               </div>
@@ -274,7 +248,7 @@ export default function DirectoryGrid({
                   <span className="text-sm text-gray-400">({aiResults.length})</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <ExportCsvButton people={aiResults} />
+                  <PeopleExportMenu people={aiResults} />
                   <BulkAddButton people={aiResults} />
                   {onClearSearch && (
                     <button
@@ -324,7 +298,7 @@ export default function DirectoryGrid({
               <span className="text-sm text-gray-400">({displayPeople.length})</span>
             </div>
             <div className="flex items-center space-x-3">
-              <ExportCsvButton people={displayPeople} />
+              <PeopleExportMenu people={displayPeople} />
               <BulkAddButton people={displayPeople} />
             </div>
           </div>

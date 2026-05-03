@@ -1,4 +1,7 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+
+loadEnv({ path: ".env", quiet: true });
+loadEnv({ path: ".env.local", override: true, quiet: true });
 
 /**
  * Smoke harness — calls each deployed edge function with a minimal known fixture
@@ -17,6 +20,9 @@ const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const personIdFixture = process.env.SMOKE_TEST_PERSON_ID || "";
 const suppliedAccessToken = process.env.SMOKE_TEST_ACCESS_TOKEN || "";
+const isLocalSupabase =
+  Boolean(supabaseUrl) &&
+  (supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost"));
 
 if (!supabaseUrl || !anonKey || !serviceRoleKey) {
   console.error(
@@ -27,11 +33,12 @@ if (!supabaseUrl || !anonKey || !serviceRoleKey) {
 
 interface SmokeCheck {
   name: string;
+  label?: string;
   body?: unknown;
   method?: "POST" | "GET";
   query?: string;
-  /** Returns null on success, or a string explaining what's wrong with the body */
-  validate?: (body: unknown, status: number) => string | null;
+  /** Returns null on success, or a string explaining what's wrong with the response */
+  validate?: (body: unknown, status: number, response: Response) => string | null;
   /** Skip if env not set — return reason string */
   skipReason?: () => string | null;
   /** Allow 4xx responses if validate accepts them (for input-validation paths) */
@@ -66,14 +73,6 @@ const checks: SmokeCheck[] = [
     },
   },
   {
-    name: "search-contacts",
-    body: { query: "ku leuven" },
-    validate: (body) => {
-      if (!isObject(body)) return "expected object";
-      return null;
-    },
-  },
-  {
     name: "suggest-people",
     body: { query: "biotech founder" },
     validate: (body) => {
@@ -96,6 +95,20 @@ const checks: SmokeCheck[] = [
     validate: (body) => {
       if (!isObject(body)) return "expected object";
       if (!("contacts" in body) && !("error" in body)) return "missing contacts/error";
+      return null;
+    },
+  },
+  {
+    name: "search-contacts",
+    label: "search-contacts compat",
+    body: { query: "ku leuven" },
+    validate: (body, _status, response) => {
+      if (!isObject(body)) return "expected object";
+      if (!("contacts" in body) && !("error" in body)) return "missing contacts/error";
+      if (response.headers.get("Deprecation") !== "true") return "missing deprecation header";
+      if (response.headers.get("X-Replaced-By") !== "discover-contacts") {
+        return "missing successor endpoint header";
+      }
       return null;
     },
   },
@@ -201,6 +214,11 @@ async function provisionSmokeSession(): Promise<SmokeSession> {
   });
   const created = await createUser.json() as { id?: string; msg?: string; error?: string };
   if (!createUser.ok || !created.id) {
+    if (isLocalSupabase && createUser.status === 403) {
+      throw new Error(
+        "Failed to create local smoke auth user. VITE_SUPABASE_URL points to local Supabase, so SUPABASE_SERVICE_ROLE_KEY must be the local service-role key in .env.local or your shell environment."
+      );
+    }
     throw new Error(`Failed to create smoke auth user: ${JSON.stringify(created)}`);
   }
 
@@ -245,9 +263,10 @@ async function cleanupSmokeSession(session: SmokeSession): Promise<void> {
 }
 
 async function runOne(check: SmokeCheck, accessToken: string): Promise<Result> {
+  const displayName = check.label || check.name;
   if (check.skipReason) {
     const reason = check.skipReason();
-    if (reason) return { name: check.name, status: "SKIP", ms: 0, detail: reason };
+    if (reason) return { name: displayName, status: "SKIP", ms: 0, detail: reason };
   }
 
   const url = `${supabaseUrl}/functions/v1/${check.name}${check.query || ""}`;
@@ -271,7 +290,7 @@ async function runOne(check: SmokeCheck, accessToken: string): Promise<Result> {
       parsed = text ? JSON.parse(text) : null;
     } catch {
       return {
-        name: check.name,
+        name: displayName,
         status: "FAIL",
         ms,
         detail: `non-JSON response (status ${res.status}): ${text.slice(0, 120)}`,
@@ -280,7 +299,7 @@ async function runOne(check: SmokeCheck, accessToken: string): Promise<Result> {
 
     if (!res.ok && !check.allowClientError) {
       return {
-        name: check.name,
+        name: displayName,
         status: "FAIL",
         ms,
         detail: `HTTP ${res.status}: ${JSON.stringify(parsed).slice(0, 200)}`,
@@ -288,16 +307,16 @@ async function runOne(check: SmokeCheck, accessToken: string): Promise<Result> {
     }
 
     if (check.validate) {
-      const failure = check.validate(parsed, res.status);
+      const failure = check.validate(parsed, res.status, res);
       if (failure) {
-        return { name: check.name, status: "FAIL", ms, detail: failure };
+        return { name: displayName, status: "FAIL", ms, detail: failure };
       }
     }
 
-    return { name: check.name, status: "PASS", ms };
+    return { name: displayName, status: "PASS", ms };
   } catch (err) {
     return {
-      name: check.name,
+      name: displayName,
       status: "FAIL",
       ms: Date.now() - start,
       detail: err instanceof Error ? err.message : String(err),

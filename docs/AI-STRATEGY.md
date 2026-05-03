@@ -1399,7 +1399,7 @@ As of March 30, 2026, Google's official docs indicate:
 
 I would explicitly clean this up:
 
-- Rename `search-contacts` to `discover-contacts` or fold it into the discovery system. It is not directory search; it is web prospect discovery.
+- Keep `discover-contacts` as the canonical web prospect discovery endpoint. `search-contacts` remains only as a deprecated compatibility endpoint with successor headers for older scripts.
 - Remove or freeze unused `ai-agent` tasks until there is a real product call site.
 - Remove free-text Flemish-connection writes from all person create/update flows.
 - Remove one of the two orchestration paths.

@@ -95,6 +95,7 @@ Read these when working on the relevant area — they are not auto-loaded but co
 - `docs/AI-STRATEGY.md` — full AI audit, model strategy, and design rationale for all phases
 - `docs/ENV.md` — all environment variables and secrets
 - `docs/ROUTES.md` — frontend route table
+- `docs/DYNAMICS-INTEGRATION.md` — Microsoft Dynamics/Dataverse integration strategy and phasing
 
 ## graphify
 

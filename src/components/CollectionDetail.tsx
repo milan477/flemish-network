@@ -14,7 +14,6 @@ import {
   Loader2,
   Plus,
   Printer,
-  Download,
 } from 'lucide-react';
 import {
   supabase,
@@ -25,8 +24,9 @@ import {
 import { getPersonFlemishConnectionText } from '../lib/flemishConnections';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type SuggestPeopleResult } from '../lib/aiService';
-import { printCollectionBriefing, exportPeopleToCsv } from '../lib/exportService';
+import { printCollectionBriefing } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
+import PeopleExportMenu from './PeopleExportMenu';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
 
@@ -271,16 +271,11 @@ export default function CollectionDetail({
         <div className="flex items-center gap-3">
           {members.length > 0 && (
             <>
-              <button
-                onClick={() => {
-                  const people = members.filter((m) => m.person).map((m) => m.person!);
-                  exportPeopleToCsv(people, `${collection.name.replace(/\s+/g, '-').toLowerCase()}.csv`);
-                }}
-                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </button>
+              <PeopleExportMenu
+                people={members.filter((m) => m.person).map((m) => m.person!)}
+                filename={`${collection.name.replace(/\s+/g, '-').toLowerCase()}.csv`}
+                buttonClassName="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 disabled:opacity-50"
+              />
               <button
                 onClick={() => {
                   printCollectionBriefing(

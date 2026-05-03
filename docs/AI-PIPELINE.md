@@ -10,7 +10,7 @@ Rules for which function owns which responsibility — violating these causes da
 - `connection_suggestions` → soft affinity only. Hard `connections` table gets only evidence-backed relationship types (`colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`).
 - `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
 - `ai-agent` tasks `parse_contacts` and `flemish_search` are frozen legacy. Active contracts: `smart_search`, `merge_text`, `check_profile`.
-- `search-contacts` is a legacy alias for `discover-contacts`. Use `discover-contacts` for new code.
+- `discover-contacts` owns ad hoc web prospect discovery. `search-contacts` remains only as a deprecated compatibility endpoint for older scripts and returns deprecation/successor headers.
 
 ## Error Contract
 Phase 6.3 standardizes edge-function failures as `{ error: { code, message, hint? } }`.
@@ -65,7 +65,7 @@ Server-side routed hybrid search for Dashboard NL queries.
 6. Returns `{ results, keywords, route, degraded, diagnostics, message, total_with_embeddings }`.
 
 ## Edge Function: `discover-contacts`
-Ad hoc web discovery for operators. (`search-contacts` is a legacy alias.)
+Ad hoc web discovery for operators. (`search-contacts` is a deprecated compatibility endpoint for older scripts.)
 
 1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results).
 2. Feeds results to Gemini for structured extraction.
@@ -157,7 +157,7 @@ Collection suggestion via embeddings + Gemini reranking.
 | Function | Target | Notes |
 |---|---|---|
 | `hybridSearch(query, maxResults)` | `search-people` | Primary Dashboard NL search path. Falls back to client-side scoring on failure. |
-| `discoverContacts(query)` | `discover-contacts` | Ad hoc operator discovery. `searchContacts()` is a compat alias. |
+| `discoverContacts(query)` | `discover-contacts` | Ad hoc operator discovery. `searchContacts()` is a deprecated import alias for older scripts. |
 | `smartSearch(query)` | `ai-agent` smart_search | |
 | `suggestPeopleEmbedding(query, options)` | `suggest-people` | Collection suggestions. |
 | `parseContacts(description, sectors)` | `ai-agent` parse_contacts | Legacy frozen. |
