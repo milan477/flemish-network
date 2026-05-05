@@ -97,15 +97,122 @@ export const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     key: 'location_city',
-    label: 'City',
+    label: 'US Base City',
     required: false,
-    aliases: ['city', 'location city', 'town', 'location'],
+    aliases: ['city', 'location city', 'town', 'location', 'us base city', 'base city'],
   },
   {
     key: 'location_state',
-    label: 'State',
+    label: 'US Base State',
     required: false,
-    aliases: ['state', 'location state', 'province', 'region', 'st'],
+    aliases: ['state', 'location state', 'province', 'region', 'st', 'us base state', 'base state'],
+  },
+  {
+    key: 'us_network_status',
+    label: 'People Scope',
+    required: false,
+    aliases: [
+      'people scope',
+      'person scope',
+      'scope',
+      'us network status',
+      'network status',
+      'us status',
+    ],
+  },
+  {
+    key: 'current_location_city',
+    label: 'Current City Abroad',
+    required: false,
+    aliases: [
+      'current city abroad',
+      'current location city',
+      'abroad city',
+      'foreign city',
+      'current city',
+    ],
+  },
+  {
+    key: 'current_location_country',
+    label: 'Current Country Abroad',
+    required: false,
+    aliases: [
+      'current country abroad',
+      'current location country',
+      'abroad country',
+      'foreign country',
+      'current country',
+      'country',
+    ],
+  },
+  {
+    key: 'us_connection_city',
+    label: 'US Connection City',
+    required: false,
+    aliases: [
+      'us connection city',
+      'us tie city',
+      'connection city',
+      'connected city',
+    ],
+  },
+  {
+    key: 'us_connection_state',
+    label: 'US Connection State',
+    required: false,
+    aliases: [
+      'us connection state',
+      'us tie state',
+      'connection state',
+      'connected state',
+    ],
+  },
+  {
+    key: 'us_connection_label',
+    label: 'US Connection Label',
+    required: false,
+    aliases: [
+      'us connection label',
+      'us tie label',
+      'connection label',
+      'tie label',
+      'connection description',
+    ],
+  },
+  {
+    key: 'us_connection_source_url',
+    label: 'US Connection Source URL',
+    required: false,
+    aliases: [
+      'us connection source url',
+      'us tie source url',
+      'connection source url',
+      'source url',
+      'evidence url',
+    ],
+  },
+  {
+    key: 'us_connection_evidence',
+    label: 'US Connection Evidence',
+    required: false,
+    aliases: [
+      'us connection evidence',
+      'us tie evidence',
+      'connection evidence',
+      'evidence excerpt',
+      'evidence',
+    ],
+  },
+  {
+    key: 'us_connection_confidence',
+    label: 'US Connection Confidence',
+    required: false,
+    aliases: [
+      'us connection confidence',
+      'us tie confidence',
+      'connection confidence',
+      'confidence',
+    ],
   },
   {
     key: 'bio',
@@ -431,8 +538,30 @@ export function validateMappedRows(rows: MappedRow[]): ValidationResult {
 
   for (const row of rows) {
     const firstName = (row.first_name || '').trim();
+    const isConnectedAbroad =
+      /connected|abroad/i.test(row.us_network_status || '') ||
+      Boolean(
+        (row.current_location_city || '').trim() ||
+          (row.current_location_country || '').trim() ||
+          (row.us_connection_city || '').trim() ||
+          (row.us_connection_state || '').trim()
+      );
     if (!firstName) {
       invalid.push({ row, reason: 'Missing required field: First Name' });
+    } else if (isConnectedAbroad &&
+      (!(row.current_location_city || '').trim() ||
+        !(row.current_location_country || '').trim())) {
+      invalid.push({
+        row,
+        reason: 'US-connected abroad rows need Current City Abroad and Current Country Abroad',
+      });
+    } else if (isConnectedAbroad &&
+      (!(row.us_connection_city || '').trim() ||
+        !(row.us_connection_state || '').trim())) {
+      invalid.push({
+        row,
+        reason: 'US-connected abroad rows need US Connection City and US Connection State',
+      });
     } else {
       valid.push(row);
     }
@@ -460,34 +589,75 @@ export function parseExcel(buffer: ArrayBuffer): CsvParseResult {
 }
 
 const TEMPLATE_COLUMNS = PROFILE_FIELDS.map((f) => f.label);
-const TEMPLATE_EXAMPLE: Record<string, string> = {
-  Title: 'Dr.',
-  'First Name': 'Jan',
-  'Last Name': 'De Smedt',
-  Position: 'Professor of Computer Science at MIT',
-  Occupation: 'Academic/Researcher',
-  'Sector(s)': 'Artificial Intelligence; Research',
-  City: 'Boston',
-  State: 'Massachusetts',
-  Bio: 'Belgian researcher specializing in AI and machine learning.',
-  'Flemish Connection': 'KU Leuven',
-  Email: 'jan.desmedt@example.com',
-  Phone: '+1 617-555-0100',
-  LinkedIn: 'https://linkedin.com/in/jandesmedt',
-  Website: 'https://jandesmedt.example.com',
-};
+const TEMPLATE_EXAMPLES: Record<string, string>[] = [
+  {
+    Title: 'Dr.',
+    'First Name': 'Jan',
+    'Last Name': 'De Smedt',
+    Position: 'Professor of Computer Science at MIT',
+    Occupation: 'Academic/Researcher',
+    'Sector(s)': 'Artificial Intelligence; Research',
+    'US Base City': 'Boston',
+    'US Base State': 'Massachusetts',
+    'People Scope': 'US-based',
+    'Current City Abroad': '',
+    'Current Country Abroad': '',
+    'US Connection City': '',
+    'US Connection State': '',
+    'US Connection Label': '',
+    'US Connection Source URL': '',
+    'US Connection Evidence': '',
+    'US Connection Confidence': '',
+    Bio: 'Belgian researcher specializing in AI and machine learning.',
+    'Flemish Connection': 'KU Leuven',
+    Email: 'jan.desmedt@example.com',
+    Phone: '+1 617-555-0100',
+    LinkedIn: 'https://linkedin.com/in/jandesmedt',
+    Website: 'https://jandesmedt.example.com',
+  },
+  {
+    Title: '',
+    'First Name': 'Sofie',
+    'Last Name': 'Peeters',
+    Position: 'Biotech founder in Leuven',
+    Occupation: 'Founder/Entrepreneur',
+    'Sector(s)': 'Biotechnology',
+    'US Base City': '',
+    'US Base State': '',
+    'People Scope': 'US-connected abroad',
+    'Current City Abroad': 'Leuven',
+    'Current Country Abroad': 'Belgium',
+    'US Connection City': 'New Haven',
+    'US Connection State': 'Connecticut',
+    'US Connection Label': 'Yale alumnus',
+    'US Connection Source URL': 'https://example.com/source',
+    'US Connection Evidence': 'Profile notes Yale alumni affiliation.',
+    'US Connection Confidence': '0.85',
+    Bio: 'Flemish founder with US university and investor connections.',
+    'Flemish Connection': 'VLAIO',
+    Email: 'sofie.peeters@example.com',
+    Phone: '',
+    LinkedIn: 'https://linkedin.com/in/sofiepeeters',
+    Website: 'https://sofiepeeters.example.com',
+  },
+];
 
 export function downloadTemplate(format: 'csv' | 'xlsx') {
-  const exampleRow = TEMPLATE_COLUMNS.map((col) => TEMPLATE_EXAMPLE[col] || '');
+  const exampleRows = TEMPLATE_EXAMPLES.map((example) =>
+    TEMPLATE_COLUMNS.map((col) => example[col] || '')
+  );
 
   if (format === 'xlsx') {
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLUMNS, exampleRow]);
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLUMNS, ...exampleRows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
     XLSX.writeFile(wb, 'flemish_network_import_template.xlsx');
   } else {
     const escape = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v);
-    const lines = [TEMPLATE_COLUMNS.map(escape).join(','), exampleRow.map(escape).join(',')];
+    const lines = [
+      TEMPLATE_COLUMNS.map(escape).join(','),
+      ...exampleRows.map((exampleRow) => exampleRow.map(escape).join(',')),
+    ];
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

@@ -117,6 +117,35 @@ const PAGE_EXTRACTION_SCHEMA = {
           current_position: { type: "STRING" },
           location_city: { type: "STRING" },
           location_state: { type: "STRING" },
+          suggested_us_network_status: {
+            type: "STRING",
+            enum: ["us_based", "us_connected_abroad", "needs_review"],
+          },
+          suggested_us_network_confidence: { type: "NUMBER" },
+          current_location_city: { type: "STRING" },
+          current_location_country: { type: "STRING" },
+          suggested_us_connections: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                location_city: { type: "STRING" },
+                location_state: { type: "STRING" },
+                connection_label: { type: "STRING" },
+                source_url: { type: "STRING" },
+                evidence_excerpt: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+              },
+              required: [
+                "location_city",
+                "location_state",
+                "connection_label",
+                "source_url",
+                "evidence_excerpt",
+                "confidence",
+              ],
+            },
+          },
           raw_location_text: { type: "STRING" },
           flemish_connection: { type: "STRING" },
           raw_flemish_text: { type: "STRING" },
@@ -135,6 +164,11 @@ const PAGE_EXTRACTION_SCHEMA = {
           "current_position",
           "location_city",
           "location_state",
+          "suggested_us_network_status",
+          "suggested_us_network_confidence",
+          "current_location_city",
+          "current_location_country",
+          "suggested_us_connections",
           "raw_location_text",
           "flemish_connection",
           "raw_flemish_text",
@@ -173,12 +207,15 @@ Rules:
 
 const PAGE_EXTRACTION_PROMPT = `You are extracting discovery candidates for a Flemish-American professional network.
 
-Extract people ONLY when the page gives explicit evidence that they have a Belgian/Flemish connection and are in the United States or likely US-based. If location is unknown, include them if the Flemish evidence is strong.
+Extract people ONLY when the page gives explicit evidence that they have a Belgian/Flemish connection and are either US-based or have a concrete US tie while based abroad. If location is unknown, include them only if the Flemish and US-tie evidence is strong.
 
 Rules:
 - Extract from profile pages, team rosters, lab/group pages, event speaker pages, articles, and press releases.
 - Use empty strings for unknown scalar fields and [] for unknown sectors.
 - location_state must be a 2-letter US state abbreviation when possible, otherwise empty.
+- suggested_us_network_status is us_based for a current US base, us_connected_abroad for a non-US current base with a concrete US tie, and needs_review for ambiguous evidence.
+- For us_connected_abroad, keep location_city/location_state empty unless they represent a US tie; put current abroad city/country in current_location_city/current_location_country and put US ties in suggested_us_connections.
+- suggested_us_connections must include a US city/state, short connection label, evidence excerpt, source URL, and confidence.
 - raw_location_text is the exact phrase from the page that suggests location.
 - raw_flemish_text is the exact phrase from the page that suggests the Belgian/Flemish tie.
 - raw_role_text is the exact role/title phrase from the page.
@@ -201,6 +238,11 @@ interface ExistingContactLookupRow {
   location_state?: string | null;
   bio?: string | null;
   flemish_connection?: string | null;
+  suggested_us_network_status?: string | null;
+  suggested_us_network_confidence?: number | string | null;
+  current_location_city?: string | null;
+  current_location_country?: string | null;
+  suggested_us_connections?: unknown[] | null;
   sectors?: string[] | null;
   source_urls?: string[] | null;
   evidence_count?: number | null;
@@ -217,6 +259,11 @@ interface ExtractedContact {
   location_city: string;
   location_state: string;
   flemish_connection: string;
+  suggested_us_network_status: "us_based" | "us_connected_abroad" | "needs_review";
+  suggested_us_network_confidence: number;
+  current_location_city: string;
+  current_location_country: string;
+  suggested_us_connections: Array<Record<string, unknown>>;
   website_url: string;
   email: string;
   linkedin_url: string;
@@ -975,6 +1022,29 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
     location_city: useOtherLocation ? otherCity : baseCity,
     location_state: useOtherLocation ? otherState : baseState,
     flemish_connection: pickBetterValue(base.flemish_connection, other.flemish_connection),
+    suggested_us_network_status:
+      base.suggested_us_network_status === "us_connected_abroad" ||
+      other.suggested_us_network_status === "us_connected_abroad"
+        ? "us_connected_abroad"
+        : base.suggested_us_network_status === "needs_review"
+          ? "needs_review"
+          : other.suggested_us_network_status,
+    suggested_us_network_confidence: Math.max(
+      base.suggested_us_network_confidence || 0,
+      other.suggested_us_network_confidence || 0,
+    ),
+    current_location_city: pickBetterValue(
+      base.current_location_city,
+      other.current_location_city,
+    ),
+    current_location_country: pickBetterValue(
+      base.current_location_country,
+      other.current_location_country,
+    ),
+    suggested_us_connections: [
+      ...base.suggested_us_connections,
+      ...other.suggested_us_connections,
+    ],
     website_url: pickBetterValue(base.website_url, other.website_url),
     email: pickBetterValue(base.email, other.email),
     linkedin_url: pickBetterValue(base.linkedin_url, other.linkedin_url),
@@ -1084,6 +1154,16 @@ function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
     location_city: location.city,
     location_state: location.state,
     flemish_connection: "",
+    suggested_us_network_status: isLikelyUS({
+      location_city: location.city,
+      location_state: location.state,
+    })
+      ? "us_based"
+      : "needs_review",
+    suggested_us_network_confidence: 0,
+    current_location_city: "",
+    current_location_country: "",
+    suggested_us_connections: [],
     website_url: "",
     email: "",
     linkedin_url: linkedinUrl,
@@ -1111,6 +1191,19 @@ function isLikelyUS(contact: Pick<ExtractedContact, "location_city" | "location_
   }
 
   return true;
+}
+
+function normalizePersonUsNetworkStatus(
+  value: unknown,
+): ExtractedContact["suggested_us_network_status"] {
+  if (value === "us_connected_abroad" || value === "needs_review") return value;
+  return "us_based";
+}
+
+function clampConfidence(value: unknown): number {
+  return Number.isFinite(Number(value))
+    ? Math.max(0, Math.min(1, Number(value)))
+    : 0;
 }
 
 function hashSeed(seed: string): number {
@@ -1383,6 +1476,20 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
     location_city: safeString(raw.location_city),
     location_state: safeString(raw.location_state).toUpperCase(),
     flemish_connection: safeString(raw.flemish_connection),
+    suggested_us_network_status: normalizePersonUsNetworkStatus(
+      raw.suggested_us_network_status,
+    ),
+    suggested_us_network_confidence: clampConfidence(
+      raw.suggested_us_network_confidence,
+    ),
+    current_location_city: safeString(raw.current_location_city),
+    current_location_country: safeString(raw.current_location_country),
+    suggested_us_connections: Array.isArray(raw.suggested_us_connections)
+      ? raw.suggested_us_connections
+        .filter((value): value is Record<string, unknown> =>
+          Boolean(value && typeof value === "object")
+        )
+      : [],
     website_url: safeString(raw.website_url),
     email: safeString(raw.email),
     linkedin_url: safeString(raw.linkedin_url),
@@ -1504,7 +1611,10 @@ ${page.text.slice(0, attempt.maxChars)}
         return (Array.isArray(parsed.contacts) ? parsed.contacts : [])
           .map((contact) => normalizeExtractedPageContact(contact, page.canonicalUrl))
           .filter((contact) => normalizeWhitespace(contact.name).length > 0)
-          .filter((contact) => isLikelyUS(contact));
+          .filter((contact) =>
+            contact.suggested_us_network_status === "us_connected_abroad" ||
+            isLikelyUS(contact)
+          );
       } catch (error) {
         lastError = error;
       }
@@ -2381,6 +2491,20 @@ function mapExistingContactRow(row: ExistingContactLookupRow): ExtractedContact 
     location_city: safeString(row.location_city),
     location_state: safeString(row.location_state),
     flemish_connection: safeString(row.flemish_connection),
+    suggested_us_network_status: normalizePersonUsNetworkStatus(
+      row.suggested_us_network_status,
+    ),
+    suggested_us_network_confidence: clampConfidence(
+      row.suggested_us_network_confidence,
+    ),
+    current_location_city: safeString(row.current_location_city),
+    current_location_country: safeString(row.current_location_country),
+    suggested_us_connections: Array.isArray(row.suggested_us_connections)
+      ? row.suggested_us_connections
+        .filter((value): value is Record<string, unknown> =>
+          Boolean(value && typeof value === "object")
+        )
+      : [],
     website_url: safeString(row.website_url),
     email: safeString(row.email),
     linkedin_url: safeString(row.linkedin_url),
@@ -2679,6 +2803,11 @@ async function persistCandidateBundle(
         occupation: mergedContact.occupation || null,
         location_city: mergedContact.location_city || null,
         location_state: mergedContact.location_state || null,
+        suggested_us_network_status: mergedContact.suggested_us_network_status,
+        suggested_us_network_confidence: mergedContact.suggested_us_network_confidence,
+        current_location_city: mergedContact.current_location_city || null,
+        current_location_country: mergedContact.current_location_country || null,
+        suggested_us_connections: mergedContact.suggested_us_connections,
         bio: mergedContact.bio || null,
         flemish_connection: mergedContact.flemish_connection || null,
         website_url: mergedContact.website_url || null,
@@ -2746,6 +2875,11 @@ async function persistCandidateBundle(
       occupation: bundle.contact.occupation || null,
       location_city: bundle.contact.location_city || null,
       location_state: bundle.contact.location_state || null,
+      suggested_us_network_status: bundle.contact.suggested_us_network_status,
+      suggested_us_network_confidence: bundle.contact.suggested_us_network_confidence,
+      current_location_city: bundle.contact.current_location_city || null,
+      current_location_country: bundle.contact.current_location_country || null,
+      suggested_us_connections: bundle.contact.suggested_us_connections,
       bio: bundle.contact.bio || null,
       flemish_connection: bundle.contact.flemish_connection || null,
       website_url: bundle.contact.website_url || null,

@@ -5,6 +5,7 @@ import {
   Bot,
   Plus,
   AlertCircle,
+  XCircle,
   CheckCircle2,
   Loader2,
   Phone,
@@ -23,6 +24,7 @@ import {
   type Sector,
   type Person,
   type FlemishConnection,
+  type PersonUsNetworkStatus,
 } from '../../lib/supabase';
 import {
   canonicalizeFlemishConnection,
@@ -35,6 +37,7 @@ import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
+import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/networkScope';
 
 interface AddContactPanelProps {
   sectors: Sector[];
@@ -60,8 +63,12 @@ interface ManualForm {
   lastName: string;
   current_position: string;
   occupation: string;
+  us_network_status: PersonUsNetworkStatus;
   location_id: string;
   location_display?: string;
+  current_location_city: string;
+  current_location_country: string;
+  usConnections: ManualUsConnection[];
   bio: string;
   phone: string;
   email: string;
@@ -71,22 +78,44 @@ interface ManualForm {
   sectorIds: string[];
 }
 
-const EMPTY_FORM: ManualForm = {
-  title: '',
-  firstName: '',
-  lastName: '',
-  current_position: '',
-  occupation: '',
-  location_id: '',
-  location_display: '',
-  bio: '',
-  phone: '',
-  email: '',
-  linkedin_url: '',
-  website_url: '',
-  twitter_url: '',
-  sectorIds: [],
-};
+interface ManualUsConnection {
+  id: string;
+  location_id: string;
+  location_display: string;
+  connection_label: string;
+}
+
+function emptyUsConnection(): ManualUsConnection {
+  return {
+    id: crypto.randomUUID(),
+    location_id: '',
+    location_display: '',
+    connection_label: '',
+  };
+}
+
+function createEmptyForm(): ManualForm {
+  return {
+    title: '',
+    firstName: '',
+    lastName: '',
+    current_position: '',
+    occupation: '',
+    us_network_status: 'us_based',
+    location_id: '',
+    location_display: '',
+    current_location_city: '',
+    current_location_country: '',
+    usConnections: [emptyUsConnection()],
+    bio: '',
+    phone: '',
+    email: '',
+    linkedin_url: '',
+    website_url: '',
+    twitter_url: '',
+    sectorIds: [],
+  };
+}
 
 function ensureProtocol(url: string): string {
   if (!url || !url.trim()) return '';
@@ -208,6 +237,8 @@ function PersonPreview({ person }: { person: Person }) {
     .join('')
     .toUpperCase() || person.name?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
   const flemishLabel = getPersonFlemishConnectionNames(person).join(', ');
+  const locationLabel = personCardLocationLabel(person);
+  const abroadBase = currentAbroadBaseLabel(person);
 
   return (
     <div className="bg-yellow-50/60 border border-yellow-200 rounded-xl p-5 space-y-4 sticky top-6">
@@ -235,12 +266,16 @@ function PersonPreview({ person }: { person: Person }) {
             <span className="truncate">{person.occupation}</span>
           </div>
         )}
-        {(person.locations?.city || person.locations?.state) && (
+        {locationLabel && (
           <div className="flex items-center gap-2 text-gray-600">
             <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            <span className="truncate">
-              {[person.locations?.city, person.locations?.state].filter(Boolean).join(', ')}
-            </span>
+            <span className="truncate">{locationLabel}</span>
+          </div>
+        )}
+        {abroadBase && (
+          <div className="flex items-center gap-2 text-gray-600">
+            <Globe className="w-3 h-3 text-gray-400 flex-shrink-0" />
+            <span className="truncate">Based in {abroadBase}</span>
           </div>
         )}
         {person.email && (
@@ -298,7 +333,7 @@ function ManualAddForm({
   onContactAdded: () => void;
   onPersonAdded: (person: Person) => void;
 }) {
-  const [form, setForm] = useState<ManualForm>(EMPTY_FORM);
+  const [form, setForm] = useState<ManualForm>(() => createEmptyForm());
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -356,6 +391,23 @@ function ManualAddForm({
       setError('First name is required');
       return;
     }
+    if (form.us_network_status === 'us_based' && !form.location_id) {
+      setError('US-based people need a US base city.');
+      return;
+    }
+    if (form.us_network_status === 'us_connected_abroad') {
+      const hasAbroadBase =
+        form.current_location_city.trim() && form.current_location_country.trim();
+      const hasUsConnection = form.usConnections.some((connection) => connection.location_id);
+      if (!hasAbroadBase) {
+        setError('US-connected abroad people need a current city and country.');
+        return;
+      }
+      if (!hasUsConnection) {
+        setError('US-connected abroad people need at least one US connection location.');
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     setDupeMatch(null);
@@ -395,7 +447,16 @@ function ManualAddForm({
         }),
         current_position: form.current_position || null,
         occupation: form.occupation || null,
-        location_id: form.location_id || null,
+        location_id: form.us_network_status === 'us_based' ? form.location_id || null : null,
+        us_network_status: form.us_network_status,
+        current_location_city:
+          form.us_network_status === 'us_connected_abroad'
+            ? form.current_location_city.trim() || null
+            : null,
+        current_location_country:
+          form.us_network_status === 'us_connected_abroad'
+            ? form.current_location_country.trim() || null
+            : null,
         bio: form.bio || null,
         phone: form.phone || null,
         email: form.email || null,
@@ -405,7 +466,7 @@ function ManualAddForm({
         data_source: 'manual',
         last_verified_at: new Date().toISOString(),
       })
-      .select('*, locations(*)')
+      .select('*, locations(*), person_us_connections(*, locations(*))')
       .maybeSingle();
 
     if (insertErr || !person) {
@@ -461,6 +522,30 @@ function ManualAddForm({
       );
     }
 
+    if (form.us_network_status === 'us_connected_abroad') {
+      const rows = form.usConnections
+        .filter((connection) => connection.location_id)
+        .map((connection) => ({
+          person_id: person.id,
+          location_id: connection.location_id,
+          connection_label: connection.connection_label.trim() || null,
+          source_url: null,
+          evidence_excerpt: null,
+          confidence: null,
+        }));
+
+      if (rows.length > 0) {
+        const { error: usConnectionError } = await supabase
+          .from('person_us_connections')
+          .insert(rows);
+        if (usConnectionError) {
+          setError(usConnectionError.message);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     try {
       await syncPersonFlemishConnections(person.id, flemishStr);
     } catch (err) {
@@ -474,8 +559,13 @@ function ManualAddForm({
     setSaving(false);
     setSuccess(true);
     setDupeMatch(null);
-    onPersonAdded(person as Person);
-    setForm(EMPTY_FORM);
+    const { data: refreshedPerson } = await supabase
+      .from('people')
+      .select('*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+      .eq('id', person.id)
+      .maybeSingle();
+    onPersonAdded((refreshedPerson || person) as Person);
+    setForm(createEmptyForm());
     setFlemishConnections([]);
     setAllFlemishConnections((prev) =>
       reconcileConnections([...prev, ...ensuredConnections], [...prev, ...ensuredConnections])
@@ -519,6 +609,28 @@ function ManualAddForm({
 
       return next;
     });
+  };
+
+  const updateUsConnection = (
+    id: string,
+    updater: (connection: ManualUsConnection) => ManualUsConnection
+  ) => {
+    setForm((f) => ({
+      ...f,
+      usConnections: f.usConnections.map((connection) =>
+        connection.id === id ? updater(connection) : connection
+      ),
+    }));
+  };
+
+  const removeUsConnection = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      usConnections:
+        f.usConnections.length > 1
+          ? f.usConnections.filter((connection) => connection.id !== id)
+          : [emptyUsConnection()],
+    }));
   };
 
   return (
@@ -599,26 +711,153 @@ function ManualAddForm({
         </div>
       </div>
 
-      <div className="flex flex-col space-y-1">
+      <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">
-          City & State
+          People Scope
         </label>
-        <div className="flex items-center space-x-2">
-          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <CitySearch
-            value={form.location_id}
-            cityStateDisplay={form.location_display}
-            onChange={(id, city, state) => {
-              setForm(f => ({
-                ...f,
-                location_id: id,
-                location_display: id ? `${city}, ${state}` : ''
-              }));
-            }}
-            placeholder="Search city..."
-          />
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { value: 'us_based', label: 'US-based' },
+            { value: 'us_connected_abroad', label: 'US-connected abroad' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() =>
+                setForm((f) => ({
+                  ...f,
+                  us_network_status: option.value as PersonUsNetworkStatus,
+                }))
+              }
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                form.us_network_status === option.value
+                  ? 'border-yellow-400 bg-yellow-50 text-yellow-800'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {form.us_network_status === 'us_based' ? (
+        <div className="flex flex-col space-y-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            US Base City & State *
+          </label>
+          <div className="flex items-center space-x-2">
+            <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+            <CitySearch
+              value={form.location_id}
+              cityStateDisplay={form.location_display}
+              onChange={(id, city, state) => {
+                setForm(f => ({
+                  ...f,
+                  location_id: id,
+                  location_display: id ? `${city}, ${state}` : ''
+                }));
+              }}
+              placeholder="Search US city..."
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/30 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Current City Abroad *
+              </label>
+              <input
+                value={form.current_location_city}
+                onChange={(e) => setField('current_location_city', e.target.value)}
+                className={INPUT_CLS}
+                placeholder="Leuven"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Current Country Abroad *
+              </label>
+              <input
+                value={form.current_location_country}
+                onChange={(e) => setField('current_location_country', e.target.value)}
+                className={INPUT_CLS}
+                placeholder="Belgium"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-medium text-gray-600">
+                US Connections *
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    usConnections: [...f.usConnections, emptyUsConnection()],
+                  }))
+                }
+                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+              >
+                <Plus className="w-3 h-3" />
+                Add
+              </button>
+            </div>
+
+            {form.usConnections.map((connection, index) => (
+              <div
+                key={connection.id}
+                className="space-y-2 rounded-lg border border-indigo-100 bg-white p-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-700">
+                    Connection {index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeUsConnection(connection.id)}
+                    className="text-gray-300 hover:text-red-500"
+                    title="Remove connection"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <CitySearch
+                    value={connection.location_id}
+                    cityStateDisplay={connection.location_display}
+                    onChange={(id, city, state) =>
+                      updateUsConnection(connection.id, (current) => ({
+                        ...current,
+                        location_id: id,
+                        location_display: id ? `${city}, ${state}` : '',
+                      }))
+                    }
+                    placeholder="Search US connection city..."
+                  />
+                </div>
+                <input
+                  value={connection.connection_label}
+                  onChange={(e) =>
+                    updateUsConnection(connection.id, (current) => ({
+                      ...current,
+                      connection_label: e.target.value,
+                    }))
+                  }
+                  className={INPUT_CLS}
+                  placeholder="Connection, e.g. Yale alumnus"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>

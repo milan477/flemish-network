@@ -7,6 +7,7 @@ import PeopleExportMenu from './PeopleExportMenu';
 import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
 import { useAuth } from '../lib/auth';
+import { personCardLocationLabel } from '../lib/networkScope';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -69,12 +70,10 @@ function PersonCard({
                 {person.current_position}
               </p>
             )}
-            {person.locations?.city && (
+            {personCardLocationLabel(person) && (
               <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
                 <MapPin className="w-3 h-3" />
-                <span>
-                  {person.locations?.city}, {person.locations?.state}
-                </span>
+                <span>{personCardLocationLabel(person)}</span>
               </div>
             )}
             {snippet && (
@@ -331,11 +330,12 @@ export default function DirectoryGrid({
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 text-sm">{org.name}</h3>
                     <p className="text-xs text-gray-600 mt-0.5">{org.type}</p>
-                    {org.locations?.city && (
+                    {(org.organization_us_locations?.[0]?.locations?.city || org.locations?.city) && (
                       <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
                         <MapPin className="w-3 h-3" />
                         <span>
-                          {org.locations?.city}, {org.locations?.state}
+                          {org.organization_us_locations?.[0]?.locations?.city || org.locations?.city},{' '}
+                          {org.organization_us_locations?.[0]?.locations?.state || org.locations?.state}
                         </span>
                       </div>
                     )}

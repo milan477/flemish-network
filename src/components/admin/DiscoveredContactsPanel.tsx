@@ -59,9 +59,23 @@ interface DiscoveredContact {
   last_evidence_at?: string | null;
   evidence_count?: number | null;
   discovery_confidence?: number | null;
+  suggested_us_network_status?: 'us_based' | 'us_connected_abroad' | 'needs_review' | null;
+  suggested_us_network_confidence?: number | null;
+  current_location_city?: string | null;
+  current_location_country?: string | null;
+  suggested_us_connections?: SuggestedUsConnection[] | null;
   reviewed_at?: string | null;
   review_outcome?: string | null;
   approved_person_id?: string | null;
+}
+
+interface SuggestedUsConnection {
+  location_city?: string | null;
+  location_state?: string | null;
+  connection_label?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  confidence?: number | null;
 }
 
 interface DiscoveryEvidence {
@@ -190,15 +204,17 @@ async function mergeTextViaAI(
 
 async function approveContact(
   contact: DiscoveredContact,
-  sectors: Sector[]
+  sectors: Sector[],
+  networkStatus: 'us_based' | 'us_connected_abroad'
 ): Promise<boolean> {
   const parsed = parseTitleFromName(contact.name || '');
   const flemishConnectionText = contact.flemish_connection?.trim() || null;
-  const locationId = await resolveOrCreateLocationId(
-    contact.location_city,
-    contact.location_state,
-    { createIfMissing: true }
-  );
+  const locationId =
+    networkStatus === 'us_based'
+      ? await resolveOrCreateLocationId(contact.location_city, contact.location_state, {
+          createIfMissing: true,
+        })
+      : null;
 
   const { data: person, error } = await supabase
     .from('people')
@@ -212,6 +228,15 @@ async function approveContact(
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
       location_id: locationId,
+      us_network_status: networkStatus,
+      current_location_city:
+        networkStatus === 'us_connected_abroad'
+          ? contact.current_location_city || contact.location_city || null
+          : null,
+      current_location_country:
+        networkStatus === 'us_connected_abroad'
+          ? contact.current_location_country || null
+          : null,
       bio: contact.bio || null,
       email: contact.email || null,
       email_verified: contact.email ? false : null,
@@ -223,6 +248,30 @@ async function approveContact(
     .maybeSingle();
 
   if (error || !person) return false;
+
+  if (networkStatus === 'us_connected_abroad') {
+    const connectionRows = (contact.suggested_us_connections || []).filter(
+      (connection) => connection.location_city && connection.location_state
+    );
+
+    for (const connection of connectionRows) {
+      const connectionLocationId = await resolveOrCreateLocationId(
+        connection.location_city || null,
+        connection.location_state || null,
+        { createIfMissing: true }
+      );
+      if (!connectionLocationId) continue;
+
+      await supabase.from('person_us_connections').insert({
+        person_id: person.id,
+        location_id: connectionLocationId,
+        connection_label: connection.connection_label || null,
+        source_url: connection.source_url || contact.source_urls?.[0] || null,
+        evidence_excerpt: connection.evidence_excerpt || null,
+        confidence: connection.confidence ?? contact.suggested_us_network_confidence ?? null,
+      });
+    }
+  }
 
   try {
     if (flemishConnectionText) {
@@ -248,7 +297,10 @@ async function approveContact(
     .from('discovered_contacts')
     .update({
       status: 'approved',
-      review_outcome: 'approved_new',
+      review_outcome:
+        networkStatus === 'us_based'
+          ? 'approved_us_based'
+          : 'approved_us_connected_abroad',
       approved_person_id: person.id,
     })
     .eq('id', contact.id);
@@ -752,23 +804,6 @@ export default function DiscoveredContactsPanel() {
     loadData();
   }, [loadData]);
 
-  const handleApprove = useCallback(
-    async (contact: DiscoveredContact) => {
-      setActionId(contact.id);
-      const ok = await approveContact(contact, sectors);
-      if (ok) {
-        setContacts((prev) => prev.filter((c) => c.id !== contact.id));
-        setDuplicates((prev) => {
-          const next = new Map(prev);
-          next.delete(contact.id);
-          return next;
-        });
-      }
-      setActionId(null);
-    },
-    [sectors]
-  );
-
   const handleReject = useCallback(async (contact: DiscoveredContact) => {
     setActionId(contact.id);
     await supabase
@@ -784,12 +819,67 @@ export default function DiscoveredContactsPanel() {
     setActionId(null);
   }, []);
 
+  const handleMarkNeedsReview = useCallback(async (contact: DiscoveredContact) => {
+    setActionId(contact.id);
+    await supabase
+      .from('discovered_contacts')
+      .update({
+        suggested_us_network_status: 'needs_review',
+        review_outcome: 'needs_review',
+      })
+      .eq('id', contact.id);
+    setContacts((prev) =>
+      prev.map((item) =>
+        item.id === contact.id
+          ? {
+              ...item,
+              suggested_us_network_status: 'needs_review',
+              review_outcome: 'needs_review',
+            }
+          : item
+      )
+    );
+    setActionId(null);
+  }, []);
+
+  const handleApproveAs = useCallback(
+    async (
+      contact: DiscoveredContact,
+      networkStatus: 'us_based' | 'us_connected_abroad'
+    ) => {
+      setActionId(contact.id);
+      const ok = await approveContact(contact, sectors, networkStatus);
+      if (ok) {
+        setContacts((prev) => prev.filter((c) => c.id !== contact.id));
+        setDuplicates((prev) => {
+          const next = new Map(prev);
+          next.delete(contact.id);
+          return next;
+        });
+      }
+      setActionId(null);
+    },
+    [sectors]
+  );
+
   const handleApproveAll = useCallback(async () => {
-    // Only approve non-duplicates in bulk
-    const nonDupes = contacts.filter((c) => !duplicates.has(c.id));
+    // Only approve non-duplicates with high-confidence scope suggestions in bulk.
+    const nonDupes = contacts.filter((c) => {
+      if (duplicates.has(c.id)) return false;
+      const status = c.suggested_us_network_status || 'us_based';
+      const confidence =
+        c.suggested_us_network_confidence ?? c.discovery_confidence ?? 0;
+      return status !== 'needs_review' && confidence >= 0.8;
+    });
     for (const contact of nonDupes) {
       setActionId(contact.id);
-      await approveContact(contact, sectors);
+      await approveContact(
+        contact,
+        sectors,
+        contact.suggested_us_network_status === 'us_connected_abroad'
+          ? 'us_connected_abroad'
+          : 'us_based'
+      );
     }
     setActionId(null);
     await loadData();
@@ -824,8 +914,13 @@ export default function DiscoveredContactsPanel() {
     if (!mergeTarget) return;
     const contact = mergeTarget.contact;
     setMergeTarget(null);
-    await handleApprove(contact);
-  }, [mergeTarget, handleApprove]);
+    await handleApproveAs(
+      contact,
+      contact.suggested_us_network_status === 'us_connected_abroad'
+        ? 'us_connected_abroad'
+        : 'us_based'
+    );
+  }, [mergeTarget, handleApproveAs]);
 
   const toggleSources = (id: string) => {
     setExpandedSources((prev) => {
@@ -994,6 +1089,15 @@ export default function DiscoveredContactsPanel() {
                   {confidence !== null && confidence > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded font-medium">
                       {confidence}% confidence
+                    </span>
+                  )}
+                  {contact.suggested_us_network_status && (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded font-medium">
+                      {contact.suggested_us_network_status === 'us_connected_abroad'
+                        ? 'US-connected abroad'
+                        : contact.suggested_us_network_status === 'needs_review'
+                          ? 'Needs review'
+                          : 'US-based'}
                     </span>
                   )}
                 </div>
@@ -1215,9 +1319,9 @@ export default function DiscoveredContactsPanel() {
               </div>
 
               {/* Action buttons */}
-              <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                {dupeMatch ? (
-                  <>
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
+                  {dupeMatch ? (
+                    <>
                     <button
                       onClick={() =>
                         setMergeTarget({ contact, match: dupeMatch })
@@ -1229,7 +1333,15 @@ export default function DiscoveredContactsPanel() {
                       Merge
                     </button>
                     <button
-                      onClick={() => handleApprove(contact)}
+                      onClick={() =>
+                        handleApproveAs(
+                          contact,
+                          contact.suggested_us_network_status ===
+                            'us_connected_abroad'
+                            ? 'us_connected_abroad'
+                            : 'us_based'
+                        )
+                      }
                       disabled={isActioning}
                       className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
                     >
@@ -1242,18 +1354,36 @@ export default function DiscoveredContactsPanel() {
                     </button>
                   </>
                 ) : (
-                  <button
-                    onClick={() => handleApprove(contact)}
-                    disabled={isActioning}
-                    className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {isActioning ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
+                  <>
+                    <button
+                      onClick={() => handleApproveAs(contact, 'us_based')}
+                      disabled={isActioning}
+                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {isActioning ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <UserPlus className="w-3 h-3" />
+                      )}
+                      Approve as US-based
+                    </button>
+                    <button
+                      onClick={() => handleApproveAs(contact, 'us_connected_abroad')}
+                      disabled={isActioning}
+                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
                       <UserPlus className="w-3 h-3" />
-                    )}
-                    Approve
-                  </button>
+                      Approve as connected
+                    </button>
+                    <button
+                      onClick={() => handleMarkNeedsReview(contact)}
+                      disabled={isActioning}
+                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      Needs review
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => handleReject(contact)}

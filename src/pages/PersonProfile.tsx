@@ -50,6 +50,11 @@ import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
 import { useAuth } from '../lib/auth';
+import {
+  currentAbroadBaseLabel,
+  isUsConnectedAbroad,
+  personUsConnectionSummary,
+} from '../lib/networkScope';
 
 interface PersonProfileProps {
   personId: string;
@@ -238,7 +243,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     const [personRes, sectorsRes, allSectorsRes, connRes, suggestionRes, flemishRes] = await Promise.all([
       supabase
         .from('people')
-        .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+        .select('*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
         .eq('id', personId)
         .maybeSingle(),
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
@@ -346,6 +351,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_position: person.current_position || '',
       occupation: person.occupation || '',
       location_id: person.location_id || '',
+      current_location_city: person.current_location_city || '',
+      current_location_country: person.current_location_country || '',
       bio: person.bio || '',
       phone: person.phone || '',
       email: person.email || '',
@@ -391,6 +398,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_position: editForm.current_position || null,
       occupation: editForm.occupation || null,
       location_id: editForm.location_id || null,
+      current_location_city: editForm.current_location_city || null,
+      current_location_country: editForm.current_location_country || null,
       bio: editForm.bio || null,
       phone: editForm.phone || null,
       email: editForm.email || null,
@@ -406,7 +415,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       .from('people')
       .update(updatePayload)
       .eq('id', person.id)
-      .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+      .select('*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
       .maybeSingle();
 
     if (updateErr) {
@@ -777,6 +786,7 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
   const verifiedDate = person.last_verified_at ? new Date(person.last_verified_at).toLocaleDateString() : null;
   const personCity = person.locations?.city || '';
   const personState = person.locations?.state || '';
+  const abroadBase = currentAbroadBaseLabel(person);
   const sourceLabels: Record<string, string> = {
     manual: 'Added manually',
     csv_import: 'Added via CSV import',
@@ -840,6 +850,12 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
             {personState && `, ${personState}`}
           </span>
         </button>
+      )}
+      {isUsConnectedAbroad(person) && abroadBase && (
+        <div className="flex items-center space-x-2 text-gray-600 mb-1">
+          <Globe className="w-5 h-5" />
+          <span>Currently based in {abroadBase}</span>
+        </div>
       )}
       {person.phone && (
         <div className="flex items-center space-x-2 text-gray-500 mb-1">
@@ -1041,6 +1057,26 @@ function EditHeader({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex items-center space-x-2">
+          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <input
+            value={editForm.current_location_city || ''}
+            onChange={(e) => setField('current_location_city', e.target.value)}
+            className={INPUT_CLS}
+            placeholder="Current city abroad"
+          />
+        </div>
+        <div className="flex items-center space-x-2">
+          <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <input
+            value={editForm.current_location_country || ''}
+            onChange={(e) => setField('current_location_country', e.target.value)}
+            className={INPUT_CLS}
+            placeholder="Current country abroad"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="flex items-center space-x-2">
           <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <input
             value={editForm.phone || ''}
@@ -1236,9 +1272,17 @@ function ViewBody({
     return counts;
   }, {});
   const flemishConnections = getPersonFlemishConnections(person);
+  const usConnectionSummary = personUsConnectionSummary(person);
 
   return (
     <>
+      {usConnectionSummary && (
+        <div className="mb-8 pb-8 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">US Connections</h2>
+          <p className="text-gray-700 leading-relaxed">{usConnectionSummary}</p>
+        </div>
+      )}
+
       {person.bio && (
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">About</h2>

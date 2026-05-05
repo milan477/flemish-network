@@ -38,6 +38,10 @@ export interface Person {
   organization_id?: string;
   location_id?: string;
   locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
+  us_network_status?: PersonUsNetworkStatus;
+  current_location_city?: string | null;
+  current_location_country?: string | null;
+  person_us_connections?: PersonUsConnection[];
   occupation?: string;
   bio?: string;
   profile_photo_url?: string;
@@ -120,9 +124,59 @@ export interface Organization {
   website_url?: string;
   location_id?: string;
   locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
+  us_network_status?: OrganizationUsNetworkStatus;
+  organization_us_locations?: OrganizationUsLocation[];
   flemish_link?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type PersonUsNetworkStatus =
+  | 'us_based'
+  | 'us_connected_abroad'
+  | 'needs_review';
+
+export type OrganizationUsNetworkStatus =
+  | 'us_based_organization'
+  | 'belgian_organization_with_us_presence'
+  | 'us_organization_connected_to_flanders'
+  | 'institutional_connector';
+
+export type OrganizationUsLocationRole =
+  | 'hq'
+  | 'office'
+  | 'branch'
+  | 'factory'
+  | 'lab'
+  | 'accelerator'
+  | 'partner_site'
+  | 'expansion_target'
+  | 'event_site'
+  | 'other';
+
+export interface PersonUsConnection {
+  id?: string;
+  person_id: string;
+  location_id: string;
+  connection_label?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  confidence?: number | null;
+  locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
+}
+
+export interface OrganizationUsLocation {
+  id?: string;
+  organization_id: string;
+  location_id: string;
+  location_role: OrganizationUsLocationRole;
+  label?: string | null;
+  description?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  confidence?: number | null;
+  is_primary?: boolean | null;
+  locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
 }
 
 export interface Sector {
@@ -163,6 +217,7 @@ export interface CollectionMember {
 export interface MapFilters {
   showPeople: boolean;
   showOrganizations: boolean;
+  personScope: 'all' | 'us_based' | 'us_connected_abroad';
   sector: string;
   occupation: string;
   city: string;
@@ -368,6 +423,7 @@ export interface DirectoryFilters {
 export const DEFAULT_MAP_FILTERS: MapFilters = {
   showPeople: true,
   showOrganizations: true,
+  personScope: 'all',
   sector: '',
   occupation: '',
   city: '',
