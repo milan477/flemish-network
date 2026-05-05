@@ -1,5 +1,10 @@
 import { supabase } from './supabase';
-import { US_STATES, type Person } from './supabase';
+import {
+  US_STATES,
+  type MapFilters,
+  type Person,
+  type SearchMatchMode,
+} from './supabase';
 import { getPersonFlemishConnectionText } from './flemishConnections';
 import { extractEdgeError, EdgeFunctionError } from './edgeError';
 
@@ -532,11 +537,27 @@ export interface HybridSearchResponse {
  */
 export async function hybridSearch(
   query: string,
-  maxResults = 30
+  maxResults = 30,
+  matchMode: SearchMatchMode = 'all',
+  filters?: MapFilters
 ): Promise<HybridSearchResponse> {
   try {
     const { data, error } = await supabase.functions.invoke('search-people', {
-      body: { query, max_results: maxResults },
+      body: {
+        query,
+        max_results: maxResults,
+        match_mode: matchMode,
+        filters: filters
+          ? {
+              sector: filters.sector,
+              person_scope: filters.personScope,
+              occupation: filters.occupation,
+              city: filters.city,
+              state: filters.state,
+              flemish_connections: filters.flemishConnections,
+            }
+          : undefined,
+      },
     });
 
     if (error) throw await extractEdgeError(error, 'Search request failed');

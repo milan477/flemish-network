@@ -1,4 +1,4 @@
-import type { FilterPreset, MapFilters } from './supabase';
+import type { FilterPreset, MapFilters, SearchMatchMode } from './supabase';
 import { DEFAULT_MAP_FILTERS } from './supabase';
 
 export type AppPage =
@@ -24,6 +24,7 @@ export type DashboardViewMode = 'map' | 'list';
 export interface DashboardRouteState {
   view: DashboardViewMode;
   query: string;
+  matchMode: SearchMatchMode;
   filters: MapFilters;
   focusedCity: { city: string; state: string } | null;
 }
@@ -52,6 +53,7 @@ export function defaultDashboardRouteState(): DashboardRouteState {
   return {
     view: 'map',
     query: '',
+    matchMode: 'all',
     filters: { ...DEFAULT_MAP_FILTERS },
     focusedCity: null,
   };
@@ -91,6 +93,7 @@ export function parseDashboardRouteState(
     view:
       viewParam === 'list' || (!viewParam && query.length > 0) ? 'list' : 'map',
     query,
+    matchMode: searchParams.get('match') === 'any' ? 'any' : 'all',
     filters: {
       ...DEFAULT_MAP_FILTERS,
       showPeople: parseBooleanParam(searchParams.get('people'), true),
@@ -123,6 +126,7 @@ export function buildDashboardSearchParams(
   const params = new URLSearchParams();
 
   if (state.query) params.set('q', state.query);
+  if (state.matchMode === 'any') params.set('match', 'any');
   if (state.view === 'list') {
     params.set('view', 'list');
   } else if (state.query) {
