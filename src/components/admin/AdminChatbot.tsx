@@ -60,6 +60,7 @@ async function addContactToDb(
       current_position: contact.current_position || null,
       occupation: contact.occupation || null,
       location_id: locationId,
+      us_network_status: 'us_based',
       bio: contact.bio || null,
       email: contact.email || null,
       email_verified: hasEmail ? false : null,

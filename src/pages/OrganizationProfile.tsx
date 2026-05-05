@@ -27,6 +27,7 @@ import { ProfileAvatar } from '../components/ProfileAvatar';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
 import { useAuth } from '../lib/auth';
+import { organizationUsLocationLabel } from '../lib/networkScope';
 
 interface OrganizationProfileProps {
   organizationId: string;
@@ -74,7 +75,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
 
   const loadOrganization = useCallback(async () => {
     const [orgRes, sectorsRes, allSectorsRes] = await Promise.all([
-      supabase.from('organizations').select('*, locations(*)').eq('id', organizationId).maybeSingle(),
+      supabase.from('organizations').select('*, locations(*), organization_us_locations(*, locations(*))').eq('id', organizationId).maybeSingle(),
       supabase.from('organization_sectors').select('sector_id, sectors(name)').eq('organization_id', organizationId),
       supabase.from('sectors').select('*'),
     ]);
@@ -100,7 +101,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
 
   const loadPeople = useCallback(async () => {
     const { data } = await supabase
-      .from('people').select('*, locations(*)')
+      .from('people').select('*, locations(*), person_us_connections(*, locations(*))')
       .eq('organization_id', organizationId)
       .limit(6);
 
@@ -158,8 +159,8 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     const { data: updatedOrg, error: updateErr } = await supabase
       .from('organizations')
       .update(updatePayload)
-      .eq('id', organization.id)
-      .select('*, locations(*)')
+                      .eq('id', organization.id)
+      .select('*, locations(*), organization_us_locations(*, locations(*))')
       .maybeSingle();
 
     if (updateErr) {
@@ -344,6 +345,36 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                         </span>
                       </button>
                     )}
+                    {organization.organization_us_locations &&
+                      organization.organization_us_locations.length > 0 && (
+                        <div className="w-full flex flex-wrap gap-2 mt-1">
+                          {organization.organization_us_locations.map((location) => (
+                            <button
+                              key={location.id || `${location.location_id}-${location.location_role}`}
+                              onClick={() =>
+                                location.locations?.city &&
+                                onNavigate('dashboard', undefined, {
+                                  focusCity: {
+                                    city: location.locations.city,
+                                    state: location.locations.state,
+                                  },
+                                })
+                              }
+                              className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-left text-xs text-emerald-800 hover:border-emerald-200"
+                            >
+                              <span className="font-semibold">
+                                {organizationUsLocationLabel(location)}
+                              </span>
+                              {location.locations?.city && (
+                                <span>
+                                  {' '}
+                                  · {location.locations.city}, {location.locations.state}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     {organization.website_url && (
                       <a
                         href={organization.website_url}
@@ -453,6 +484,51 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                 )
               )}
             </div>
+
+            {!editing &&
+              organization.organization_us_locations &&
+              organization.organization_us_locations.length > 0 && (
+                <div className="pb-8 border-b border-gray-200">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-3">
+                    US Locations
+                  </h2>
+                  <div className="space-y-3">
+                    {organization.organization_us_locations.map((location) => (
+                      <div
+                        key={location.id || `${location.location_id}-${location.location_role}`}
+                        className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {organizationUsLocationLabel(location)}
+                              {location.is_primary ? ' · Primary' : ''}
+                            </p>
+                            {location.locations?.city && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {location.locations.city}, {location.locations.state}
+                              </p>
+                            )}
+                          </div>
+                          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-gray-500 border border-gray-200">
+                            {location.location_role.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {location.description && (
+                          <p className="text-sm text-gray-600 mt-2">
+                            {location.description}
+                          </p>
+                        )}
+                        {location.evidence_excerpt && (
+                          <p className="text-xs text-gray-500 mt-2 italic">
+                            {location.evidence_excerpt}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             <div className={`pb-8 ${editing ? '' : 'border-b border-gray-200'}`}>
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>

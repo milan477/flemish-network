@@ -87,15 +87,63 @@ interface UpdatedPersonSnapshot {
     linkedin_url: string | null;
     website_url: string | null;
     location_id: string | null;
+    us_network_status: string | null;
+    current_location_city: string | null;
+    current_location_country: string | null;
   };
   sectorIds: string[];
   flemishConnectionIds: string[];
+  usConnections: {
+    location_id: string;
+    connection_label: string | null;
+    source_url: string | null;
+    evidence_excerpt: string | null;
+    confidence: number | null;
+  }[];
 }
 
 const IMPORT_CANCELLED = "IMPORT_CANCELLED";
 
 function getErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+function normalizePeopleScope(raw: string | undefined): "us_based" | "us_connected_abroad" {
+  const normalized = (raw || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (
+    normalized === "us_connected_abroad" ||
+    normalized === "connected_abroad" ||
+    normalized === "connected_to_us" ||
+    normalized === "us_connected" ||
+    normalized === "abroad"
+  ) {
+    return "us_connected_abroad";
+  }
+  return "us_based";
+}
+
+function inferPeopleScope(row: MappedRow): "us_based" | "us_connected_abroad" {
+  if (row.us_network_status) return normalizePeopleScope(row.us_network_status);
+  if (
+    row.current_location_city ||
+    row.current_location_country ||
+    row.us_connection_city ||
+    row.us_connection_state
+  ) {
+    return "us_connected_abroad";
+  }
+  return "us_based";
+}
+
+function splitMultiValue(raw: string | undefined): string[] {
+  return (raw || "")
+    .split(/[;\n|]+/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function valueAt(values: string[], index: number, fallback = ""): string {
+  return values[index] || values[0] || fallback;
 }
 
 const SECTOR_VALUE_ALIASES = new Map<string, string>([
@@ -449,16 +497,69 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         return null;
       }
 
+      async function buildUsConnectionRows(
+        personId: string,
+        row: MappedRow,
+      ): Promise<
+        {
+          person_id: string;
+          location_id: string;
+          connection_label: string | null;
+          source_url: string | null;
+          evidence_excerpt: string | null;
+          confidence: number | null;
+        }[]
+      > {
+        const cities = splitMultiValue(row.us_connection_city);
+        const states = splitMultiValue(row.us_connection_state);
+        const labels = splitMultiValue(row.us_connection_label);
+        const sources = splitMultiValue(row.us_connection_source_url);
+        const evidence = splitMultiValue(row.us_connection_evidence);
+        const confidences = splitMultiValue(row.us_connection_confidence);
+        const max = Math.max(cities.length, states.length);
+        const rows: {
+          person_id: string;
+          location_id: string;
+          connection_label: string | null;
+          source_url: string | null;
+          evidence_excerpt: string | null;
+          confidence: number | null;
+        }[] = [];
+
+        for (let index = 0; index < max; index += 1) {
+          const locationId = await resolveLocationId(
+            valueAt(cities, index),
+            valueAt(states, index),
+          );
+          if (!locationId) continue;
+
+          const parsedConfidence = Number(valueAt(confidences, index));
+          rows.push({
+            person_id: personId,
+            location_id: locationId,
+            connection_label: valueAt(labels, index) || null,
+            source_url: valueAt(sources, index) || null,
+            evidence_excerpt: valueAt(evidence, index) || null,
+            confidence:
+              valueAt(confidences, index) && Number.isFinite(parsedConfidence)
+                ? Math.max(0, Math.min(1, parsedConfidence))
+                : null,
+          });
+        }
+
+        return rows;
+      }
+
       async function captureUpdatedPersonSnapshot(
         personId: string,
       ): Promise<void> {
         if (updatedSnapshots.has(personId)) return;
 
-        const [personResult, sectorResult, flemishResult] = await Promise.all([
+        const [personResult, sectorResult, flemishResult, usConnectionResult] = await Promise.all([
           supabase
             .from("people")
             .select(
-              "title, current_position, occupation, bio, email, phone, linkedin_url, website_url, location_id",
+              "title, current_position, occupation, bio, email, phone, linkedin_url, website_url, location_id, us_network_status, current_location_city, current_location_country",
             )
             .eq("id", personId)
             .maybeSingle(),
@@ -469,6 +570,10 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
           supabase
             .from("person_flemish_connections")
             .select("flemish_connection_id")
+            .eq("person_id", personId),
+          supabase
+            .from("person_us_connections")
+            .select("location_id, connection_label, source_url, evidence_excerpt, confidence")
             .eq("person_id", personId),
         ]);
 
@@ -490,6 +595,12 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               "Failed to capture existing Flemish connections",
           );
         }
+        if (usConnectionResult.error) {
+          throw new Error(
+            usConnectionResult.error.message ||
+              "Failed to capture existing US connections",
+          );
+        }
 
         updatedSnapshots.set(personId, {
           personId,
@@ -503,11 +614,21 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             linkedin_url: personResult.data.linkedin_url || null,
             website_url: personResult.data.website_url || null,
             location_id: personResult.data.location_id || null,
+            us_network_status: personResult.data.us_network_status || null,
+            current_location_city: personResult.data.current_location_city || null,
+            current_location_country: personResult.data.current_location_country || null,
           },
           sectorIds: (sectorResult.data || []).map((entry) => entry.sector_id),
           flemishConnectionIds: (flemishResult.data || []).map(
             (entry) => entry.flemish_connection_id,
           ),
+          usConnections: ((usConnectionResult?.data || []) as {
+            location_id: string;
+            connection_label: string | null;
+            source_url: string | null;
+            evidence_excerpt: string | null;
+            confidence: number | null;
+          }[]),
         });
       }
 
@@ -601,6 +722,40 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               );
             }
           }
+
+          const { error: clearUsConnectionsError } = await supabase
+            .from("person_us_connections")
+            .delete()
+            .eq("person_id", snapshot.personId);
+
+          if (clearUsConnectionsError) {
+            throw new Error(
+              clearUsConnectionsError.message ||
+                "Failed to clear US connections during rollback",
+            );
+          }
+
+          if (snapshot.usConnections.length > 0) {
+            const { error: restoreUsConnectionsError } = await supabase
+              .from("person_us_connections")
+              .insert(
+                snapshot.usConnections.map((connection) => ({
+                  person_id: snapshot.personId,
+                  location_id: connection.location_id,
+                  connection_label: connection.connection_label,
+                  source_url: connection.source_url,
+                  evidence_excerpt: connection.evidence_excerpt,
+                  confidence: connection.confidence,
+                })),
+              );
+
+            if (restoreUsConnectionsError) {
+              throw new Error(
+                restoreUsConnectionsError.message ||
+                  "Failed to restore US connections during rollback",
+              );
+            }
+          }
         }
       }
 
@@ -677,6 +832,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                 row.location_state || "",
               );
               ensureNotCancelled();
+              const peopleScope = inferPeopleScope(row);
 
               const updateFields: Record<string, string | null> = {};
               if (row.title) updateFields.title = row.title;
@@ -689,12 +845,37 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               if (row.linkedin_url)
                 updateFields.linkedin_url = row.linkedin_url;
               if (row.website_url) updateFields.website_url = row.website_url;
-              if (locationId) updateFields.location_id = locationId;
+              if (
+                row.us_network_status ||
+                row.current_location_city ||
+                row.current_location_country ||
+                row.us_connection_city ||
+                row.us_connection_state
+              ) {
+                updateFields.us_network_status = peopleScope;
+              }
+              if (peopleScope === "us_connected_abroad") {
+                updateFields.location_id = null;
+                if (row.current_location_city) {
+                  updateFields.current_location_city = row.current_location_city;
+                }
+                if (row.current_location_country) {
+                  updateFields.current_location_country = row.current_location_country;
+                }
+              } else {
+                if (locationId) updateFields.location_id = locationId;
+                if (row.us_network_status) {
+                  updateFields.current_location_city = null;
+                  updateFields.current_location_country = null;
+                }
+              }
 
               const hasScalarUpdates = Object.keys(updateFields).length > 0;
               const hasLinkedUpdates = Boolean(
                 (row.flemish_connection || "").trim() ||
-                (row.sectors || "").trim(),
+                (row.sectors || "").trim() ||
+                (row.us_connection_city || "").trim() ||
+                (row.us_connection_state || "").trim(),
               );
 
               if (!hasScalarUpdates && !hasLinkedUpdates) {
@@ -733,6 +914,26 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
                 ensureNotCancelled();
                 await assignRowSectors(dupe.existingId, row, i + 1, fullName);
+                if (
+                  peopleScope === "us_connected_abroad" &&
+                  ((row.us_connection_city || "").trim() ||
+                    (row.us_connection_state || "").trim())
+                ) {
+                  const usConnectionRows = await buildUsConnectionRows(
+                    dupe.existingId,
+                    row,
+                  );
+                  await supabase
+                    .from("person_us_connections")
+                    .delete()
+                    .eq("person_id", dupe.existingId);
+                  if (usConnectionRows.length > 0) {
+                    const { error: usConnectionError } = await supabase
+                      .from("person_us_connections")
+                      .insert(usConnectionRows);
+                    if (usConnectionError) throw usConnectionError;
+                  }
+                }
               } catch (err) {
                 if (err instanceof Error && err.message === IMPORT_CANCELLED) {
                   throw err;
@@ -762,6 +963,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             row.location_state || "",
           );
           ensureNotCancelled();
+          const peopleScope = inferPeopleScope(row);
 
           const { data: person, error: insertErr } = await supabase
             .from("people")
@@ -774,7 +976,16 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               }),
               current_position: row.current_position || null,
               occupation: row.occupation || null,
-              location_id: locationId || null,
+              location_id: peopleScope === "us_based" ? locationId || null : null,
+              us_network_status: peopleScope,
+              current_location_city:
+                peopleScope === "us_connected_abroad"
+                  ? row.current_location_city || null
+                  : null,
+              current_location_country:
+                peopleScope === "us_connected_abroad"
+                  ? row.current_location_country || null
+                  : null,
               bio: row.bio || null,
               email: row.email || null,
               phone: row.phone || null,
@@ -796,6 +1007,18 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
               }
               ensureNotCancelled();
               await assignRowSectors(person.id, row, i + 1, fullName);
+              if (peopleScope === "us_connected_abroad") {
+                const usConnectionRows = await buildUsConnectionRows(
+                  person.id,
+                  row,
+                );
+                if (usConnectionRows.length > 0) {
+                  const { error: usConnectionError } = await supabase
+                    .from("person_us_connections")
+                    .insert(usConnectionRows);
+                  if (usConnectionError) throw usConnectionError;
+                }
+              }
             } catch (err) {
               if (err instanceof Error && err.message === IMPORT_CANCELLED) {
                 throw err;

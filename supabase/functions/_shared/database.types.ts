@@ -96,6 +96,9 @@ interface PeopleRow extends RowRecord {
   location_id: string | null;
   location_city: string | null;
   location_state: string | null;
+  us_network_status: string | null;
+  current_location_city: string | null;
+  current_location_country: string | null;
   data_source: string | null;
   last_verified_at: string | null;
   embedding: string | null;
@@ -140,6 +143,33 @@ interface PersonFlemishConnectionRow extends RowRecord {
   person_id: string;
   flemish_connection_id: string;
   created_at: string | null;
+}
+
+interface PersonUsConnectionRow extends RowRecord {
+  id: string;
+  person_id: string;
+  location_id: string;
+  connection_label: string | null;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  confidence: number | string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface OrganizationUsLocationRow extends RowRecord {
+  id: string;
+  organization_id: string;
+  location_id: string;
+  location_role: string;
+  label: string | null;
+  description: string | null;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  confidence: number | string | null;
+  is_primary: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface ProfileSuggestionRow extends RowRecord {
@@ -358,9 +388,35 @@ interface DiscoveredContactRow extends RowRecord {
   last_evidence_at: string | null;
   evidence_count: number;
   discovery_confidence: number | string | null;
+  suggested_us_network_status: string | null;
+  suggested_us_network_confidence: number | string | null;
+  current_location_city: string | null;
+  current_location_country: string | null;
+  suggested_us_connections: Json;
+  suggested_org_pivots: Json;
   reviewed_at: string | null;
   review_outcome: string | null;
   approved_person_id: string | null;
+}
+
+interface DiscoveredOrganizationRow extends RowRecord {
+  id: string;
+  name: string;
+  website_url: string | null;
+  description: string | null;
+  suggested_us_network_status: string | null;
+  us_locations: Json;
+  sectors: string[] | null;
+  flemish_belgian_relevance: string | null;
+  source_urls: string[] | null;
+  confidence: number | string | null;
+  status: string;
+  review_outcome: string | null;
+  reviewed_at: string | null;
+  approved_organization_id: string | null;
+  agent_run_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface DiscoverySourcePackRow extends RowRecord {
@@ -684,6 +740,8 @@ export type Database = {
       person_sectors: Table<PersonSectorRow>;
       flemish_connections: Table<FlemishConnectionRow>;
       person_flemish_connections: Table<PersonFlemishConnectionRow>;
+      person_us_connections: Table<PersonUsConnectionRow>;
+      organization_us_locations: Table<OrganizationUsLocationRow>;
       profile_suggestions: Table<ProfileSuggestionRow>;
       search_clicks: Table<SearchClickRow>;
       embedding_jobs: Table<EmbeddingJobRow>;
@@ -694,6 +752,7 @@ export type Database = {
       derived_label_suggestions: Table<DerivedLabelSuggestionRow>;
       connection_suggestions: Table<ConnectionSuggestionRow>;
       discovered_contacts: Table<DiscoveredContactRow>;
+      discovered_organizations: Table<DiscoveredOrganizationRow>;
       discovery_source_packs: Table<DiscoverySourcePackRow>;
       discovery_domains: Table<DiscoveryDomainRow>;
       discovery_frontier: Table<DiscoveryFrontierRow>;

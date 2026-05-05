@@ -15,6 +15,18 @@ export interface ParsedContact {
   occupation: string;
   location_city: string;
   location_state: string;
+  suggested_us_network_status: "us_based" | "us_connected_abroad" | "needs_review";
+  suggested_us_network_confidence: number;
+  current_location_city: string;
+  current_location_country: string;
+  suggested_us_connections: Array<{
+    location_city: string;
+    location_state: string;
+    connection_label: string;
+    source_url: string;
+    evidence_excerpt: string;
+    confidence: number;
+  }>;
   bio: string;
   flemish_connection: string;
   sectors: string[];
@@ -105,6 +117,21 @@ function toLowercaseStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function clampConfidence(value: unknown): number {
+  return Number.isFinite(Number(value))
+    ? Math.max(0, Math.min(1, Number(value)))
+    : 0;
+}
+
+function normalizePersonUsNetworkStatus(
+  value: unknown
+): ParsedContact["suggested_us_network_status"] {
+  if (value === "us_connected_abroad" || value === "needs_review") {
+    return value;
+  }
+  return "us_based";
+}
+
 const EMPTY_SMART_SEARCH_KEYWORDS: SmartSearchKeywords = {
   name: [],
   occupation: [],
@@ -142,6 +169,32 @@ function normalizeParsedContacts(payload: unknown): ParseContactsResult {
         occupation: safeString(row.occupation),
         location_city: safeString(row.location_city),
         location_state: safeString(row.location_state),
+        suggested_us_network_status: normalizePersonUsNetworkStatus(
+          row.suggested_us_network_status,
+        ),
+        suggested_us_network_confidence: clampConfidence(
+          row.suggested_us_network_confidence,
+        ),
+        current_location_city: safeString(row.current_location_city),
+        current_location_country: safeString(row.current_location_country),
+        suggested_us_connections: Array.isArray(row.suggested_us_connections)
+          ? row.suggested_us_connections.map((connection) => {
+            const connectionRow =
+              connection && typeof connection === "object"
+                ? (connection as Record<string, unknown>)
+                : {};
+            return {
+              location_city: safeString(connectionRow.location_city),
+              location_state: safeString(connectionRow.location_state),
+              connection_label: safeString(connectionRow.connection_label),
+              source_url: safeString(connectionRow.source_url),
+              evidence_excerpt: safeString(connectionRow.evidence_excerpt),
+              confidence: clampConfidence(connectionRow.confidence),
+            };
+          }).filter((connection) =>
+            connection.location_city && connection.location_state
+          )
+          : [],
         bio: safeString(row.bio),
         flemish_connection: safeString(row.flemish_connection),
         sectors: Array.isArray(row.sectors)
@@ -246,6 +299,11 @@ Given a user's description of one or more contacts, extract each person's detail
 Rules:
 - Extract the full name, position/role, location, and any Flemish/Belgian connection
 - For location, use US city names and 2-letter state abbreviations (e.g. MA, NY, CA)
+- Classify US scope:
+  - us_based means the person's current base is in the United States; put that city/state in location_city/location_state.
+  - us_connected_abroad means the person appears to be based outside the US but has a concrete US tie; put current abroad base in current_location_city/current_location_country and put every US tie in suggested_us_connections.
+  - needs_review means the available evidence is ambiguous.
+- suggested_us_connections must contain US city/state, a short connection label, evidence, and confidence for US-connected-abroad candidates.
 - For sectors, choose from ONLY these options: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research
 - If the description mentions multiple people (numbered list, semicolons, or separate sentences), extract each one separately
 - If information is not provided for a field, use an empty string
@@ -331,6 +389,35 @@ const PARSE_CONTACTS_SCHEMA: JsonSchema = {
           },
           location_city: { type: "STRING" },
           location_state: { type: "STRING" },
+          suggested_us_network_status: {
+            type: "STRING",
+            enum: ["us_based", "us_connected_abroad", "needs_review"],
+          },
+          suggested_us_network_confidence: { type: "NUMBER" },
+          current_location_city: { type: "STRING" },
+          current_location_country: { type: "STRING" },
+          suggested_us_connections: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                location_city: { type: "STRING" },
+                location_state: { type: "STRING" },
+                connection_label: { type: "STRING" },
+                source_url: { type: "STRING" },
+                evidence_excerpt: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+              },
+              required: [
+                "location_city",
+                "location_state",
+                "connection_label",
+                "source_url",
+                "evidence_excerpt",
+                "confidence",
+              ],
+            },
+          },
           bio: { type: "STRING" },
           flemish_connection: { type: "STRING" },
           sectors: { type: "ARRAY", items: { type: "STRING" } },
@@ -341,6 +428,11 @@ const PARSE_CONTACTS_SCHEMA: JsonSchema = {
           "occupation",
           "location_city",
           "location_state",
+          "suggested_us_network_status",
+          "suggested_us_network_confidence",
+          "current_location_city",
+          "current_location_country",
+          "suggested_us_connections",
           "bio",
           "flemish_connection",
           "sectors",

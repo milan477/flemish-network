@@ -42,6 +42,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
       filters: {
         showPeople: true,
         showOrganizations: true,
+        personScope: 'all',
         sector: 'Biotechnology',
         occupation: 'Executive/Leadership',
         city: 'Boston',
@@ -65,6 +66,21 @@ describe('appRouting - dashboard URL roundtrip', () => {
       },
       focusedCity: null,
     };
+    expect(roundtrip(state)).toEqual(state);
+  });
+
+  it('roundtrips person scope filter', () => {
+    const state: DashboardRouteState = {
+      view: 'map',
+      query: '',
+      filters: {
+        ...DEFAULT_MAP_FILTERS,
+        personScope: 'us_connected_abroad',
+      },
+      focusedCity: null,
+    };
+    const params = buildDashboardSearchParams(state);
+    expect(params.get('personScope')).toBe('us_connected_abroad');
     expect(roundtrip(state)).toEqual(state);
   });
 

@@ -48,6 +48,7 @@ export default function FilterPanel({
     filters.city || filters.state,
     filters.flemishConnections.length > 0 ? 'yes' : '',
     filters.availableForLectures ? 'yes' : '',
+    filters.personScope !== 'all' ? 'yes' : '',
     !filters.showPeople ? 'hide' : '',
     !filters.showOrganizations ? 'hide' : '',
     activeSearchQuery ? 'yes' : '',
@@ -110,6 +111,27 @@ export default function FilterPanel({
                 <span className="text-sm text-gray-700">Organizations</span>
               </label>
             </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-900 mb-2 block">
+              People Scope
+            </label>
+            <select
+              value={filters.personScope}
+              onChange={(e) =>
+                onFiltersChange({
+                  ...filters,
+                  personScope: e.target.value as MapFilters['personScope'],
+                })
+              }
+              disabled={!filters.showPeople}
+              className={SELECT_CLS}
+            >
+              <option value="all">All</option>
+              <option value="us_based">US-based</option>
+              <option value="us_connected_abroad">US-connected abroad</option>
+            </select>
           </div>
 
           <div>

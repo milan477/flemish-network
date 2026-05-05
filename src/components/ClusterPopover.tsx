@@ -2,6 +2,10 @@ import { X, MapPin, Building2, ExternalLink } from 'lucide-react';
 import { displayName } from '../lib/supabase';
 import type { MapCluster } from '../lib/supabase';
 import { ProfileAvatar } from './ProfileAvatar';
+import {
+  isUsConnectedAbroad,
+  personClusterContext,
+} from '../lib/networkScope';
 
 interface ClusterPopoverProps {
   cluster: MapCluster;
@@ -18,6 +22,36 @@ export default function ClusterPopover({
 }: ClusterPopoverProps) {
   const totalCount = cluster.people.length + cluster.organizations.length;
   const allPersonIds = cluster.people.map((p) => p.id);
+  const basedPeople = cluster.people.filter((person) => !isUsConnectedAbroad(person));
+  const connectedPeople = cluster.people.filter(isUsConnectedAbroad);
+
+  const renderPersonRows = (
+    people: typeof cluster.people,
+    options?: { connected?: boolean }
+  ) => (
+    <div className="px-0.5">
+      {people.map((person) => (
+        <button
+          key={person.id}
+          onClick={() => onNavigate('person', person.id)}
+          className="w-full flex items-center gap-x-2.5 px-2 py-0 hover:bg-yellow-50/50 rounded-lg transition-colors text-left group"
+        >
+          <ProfileAvatar person={person} size="sm" variant="dark" className="shadow-sm" />
+
+          <div className="flex-1 min-w-0 min-h-0">
+            <p className="text-[12px] font-bold text-gray-900 truncate leading-[1.1]">
+              {displayName(person)}
+            </p>
+            <p className="text-[11px] text-gray-500 truncate font-medium leading-[1.1]">
+              {options?.connected
+                ? personClusterContext(person, cluster.city, cluster.state)
+                : person.current_position}
+            </p>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div
@@ -46,46 +80,25 @@ export default function ClusterPopover({
       </div>
 
       <div className="overflow-y-auto custom-scrollbar">
-        {cluster.people.length > 0 && (
+        {basedPeople.length > 0 && (
           <div className="pb-0.5">
             <div className="px-2 py-0.5 bg-gray-50/50 border-b border-gray-100/30">
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
-                PEOPLE ({cluster.people.length})
+                BASED PEOPLE ({basedPeople.length})
               </span>
             </div>
-            <div className="px-0.5">
-              {cluster.people.map((person) => (
-                <button
-                  key={person.id}
-                  onClick={() => onNavigate('person', person.id)}
-                  className="w-full flex items-center gap-x-2.5 px-2 py-0 hover:bg-yellow-50/50 rounded-lg transition-colors text-left group"
-                >
-                  <ProfileAvatar person={person} size="sm" variant="dark" className="shadow-sm" />
+            {renderPersonRows(basedPeople)}
+          </div>
+        )}
 
-                  {/* UPDATED TEXT BLOCK */}
-                  <div className="flex-1 min-w-0 min-h-0">
-                    <p className="text-[12px] font-bold text-gray-900 truncate leading-[1.1]">
-                      {displayName(person)}
-                    </p>
-                    {person.current_position && (
-                      <p className="text-[11px] text-gray-500 truncate font-medium leading-[1.1]">
-                        {person.current_position}
-                      </p>
-                    )}
-                  </div>
-                  {/* <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <p className="text-[12px] font-bold text-gray-900 truncate group-hover:text-amber-700 transition-colors leading-[1.1]">
-                      {displayName(person)}
-                    </p>
-                    {person.current_position && (
-                      <p className="text-[11px] text-gray-500 truncate font-medium leading-[1.1] -mt-[1px]">
-                        {person.current_position}
-                      </p>
-                    )}
-                  </div> */}
-                </button>
-              ))}
+        {connectedPeople.length > 0 && (
+          <div className="pb-0.5 border-t border-gray-100">
+            <div className="px-2 py-0.5 bg-gray-50/50 border-b border-gray-100/30">
+              <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
+                CONNECTED PEOPLE ({connectedPeople.length})
+              </span>
             </div>
+            {renderPersonRows(connectedPeople, { connected: true })}
           </div>
         )}
 

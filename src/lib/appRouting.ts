@@ -95,6 +95,11 @@ export function parseDashboardRouteState(
       ...DEFAULT_MAP_FILTERS,
       showPeople: parseBooleanParam(searchParams.get('people'), true),
       showOrganizations: parseBooleanParam(searchParams.get('organizations'), true),
+      personScope:
+        searchParams.get('personScope') === 'us_based' ||
+        searchParams.get('personScope') === 'us_connected_abroad'
+          ? searchParams.get('personScope') as MapFilters['personScope']
+          : 'all',
       sector: searchParams.get('sector')?.trim() || '',
       occupation: searchParams.get('occupation')?.trim() || '',
       city: searchParams.get('city')?.trim() || '',
@@ -125,6 +130,9 @@ export function buildDashboardSearchParams(
   }
   if (!state.filters.showPeople) params.set('people', '0');
   if (!state.filters.showOrganizations) params.set('organizations', '0');
+  if (state.filters.personScope !== 'all') {
+    params.set('personScope', state.filters.personScope);
+  }
   if (state.filters.sector) params.set('sector', state.filters.sector);
   if (state.filters.occupation) {
     params.set('occupation', state.filters.occupation);

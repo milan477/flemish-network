@@ -60,6 +60,10 @@ interface SearchResultItem {
   available_for_lectures: boolean | null;
   location_id: string | null;
   locations: { city: string | null; state: string | null } | null;
+  us_network_status?: string | null;
+  current_location_city?: string | null;
+  current_location_country?: string | null;
+  person_us_connections?: unknown[];
   score: number;
   snippet: string;
 }
@@ -108,6 +112,10 @@ interface PersonRow {
   last_verified_at: string | null;
   location_id: string | null;
   locations: { city: string | null; state: string | null } | null;
+  us_network_status: string | null;
+  current_location_city: string | null;
+  current_location_country: string | null;
+  person_us_connections?: unknown[];
 }
 
 interface PersonQueryRow extends Omit<PersonRow, "locations"> {
@@ -353,7 +361,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         supabase
           .from("people")
           .select(
-            "id, name, first_name, last_name, title, current_position, bio, occupation, profile_photo_url, email, linkedin_url, last_verified_at, location_id, locations(city, state)"
+            "id, name, first_name, last_name, title, current_position, bio, occupation, profile_photo_url, email, linkedin_url, last_verified_at, location_id, us_network_status, current_location_city, current_location_country, locations(city, state), person_us_connections(*, locations(city, state))"
           )
           .in("id", candidateIds),
         supabase
@@ -474,6 +482,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
       available_for_lectures: null,
       location_id: person.location_id,
       locations: person.locations,
+      us_network_status: person.us_network_status,
+      current_location_city: person.current_location_city,
+      current_location_country: person.current_location_country,
+      person_us_connections: person.person_us_connections || [],
       score: Math.round(fusedScore * 1000) / 1000,
       snippet,
     }));

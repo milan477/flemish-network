@@ -89,6 +89,18 @@ export interface ParsedContact {
   occupation: string;
   location_city: string;
   location_state: string;
+  suggested_us_network_status?: 'us_based' | 'us_connected_abroad' | 'needs_review';
+  suggested_us_network_confidence?: number;
+  current_location_city?: string;
+  current_location_country?: string;
+  suggested_us_connections?: Array<{
+    location_city: string;
+    location_state: string;
+    connection_label: string;
+    source_url?: string;
+    evidence_excerpt?: string;
+    confidence?: number;
+  }>;
   bio: string;
   flemish_connection: string;
   sectors: string[];

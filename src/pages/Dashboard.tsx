@@ -40,105 +40,14 @@ import {
   setCachedDashboardSearch,
   setLastDashboardLocation,
 } from '../lib/dashboardSession';
+import {
+  buildNetworkClusters,
+  organizationMatchesLocation,
+  personMatchesLocation,
+} from '../lib/networkScope';
 
 interface DashboardProps {
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
-}
-
-// Snippets are generated server-side by the search-people edge function.
-// This helper converts HybridSearchResultItem[] to Person-like objects for display.
-
-function buildClusters(
-  people: Person[],
-  organizations: Organization[],
-  filters: MapFilters
-): MapCluster[] {
-  const clusterMap = new window.Map<string, MapCluster>();
-
-  if (filters.showPeople) {
-    for (const person of people) {
-      if (!person.locations?.city || !person.locations?.state) continue;
-
-      // Try the global geocoding cache first - this is our source of truth for city positions.
-      const coords = lookupCity(person.locations.city, person.locations.state);
-
-      let lat: number | null | undefined = coords?.lat;
-      let lng: number | null | undefined = coords?.lng;
-
-      // Only fall back to the entity record if we have no cached city coordinates.
-      if (lat == null || lng == null) {
-        lat = person.locations.latitude;
-        lng = person.locations.longitude;
-      }
-
-      if (lat == null || lng == null) continue;
-
-      const key = `${person.locations.city}|${person.locations.state}`;
-      if (!clusterMap.has(key)) {
-        clusterMap.set(key, {
-          city: person.locations.city,
-          state: person.locations.state,
-          lat: Number(lat),
-          lng: Number(lng),
-          people: [],
-          organizations: [],
-        });
-      }
-      clusterMap.get(key)!.people.push(person);
-    }
-  }
-
-  if (filters.showOrganizations) {
-    for (const organization of organizations) {
-      if (!organization.locations?.city || !organization.locations?.state) continue;
-
-      const coords = lookupCity(
-        organization.locations.city,
-        organization.locations.state
-      );
-
-      let lat: number | null | undefined = coords?.lat;
-      let lng: number | null | undefined = coords?.lng;
-
-      if (lat == null || lng == null) {
-        lat = organization.locations.latitude;
-        lng = organization.locations.longitude;
-      }
-
-      if (lat == null || lng == null) continue;
-
-      const key = `${organization.locations.city}|${organization.locations.state}`;
-      if (!clusterMap.has(key)) {
-        clusterMap.set(key, {
-          city: organization.locations.city,
-          state: organization.locations.state,
-          lat: Number(lat),
-          lng: Number(lng),
-          people: [],
-          organizations: [],
-        });
-      }
-      clusterMap.get(key)!.organizations.push(organization);
-    }
-  }
-
-  return Array.from(clusterMap.values());
-}
-
-function matchesLocation(
-  entity: Pick<Person, 'locations'> | Pick<Organization, 'locations'>,
-  filters: Pick<MapFilters, 'city' | 'state'>
-): boolean {
-  if (!filters.city && !filters.state) return true;
-
-  const cityMatches = filters.city
-    ? entity.locations?.city === filters.city
-    : true;
-  const stateMatches = filters.state
-    ? entity.locations?.state === filters.state
-    : true;
-
-  return cityMatches && stateMatches;
 }
 
 function toSearchParams(state: DashboardRouteState): URLSearchParams {
@@ -237,7 +146,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               const { data } = await supabase
                 .from('people')
                 .select(
-                  '*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+                  '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
                 )
                 .or(
                   `name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`
@@ -339,8 +248,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         let query = supabase
           .from('people')
           .select(
-            '*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+            '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
           );
+
+        if (currentFilters.personScope !== 'all') {
+          query = query.eq('us_network_status', currentFilters.personScope);
+        }
 
         if (currentFilters.sector) {
           const { data: sectorRows } = await supabase
@@ -415,14 +328,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
         const { data } = await query;
         peopleData = (data || []).filter((person) =>
-          matchesLocation(person, currentFilters)
+          personMatchesLocation(person, currentFilters)
         );
       }
 
       if (currentFilters.showOrganizations) {
         const { data } = await supabase
           .from('organizations')
-          .select('*, locations(*)');
+          .select('*, locations(*), organization_us_locations(*, locations(*))');
         let rawOrganizations = (data || []) as Organization[];
 
         if (currentQuery) {
@@ -469,7 +382,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         }
 
         orgsData = rawOrganizations.filter((organization) =>
-          matchesLocation(organization, currentFilters)
+          organizationMatchesLocation(organization, currentFilters)
         );
       }
 
@@ -490,7 +403,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       setPeople(peopleData);
       setOrganizations(orgsData);
 
-      const builtClusters = buildClusters(peopleData, orgsData, currentFilters);
+      const builtClusters = buildNetworkClusters(peopleData, orgsData, currentFilters);
       setClusters(builtClusters);
 
       const uniqueCities = new Set(builtClusters.map((cluster) => cluster.city));
@@ -504,12 +417,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
       const allEntities = [
         ...peopleData.map((person) => ({
-          city: person.locations?.city,
-          state: person.locations?.state,
+          city:
+            person.us_network_status === 'us_connected_abroad'
+              ? person.person_us_connections?.[0]?.locations?.city
+              : person.locations?.city,
+          state:
+            person.us_network_status === 'us_connected_abroad'
+              ? person.person_us_connections?.[0]?.locations?.state
+              : person.locations?.state,
         })),
         ...orgsData.map((organization) => ({
-          city: organization.locations?.city,
-          state: organization.locations?.state,
+          city:
+            organization.organization_us_locations?.[0]?.locations?.city ||
+            organization.locations?.city,
+          state:
+            organization.organization_us_locations?.[0]?.locations?.state ||
+            organization.locations?.state,
         })),
       ];
 
@@ -539,7 +462,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           addToCache(city, state, coords.lat, coords.lng);
         }
 
-        const updatedClusters = buildClusters(peopleData, orgsData, currentFilters);
+        const updatedClusters = buildNetworkClusters(peopleData, orgsData, currentFilters);
         setClusters(updatedClusters);
         setStats((previous) => ({
           ...previous,
@@ -640,18 +563,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const isSearchActive = activeQuery.length > 0;
 
   const displayedPeople = focusedCity
-    ? people.filter(
-        (person) =>
-          person.locations?.city === focusedCity.city &&
-          person.locations?.state === focusedCity.state
-      )
+    ? people.filter((person) => personMatchesLocation(person, focusedCity))
     : people;
 
   const displayedOrganizations = focusedCity
-    ? organizations.filter(
-        (organization) =>
-          organization.locations?.city === focusedCity.city &&
-          organization.locations?.state === focusedCity.state
+    ? organizations.filter((organization) =>
+        organizationMatchesLocation(organization, focusedCity)
       )
     : organizations;
 
@@ -696,6 +613,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             {(isSearchActive ||
               filters.sector ||
               filters.occupation ||
+              filters.personScope !== 'all' ||
               filters.city ||
               filters.state ||
               filters.flemishConnections.length > 0) && (
@@ -733,6 +651,24 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                         handleFiltersChange({ ...filters, occupation: '' })
                       }
                       className="hover:text-purple-900 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {filters.personScope !== 'all' && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-medium shadow-sm">
+                    <span>
+                      People:{' '}
+                      {filters.personScope === 'us_based'
+                        ? 'US-based'
+                        : 'US-connected abroad'}
+                    </span>
+                    <button
+                      onClick={() =>
+                        handleFiltersChange({ ...filters, personScope: 'all' })
+                      }
+                      className="hover:text-indigo-900 transition-colors"
                     >
                       <X className="w-3 h-3" />
                     </button>
