@@ -29,6 +29,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'list',
       query: 'biotech',
+      matchMode: 'all',
       filters: { ...DEFAULT_MAP_FILTERS },
       focusedCity: null,
     };
@@ -39,6 +40,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'map',
       query: '',
+      matchMode: 'all',
       filters: {
         showPeople: true,
         showOrganizations: true,
@@ -59,6 +61,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'map',
       query: '',
+      matchMode: 'all',
       filters: {
         ...DEFAULT_MAP_FILTERS,
         showPeople: false,
@@ -73,6 +76,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'map',
       query: '',
+      matchMode: 'all',
       filters: {
         ...DEFAULT_MAP_FILTERS,
         personScope: 'us_connected_abroad',
@@ -88,6 +92,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'map',
       query: '',
+      matchMode: 'all',
       filters: { ...DEFAULT_MAP_FILTERS },
       focusedCity: { city: 'Austin', state: 'TX' },
     };
@@ -119,11 +124,31 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'map',
       query: 'los angeles',
+      matchMode: 'all',
       filters: { ...DEFAULT_MAP_FILTERS },
       focusedCity: null,
     };
     const params = buildDashboardSearchParams(state);
     expect(params.get('view')).toBe('map');
+    expect(roundtrip(state)).toEqual(state);
+  });
+
+  it('roundtrips match criteria mode when set to any', () => {
+    const state: DashboardRouteState = {
+      view: 'list',
+      query: 'ku leuven biotech boston',
+      matchMode: 'any',
+      filters: {
+        ...DEFAULT_MAP_FILTERS,
+        sector: 'Biotechnology',
+        city: 'Boston',
+        state: 'MA',
+        flemishConnections: ['KU Leuven'],
+      },
+      focusedCity: null,
+    };
+    const params = buildDashboardSearchParams(state);
+    expect(params.get('match')).toBe('any');
     expect(roundtrip(state)).toEqual(state);
   });
 
@@ -145,6 +170,7 @@ describe('appRouting - dashboard URL roundtrip', () => {
     const state: DashboardRouteState = {
       view: 'list',
       query: 'foo',
+      matchMode: 'all',
       filters: { ...DEFAULT_MAP_FILTERS },
       focusedCity: null,
     };

@@ -47,6 +47,10 @@ export interface Person {
   profile_photo_url?: string;
   flemish_connection?: string;
   person_flemish_connections?: PersonFlemishConnectionLink[];
+  person_sectors?: Array<{
+    sectors?: { name?: string | null } | { name?: string | null }[] | null;
+  }>;
+  sector_names?: string | null;
   linkedin_url?: string;
   website_url?: string;
   twitter_url?: string;
@@ -141,6 +145,8 @@ export type OrganizationUsNetworkStatus =
   | 'belgian_organization_with_us_presence'
   | 'us_organization_connected_to_flanders'
   | 'institutional_connector';
+
+export type SearchMatchMode = 'all' | 'any';
 
 export type OrganizationUsLocationRole =
   | 'hq'

@@ -3,7 +3,6 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import { Map as MapIcon, List, X, Search as SearchIcon, MapPin } from 'lucide-react';
 import {
   supabase,
-  fuzzyMatch,
   type Person,
   type Organization,
   type MapCluster,
@@ -11,7 +10,7 @@ import {
   type FilterPreset,
   type ActiveAiFilter,
   type FlemishConnection,
-  OCCUPATION_CATEGORY_KEYWORDS,
+  type SearchMatchMode,
 } from '../lib/supabase';
 import MapVisualization from '../components/MapVisualization';
 import DirectoryGrid from '../components/DirectoryGrid';
@@ -41,6 +40,12 @@ import {
   setLastDashboardLocation,
 } from '../lib/dashboardSession';
 import {
+  applyOrganizationMatchCriteria,
+  applyPeopleMatchCriteria,
+  countActiveMatchCriteria,
+  dashboardSearchCacheScope,
+} from '../lib/matchCriteria';
+import {
   buildNetworkClusters,
   organizationMatchesLocation,
   personMatchesLocation,
@@ -61,7 +66,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     () => parseDashboardRouteState(searchParams),
     [searchParams]
   );
-  const { view: viewMode, query: activeQuery, filters, focusedCity } = routeState;
+  const {
+    view: viewMode,
+    query: activeQuery,
+    matchMode,
+    filters,
+    focusedCity,
+  } = routeState;
 
   const [people, setPeople] = useState<Person[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -85,6 +96,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   const loadIdRef = useRef(0);
   const searchRequestIdRef = useRef(0);
+  const activeMatchCriteriaCount = useMemo(
+    () => countActiveMatchCriteria(filters),
+    [filters]
+  );
+  const effectiveMatchMode = activeMatchCriteriaCount > 1 ? matchMode : 'all';
 
   const updateRouteState = useCallback(
     (
@@ -115,9 +131,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, [clearSearchResults, updateRouteState]);
 
   const runSearch = useCallback(
-    async (query: string) => {
+    async (
+      query: string,
+      currentFilters: MapFilters,
+      currentMatchMode: SearchMatchMode
+    ) => {
       const requestId = ++searchRequestIdRef.current;
-      const cached = getCachedDashboardSearch(query);
+      const cacheScope = dashboardSearchCacheScope(currentFilters, currentMatchMode);
+      const cached = getCachedDashboardSearch(query, cacheScope);
 
       if (cached) {
         setNameMatches(cached.nameMatches);
@@ -146,17 +167,26 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               const { data } = await supabase
                 .from('people')
                 .select(
-                  '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+                  '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))'
                 )
                 .or(
                   `name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`
                 )
                 .limit(20);
-              return (data as Person[]) || [];
+              return applyPeopleMatchCriteria(
+                (data as Person[]) || [],
+                currentFilters,
+                currentMatchMode
+              );
             })()
           : Promise.resolve([]);
 
-        const hybridPromise = hybridSearch(query);
+        const hybridPromise = hybridSearch(
+          query,
+          30,
+          currentMatchMode,
+          currentFilters
+        );
         const [nameResults, hybridResult] = await Promise.all([
           nameMatchPromise,
           hybridPromise,
@@ -183,6 +213,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
         setCachedDashboardSearch({
           query,
+          scope: cacheScope,
           nameMatches: nameResults,
           aiResults: aiPeople,
           snippets: Array.from(nextSnippets.entries()),
@@ -236,7 +267,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   );
 
   const loadData = useCallback(
-    async (currentFilters: MapFilters, currentQuery: string, aiFilters: ActiveAiFilter[]) => {
+    async (
+      currentFilters: MapFilters,
+      currentQuery: string,
+      aiFilters: ActiveAiFilter[],
+      currentMatchMode: SearchMatchMode
+    ) => {
       const thisId = ++loadIdRef.current;
       setLoading(true);
       await ensureLocationsLoaded();
@@ -248,87 +284,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         let query = supabase
           .from('people')
           .select(
-            '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'
+            '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))'
           );
-
-        if (currentFilters.personScope !== 'all') {
-          query = query.eq('us_network_status', currentFilters.personScope);
-        }
-
-        if (currentFilters.sector) {
-          const { data: sectorRows } = await supabase
-            .from('sectors')
-            .select('id')
-            .eq('name', currentFilters.sector)
-            .maybeSingle();
-
-          if (sectorRows) {
-            const { data: personIds } = await supabase
-              .from('person_sectors')
-              .select('person_id')
-              .eq('sector_id', sectorRows.id);
-            const ids = personIds?.map((row) => row.person_id) || [];
-            query =
-              ids.length > 0
-                ? query.in('id', ids)
-                : query.eq('id', '00000000-0000-0000-0000-000000000000');
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
-        }
-
-        if (currentFilters.occupation) {
-          const categoryKeywords =
-            OCCUPATION_CATEGORY_KEYWORDS[currentFilters.occupation];
-          if (categoryKeywords && categoryKeywords.length > 0) {
-            query = query.or(
-              categoryKeywords
-                .map((keyword) => `occupation.ilike.%${keyword}%`)
-                .join(',')
-            );
-          }
-        }
-
-        if (currentFilters.flemishConnections.length > 0) {
-          const { data: matchingConnections } = await supabase
-            .from('flemish_connections')
-            .select('id, name')
-            .in('name', currentFilters.flemishConnections);
-
-          const connectionIds = (matchingConnections || []).map(
-            (connection: { id: string }) => connection.id
-          );
-
-          if (connectionIds.length > 0) {
-            const { data: matchedPeople } = await supabase
-              .from('person_flemish_connections')
-              .select('person_id')
-              .in('flemish_connection_id', connectionIds);
-
-            const personIds = Array.from(
-              new Set(
-                (matchedPeople || []).map(
-                  (row: { person_id: string }) => row.person_id
-                )
-              )
-            );
-
-            query =
-              personIds.length > 0
-                ? query.in('id', personIds)
-                : query.eq('id', '00000000-0000-0000-0000-000000000000');
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
-        }
 
         if (currentFilters.availableForLectures) {
           query = query.eq('available_for_lectures', true);
         }
 
         const { data } = await query;
-        peopleData = (data || []).filter((person) =>
-          personMatchesLocation(person, currentFilters)
+        peopleData = applyPeopleMatchCriteria(
+          (data as Person[]) || [],
+          currentFilters,
+          currentMatchMode
         );
       }
 
@@ -350,39 +317,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           );
         }
 
-        if (currentFilters.sector) {
-          rawOrganizations = rawOrganizations.filter(
-            (organization) =>
-              fuzzyMatch(currentFilters.sector, organization.type || '') ||
-              fuzzyMatch(currentFilters.sector, organization.description || '')
-          );
-        }
-
-        if (currentFilters.occupation) {
-          rawOrganizations = rawOrganizations.filter(
-            (organization) =>
-              fuzzyMatch(currentFilters.occupation, organization.type || '') ||
-              fuzzyMatch(currentFilters.occupation, organization.description || '')
-          );
-        }
-
-        if (currentFilters.flemishConnections.length > 0) {
-          rawOrganizations = rawOrganizations.filter((organization) =>
-            currentFilters.flemishConnections.some(
-              (connection) =>
-                fuzzyMatch(connection, organization.flemish_link || '') ||
-                fuzzyMatch(connection, organization.name || '') ||
-                fuzzyMatch(connection, organization.description || '')
-            )
-          );
-        }
-
         if (currentFilters.availableForLectures) {
           rawOrganizations = [];
         }
 
-        orgsData = rawOrganizations.filter((organization) =>
-          organizationMatchesLocation(organization, currentFilters)
+        orgsData = applyOrganizationMatchCriteria(
+          rawOrganizations,
+          currentFilters,
+          currentMatchMode
         );
       }
 
@@ -478,6 +420,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
+    if (activeMatchCriteriaCount > 1 || matchMode === 'all') return;
+
+    updateRouteState(
+      (current) => ({
+        ...current,
+        matchMode: 'all',
+      }),
+      { replace: true }
+    );
+  }, [activeMatchCriteriaCount, matchMode, updateRouteState]);
+
+  useEffect(() => {
     supabase
       .from('flemish_connections')
       .select('name')
@@ -491,8 +445,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, []);
 
   useEffect(() => {
-    loadData(filters, activeQuery, activeFilters);
-  }, [activeFilters, activeQuery, filters, loadData]);
+    loadData(filters, activeQuery, activeFilters, effectiveMatchMode);
+  }, [activeFilters, activeQuery, effectiveMatchMode, filters, loadData]);
 
   useEffect(() => {
     if (!activeQuery) {
@@ -501,8 +455,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       return;
     }
 
-    runSearch(activeQuery);
-  }, [activeQuery, clearSearchResults, runSearch]);
+    runSearch(activeQuery, filters, effectiveMatchMode);
+  }, [activeQuery, clearSearchResults, effectiveMatchMode, filters, runSearch]);
 
   useEffect(() => {
     const state = location.state as { focusSearch?: boolean } | null;
@@ -516,6 +470,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       updateRouteState((current) => ({
         ...current,
         filters: next,
+      }));
+    },
+    [updateRouteState]
+  );
+
+  const handleMatchModeChange = useCallback(
+    (nextMatchMode: SearchMatchMode) => {
+      updateRouteState((current) => ({
+        ...current,
+        matchMode: nextMatchMode,
       }));
     },
     [updateRouteState]
@@ -618,6 +582,25 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               filters.state ||
               filters.flemishConnections.length > 0) && (
               <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                {activeMatchCriteriaCount > 1 && (
+                  <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 shadow-sm">
+                    <span className="px-1">Match criteria:</span>
+                    {(['all', 'any'] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => handleMatchModeChange(option)}
+                        className={`rounded-full px-2 py-0.5 transition-colors ${
+                          effectiveMatchMode === option
+                            ? 'bg-gray-900 text-white'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        {option === 'all' ? 'All' : 'Any'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {activeQuery && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full text-xs font-medium shadow-sm">
                     <SearchIcon className="w-3 h-3" />
