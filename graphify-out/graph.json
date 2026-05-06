@@ -60,7 +60,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/tailwind.config.js",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_tailwind_config_js",
+<<<<<<< HEAD
       "community": 57,
+=======
+      "community": 58,
+>>>>>>> origin/main
       "norm_label": "tailwind.config.js"
     },
     {
@@ -87,7 +91,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/eslint.config.js",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_eslint_config_js",
+<<<<<<< HEAD
       "community": 58,
+=======
+      "community": 59,
+>>>>>>> origin/main
       "norm_label": "eslint.config.js"
     },
     {
@@ -96,7 +104,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/vite.config.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_vite_config_ts",
+<<<<<<< HEAD
       "community": 59,
+=======
+      "community": 60,
+>>>>>>> origin/main
       "norm_label": "vite.config.ts"
     },
     {
@@ -105,7 +117,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/vitest.config.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_vitest_config_ts",
+<<<<<<< HEAD
       "community": 60,
+=======
+      "community": 61,
+>>>>>>> origin/main
       "norm_label": "vitest.config.ts"
     },
     {
@@ -114,7 +130,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/postcss.config.js",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_postcss_config_js",
+<<<<<<< HEAD
       "community": 61,
+=======
+      "community": 62,
+>>>>>>> origin/main
       "norm_label": "postcss.config.js"
     },
     {
@@ -924,7 +944,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/agent-verify/index.ts",
       "source_location": "L179",
       "id": "index_timeleft",
-      "community": 0,
+      "community": 1,
       "norm_label": "timeleft()"
     },
     {
@@ -933,7 +953,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/agent-discovery/index.ts",
       "source_location": "L3484",
       "id": "index_istimedout",
-      "community": 0,
+      "community": 1,
       "norm_label": "istimedout()"
     },
     {
@@ -1031,26 +1051,41 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "community": 6,
+=======
+      "id": "supabase_functions_search_people_index_ts",
+      "community": 9,
+>>>>>>> origin/main
       "norm_label": "index.ts"
     },
     {
       "label": "normalizeLocationRelation()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L128",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L137",
+>>>>>>> origin/main
       "id": "index_normalizelocationrelation",
-      "community": 6,
+      "community": 9,
       "norm_label": "normalizelocationrelation()"
     },
     {
       "label": "extractKeywords()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L135",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L144",
+>>>>>>> origin/main
       "id": "index_extractkeywords",
-      "community": 6,
+      "community": 10,
       "norm_label": "extractkeywords()"
     },
     {
@@ -1065,55 +1100,85 @@
     {
       "label": "clampScore()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L160",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L169",
+>>>>>>> origin/main
       "id": "index_clampscore",
-      "community": 6,
+      "community": 9,
       "norm_label": "clampscore()"
     },
     {
       "label": "reciprocalRank()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L167",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L176",
+>>>>>>> origin/main
       "id": "index_reciprocalrank",
-      "community": 6,
+      "community": 9,
       "norm_label": "reciprocalrank()"
     },
     {
       "label": "getFieldBoost()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L171",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L180",
+>>>>>>> origin/main
       "id": "index_getfieldboost",
-      "community": 6,
+      "community": 9,
       "norm_label": "getfieldboost()"
     },
     {
       "label": "buildFallbackDocument()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L187",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L196",
+>>>>>>> origin/main
       "id": "index_buildfallbackdocument",
-      "community": 6,
+      "community": 9,
       "norm_label": "buildfallbackdocument()"
     },
     {
       "label": "routeLabel()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L201",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L210",
+>>>>>>> origin/main
       "id": "index_routelabel",
-      "community": 6,
+      "community": 9,
       "norm_label": "routelabel()"
     },
     {
       "label": "truncateSnippet()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L212",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L221",
+>>>>>>> origin/main
       "id": "index_truncatesnippet",
-      "community": 6,
+      "community": 9,
       "norm_label": "truncatesnippet()"
     },
     {
@@ -1386,7 +1451,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 62,
+=======
+      "community": 63,
+>>>>>>> origin/main
       "norm_label": "edge function: discover-contacts",
       "id": "fn_discover_contacts"
     },
@@ -1652,12 +1721,133 @@
       "norm_label": "wraphandler()"
     },
     {
+      "label": "searchCriteria.ts",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L1",
+      "id": "supabase_functions_shared_searchcriteria_ts",
+      "community": 9,
+      "norm_label": "searchcriteria.ts"
+    },
+    {
+      "label": "normalizeText()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L39",
+      "id": "searchcriteria_normalizetext",
+      "community": 9,
+      "norm_label": "normalizetext()"
+    },
+    {
+      "label": "unique()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L47",
+      "id": "searchcriteria_unique",
+      "community": 9,
+      "norm_label": "unique()"
+    },
+    {
+      "label": "termsMatchText()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L51",
+      "id": "searchcriteria_termsmatchtext",
+      "community": 9,
+      "norm_label": "termsmatchtext()"
+    },
+    {
+      "label": "groupMatches()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L60",
+      "id": "searchcriteria_groupmatches",
+      "community": 9,
+      "norm_label": "groupmatches()"
+    },
+    {
+      "label": "normalizeSearchMatchMode()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L64",
+      "id": "searchcriteria_normalizesearchmatchmode",
+      "community": 9,
+      "norm_label": "normalizesearchmatchmode()"
+    },
+    {
+      "label": "emptySearchKeywords()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L68",
+      "id": "searchcriteria_emptysearchkeywords",
+      "community": 9,
+      "norm_label": "emptysearchkeywords()"
+    },
+    {
+      "label": "buildManualFilterKeywords()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L81",
+      "id": "searchcriteria_buildmanualfilterkeywords",
+      "community": 9,
+      "norm_label": "buildmanualfilterkeywords()"
+    },
+    {
+      "label": "mergeSearchKeywords()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L104",
+      "id": "searchcriteria_mergesearchkeywords",
+      "community": 9,
+      "norm_label": "mergesearchkeywords()"
+    },
+    {
+      "label": "calculateStructuredCriteriaCoverage()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L120",
+      "id": "searchcriteria_calculatestructuredcriteriacoverage",
+      "community": 9,
+      "norm_label": "calculatestructuredcriteriacoverage()"
+    },
+    {
+      "label": "criteriaCoveragePasses()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L169",
+      "id": "searchcriteria_criteriacoveragepasses",
+      "community": 9,
+      "norm_label": "criteriacoveragepasses()"
+    },
+    {
+      "label": "normalizePersonScope()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L178",
+      "id": "searchcriteria_normalizepersonscope",
+      "community": 9,
+      "norm_label": "normalizepersonscope()"
+    },
+    {
+      "label": "addCriterionCoverage()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L182",
+      "id": "searchcriteria_addcriterioncoverage",
+      "community": 9,
+      "norm_label": "addcriterioncoverage()"
+    },
+    {
       "label": "aiContracts.ts",
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_aicontracts_ts",
+<<<<<<< HEAD
       "community": 6,
+=======
+      "community": 10,
+>>>>>>> origin/main
       "norm_label": "aicontracts.ts"
     },
     {
@@ -1666,7 +1856,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L108",
       "id": "aicontracts_safestring",
-      "community": 6,
+      "community": 10,
       "norm_label": "safestring()"
     },
     {
@@ -1675,7 +1865,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L113",
       "id": "aicontracts_tolowercasestringarray",
-      "community": 6,
+      "community": 10,
       "norm_label": "tolowercasestringarray()"
     },
     {
@@ -1684,7 +1874,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L120",
       "id": "aicontracts_clampconfidence",
-      "community": 6,
+      "community": 10,
       "norm_label": "clampconfidence()"
     },
     {
@@ -1693,7 +1883,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L126",
       "id": "aicontracts_normalizepersonusnetworkstatus",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizepersonusnetworkstatus()"
     },
     {
@@ -1702,7 +1892,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L151",
       "id": "aicontracts_normalizeparsedcontacts",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizeparsedcontacts()"
     },
     {
@@ -1711,7 +1901,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L208",
       "id": "aicontracts_normalizesmartsearchresult",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizesmartsearchresult()"
     },
     {
@@ -1720,7 +1910,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L233",
       "id": "aicontracts_normalizeflemishsearchresult",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizeflemishsearchresult()"
     },
     {
@@ -1729,7 +1919,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L254",
       "id": "aicontracts_normalizeprofilecheckresult",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizeprofilecheckresult()"
     },
     {
@@ -1738,7 +1928,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L538",
       "id": "aicontracts_buildparsecontactsprompt",
-      "community": 6,
+      "community": 10,
       "norm_label": "buildparsecontactsprompt()"
     },
     {
@@ -1747,7 +1937,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L546",
       "id": "aicontracts_buildsearchprompt",
-      "community": 6,
+      "community": 10,
       "norm_label": "buildsearchprompt()"
     },
     {
@@ -1756,7 +1946,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L550",
       "id": "aicontracts_buildcheckprofileprompt",
-      "community": 6,
+      "community": 10,
       "norm_label": "buildcheckprofileprompt()"
     },
     {
@@ -1765,7 +1955,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L564",
       "id": "aicontracts_buildmergetextprompt",
-      "community": 6,
+      "community": 10,
       "norm_label": "buildmergetextprompt()"
     },
     {
@@ -1774,7 +1964,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L572",
       "id": "aicontracts_normalizemergetextresult",
-      "community": 6,
+      "community": 10,
       "norm_label": "normalizemergetextresult()"
     },
     {
@@ -1783,7 +1973,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L630",
       "id": "aicontracts_isaiagenttask",
-      "community": 6,
+      "community": 10,
       "norm_label": "isaiagenttask()"
     },
     {
@@ -1792,7 +1982,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L634",
       "id": "aicontracts_getaiagenttaskdefinition",
-      "community": 6,
+      "community": 10,
       "norm_label": "getaiagenttaskdefinition()"
     },
     {
@@ -1801,7 +1991,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L638",
       "id": "aicontracts_getfrozenaiagenttasks",
-      "community": 6,
+      "community": 10,
       "norm_label": "getfrozenaiagenttasks()"
     },
     {
@@ -1810,7 +2000,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L646",
       "id": "aicontracts_getaiagenttasks",
-      "community": 6,
+      "community": 10,
       "norm_label": "getaiagenttasks()"
     },
     {
@@ -1819,7 +2009,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L650",
       "id": "aicontracts_getemptysmartsearchkeywords",
-      "community": 6,
+      "community": 10,
       "norm_label": "getemptysmartsearchkeywords()"
     },
     {
@@ -1828,7 +2018,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L664",
       "id": "aicontracts_getemptyflemishsearchkeywords",
-      "community": 6,
+      "community": 10,
       "norm_label": "getemptyflemishsearchkeywords()"
     },
     {
@@ -1837,7 +2027,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_supabase_functions_shared_websearch_ts",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "websearch.ts"
     },
     {
@@ -1846,7 +2040,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L20",
       "id": "websearch_coercecachedresults",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "coercecachedresults()"
     },
     {
@@ -1855,7 +2053,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L47",
       "id": "websearch_searchweb",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "searchweb()"
     },
     {
@@ -1864,7 +2066,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L140",
       "id": "websearch_calltavily",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "calltavily()"
     },
     {
@@ -1873,7 +2079,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L179",
       "id": "websearch_callbrave",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "callbrave()"
     },
     {
@@ -1882,7 +2092,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L215",
       "id": "websearch_getorcreatequota",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "getorcreatequota()"
     },
     {
@@ -1891,7 +2105,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L243",
       "id": "websearch_incrementquota",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "incrementquota()"
     },
     {
@@ -1900,7 +2118,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L252",
       "id": "websearch_cacheresults",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "cacheresults()"
     },
     {
@@ -1909,7 +2131,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/webSearch.ts",
       "source_location": "L276",
       "id": "websearch_formatresultsforllm",
+<<<<<<< HEAD
       "community": 21,
+=======
+      "community": 20,
+>>>>>>> origin/main
       "norm_label": "formatresultsforllm()"
     },
     {
@@ -2177,7 +2403,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 49,
+=======
+      "community": 57,
+>>>>>>> origin/main
       "norm_label": "_shared/gemini.ts (model routing)",
       "id": "shared_gemini"
     },
@@ -2514,7 +2744,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 50,
+=======
+      "community": 56,
+>>>>>>> origin/main
       "norm_label": "_shared/verification.ts (shared verification core)",
       "id": "shared_verification"
     },
@@ -2663,12 +2897,34 @@
       "norm_label": "getapifyusage()"
     },
     {
+      "label": "searchCriteria_test.ts",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/__tests__/searchCriteria_test.ts",
+      "source_location": "L1",
+      "id": "supabase_functions_shared_tests_searchcriteria_test_ts",
+      "community": 9,
+      "norm_label": "searchcriteria_test.ts"
+    },
+    {
+      "label": "emptyKeywords()",
+      "file_type": "code",
+      "source_file": "supabase/functions/_shared/__tests__/searchCriteria_test.ts",
+      "source_location": "L16",
+      "id": "searchcriteria_test_emptykeywords",
+      "community": 9,
+      "norm_label": "emptykeywords()"
+    },
+    {
       "label": "searchRouting_test.ts",
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/__tests__/searchRouting_test.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_supabase_functions_shared_tests_searchrouting_test_ts",
+<<<<<<< HEAD
       "community": 51,
+=======
+      "community": 49,
+>>>>>>> origin/main
       "norm_label": "searchrouting_test.ts"
     },
     {
@@ -2677,7 +2933,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/supabase/functions/_shared/__tests__/searchRouting_test.ts",
       "source_location": "L13",
       "id": "searchrouting_test_emptykeywords",
+<<<<<<< HEAD
       "community": 51,
+=======
+      "community": 49,
+>>>>>>> origin/main
       "norm_label": "emptykeywords()"
     },
     {
@@ -2686,7 +2946,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/__tests__/aiContracts_test.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_tests_aicontracts_test_ts",
+<<<<<<< HEAD
       "community": 6,
+=======
+      "community": 10,
+>>>>>>> origin/main
       "norm_label": "aicontracts_test.ts"
     },
     {
@@ -2983,7 +3247,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_scripts_generate_large_import_fixtures_mjs",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "generate_large_import_fixtures.mjs"
     },
     {
@@ -2992,7 +3260,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L302",
       "id": "generate_large_import_fixtures_slugify",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "slugify()"
     },
     {
@@ -3001,7 +3273,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L311",
       "id": "generate_large_import_fixtures_csvescape",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "csvescape()"
     },
     {
@@ -3010,7 +3286,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L319",
       "id": "generate_large_import_fixtures_pick",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "pick()"
     },
     {
@@ -3019,7 +3299,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L323",
       "id": "generate_large_import_fixtures_occupationfor",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "occupationfor()"
     },
     {
@@ -3028,7 +3312,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L327",
       "id": "generate_large_import_fixtures_titlefor",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "titlefor()"
     },
     {
@@ -3037,7 +3325,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L342",
       "id": "generate_large_import_fixtures_buildbio",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "buildbio()"
     },
     {
@@ -3046,7 +3338,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L371",
       "id": "generate_large_import_fixtures_generatename",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "generatename()"
     },
     {
@@ -3055,7 +3351,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L384",
       "id": "generate_large_import_fixtures_rowfor",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "rowfor()"
     },
     {
@@ -3064,7 +3364,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/generate_large_import_fixtures.mjs",
       "source_location": "L435",
       "id": "generate_large_import_fixtures_tocsv",
+<<<<<<< HEAD
       "community": 18,
+=======
+      "community": 17,
+>>>>>>> origin/main
       "norm_label": "tocsv()"
     },
     {
@@ -3073,7 +3377,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/benchmark_search.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_scripts_benchmark_search_ts",
+<<<<<<< HEAD
       "community": 52,
+=======
+      "community": 50,
+>>>>>>> origin/main
       "norm_label": "benchmark_search.ts"
     },
     {
@@ -3082,7 +3390,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/scripts/benchmark_search.ts",
       "source_location": "L17",
       "id": "benchmark_search_parseargs",
+<<<<<<< HEAD
       "community": 52,
+=======
+      "community": 50,
+>>>>>>> origin/main
       "norm_label": "parseargs()"
     },
     {
@@ -3217,7 +3529,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/vite-env.d.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_vite_env_d_ts",
+<<<<<<< HEAD
       "community": 63,
+=======
+      "community": 64,
+>>>>>>> origin/main
       "norm_label": "vite-env.d.ts"
     },
     {
@@ -3226,7 +3542,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/AddToCollectionDropdown.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_addtocollectiondropdown_tsx",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "addtocollectiondropdown.tsx"
     },
     {
@@ -3235,7 +3555,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/AddToCollectionDropdown.tsx",
       "source_location": "L66",
       "id": "addtocollectiondropdown_handleclickoutside",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleclickoutside()"
     },
     {
@@ -3244,7 +3568,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/AddToCollectionDropdown.tsx",
       "source_location": "L75",
       "id": "addtocollectiondropdown_togglecollection",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "togglecollection()"
     },
     {
@@ -3253,7 +3581,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/AddToCollectionDropdown.tsx",
       "source_location": "L122",
       "id": "addtocollectiondropdown_handlecreatecollection",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlecreatecollection()"
     },
     {
@@ -3262,7 +3594,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionModal.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_collectionmodal_tsx",
-      "community": 9,
+      "community": 8,
       "norm_label": "collectionmodal.tsx"
     },
     {
@@ -3271,7 +3603,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionModal.tsx",
       "source_location": "L29",
       "id": "collectionmodal_handlenext",
-      "community": 9,
+      "community": 8,
       "norm_label": "handlenext()"
     },
     {
@@ -3280,7 +3612,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionModal.tsx",
       "source_location": "L54",
       "id": "collectionmodal_handlefinalsave",
-      "community": 9,
+      "community": 8,
       "norm_label": "handlefinalsave()"
     },
     {
@@ -3289,7 +3621,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionModal.tsx",
       "source_location": "L112",
       "id": "collectionmodal_toggleperson",
-      "community": 9,
+      "community": 8,
       "norm_label": "toggleperson()"
     },
     {
@@ -3388,7 +3720,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/ClusterPopover.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_clusterpopover_tsx",
+<<<<<<< HEAD
       "community": 64,
+=======
+      "community": 65,
+>>>>>>> origin/main
       "norm_label": "clusterpopover.tsx"
     },
     {
@@ -3442,7 +3778,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/PeopleExportMenu.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_peopleexportmenu_tsx",
-      "community": 10,
+      "community": 11,
       "norm_label": "peopleexportmenu.tsx"
     },
     {
@@ -3451,7 +3787,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/PeopleExportMenu.tsx",
       "source_location": "L36",
       "id": "peopleexportmenu_handleclickoutside",
-      "community": 10,
+      "community": 11,
       "norm_label": "handleclickoutside()"
     },
     {
@@ -3460,7 +3796,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/PeopleExportMenu.tsx",
       "source_location": "L48",
       "id": "peopleexportmenu_handleexport",
-      "community": 10,
+      "community": 11,
       "norm_label": "handleexport()"
     },
     {
@@ -3469,7 +3805,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/FilterPanel.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_filterpanel_tsx",
+<<<<<<< HEAD
       "community": 53,
+=======
+      "community": 51,
+>>>>>>> origin/main
       "norm_label": "filterpanel.tsx"
     },
     {
@@ -3478,7 +3818,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/FilterPanel.tsx",
       "source_location": "L37",
       "id": "filterpanel_handlereset",
+<<<<<<< HEAD
       "community": 53,
+=======
+      "community": 51,
+>>>>>>> origin/main
       "norm_label": "handlereset()"
     },
     {
@@ -3491,7 +3835,11 @@
       "author": null,
       "contributor": null,
       "id": "flemishconnectionselector_flemishconnectionselector",
+<<<<<<< HEAD
       "community": 65,
+=======
+      "community": 66,
+>>>>>>> origin/main
       "norm_label": "flemishconnectionselector component"
     },
     {
@@ -3500,7 +3848,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/ProfileAvatar.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_profileavatar_tsx",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "profileavatar.tsx"
     },
     {
@@ -3509,7 +3861,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/ProfileAvatar.tsx",
       "source_location": "L14",
       "id": "profileavatar_sha256hex",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "sha256hex()"
     },
     {
@@ -3518,7 +3874,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/ProfileAvatar.tsx",
       "source_location": "L35",
       "id": "profileavatar_profileavatar",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "profileavatar()"
     },
     {
@@ -3527,7 +3887,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/DirectoryGrid.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_directorygrid_tsx",
+<<<<<<< HEAD
       "community": 66,
+=======
+      "community": 67,
+>>>>>>> origin/main
       "norm_label": "directorygrid.tsx"
     },
     {
@@ -3536,7 +3900,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_collectiondetail_tsx",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "collectiondetail.tsx"
     },
     {
@@ -3545,7 +3913,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L93",
       "id": "collectiondetail_handleremovemember",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleremovemember()"
     },
     {
@@ -3554,7 +3926,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L109",
       "id": "collectiondetail_starteditingnotes",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "starteditingnotes()"
     },
     {
@@ -3563,7 +3939,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L114",
       "id": "collectiondetail_savenotes",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "savenotes()"
     },
     {
@@ -3572,7 +3952,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L137",
       "id": "collectiondetail_handledeletecollection",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handledeletecollection()"
     },
     {
@@ -3581,7 +3965,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L159",
       "id": "collectiondetail_handlefindsimilar",
+<<<<<<< HEAD
       "community": 9,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlefindsimilar()"
     },
     {
@@ -3590,7 +3978,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/CollectionDetail.tsx",
       "source_location": "L197",
       "id": "collectiondetail_handleaddsuggestion",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleaddsuggestion()"
     },
     {
@@ -3656,7 +4048,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 67,
+=======
+      "community": 68,
+>>>>>>> origin/main
       "norm_label": "src/components/navigation.tsx",
       "id": "src_navigation"
     },
@@ -3747,7 +4143,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_admin_discoveredcontactspanel_tsx",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "discoveredcontactspanel.tsx"
     },
     {
@@ -3756,7 +4156,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L115",
       "id": "discoveredcontactspanel_getval",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "getval()"
     },
     {
@@ -3765,7 +4169,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L121",
       "id": "discoveredcontactspanel_checkduplicates",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "checkduplicates()"
     },
     {
@@ -3774,7 +4182,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L181",
       "id": "discoveredcontactspanel_mergetextviaai",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "mergetextviaai()"
     },
     {
@@ -3783,7 +4195,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L205",
       "id": "discoveredcontactspanel_approvecontact",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "approvecontact()"
     },
     {
@@ -3792,7 +4208,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L312",
       "id": "discoveredcontactspanel_mergeintoexisting",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "mergeintoexisting()"
     },
     {
@@ -3801,7 +4221,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L427",
       "id": "discoveredcontactspanel_mergecompare",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "mergecompare()"
     },
     {
@@ -3810,7 +4234,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L925",
       "id": "discoveredcontactspanel_togglesources",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "togglesources()"
     },
     {
@@ -3819,7 +4247,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/DiscoveredContactsPanel.tsx",
       "source_location": "L934",
       "id": "discoveredcontactspanel_toggleevidence",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "toggleevidence()"
     },
     {
@@ -3867,7 +4299,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 68,
+=======
+      "community": 69,
+>>>>>>> origin/main
       "norm_label": "src/components/admin/accessmanagementpanel.tsx",
       "id": "src_access_management_panel"
     },
@@ -3877,7 +4313,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_admin_csvimport_tsx",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "csvimport.tsx"
     },
     {
@@ -3886,7 +4326,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L52",
       "id": "csvimport_normalizestatecode",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "normalizestatecode()"
     },
     {
@@ -3895,7 +4339,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L107",
       "id": "csvimport_geterrormessage",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "geterrormessage()"
     },
     {
@@ -3904,7 +4352,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L111",
       "id": "csvimport_normalizepeoplescope",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "normalizepeoplescope()"
     },
     {
@@ -3913,7 +4365,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L125",
       "id": "csvimport_inferpeoplescope",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "inferpeoplescope()"
     },
     {
@@ -3922,7 +4378,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L138",
       "id": "csvimport_splitmultivalue",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "splitmultivalue()"
     },
     {
@@ -3931,7 +4391,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L145",
       "id": "csvimport_valueat",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "valueat()"
     },
     {
@@ -3940,7 +4404,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L161",
       "id": "csvimport_normalizesectorname",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "normalizesectorname()"
     },
     {
@@ -3949,7 +4417,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L170",
       "id": "csvimport_splitsectorcell",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "splitsectorcell()"
     },
     {
@@ -3958,7 +4430,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L181",
       "id": "csvimport_buildsectorlookup",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "buildsectorlookup()"
     },
     {
@@ -3967,7 +4443,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L191",
       "id": "csvimport_resolvesectorids",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "resolvesectorids()"
     },
     {
@@ -3976,7 +4456,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L216",
       "id": "csvimport_confidencelabel",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "confidencelabel()"
     },
     {
@@ -3985,7 +4469,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L229",
       "id": "csvimport_checkduplicates",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "checkduplicates()"
     },
     {
@@ -3994,7 +4482,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L331",
       "id": "csvimport_handlefile",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handlefile()"
     },
     {
@@ -4003,7 +4495,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L390",
       "id": "csvimport_updatemapping",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "updatemapping()"
     },
     {
@@ -4012,7 +4508,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L400",
       "id": "csvimport_handleconfirm",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handleconfirm()"
     },
     {
@@ -4021,7 +4521,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L415",
       "id": "csvimport_handleimport",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handleimport()"
     },
     {
@@ -4030,7 +4534,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L1103",
       "id": "csvimport_handlebulksectorassign",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handlebulksectorassign()"
     },
     {
@@ -4039,7 +4547,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L1123",
       "id": "csvimport_handlereset",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handlereset()"
     },
     {
@@ -4048,7 +4560,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/CsvImport.tsx",
       "source_location": "L1143",
       "id": "csvimport_handlecancelimport",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "handlecancelimport()"
     },
     {
@@ -4057,7 +4573,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_interactivestatsoverview_tsx",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "interactivestatsoverview.tsx"
     },
     {
@@ -4066,7 +4586,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L88",
       "id": "interactivestatsoverview_hastext",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "hastext()"
     },
     {
@@ -4075,7 +4599,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L92",
       "id": "interactivestatsoverview_buildcitykey",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "buildcitykey()"
     },
     {
@@ -4084,7 +4612,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L96",
       "id": "interactivestatsoverview_parsecitykey",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "parsecitykey()"
     },
     {
@@ -4093,7 +4625,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L101",
       "id": "interactivestatsoverview_buildcounts",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "buildcounts()"
     },
     {
@@ -4102,7 +4638,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L111",
       "id": "interactivestatsoverview_countuniqueby",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "countuniqueby()"
     },
     {
@@ -4111,7 +4651,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L119",
       "id": "interactivestatsoverview_formatbatchnumber",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "formatbatchnumber()"
     },
     {
@@ -4120,7 +4664,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L126",
       "id": "interactivestatsoverview_formatbatchdate",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "formatbatchdate()"
     },
     {
@@ -4129,7 +4677,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveStatsOverview.tsx",
       "source_location": "L136",
       "id": "interactivestatsoverview_statcard",
+<<<<<<< HEAD
       "community": 20,
+=======
+      "community": 19,
+>>>>>>> origin/main
       "norm_label": "statcard()"
     },
     {
@@ -4138,7 +4690,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_admin_adminchatbot_tsx",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "adminchatbot.tsx"
     },
     {
@@ -4147,7 +4703,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L39",
       "id": "adminchatbot_addcontacttodb",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "addcontacttodb()"
     },
     {
@@ -4156,7 +4716,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L102",
       "id": "adminchatbot_updateexistingcontact",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "updateexistingcontact()"
     },
     {
@@ -4165,7 +4729,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L242",
       "id": "adminchatbot_addbot",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "addbot()"
     },
     {
@@ -4174,7 +4742,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L249",
       "id": "adminchatbot_handlesend",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlesend()"
     },
     {
@@ -4183,7 +4755,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L295",
       "id": "adminchatbot_handleadd",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleadd()"
     },
     {
@@ -4192,7 +4768,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L305",
       "id": "adminchatbot_handleaddall",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleaddall()"
     },
     {
@@ -4201,7 +4781,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L318",
       "id": "adminchatbot_handlecompare",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlecompare()"
     },
     {
@@ -4210,7 +4794,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L332",
       "id": "adminchatbot_handleupdate",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleupdate()"
     },
     {
@@ -4219,7 +4807,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L350",
       "id": "adminchatbot_handleaddnewfromcompare",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handleaddnewfromcompare()"
     },
     {
@@ -4228,7 +4820,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AdminChatbot.tsx",
       "source_location": "L363",
       "id": "adminchatbot_handlesaveedit",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlesaveedit()"
     },
     {
@@ -4240,7 +4836,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 69,
+=======
+      "community": 70,
+>>>>>>> origin/main
       "norm_label": "src/components/admin/derivedlabelspanel.tsx",
       "id": "src_derived_labels_panel"
     },
@@ -4253,7 +4853,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 70,
+=======
+      "community": 71,
+>>>>>>> origin/main
       "norm_label": "src/components/admin/contactcard.tsx",
       "id": "src_contact_card"
     },
@@ -4389,7 +4993,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/DataQualityChart.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_dataqualitychart_tsx",
+<<<<<<< HEAD
       "community": 71,
+=======
+      "community": 72,
+>>>>>>> origin/main
       "norm_label": "dataqualitychart.tsx"
     },
     {
@@ -4401,7 +5009,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 72,
+=======
+      "community": 73,
+>>>>>>> origin/main
       "norm_label": "src/components/admin/opsmetricspanel.tsx",
       "id": "src_ops_metrics_panel"
     },
@@ -4438,7 +5050,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/InteractiveBarChart.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_interactivebarchart_tsx",
+<<<<<<< HEAD
       "community": 73,
+=======
+      "community": 74,
+>>>>>>> origin/main
       "norm_label": "interactivebarchart.tsx"
     },
     {
@@ -4627,7 +5243,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/CrossFilterBar.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_crossfilterbar_tsx",
+<<<<<<< HEAD
       "community": 74,
+=======
+      "community": 75,
+>>>>>>> origin/main
       "norm_label": "crossfilterbar.tsx"
     },
     {
@@ -4672,7 +5292,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_components_admin_addcontactpanel_tsx",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "addcontactpanel.tsx"
     },
     {
@@ -4681,7 +5305,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L88",
       "id": "addcontactpanel_emptyusconnection",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "emptyusconnection()"
     },
     {
@@ -4690,7 +5318,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L97",
       "id": "addcontactpanel_createemptyform",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "createemptyform()"
     },
     {
@@ -4699,7 +5331,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L120",
       "id": "addcontactpanel_ensureprotocol",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "ensureprotocol()"
     },
     {
@@ -4708,7 +5344,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L129",
       "id": "addcontactpanel_normalizeconnectionname",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "normalizeconnectionname()"
     },
     {
@@ -4717,7 +5357,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L133",
       "id": "addcontactpanel_reconcileconnections",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "reconcileconnections()"
     },
     {
@@ -4726,7 +5370,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L355",
       "id": "addcontactpanel_checkduplicate",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "checkduplicate()"
     },
     {
@@ -4735,7 +5383,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L388",
       "id": "addcontactpanel_handlesubmit",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "handlesubmit()"
     },
     {
@@ -4744,7 +5396,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L428",
       "id": "addcontactpanel_insertcontact",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "insertcontact()"
     },
     {
@@ -4753,7 +5409,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L577",
       "id": "addcontactpanel_togglesector",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "togglesector()"
     },
     {
@@ -4762,7 +5422,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L586",
       "id": "addcontactpanel_setfield",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "setfield()"
     },
     {
@@ -4771,7 +5435,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L614",
       "id": "addcontactpanel_updateusconnection",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "updateusconnection()"
     },
     {
@@ -4780,7 +5448,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L626",
       "id": "addcontactpanel_removeusconnection",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "removeusconnection()"
     },
     {
@@ -4789,7 +5461,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/components/admin/AddContactPanel.tsx",
       "source_location": "L953",
       "id": "addcontactpanel_async",
+<<<<<<< HEAD
       "community": 13,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "async()"
     },
     {
@@ -4825,7 +5501,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/StructuredErrorBanner.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_structurederrorbanner_tsx",
+<<<<<<< HEAD
       "community": 75,
+=======
+      "community": 76,
+>>>>>>> origin/main
       "norm_label": "structurederrorbanner.tsx"
     },
     {
@@ -4837,7 +5517,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 76,
+=======
+      "community": 77,
+>>>>>>> origin/main
       "norm_label": "src/components/admin/discoveryplanningpanel.tsx",
       "id": "src_discovery_planning_panel"
     },
@@ -4847,7 +5531,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/occupationCategories.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_components_admin_occupationcategories_ts",
+<<<<<<< HEAD
       "community": 54,
+=======
+      "community": 52,
+>>>>>>> origin/main
       "norm_label": "occupationcategories.ts"
     },
     {
@@ -4856,7 +5544,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/components/admin/occupationCategories.ts",
       "source_location": "L40",
       "id": "occupationcategories_classifyperson",
+<<<<<<< HEAD
       "community": 54,
+=======
+      "community": 52,
+>>>>>>> origin/main
       "norm_label": "classifyperson()"
     },
     {
@@ -4868,7 +5560,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 77,
+=======
+      "community": 78,
+>>>>>>> origin/main
       "norm_label": "src/lib/auth.tsx (authprovider)",
       "id": "src_auth_tsx"
     },
@@ -4932,7 +5628,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/locations.ts",
       "source_location": "L175",
       "id": "locations_lookupcity",
+<<<<<<< HEAD
       "community": 8,
+=======
+      "community": 14,
+>>>>>>> origin/main
       "norm_label": "lookupcity()"
     },
     {
@@ -5017,7 +5717,11 @@
       "author": null,
       "contributor": null,
       "id": "flemishconnections_lib",
+<<<<<<< HEAD
       "community": 78,
+=======
+      "community": 79,
+>>>>>>> origin/main
       "norm_label": "flemishconnections lib"
     },
     {
@@ -5026,7 +5730,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/useSmartBack.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_usesmartback_ts",
+<<<<<<< HEAD
       "community": 35,
+=======
+      "community": 36,
+>>>>>>> origin/main
       "norm_label": "usesmartback.ts"
     },
     {
@@ -5035,7 +5743,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/useSmartBack.ts",
       "source_location": "L8",
       "id": "usesmartback_usesmartback",
+<<<<<<< HEAD
       "community": 35,
+=======
+      "community": 36,
+>>>>>>> origin/main
       "norm_label": "usesmartback()"
     },
     {
@@ -5044,7 +5756,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/toast.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_toast_ts",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "toast.ts"
     },
     {
@@ -5053,7 +5769,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/toast.ts",
       "source_location": "L15",
       "id": "toast_notifyerror",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "notifyerror()"
     },
     {
@@ -5062,7 +5782,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/toast.ts",
       "source_location": "L34",
       "id": "toast_notifysuccess",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "notifysuccess()"
     },
     {
@@ -5071,8 +5795,129 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/toast.ts",
       "source_location": "L41",
       "id": "toast_notifyinfo",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "notifyinfo()"
+    },
+    {
+      "label": "matchCriteria.ts",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L1",
+      "id": "src_lib_matchcriteria_ts",
+      "community": 15,
+      "norm_label": "matchcriteria.ts"
+    },
+    {
+      "label": "personSectorNames()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L20",
+      "id": "matchcriteria_personsectornames",
+      "community": 15,
+      "norm_label": "personsectornames()"
+    },
+    {
+      "label": "personMatchesSector()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L41",
+      "id": "matchcriteria_personmatchessector",
+      "community": 15,
+      "norm_label": "personmatchessector()"
+    },
+    {
+      "label": "personMatchesOccupation()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L50",
+      "id": "matchcriteria_personmatchesoccupation",
+      "community": 15,
+      "norm_label": "personmatchesoccupation()"
+    },
+    {
+      "label": "personMatchesFlemishConnection()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L61",
+      "id": "matchcriteria_personmatchesflemishconnection",
+      "community": 15,
+      "norm_label": "personmatchesflemishconnection()"
+    },
+    {
+      "label": "organizationMatchesText()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L65",
+      "id": "matchcriteria_organizationmatchestext",
+      "community": 15,
+      "norm_label": "organizationmatchestext()"
+    },
+    {
+      "label": "buildPersonCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L75",
+      "id": "matchcriteria_buildpersoncriteria",
+      "community": 15,
+      "norm_label": "buildpersoncriteria()"
+    },
+    {
+      "label": "buildOrganizationCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L116",
+      "id": "matchcriteria_buildorganizationcriteria",
+      "community": 15,
+      "norm_label": "buildorganizationcriteria()"
+    },
+    {
+      "label": "applyCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L150",
+      "id": "matchcriteria_applycriteria",
+      "community": 15,
+      "norm_label": "applycriteria()"
+    },
+    {
+      "label": "countActiveMatchCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L170",
+      "id": "matchcriteria_countactivematchcriteria",
+      "community": 15,
+      "norm_label": "countactivematchcriteria()"
+    },
+    {
+      "label": "applyPeopleMatchCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L174",
+      "id": "matchcriteria_applypeoplematchcriteria",
+      "community": 15,
+      "norm_label": "applypeoplematchcriteria()"
+    },
+    {
+      "label": "applyOrganizationMatchCriteria()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L182",
+      "id": "matchcriteria_applyorganizationmatchcriteria",
+      "community": 15,
+      "norm_label": "applyorganizationmatchcriteria()"
+    },
+    {
+      "label": "dashboardSearchCacheScope()",
+      "file_type": "code",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L194",
+      "id": "matchcriteria_dashboardsearchcachescope",
+      "community": 15,
+      "norm_label": "dashboardsearchcachescope()"
     },
     {
       "label": "geocoding.ts",
@@ -5080,7 +5925,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/geocoding.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_geocoding_ts",
+<<<<<<< HEAD
       "community": 55,
+=======
+      "community": 53,
+>>>>>>> origin/main
       "norm_label": "geocoding.ts"
     },
     {
@@ -5089,7 +5938,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/geocoding.ts",
       "source_location": "L5",
       "id": "geocoding_geocodebatch",
+<<<<<<< HEAD
       "community": 55,
+=======
+      "community": 53,
+>>>>>>> origin/main
       "norm_label": "geocodebatch()"
     },
     {
@@ -5097,8 +5950,13 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "community": 11,
+=======
+      "id": "src_lib_approuting_ts",
+      "community": 13,
+>>>>>>> origin/main
       "norm_label": "approuting.ts"
     },
     {
@@ -5107,88 +5965,133 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L16",
       "id": "approuting_normalizeadmintab",
-      "community": 11,
+      "community": 13,
       "norm_label": "normalizeadmintab()"
     },
     {
       "label": "parseBooleanParam()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L31",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L32",
+>>>>>>> origin/main
       "id": "approuting_parsebooleanparam",
-      "community": 11,
+      "community": 13,
       "norm_label": "parsebooleanparam()"
     },
     {
       "label": "sanitizeValues()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L39",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L40",
+>>>>>>> origin/main
       "id": "approuting_sanitizevalues",
-      "community": 11,
+      "community": 13,
       "norm_label": "sanitizevalues()"
     },
     {
       "label": "normalizePage()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L45",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L46",
+>>>>>>> origin/main
       "id": "approuting_normalizepage",
-      "community": 11,
+      "community": 13,
       "norm_label": "normalizepage()"
     },
     {
       "label": "defaultDashboardRouteState()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L51",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L52",
+>>>>>>> origin/main
       "id": "approuting_defaultdashboardroutestate",
-      "community": 11,
+      "community": 13,
       "norm_label": "defaultdashboardroutestate()"
     },
     {
       "label": "buildDashboardStateFromPreset()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L60",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L62",
+>>>>>>> origin/main
       "id": "approuting_builddashboardstatefrompreset",
-      "community": 11,
+      "community": 13,
       "norm_label": "builddashboardstatefrompreset()"
     },
     {
       "label": "parseDashboardRouteState()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L82",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L84",
+>>>>>>> origin/main
       "id": "approuting_parsedashboardroutestate",
-      "community": 11,
+      "community": 13,
       "norm_label": "parsedashboardroutestate()"
     },
     {
       "label": "buildDashboardSearchParams()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L120",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L123",
+>>>>>>> origin/main
       "id": "approuting_builddashboardsearchparams",
-      "community": 11,
+      "community": 13,
       "norm_label": "builddashboardsearchparams()"
     },
     {
       "label": "buildDashboardLocation()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L156",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L160",
+>>>>>>> origin/main
       "id": "approuting_builddashboardlocation",
-      "community": 11,
+      "community": 13,
       "norm_label": "builddashboardlocation()"
     },
     {
       "label": "getCurrentPageFromPathname()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L167",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L171",
+>>>>>>> origin/main
       "id": "approuting_getcurrentpagefrompathname",
-      "community": 11,
+      "community": 13,
       "norm_label": "getcurrentpagefrompathname()"
     },
     {
@@ -5197,7 +6100,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_exportservice_ts",
-      "community": 10,
+      "community": 11,
       "norm_label": "exportservice.ts"
     },
     {
@@ -5206,7 +6109,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L29",
       "id": "exportservice_escapecsvfield",
-      "community": 10,
+      "community": 11,
       "norm_label": "escapecsvfield()"
     },
     {
@@ -5215,7 +6118,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L37",
       "id": "exportservice_persontoexportfields",
-      "community": 10,
+      "community": 11,
       "norm_label": "persontoexportfields()"
     },
     {
@@ -5224,7 +6127,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L57",
       "id": "exportservice_persontocsvrow",
-      "community": 10,
+      "community": 11,
       "norm_label": "persontocsvrow()"
     },
     {
@@ -5233,7 +6136,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L61",
       "id": "exportservice_enrichpeopleforexport",
-      "community": 10,
+      "community": 11,
       "norm_label": "enrichpeopleforexport()"
     },
     {
@@ -5242,7 +6145,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L86",
       "id": "exportservice_filenamewithextension",
-      "community": 10,
+      "community": 11,
       "norm_label": "filenamewithextension()"
     },
     {
@@ -5251,7 +6154,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L91",
       "id": "exportservice_setworksheetcolumnwidths",
-      "community": 10,
+      "community": 11,
       "norm_label": "setworksheetcolumnwidths()"
     },
     {
@@ -5260,7 +6163,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L100",
       "id": "exportservice_buildpeoplecsv",
-      "community": 10,
+      "community": 11,
       "norm_label": "buildpeoplecsv()"
     },
     {
@@ -5269,7 +6172,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L104",
       "id": "exportservice_buildpeopleworksheetdata",
-      "community": 10,
+      "community": 11,
       "norm_label": "buildpeopleworksheetdata()"
     },
     {
@@ -5278,7 +6181,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L108",
       "id": "exportservice_exportpeopletocsv",
-      "community": 10,
+      "community": 11,
       "norm_label": "exportpeopletocsv()"
     },
     {
@@ -5287,7 +6190,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L115",
       "id": "exportservice_exportpeopletoexcel",
-      "community": 10,
+      "community": 11,
       "norm_label": "exportpeopletoexcel()"
     },
     {
@@ -5296,7 +6199,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L128",
       "id": "exportservice_printcollectionbriefing",
-      "community": 10,
+      "community": 11,
       "norm_label": "printcollectionbriefing()"
     },
     {
@@ -5305,7 +6208,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L221",
       "id": "exportservice_downloadfile",
-      "community": 10,
+      "community": 11,
       "norm_label": "downloadfile()"
     },
     {
@@ -5314,7 +6217,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/exportService.ts",
       "source_location": "L233",
       "id": "exportservice_escapehtml",
-      "community": 10,
+      "community": 11,
       "norm_label": "escapehtml()"
     },
     {
@@ -5322,158 +6225,246 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "community": 9,
+=======
+      "id": "src_lib_aiservice_ts",
+      "community": 8,
+>>>>>>> origin/main
       "norm_label": "aiservice.ts"
     },
     {
       "label": "uniqueTerms()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L38",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L43",
+>>>>>>> origin/main
       "id": "aiservice_uniqueterms",
-      "community": 9,
+      "community": 8,
       "norm_label": "uniqueterms()"
     },
     {
       "label": "buildFallbackTerms()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L42",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L47",
+>>>>>>> origin/main
       "id": "aiservice_buildfallbackterms",
-      "community": 9,
+      "community": 8,
       "norm_label": "buildfallbackterms()"
     },
     {
       "label": "buildFallbackKeywords()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L62",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L67",
+>>>>>>> origin/main
       "id": "aiservice_buildfallbackkeywords",
-      "community": 9,
+      "community": 8,
       "norm_label": "buildfallbackkeywords()"
     },
     {
       "label": "callAI()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L121",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L126",
+>>>>>>> origin/main
       "id": "aiservice_callai",
-      "community": 9,
+      "community": 8,
       "norm_label": "callai()"
     },
     {
       "label": "parseContacts()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L147",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L152",
+>>>>>>> origin/main
       "id": "aiservice_parsecontacts",
-      "community": 9,
+      "community": 8,
       "norm_label": "parsecontacts()"
     },
     {
       "label": "discoverContacts()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L194",
       "id": "aiservice_discovercontacts",
       "community": 3,
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L199",
+      "id": "aiservice_discovercontacts",
+      "community": 8,
+>>>>>>> origin/main
       "norm_label": "discovercontacts()"
     },
     {
       "label": "smartSearch()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L236",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L241",
+>>>>>>> origin/main
       "id": "aiservice_smartsearch",
-      "community": 9,
+      "community": 8,
       "norm_label": "smartsearch()"
     },
     {
       "label": "getIndexedString()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L267",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L272",
+>>>>>>> origin/main
       "id": "aiservice_getindexedstring",
-      "community": 9,
+      "community": 8,
       "norm_label": "getindexedstring()"
     },
     {
       "label": "getNestedString()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L277",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L282",
+>>>>>>> origin/main
       "id": "aiservice_getnestedstring",
-      "community": 9,
+      "community": 8,
       "norm_label": "getnestedstring()"
     },
     {
       "label": "scorePersonAgainstKeywords()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L290",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L295",
+>>>>>>> origin/main
       "id": "aiservice_scorepersonagainstkeywords",
-      "community": 9,
+      "community": 8,
       "norm_label": "scorepersonagainstkeywords()"
     },
     {
       "label": "scorePersonAgainstFilter()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L337",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L342",
+>>>>>>> origin/main
       "id": "aiservice_scorepersonagainstfilter",
-      "community": 9,
+      "community": 8,
       "norm_label": "scorepersonagainstfilter()"
     },
     {
       "label": "flemishSearch()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L366",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L371",
+>>>>>>> origin/main
       "id": "aiservice_flemishsearch",
-      "community": 9,
+      "community": 8,
       "norm_label": "flemishsearch()"
     },
     {
       "label": "suggestPeopleEmbedding()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L402",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L407",
+>>>>>>> origin/main
       "id": "aiservice_suggestpeopleembedding",
-      "community": 9,
+      "community": 8,
       "norm_label": "suggestpeopleembedding()"
     },
     {
       "label": "suggestPeople()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L469",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L474",
+>>>>>>> origin/main
       "id": "aiservice_suggestpeople",
-      "community": 9,
+      "community": 8,
       "norm_label": "suggestpeople()"
     },
     {
       "label": "hybridSearch()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L533",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L538",
+>>>>>>> origin/main
       "id": "aiservice_hybridsearch",
-      "community": 9,
+      "community": 8,
       "norm_label": "hybridsearch()"
     },
     {
       "label": "logSearchClick()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L610",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L631",
+>>>>>>> origin/main
       "id": "aiservice_logsearchclick",
-      "community": 9,
+      "community": 8,
       "norm_label": "logsearchclick()"
     },
     {
-      "label": "src/lib/dashboardSession.ts",
-      "file_type": "document",
+      "label": "dashboardSession.ts",
+      "file_type": "code",
       "source_file": "src/lib/dashboardSession.ts",
+<<<<<<< HEAD
       "source_location": null,
       "source_url": null,
       "captured_at": null,
@@ -5482,6 +6473,84 @@
       "community": 79,
       "norm_label": "src/lib/dashboardsession.ts",
       "id": "src_dashboard_session"
+=======
+      "source_location": "L1",
+      "id": "src_lib_dashboardsession_ts",
+      "community": 21,
+      "norm_label": "dashboardsession.ts"
+    },
+    {
+      "label": "canUseSessionStorage()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L16",
+      "id": "dashboardsession_canusesessionstorage",
+      "community": 21,
+      "norm_label": "canusesessionstorage()"
+    },
+    {
+      "label": "normalizeQuery()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L20",
+      "id": "dashboardsession_normalizequery",
+      "community": 21,
+      "norm_label": "normalizequery()"
+    },
+    {
+      "label": "readSearchCache()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L24",
+      "id": "dashboardsession_readsearchcache",
+      "community": 21,
+      "norm_label": "readsearchcache()"
+    },
+    {
+      "label": "writeSearchCache()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L37",
+      "id": "dashboardsession_writesearchcache",
+      "community": 21,
+      "norm_label": "writesearchcache()"
+    },
+    {
+      "label": "getCachedDashboardSearch()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L47",
+      "id": "dashboardsession_getcacheddashboardsearch",
+      "community": 21,
+      "norm_label": "getcacheddashboardsearch()"
+    },
+    {
+      "label": "setCachedDashboardSearch()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L63",
+      "id": "dashboardsession_setcacheddashboardsearch",
+      "community": 21,
+      "norm_label": "setcacheddashboardsearch()"
+    },
+    {
+      "label": "setLastDashboardLocation()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L85",
+      "id": "dashboardsession_setlastdashboardlocation",
+      "community": 21,
+      "norm_label": "setlastdashboardlocation()"
+    },
+    {
+      "label": "getLastDashboardLocation()",
+      "file_type": "code",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L95",
+      "id": "dashboardsession_getlastdashboardlocation",
+      "community": 21,
+      "norm_label": "getlastdashboardlocation()"
+>>>>>>> origin/main
     },
     {
       "label": "filterParser.ts",
@@ -5489,7 +6558,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/filterParser.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_filterparser_ts",
+<<<<<<< HEAD
       "community": 36,
+=======
+      "community": 35,
+>>>>>>> origin/main
       "norm_label": "filterparser.ts"
     },
     {
@@ -5498,7 +6571,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/filterParser.ts",
       "source_location": "L136",
       "id": "filterparser_normalizequeryterm",
+<<<<<<< HEAD
       "community": 36,
+=======
+      "community": 35,
+>>>>>>> origin/main
       "norm_label": "normalizequeryterm()"
     },
     {
@@ -5507,7 +6584,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/filterParser.ts",
       "source_location": "L140",
       "id": "filterparser_islocationonlyquery",
+<<<<<<< HEAD
       "community": 36,
+=======
+      "community": 35,
+>>>>>>> origin/main
       "norm_label": "islocationonlyquery()"
     },
     {
@@ -5516,7 +6597,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/filterParser.ts",
       "source_location": "L154",
       "id": "filterparser_parsefiltersfromquery",
+<<<<<<< HEAD
       "community": 36,
+=======
+      "community": 35,
+>>>>>>> origin/main
       "norm_label": "parsefiltersfromquery()"
     },
     {
@@ -5524,53 +6609,93 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "community": 3,
+=======
+      "id": "src_lib_supabase_ts",
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "supabase.ts"
     },
     {
       "label": "displayName()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L68",
       "id": "supabase_displayname",
       "community": 3,
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L72",
+      "id": "supabase_displayname",
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "displayname()"
     },
     {
       "label": "personInitials()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L78",
       "id": "supabase_personinitials",
       "community": 3,
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L82",
+      "id": "supabase_personinitials",
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "personinitials()"
     },
     {
       "label": "parseTitleFromName()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L87",
       "id": "supabase_parsetitlefromname",
       "community": 3,
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L91",
+      "id": "supabase_parsetitlefromname",
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "parsetitlefromname()"
     },
     {
       "label": "personNamePartsForInsert()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L101",
       "id": "supabase_personnamepartsforinsert",
       "community": 3,
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L105",
+      "id": "supabase_personnamepartsforinsert",
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "personnamepartsforinsert()"
     },
     {
       "label": "fuzzyMatch()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L397",
       "id": "supabase_fuzzymatch",
       "community": 3,
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L403",
+      "id": "supabase_fuzzymatch",
+      "community": 15,
+>>>>>>> origin/main
       "norm_label": "fuzzymatch()"
     },
     {
@@ -5579,7 +6704,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/embeddingRefresh.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_embeddingrefresh_ts",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "embeddingrefresh.ts"
     },
     {
@@ -5588,7 +6717,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/embeddingRefresh.ts",
       "source_location": "L3",
       "id": "embeddingrefresh_kickembeddingworker",
+<<<<<<< HEAD
       "community": 3,
+=======
+      "community": 2,
+>>>>>>> origin/main
       "norm_label": "kickembeddingworker()"
     },
     {
@@ -5597,7 +6730,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_lib_csvparser_ts",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "csvparser.ts"
     },
     {
@@ -5606,7 +6743,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L310",
       "id": "csvparser_parsecsv",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "parsecsv()"
     },
     {
@@ -5615,7 +6756,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L372",
       "id": "csvparser_levenshtein",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "levenshtein()"
     },
     {
@@ -5624,7 +6769,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L399",
       "id": "csvparser_similarity",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "similarity()"
     },
     {
@@ -5633,7 +6782,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L416",
       "id": "csvparser_bestmatch",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "bestmatch()"
     },
     {
@@ -5642,7 +6795,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L451",
       "id": "csvparser_suggestmappings",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "suggestmappings()"
     },
     {
@@ -5651,7 +6808,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L491",
       "id": "csvparser_applymappings",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "applymappings()"
     },
     {
@@ -5660,7 +6821,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L535",
       "id": "csvparser_validatemappedrows",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "validatemappedrows()"
     },
     {
@@ -5669,7 +6834,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L573",
       "id": "csvparser_parseexcel",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "parseexcel()"
     },
     {
@@ -5678,7 +6847,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/csvParser.ts",
       "source_location": "L645",
       "id": "csvparser_downloadtemplate",
+<<<<<<< HEAD
       "community": 7,
+=======
+      "community": 6,
+>>>>>>> origin/main
       "norm_label": "downloadtemplate()"
     },
     {
@@ -5781,7 +6954,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/edgeError.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_edgeerror_ts",
-      "community": 9,
+      "community": 8,
       "norm_label": "edgeerror.ts"
     },
     {
@@ -5790,7 +6963,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/edgeError.ts",
       "source_location": "L22",
       "id": "edgeerror_edgefunctionerror",
-      "community": 9,
+      "community": 8,
       "norm_label": "edgefunctionerror"
     },
     {
@@ -5799,7 +6972,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/edgeError.ts",
       "source_location": "L26",
       "id": "edgeerror_edgefunctionerror_constructor",
-      "community": 9,
+      "community": 8,
       "norm_label": ".constructor()"
     },
     {
@@ -5808,7 +6981,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/edgeError.ts",
       "source_location": "L34",
       "id": "edgeerror_extractedgeerror",
-      "community": 9,
+      "community": 8,
       "norm_label": "extractedgeerror()"
     },
     {
@@ -5817,7 +6990,7 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/edgeError.ts",
       "source_location": "L74",
       "id": "edgeerror_describeerror",
-      "community": 9,
+      "community": 8,
       "norm_label": "describeerror()"
     },
     {
@@ -5952,7 +7125,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/__tests__/filterParser.test.ts",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_lib_tests_filterparser_test_ts",
+<<<<<<< HEAD
       "community": 56,
+=======
+      "community": 54,
+>>>>>>> origin/main
       "norm_label": "filterparser.test.ts"
     },
     {
@@ -5961,15 +7138,23 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/__tests__/filterParser.test.ts",
       "source_location": "L5",
       "id": "filterparser_test_base",
+<<<<<<< HEAD
       "community": 56,
+=======
+      "community": 54,
+>>>>>>> origin/main
       "norm_label": "base()"
     },
     {
       "label": "dashboardSession.test.ts",
       "file_type": "code",
-      "source_file": "/Users/arend/Developer/flemish-network/src/lib/__tests__/dashboardSession.test.ts",
+      "source_file": "src/lib/__tests__/dashboardSession.test.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_src_lib_tests_dashboardsession_test_ts",
+=======
+      "id": "src_lib_tests_dashboardsession_test_ts",
+>>>>>>> origin/main
       "community": 81,
       "norm_label": "dashboardsession.test.ts"
     },
@@ -6019,6 +7204,24 @@
       "norm_label": "organization()"
     },
     {
+      "label": "matchCriteria.test.ts",
+      "file_type": "code",
+      "source_file": "src/lib/__tests__/matchCriteria.test.ts",
+      "source_location": "L1",
+      "id": "src_lib_tests_matchcriteria_test_ts",
+      "community": 55,
+      "norm_label": "matchcriteria.test.ts"
+    },
+    {
+      "label": "person()",
+      "file_type": "code",
+      "source_file": "src/lib/__tests__/matchCriteria.test.ts",
+      "source_location": "L8",
+      "id": "matchcriteria_test_person",
+      "community": 55,
+      "norm_label": "person()"
+    },
+    {
       "label": "csvParser.test.ts",
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/__tests__/csvParser.test.ts",
@@ -6041,8 +7244,13 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/__tests__/appRouting.test.ts",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_lib_tests_approuting_test_ts",
       "community": 11,
+=======
+      "id": "src_lib_tests_approuting_test_ts",
+      "community": 13,
+>>>>>>> origin/main
       "norm_label": "approuting.test.ts"
     },
     {
@@ -6051,7 +7259,7 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/__tests__/appRouting.test.ts",
       "source_location": "L14",
       "id": "approuting_test_roundtrip",
-      "community": 11,
+      "community": 13,
       "norm_label": "roundtrip()"
     },
     {
@@ -6072,17 +7280,27 @@
       "file_type": "code",
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/Dashboard.tsx",
       "source_location": "L1",
+<<<<<<< HEAD
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_pages_dashboard_tsx",
       "community": 11,
+=======
+      "id": "src_pages_dashboard_tsx",
+      "community": 13,
+>>>>>>> origin/main
       "norm_label": "dashboard.tsx"
     },
     {
       "label": "toSearchParams()",
       "file_type": "code",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/Dashboard.tsx",
       "source_location": "L53",
+=======
+      "source_file": "src/pages/Dashboard.tsx",
+      "source_location": "L58",
+>>>>>>> origin/main
       "id": "dashboard_tosearchparams",
-      "community": 11,
+      "community": 13,
       "norm_label": "tosearchparams()"
     },
     {
@@ -6104,7 +7322,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/pages/AddContact.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_src_pages_addcontact_tsx",
+<<<<<<< HEAD
       "community": 35,
+=======
+      "community": 36,
+>>>>>>> origin/main
       "norm_label": "addcontact.tsx"
     },
     {
@@ -6113,7 +7335,11 @@
       "source_file": "/Users/arend/Developer/flemish-network/src/pages/AddContact.tsx",
       "source_location": "L12",
       "id": "addcontact_addcontact",
+<<<<<<< HEAD
       "community": 35,
+=======
+      "community": 36,
+>>>>>>> origin/main
       "norm_label": "addcontact()"
     },
     {
@@ -6257,7 +7483,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L1",
       "id": "users_arend_developer_flemish_network_based_vs_connected_src_pages_organizationprofile_tsx",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "organizationprofile.tsx"
     },
     {
@@ -6266,7 +7496,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L42",
       "id": "organizationprofile_ensureprotocol",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "ensureprotocol()"
     },
     {
@@ -6275,7 +7509,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L116",
       "id": "organizationprofile_startediting",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "startediting()"
     },
     {
@@ -6284,7 +7522,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L134",
       "id": "organizationprofile_cancelediting",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "cancelediting()"
     },
     {
@@ -6293,7 +7535,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L142",
       "id": "organizationprofile_saveedits",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "saveedits()"
     },
     {
@@ -6302,7 +7548,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L214",
       "id": "organizationprofile_toggleeditsector",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "toggleeditsector()"
     },
     {
@@ -6311,7 +7561,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L220",
       "id": "organizationprofile_toggleeditflemish",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "toggleeditflemish()"
     },
     {
@@ -6320,7 +7574,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L226",
       "id": "organizationprofile_handleaddcustomflemish",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "handleaddcustomflemish()"
     },
     {
@@ -6329,7 +7587,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L236",
       "id": "organizationprofile_setfield",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "setfield()"
     },
     {
@@ -6338,7 +7600,11 @@
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/OrganizationProfile.tsx",
       "source_location": "L504",
       "id": "organizationprofile_organizationuslocationlabel",
+<<<<<<< HEAD
       "community": 19,
+=======
+      "community": 18,
+>>>>>>> origin/main
       "norm_label": "organizationuslocationlabel()"
     },
     {
@@ -6391,6 +7657,19 @@
       "norm_label": "handlesavecollection()"
     },
     {
+      "label": "src/lib/dashboardSession.ts",
+      "file_type": "document",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "community": 90,
+      "norm_label": "src/lib/dashboardsession.ts",
+      "id": "src_dashboard_session"
+    },
+    {
       "label": "Edge Function: search-contacts (legacy alias)",
       "file_type": "document",
       "source_file": "supabase/functions/search-contacts/index.ts",
@@ -6399,7 +7678,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 90,
+=======
+      "community": 91,
+>>>>>>> origin/main
       "norm_label": "edge function: search-contacts (legacy alias)",
       "id": "fn_search_contacts"
     },
@@ -6412,7 +7695,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 91,
+=======
+      "community": 92,
+>>>>>>> origin/main
       "norm_label": "_shared/aicontracts.ts (shared prompts/schemas)",
       "id": "shared_ai_contracts"
     },
@@ -6425,7 +7712,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 92,
+=======
+      "community": 93,
+>>>>>>> origin/main
       "norm_label": "_shared/database.types.ts (deno schema shim)",
       "id": "shared_database_types"
     },
@@ -6438,7 +7729,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 93,
+=======
+      "community": 94,
+>>>>>>> origin/main
       "norm_label": "src/lib/approuting.ts",
       "id": "src_app_routing"
     },
@@ -6451,7 +7746,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 94,
+=======
+      "community": 95,
+>>>>>>> origin/main
       "norm_label": "src/lib/filterparser.ts",
       "id": "src_filter_parser"
     },
@@ -6464,7 +7763,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 95,
+=======
+      "community": 96,
+>>>>>>> origin/main
       "norm_label": "src/pages/dashboard.tsx",
       "id": "src_dashboard"
     },
@@ -6477,7 +7780,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 96,
+=======
+      "community": 97,
+>>>>>>> origin/main
       "norm_label": "index.html (app entry point)",
       "id": "index_html"
     },
@@ -6490,7 +7797,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 97,
+=======
+      "community": 98,
+>>>>>>> origin/main
       "norm_label": "agents.md (graphify rules)",
       "id": "agents_md"
     },
@@ -6503,7 +7814,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 98,
+=======
+      "community": 99,
+>>>>>>> origin/main
       "norm_label": "ai strategy document",
       "id": "ai_strategy"
     },
@@ -6581,7 +7896,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 99,
+=======
+      "community": 100,
+>>>>>>> origin/main
       "norm_label": "concept: entity-pivot discovery",
       "id": "concept_entity_pivot"
     },
@@ -6594,7 +7913,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 100,
+=======
+      "community": 101,
+>>>>>>> origin/main
       "norm_label": "concept: geographic gap-seeking coverage",
       "id": "concept_geo_gap_seeking"
     },
@@ -6607,7 +7930,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 50,
+=======
+      "community": 56,
+>>>>>>> origin/main
       "norm_label": "concept: verification field risk routing",
       "id": "concept_field_risk_routing"
     },
@@ -6620,7 +7947,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 101,
+=======
+      "community": 102,
+>>>>>>> origin/main
       "norm_label": "concept: bio-chunk vectors",
       "id": "concept_bio_chunk_vectors"
     },
@@ -6633,7 +7964,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 49,
+=======
+      "community": 57,
+>>>>>>> origin/main
       "norm_label": "rationale: stable gemini 2.5 as production defaults",
       "id": "rationale_stable_models"
     },
@@ -6659,7 +7994,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 102,
+=======
+      "community": 103,
+>>>>>>> origin/main
       "norm_label": "rationale: conservative connection graph edges",
       "id": "rationale_connections_conservative"
     },
@@ -6672,7 +8011,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 103,
+=======
+      "community": 104,
+>>>>>>> origin/main
       "norm_label": "dashboard route /",
       "id": "routes_dashboard"
     },
@@ -6685,7 +8028,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 104,
+=======
+      "community": 105,
+>>>>>>> origin/main
       "norm_label": "person profile route /people/:id",
       "id": "routes_person_profile"
     },
@@ -6698,7 +8045,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 105,
+=======
+      "community": 106,
+>>>>>>> origin/main
       "norm_label": "organization profile route /organizations/:id",
       "id": "routes_org_profile"
     },
@@ -6711,7 +8062,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 106,
+=======
+      "community": 107,
+>>>>>>> origin/main
       "norm_label": "collections route /collections",
       "id": "routes_collections"
     },
@@ -6724,7 +8079,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 107,
+=======
+      "community": 108,
+>>>>>>> origin/main
       "norm_label": "admin route /admin",
       "id": "routes_admin"
     },
@@ -6737,7 +8096,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 108,
+=======
+      "community": 109,
+>>>>>>> origin/main
       "norm_label": "add contact route /contacts/new",
       "id": "routes_contacts_new"
     },
@@ -6750,7 +8113,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 109,
+=======
+      "community": 110,
+>>>>>>> origin/main
       "norm_label": "login route /login",
       "id": "routes_login"
     },
@@ -6763,7 +8130,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 110,
+=======
+      "community": 111,
+>>>>>>> origin/main
       "norm_label": "auth callback route /auth/callback",
       "id": "routes_auth_callback"
     },
@@ -6776,7 +8147,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 111,
+=======
+      "community": 112,
+>>>>>>> origin/main
       "norm_label": "account route /account",
       "id": "routes_account"
     },
@@ -6789,7 +8164,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 112,
+=======
+      "community": 113,
+>>>>>>> origin/main
       "norm_label": "gemini_api_key secret",
       "id": "env_gemini_api_key"
     },
@@ -6802,7 +8181,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 113,
+=======
+      "community": 114,
+>>>>>>> origin/main
       "norm_label": "tavily_api_key secret",
       "id": "env_tavily_api_key"
     },
@@ -6815,7 +8198,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 114,
+=======
+      "community": 115,
+>>>>>>> origin/main
       "norm_label": "brave_api_key secret",
       "id": "env_brave_api_key"
     },
@@ -6828,7 +8215,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 115,
+=======
+      "community": 116,
+>>>>>>> origin/main
       "norm_label": "apify_token secret",
       "id": "env_apify_token"
     },
@@ -6841,7 +8232,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 116,
+=======
+      "community": 117,
+>>>>>>> origin/main
       "norm_label": "supabase_service_role_key secret",
       "id": "env_supabase_service_role_key"
     },
@@ -6854,7 +8249,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 117,
+=======
+      "community": 118,
+>>>>>>> origin/main
       "norm_label": "gemini model override env vars",
       "id": "env_gemini_model_overrides"
     },
@@ -6867,7 +8266,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 118,
+=======
+      "community": 119,
+>>>>>>> origin/main
       "norm_label": "vite_supabase_url frontend env",
       "id": "env_vite_supabase_url"
     },
@@ -6880,7 +8283,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 119,
+=======
+      "community": 120,
+>>>>>>> origin/main
       "norm_label": "vite_supabase_anon_key frontend env",
       "id": "env_vite_supabase_anon_key"
     },
@@ -6893,7 +8300,11 @@
       "captured_at": null,
       "author": null,
       "contributor": null,
+<<<<<<< HEAD
       "community": 120,
+=======
+      "community": 121,
+>>>>>>> origin/main
       "norm_label": "phase 0 benchmarks readme",
       "id": "benchmarks_readme"
     },
@@ -10919,6 +12330,7 @@
     {
       "relation": "imports_from",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L2",
       "weight": 1.0,
@@ -10926,13 +12338,27 @@
       "_tgt": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_aicontracts_ts",
       "source": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "target": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_aicontracts_ts",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_src": "supabase_functions_search_people_index_ts",
+      "_tgt": "supabase_functions_shared_searchcriteria_ts",
+      "source": "supabase_functions_search_people_index_ts",
+      "target": "supabase_functions_shared_searchcriteria_ts",
+>>>>>>> origin/main
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L128",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L137",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_normalizelocationrelation",
@@ -10943,8 +12369,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L135",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L144",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_extractkeywords",
@@ -10955,8 +12386,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L152",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L161",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_getembedding",
@@ -10967,8 +12403,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L160",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L169",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_clampscore",
@@ -10979,8 +12420,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L167",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L176",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_reciprocalrank",
@@ -10991,8 +12437,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L171",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L180",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_getfieldboost",
@@ -11003,8 +12454,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L187",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L196",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_buildfallbackdocument",
@@ -11015,8 +12471,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L201",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L210",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_routelabel",
@@ -11027,8 +12488,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/search-people/index.ts",
       "source_location": "L212",
+=======
+      "source_file": "supabase/functions/search-people/index.ts",
+      "source_location": "L221",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_search_people_index_ts",
       "_tgt": "index_truncatesnippet",
@@ -12695,9 +14161,267 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
       "source_location": "L108",
       "weight": 1.0,
+=======
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L39",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_normalizetext",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_normalizetext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L47",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_unique",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_unique",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_termsmatchtext",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_termsmatchtext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L60",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_groupmatches",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_groupmatches",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L64",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_normalizesearchmatchmode",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_normalizesearchmatchmode",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L68",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_emptysearchkeywords",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_emptysearchkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L81",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_buildmanualfilterkeywords",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_buildmanualfilterkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L104",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_mergesearchkeywords",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_mergesearchkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L120",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_calculatestructuredcriteriacoverage",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_calculatestructuredcriteriacoverage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L169",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_criteriacoveragepasses",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_criteriacoveragepasses",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L178",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_normalizepersonscope",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_normalizepersonscope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_searchcriteria_ts",
+      "_tgt": "searchcriteria_addcriterioncoverage",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "searchcriteria_addcriterioncoverage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/__tests__/searchCriteria_test.ts",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_tests_searchcriteria_test_ts",
+      "_tgt": "supabase_functions_shared_searchcriteria_ts",
+      "source": "supabase_functions_shared_searchcriteria_ts",
+      "target": "supabase_functions_shared_tests_searchcriteria_test_ts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L52",
+      "weight": 1.0,
+      "_src": "searchcriteria_termsmatchtext",
+      "_tgt": "searchcriteria_normalizetext",
+      "source": "searchcriteria_normalizetext",
+      "target": "searchcriteria_termsmatchtext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "searchcriteria_termsmatchtext",
+      "_tgt": "searchcriteria_unique",
+      "source": "searchcriteria_unique",
+      "target": "searchcriteria_termsmatchtext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L111",
+      "weight": 1.0,
+      "_src": "searchcriteria_mergesearchkeywords",
+      "_tgt": "searchcriteria_unique",
+      "source": "searchcriteria_unique",
+      "target": "searchcriteria_mergesearchkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L61",
+      "weight": 1.0,
+      "_src": "searchcriteria_groupmatches",
+      "_tgt": "searchcriteria_termsmatchtext",
+      "source": "searchcriteria_termsmatchtext",
+      "target": "searchcriteria_groupmatches",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L127",
+      "weight": 1.0,
+      "_src": "searchcriteria_calculatestructuredcriteriacoverage",
+      "_tgt": "searchcriteria_termsmatchtext",
+      "source": "searchcriteria_termsmatchtext",
+      "target": "searchcriteria_calculatestructuredcriteriacoverage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L154",
+      "weight": 1.0,
+      "_src": "searchcriteria_calculatestructuredcriteriacoverage",
+      "_tgt": "searchcriteria_groupmatches",
+      "source": "searchcriteria_groupmatches",
+      "target": "searchcriteria_calculatestructuredcriteriacoverage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L84",
+      "weight": 1.0,
+      "_src": "searchcriteria_buildmanualfilterkeywords",
+      "_tgt": "searchcriteria_emptysearchkeywords",
+      "source": "searchcriteria_emptysearchkeywords",
+      "target": "searchcriteria_buildmanualfilterkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/searchCriteria.ts",
+      "source_location": "L108",
+      "weight": 1.0,
+      "_src": "searchcriteria_mergesearchkeywords",
+      "_tgt": "searchcriteria_emptysearchkeywords",
+      "source": "searchcriteria_emptysearchkeywords",
+      "target": "searchcriteria_mergesearchkeywords",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/supabase/functions/_shared/aiContracts.ts",
+      "source_location": "L108",
+      "weight": 1.0,
+>>>>>>> origin/main
       "_src": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_aicontracts_ts",
       "_tgt": "aicontracts_safestring",
       "source": "users_arend_developer_flemish_network_based_vs_connected_supabase_functions_shared_aicontracts_ts",
@@ -15054,6 +16778,18 @@
       "_tgt": "apifyclient_apifyerror_constructor",
       "source": "apifyclient_apifyerror",
       "target": "apifyclient_apifyerror_constructor",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "supabase/functions/_shared/__tests__/searchCriteria_test.ts",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_src": "supabase_functions_shared_tests_searchcriteria_test_ts",
+      "_tgt": "searchcriteria_test_emptykeywords",
+      "source": "supabase_functions_shared_tests_searchcriteria_test_ts",
+      "target": "searchcriteria_test_emptykeywords",
       "confidence_score": 1.0
     },
     {
@@ -18731,6 +20467,258 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_personsectornames",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_personsectornames",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L41",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_personmatchessector",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_personmatchessector",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L50",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_personmatchesoccupation",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_personmatchesoccupation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L61",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_personmatchesflemishconnection",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_personmatchesflemishconnection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L65",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_organizationmatchestext",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_organizationmatchestext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L75",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_buildpersoncriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_buildpersoncriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L116",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_buildorganizationcriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_buildorganizationcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L150",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_applycriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_applycriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L170",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_countactivematchcriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_countactivematchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L174",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_applypeoplematchcriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_applypeoplematchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_applyorganizationmatchcriteria",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_applyorganizationmatchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L194",
+      "weight": 1.0,
+      "_src": "src_lib_matchcriteria_ts",
+      "_tgt": "matchcriteria_dashboardsearchcachescope",
+      "source": "src_lib_matchcriteria_ts",
+      "target": "matchcriteria_dashboardsearchcachescope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L42",
+      "weight": 1.0,
+      "_src": "matchcriteria_personmatchessector",
+      "_tgt": "matchcriteria_personsectornames",
+      "source": "matchcriteria_personsectornames",
+      "target": "matchcriteria_personmatchessector",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L45",
+      "weight": 1.0,
+      "_src": "matchcriteria_personmatchessector",
+      "_tgt": "supabase_fuzzymatch",
+      "source": "matchcriteria_personmatchessector",
+      "target": "supabase_fuzzymatch"
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L62",
+      "weight": 1.0,
+      "_src": "matchcriteria_personmatchesflemishconnection",
+      "_tgt": "supabase_fuzzymatch",
+      "source": "matchcriteria_personmatchesflemishconnection",
+      "target": "supabase_fuzzymatch"
+    },
+    {
+      "relation": "calls",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L69",
+      "weight": 1.0,
+      "_src": "matchcriteria_organizationmatchestext",
+      "_tgt": "supabase_fuzzymatch",
+      "source": "matchcriteria_organizationmatchestext",
+      "target": "supabase_fuzzymatch"
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L171",
+      "weight": 1.0,
+      "_src": "matchcriteria_countactivematchcriteria",
+      "_tgt": "matchcriteria_buildpersoncriteria",
+      "source": "matchcriteria_buildpersoncriteria",
+      "target": "matchcriteria_countactivematchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L179",
+      "weight": 1.0,
+      "_src": "matchcriteria_applypeoplematchcriteria",
+      "_tgt": "matchcriteria_buildpersoncriteria",
+      "source": "matchcriteria_buildpersoncriteria",
+      "target": "matchcriteria_applypeoplematchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L189",
+      "weight": 1.0,
+      "_src": "matchcriteria_applyorganizationmatchcriteria",
+      "_tgt": "matchcriteria_buildorganizationcriteria",
+      "source": "matchcriteria_buildorganizationcriteria",
+      "target": "matchcriteria_applyorganizationmatchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L179",
+      "weight": 1.0,
+      "_src": "matchcriteria_applypeoplematchcriteria",
+      "_tgt": "matchcriteria_applycriteria",
+      "source": "matchcriteria_applycriteria",
+      "target": "matchcriteria_applypeoplematchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/matchCriteria.ts",
+      "source_location": "L187",
+      "weight": 1.0,
+      "_src": "matchcriteria_applyorganizationmatchcriteria",
+      "_tgt": "matchcriteria_applycriteria",
+      "source": "matchcriteria_applycriteria",
+      "target": "matchcriteria_applyorganizationmatchcriteria",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "/Users/arend/Developer/flemish-network/src/lib/geocoding.ts",
       "source_location": "L5",
       "weight": 1.0,
@@ -18755,8 +20743,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L31",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L32",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_parsebooleanparam",
@@ -18767,8 +20760,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L39",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L40",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_sanitizevalues",
@@ -18779,8 +20777,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L45",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L46",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_normalizepage",
@@ -18791,8 +20794,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L51",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L52",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_defaultdashboardroutestate",
@@ -18803,8 +20811,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L60",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L62",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_builddashboardstatefrompreset",
@@ -18815,8 +20828,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L82",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L84",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_parsedashboardroutestate",
@@ -18827,8 +20845,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L120",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L123",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_builddashboardsearchparams",
@@ -18839,8 +20862,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L156",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L160",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_builddashboardlocation",
@@ -18851,8 +20879,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L167",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L171",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_approuting_ts",
       "_tgt": "approuting_getcurrentpagefrompathname",
@@ -18863,8 +20896,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L96",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L99",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_parsedashboardroutestate",
       "_tgt": "approuting_parsebooleanparam",
@@ -18875,8 +20913,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L70",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L72",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_builddashboardstatefrompreset",
       "_tgt": "approuting_sanitizevalues",
@@ -18887,8 +20930,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L107",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L110",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_parsedashboardroutestate",
       "_tgt": "approuting_sanitizevalues",
@@ -18899,8 +20947,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L144",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L148",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_builddashboardsearchparams",
       "_tgt": "approuting_sanitizevalues",
@@ -18911,8 +20964,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L63",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L65",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_builddashboardstatefrompreset",
       "_tgt": "approuting_defaultdashboardroutestate",
@@ -18935,8 +20993,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/appRouting.ts",
       "source_location": "L160",
+=======
+      "source_file": "src/lib/appRouting.ts",
+      "source_location": "L164",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "approuting_builddashboardlocation",
       "_tgt": "approuting_builddashboardsearchparams",
@@ -19247,8 +21310,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L38",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L43",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_uniqueterms",
@@ -19259,8 +21327,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L42",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L47",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_buildfallbackterms",
@@ -19271,8 +21344,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L62",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L67",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_buildfallbackkeywords",
@@ -19283,8 +21361,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L121",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L126",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_callai",
@@ -19295,8 +21378,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L147",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L152",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_parsecontacts",
@@ -19307,8 +21395,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L194",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L199",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_discovercontacts",
@@ -19319,8 +21412,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L236",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L241",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_smartsearch",
@@ -19331,8 +21429,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L267",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L272",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_getindexedstring",
@@ -19343,8 +21446,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L277",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L282",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_getnestedstring",
@@ -19355,8 +21463,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L290",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L295",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_scorepersonagainstkeywords",
@@ -19367,8 +21480,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L337",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L342",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_scorepersonagainstfilter",
@@ -19379,8 +21497,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L366",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L371",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_flemishsearch",
@@ -19391,8 +21514,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L402",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L407",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_suggestpeopleembedding",
@@ -19403,8 +21531,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L469",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L474",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_suggestpeople",
@@ -19415,8 +21548,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L533",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L538",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_hybridsearch",
@@ -19427,8 +21565,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L610",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L631",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_aiservice_ts",
       "_tgt": "aiservice_logsearchclick",
@@ -19439,8 +21582,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L59",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L64",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_buildfallbackterms",
       "_tgt": "aiservice_uniqueterms",
@@ -19451,8 +21599,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L68",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L73",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_buildfallbackkeywords",
       "_tgt": "aiservice_uniqueterms",
@@ -19463,8 +21616,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L63",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L68",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_buildfallbackkeywords",
       "_tgt": "aiservice_buildfallbackterms",
@@ -19475,8 +21633,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L246",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L251",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_smartsearch",
       "_tgt": "aiservice_buildfallbackkeywords",
@@ -19511,8 +21674,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L471",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L476",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_suggestpeople",
       "_tgt": "aiservice_smartsearch",
@@ -19523,8 +21691,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L548",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L569",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_hybridsearch",
       "_tgt": "aiservice_smartsearch",
@@ -19535,8 +21708,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L321",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L326",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_scorepersonagainstkeywords",
       "_tgt": "aiservice_getindexedstring",
@@ -19547,8 +21725,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L347",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L352",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_scorepersonagainstfilter",
       "_tgt": "aiservice_getindexedstring",
@@ -19559,8 +21742,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L317",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L322",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_scorepersonagainstkeywords",
       "_tgt": "aiservice_getnestedstring",
@@ -19571,8 +21759,13 @@
     {
       "relation": "calls",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/aiService.ts",
       "source_location": "L428",
+=======
+      "source_file": "src/lib/aiService.ts",
+      "source_location": "L433",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "aiservice_suggestpeopleembedding",
       "_tgt": "aiservice_suggestpeople",
@@ -19603,6 +21796,210 @@
       "_tgt": "edgeerror_extractedgeerror",
       "source": "aiservice_hybridsearch",
       "target": "edgeerror_extractedgeerror"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_canusesessionstorage",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_canusesessionstorage",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L20",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_normalizequery",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_normalizequery",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L24",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_readsearchcache",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_readsearchcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L37",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_writesearchcache",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_writesearchcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L47",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_getcacheddashboardsearch",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_getcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L63",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_setcacheddashboardsearch",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_setcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L85",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_setlastdashboardlocation",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_setlastdashboardlocation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L95",
+      "weight": 1.0,
+      "_src": "src_lib_dashboardsession_ts",
+      "_tgt": "dashboardsession_getlastdashboardlocation",
+      "source": "src_lib_dashboardsession_ts",
+      "target": "dashboardsession_getlastdashboardlocation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_src": "dashboardsession_readsearchcache",
+      "_tgt": "dashboardsession_canusesessionstorage",
+      "source": "dashboardsession_canusesessionstorage",
+      "target": "dashboardsession_readsearchcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L38",
+      "weight": 1.0,
+      "_src": "dashboardsession_writesearchcache",
+      "_tgt": "dashboardsession_canusesessionstorage",
+      "source": "dashboardsession_canusesessionstorage",
+      "target": "dashboardsession_writesearchcache",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L86",
+      "weight": 1.0,
+      "_src": "dashboardsession_setlastdashboardlocation",
+      "_tgt": "dashboardsession_canusesessionstorage",
+      "source": "dashboardsession_canusesessionstorage",
+      "target": "dashboardsession_setlastdashboardlocation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L96",
+      "weight": 1.0,
+      "_src": "dashboardsession_getlastdashboardlocation",
+      "_tgt": "dashboardsession_canusesessionstorage",
+      "source": "dashboardsession_canusesessionstorage",
+      "target": "dashboardsession_getlastdashboardlocation",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_src": "dashboardsession_getcacheddashboardsearch",
+      "_tgt": "dashboardsession_normalizequery",
+      "source": "dashboardsession_normalizequery",
+      "target": "dashboardsession_getcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L66",
+      "weight": 1.0,
+      "_src": "dashboardsession_setcacheddashboardsearch",
+      "_tgt": "dashboardsession_normalizequery",
+      "source": "dashboardsession_normalizequery",
+      "target": "dashboardsession_setcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_src": "dashboardsession_getcacheddashboardsearch",
+      "_tgt": "dashboardsession_readsearchcache",
+      "source": "dashboardsession_readsearchcache",
+      "target": "dashboardsession_getcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L76",
+      "weight": 1.0,
+      "_src": "dashboardsession_setcacheddashboardsearch",
+      "_tgt": "dashboardsession_readsearchcache",
+      "source": "dashboardsession_readsearchcache",
+      "target": "dashboardsession_setcacheddashboardsearch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/dashboardSession.ts",
+      "source_location": "L82",
+      "weight": 1.0,
+      "_src": "dashboardsession_setcacheddashboardsearch",
+      "_tgt": "dashboardsession_writesearchcache",
+      "source": "dashboardsession_writesearchcache",
+      "target": "dashboardsession_setcacheddashboardsearch",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -19655,8 +22052,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L68",
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L72",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "_tgt": "supabase_displayname",
@@ -19667,8 +22069,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L78",
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L82",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "_tgt": "supabase_personinitials",
@@ -19679,8 +22086,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L87",
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L91",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "_tgt": "supabase_parsetitlefromname",
@@ -19691,8 +22103,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L101",
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L105",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "_tgt": "supabase_personnamepartsforinsert",
@@ -19703,8 +22120,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/supabase.ts",
       "source_location": "L397",
+=======
+      "source_file": "src/lib/supabase.ts",
+      "source_location": "L403",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_supabase_ts",
       "_tgt": "supabase_fuzzymatch",
@@ -20363,7 +22785,23 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/lib/__tests__/appRouting.test.ts",
+=======
+      "source_file": "src/lib/__tests__/matchCriteria.test.ts",
+      "source_location": "L8",
+      "weight": 1.0,
+      "_src": "src_lib_tests_matchcriteria_test_ts",
+      "_tgt": "matchcriteria_test_person",
+      "source": "src_lib_tests_matchcriteria_test_ts",
+      "target": "matchcriteria_test_person",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/lib/__tests__/appRouting.test.ts",
+>>>>>>> origin/main
       "source_location": "L14",
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_lib_tests_approuting_test_ts",
@@ -20375,8 +22813,13 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+<<<<<<< HEAD
       "source_file": "/Users/arend/Developer/flemish-network-based-vs-connected/src/pages/Dashboard.tsx",
       "source_location": "L53",
+=======
+      "source_file": "src/pages/Dashboard.tsx",
+      "source_location": "L58",
+>>>>>>> origin/main
       "weight": 1.0,
       "_src": "users_arend_developer_flemish_network_based_vs_connected_src_pages_dashboard_tsx",
       "_tgt": "dashboard_tosearchparams",

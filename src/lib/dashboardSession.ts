@@ -6,6 +6,7 @@ const MAX_CACHE_ENTRIES = 10;
 
 export interface CachedDashboardSearch {
   query: string;
+  scope?: string;
   nameMatches: Person[];
   aiResults: Person[];
   snippets: Array<[string, string]>;
@@ -44,13 +45,18 @@ function writeSearchCache(entries: CachedDashboardSearch[]) {
 }
 
 export function getCachedDashboardSearch(
-  query: string
+  query: string,
+  scope = 'default'
 ): CachedDashboardSearch | null {
   const key = normalizeQuery(query);
   if (!key) return null;
 
   return (
-    readSearchCache().find((entry) => normalizeQuery(entry.query) === key) || null
+    readSearchCache().find(
+      (entry) =>
+        normalizeQuery(entry.query) === key &&
+        (entry.scope || 'default') === scope
+    ) || null
   );
 }
 
@@ -66,8 +72,11 @@ export function setCachedDashboardSearch(
     updatedAt: entry.updatedAt || Date.now(),
   };
 
+  const scope = entry.scope || 'default';
   const existing = readSearchCache().filter(
-    (cached) => normalizeQuery(cached.query) !== key
+    (cached) =>
+      normalizeQuery(cached.query) !== key ||
+      (cached.scope || 'default') !== scope
   );
   existing.unshift(nextEntry);
   writeSearchCache(existing.slice(0, MAX_CACHE_ENTRIES));

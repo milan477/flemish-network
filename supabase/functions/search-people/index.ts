@@ -22,6 +22,15 @@ import {
   type SearchDocumentSnippetSource,
   type SearchRoute,
 } from "../_shared/searchRouting.ts";
+import {
+  buildManualFilterKeywords,
+  calculateStructuredCriteriaCoverage,
+  criteriaCoveragePasses,
+  addCriterionCoverage,
+  mergeSearchKeywords,
+  normalizePersonScope,
+  normalizeSearchMatchMode,
+} from "../_shared/searchCriteria.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -227,6 +236,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const body = await req.json();
     const query = typeof body?.query === "string" ? body.query.trim() : "";
+    const matchMode = normalizeSearchMatchMode(body?.match_mode);
     const limit =
       typeof body?.max_results === "number" && body.max_results > 0
         ? Math.min(body.max_results, 100)
@@ -249,7 +259,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
         ])
       : [EMPTY_KEYWORDS, null];
 
-    const route = classifySearchRoute(query, keywords);
+    const criteriaKeywords = mergeSearchKeywords(
+      keywords,
+      buildManualFilterKeywords(body?.filters)
+    );
+    const personScope = normalizePersonScope(body?.filters?.person_scope);
+    const route = classifySearchRoute(query, criteriaKeywords);
     const config = getSearchRouteConfig(route);
 
     const [lexicalResponse, vectorResponse, chunkResponse] = await Promise.all([
@@ -338,7 +353,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
       return new Response(
         JSON.stringify({
           results: [],
-          keywords,
+          keywords: criteriaKeywords,
+          match_mode: matchMode,
           route,
           degraded: !queryEmbedding,
           diagnostics: {
@@ -346,6 +362,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
             vector_candidates: 0,
             chunk_candidates: 0,
             fused_candidates: 0,
+            structured_criteria: 0,
           },
           message: "No matching profiles found.",
           total_with_embeddings: 0,
@@ -404,7 +421,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       documentsByPerson.set(document.person_id, document);
     }
 
-    const searchTerms = buildSearchTerms(query, keywords);
+    const searchTerms = buildSearchTerms(query, criteriaKeywords);
     const scored = candidateIds
       .map((personId) => {
         const person = peopleById.get(personId);
@@ -442,6 +459,17 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
         const document =
           documentsByPerson.get(personId) || buildFallbackDocument(person);
+        const coverage = personScope
+          ? addCriterionCoverage(
+              calculateStructuredCriteriaCoverage(criteriaKeywords, document),
+              person.us_network_status === personScope
+            )
+          : calculateStructuredCriteriaCoverage(criteriaKeywords, document);
+        if (!criteriaCoveragePasses(coverage, matchMode)) {
+          return null;
+        }
+
+        const coverageBoost = coverage.total > 0 ? 0.04 * coverage.score : 0;
         const hint: LexicalMatchHint | undefined = lexical
           ? {
               match_field: lexical.match_field,
@@ -457,7 +485,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         return {
           person,
           document,
-          fusedScore,
+          fusedScore: fusedScore + coverageBoost,
           snippet,
         };
       })
@@ -493,7 +521,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(
       JSON.stringify({
         results,
-        keywords,
+        keywords: criteriaKeywords,
+        match_mode: matchMode,
         route,
         degraded: !queryEmbedding,
         diagnostics: {
@@ -501,6 +530,16 @@ Deno.serve(wrapHandler(async (req: Request) => {
           vector_candidates: vectorMatches.length,
           chunk_candidates: chunkMatches.length,
           fused_candidates: candidateIds.length,
+          structured_criteria: calculateStructuredCriteriaCoverage(
+            criteriaKeywords,
+            {
+              current_position: null,
+              occupation: null,
+              flemish_connection_names: null,
+              sector_names: null,
+              location_text: null,
+            }
+          ).total,
         },
         message: `Found ${results.length} relevant people using ${routeLabel(route)}.`,
         total_with_embeddings: embeddingCountResponse.count || 0,

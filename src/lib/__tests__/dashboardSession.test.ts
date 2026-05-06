@@ -76,6 +76,30 @@ describe('dashboardSession - search cache', () => {
     expect(raw[0].snippets).toEqual([['b', 'two']]);
   });
 
+  it('keeps separate cache entries for different search scopes', () => {
+    setCachedDashboardSearch({
+      query: 'biotech',
+      scope: 'all',
+      nameMatches: [],
+      aiResults: [],
+      snippets: [['a', 'all']],
+    });
+    setCachedDashboardSearch({
+      query: 'biotech',
+      scope: 'any',
+      nameMatches: [],
+      aiResults: [],
+      snippets: [['b', 'any']],
+    });
+
+    expect(getCachedDashboardSearch('biotech', 'all')?.snippets).toEqual([
+      ['a', 'all'],
+    ]);
+    expect(getCachedDashboardSearch('biotech', 'any')?.snippets).toEqual([
+      ['b', 'any'],
+    ]);
+  });
+
   it('caps cache to 10 entries (LRU eviction)', () => {
     for (let i = 0; i < 12; i++) {
       setCachedDashboardSearch({
