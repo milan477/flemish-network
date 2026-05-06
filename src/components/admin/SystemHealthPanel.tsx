@@ -15,7 +15,7 @@ import { supabase } from '../../lib/supabase';
 import { notifyError, notifySuccess } from '../../lib/toast';
 import StructuredErrorBanner from './StructuredErrorBanner';
 
-type AgentKind = 'discovery' | 'verification' | 'connection';
+type AgentKind = 'discovery' | 'verification';
 type HealthAgentKind = AgentKind | 'embeddings';
 
 interface AgentRun {
@@ -77,7 +77,6 @@ interface UsageTotals {
 const AGENTS: Array<{ kind: HealthAgentKind; label: string }> = [
   { kind: 'discovery', label: 'Discovery' },
   { kind: 'verification', label: 'Verification' },
-  { kind: 'connection', label: 'Connections' },
   { kind: 'embeddings', label: 'Embeddings' },
 ];
 
@@ -315,12 +314,7 @@ export default function SystemHealthPanel() {
           });
           if (error) throw error;
         } else {
-          const params =
-            kind === 'verification'
-              ? { batch_size: 5 }
-              : kind === 'connection'
-                ? { types: ['colleague', 'alumni', 'local_peer'] }
-                : {};
+          const params = kind === 'verification' ? { batch_size: 5 } : {};
           const { error } = await supabase.functions.invoke('agent-scheduler', {
             body: { action: 'trigger', agent_type: kind, params },
           });
@@ -408,7 +402,7 @@ export default function SystemHealthPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">System Health</h2>
-          <p className="text-sm text-gray-600">Agent status, queue health, usage, and operator actions.</p>
+          <p className="text-sm text-gray-600">Service status, queue health, usage, and operator actions.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -507,7 +501,7 @@ export default function SystemHealthPanel() {
           <h3 className="font-semibold text-gray-900">Stuck Runs</h3>
         </div>
         {stuckRuns.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-gray-500">No running agent has exceeded the housekeeping timeout.</div>
+          <div className="px-5 py-6 text-sm text-gray-500">No running service has exceeded the housekeeping timeout.</div>
         ) : (
           <div className="divide-y divide-gray-100">
             {stuckRuns.map((run) => (

@@ -34,9 +34,9 @@ export default function Navigation({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const navItems = [
-    { id: 'dashboard', label: 'Network', icon: MapPin },
+    { id: 'dashboard', label: 'Search', icon: MapPin },
     { id: 'collections', label: 'Collections', icon: Library },
-    ...(canAccessAdmin ? [{ id: 'admin', label: 'Dashboard', icon: Shield }] : []),
+    ...(canAccessAdmin ? [{ id: 'admin', label: 'Staff', icon: Shield }] : []),
   ] as const;
 
   const initials = useMemo(() => {
@@ -116,7 +116,7 @@ export default function Navigation({
                     ? 'bg-yellow-100 text-yellow-700'
                     : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
                 }`}
-                title="Add new contact"
+                title="Add through Discovery"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -174,7 +174,7 @@ export default function Navigation({
                       className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50"
                     >
                       <Settings className="h-4 w-4 text-gray-400" />
-                      <span>Admin Dashboard</span>
+                      <span>Staff Workspace</span>
                     </button>
                   )}
                   <button
@@ -221,7 +221,7 @@ export default function Navigation({
               }`}
             >
               <Plus className="w-5 h-5" />
-              <span className="text-xs">Add</span>
+              <span className="text-xs">Discover</span>
             </button>
           )}
         </div>

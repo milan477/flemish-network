@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Map as MapIcon, List, X, Search as SearchIcon, MapPin } from 'lucide-react';
 import {
@@ -13,7 +13,6 @@ import {
   type FlemishConnection,
   OCCUPATION_CATEGORY_KEYWORDS,
 } from '../lib/supabase';
-import MapVisualization from '../components/MapVisualization';
 import DirectoryGrid from '../components/DirectoryGrid';
 import FilterPanel from '../components/FilterPanel';
 import UnifiedSearchBar from '../components/UnifiedSearchBar';
@@ -45,6 +44,8 @@ import {
   organizationMatchesLocation,
   personMatchesLocation,
 } from '../lib/networkScope';
+
+const MapVisualization = lazy(() => import('../components/MapVisualization'));
 
 interface DashboardProps {
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
@@ -720,15 +721,23 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         </div>
 
         {viewMode === 'map' ? (
-          <MapVisualization
-            clusters={clusters}
-            loading={loading}
-            focusedCity={focusedCity}
-            onViewInDirectory={handleViewInDirectory}
-            onNavigate={onNavigate}
-            totalPeople={people.length}
-            totalOrganizations={organizations.length}
-          />
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center bg-gray-100">
+                <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-teal-600" />
+              </div>
+            }
+          >
+            <MapVisualization
+              clusters={clusters}
+              loading={loading}
+              focusedCity={focusedCity}
+              onViewInDirectory={handleViewInDirectory}
+              onNavigate={onNavigate}
+              totalPeople={people.length}
+              totalOrganizations={organizations.length}
+            />
+          </Suspense>
         ) : (
           <div className="h-full overflow-y-auto bg-gray-50">
             <div className="max-w-6xl mx-auto px-6 pt-24 pb-8">

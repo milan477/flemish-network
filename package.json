@@ -1,7 +1,7 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "flemish-network",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,8 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:deno": "deno test --allow-env --allow-net supabase/functions/_shared/__tests__/",
-    "smoke": "tsx scripts/smoke_edge_functions.ts",
-    "benchmark:search": "tsx scripts/benchmark_search.ts"
+    "smoke": "tsx scripts/smoke_edge_functions.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

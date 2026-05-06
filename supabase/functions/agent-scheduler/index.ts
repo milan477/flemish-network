@@ -19,13 +19,12 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-type AgentType = "discovery" | "verification" | "connection";
+type AgentType = "discovery" | "verification";
 type SchedulerAction = "trigger" | "cancel" | "housekeeping" | "planning" | "metrics";
 
 const AGENT_FUNCTIONS: Record<AgentType, string> = {
   discovery: "agent-discovery",
   verification: "agent-verify",
-  connection: "agent-connections",
 };
 
 Deno.serve(wrapHandler(async (req: Request) => {
@@ -110,16 +109,26 @@ Deno.serve(wrapHandler(async (req: Request) => {
       });
     }
 
-    const agentType = body.agent_type as AgentType;
+    const requestedAgentType = typeof body.agent_type === "string" ? body.agent_type : "";
     const params = body.params || {};
 
-    if (!agentType || !AGENT_FUNCTIONS[agentType]) {
+    if (requestedAgentType === "connection") {
+      return jsonError(
+        400,
+        "invalid_input",
+        "Connection runs have been removed. Use Discovery for database expansion and Network Growth for coverage planning.",
+      );
+    }
+
+    if (!requestedAgentType || !(requestedAgentType in AGENT_FUNCTIONS)) {
       return jsonError(
         400,
         "invalid_input",
         `Invalid agent_type. Must be one of: ${Object.keys(AGENT_FUNCTIONS).join(", ")}`,
       );
     }
+
+    const agentType = requestedAgentType as AgentType;
 
     const runId = await triggerAgentRun(
       supabase,
