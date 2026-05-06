@@ -3,17 +3,15 @@ dist/
 .DS_Store
 .env
 .env.*
+!.env.example
 .claude/settings.local.json
 .claude/projects/
 supabase-secrets.txt
 
 # keep graph outputs, skip heavy/local-only files
-# optional: commit cache for shared extraction speed, skip to keep repo small
-graphify-out/cache/
-# mtime-based, invalid after git clone — always gitignore this
-graphify-out/manifest.json
-# local token tracking, not useful to share
-graphify-out/cost.json
+graphify-out/cache/            # optional: commit for shared extraction speed, skip to keep repo small
+graphify-out/manifest.json     # mtime-based, invalid after git clone — always gitignore this
+graphify-out/cost.json         # local token tracking, not useful to share
 
 # random docs
 docs/commands.txt

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   UserPlus,
   FileUp,
-  Bot,
   Plus,
   AlertCircle,
   XCircle,
@@ -33,7 +32,6 @@ import {
 } from '../../lib/flemishConnections';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
-import AdminChatbot from './AdminChatbot';
 import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
@@ -42,14 +40,14 @@ import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/netwo
 interface AddContactPanelProps {
   sectors: Sector[];
   onContactAdded: () => void;
+  initialTab?: Tab;
 }
 
-type Tab = 'manual' | 'import' | 'ai';
+type Tab = 'manual' | 'import';
 
 const TABS: { key: Tab; label: string; icon: typeof UserPlus }[] = [
   { key: 'manual', label: 'Add Manually', icon: UserPlus },
   { key: 'import', label: 'Import File', icon: FileUp },
-  { key: 'ai', label: 'AI Assistant', icon: Bot },
 ];
 
 const INPUT_CLS =
@@ -153,9 +151,14 @@ function reconcileConnections(
 export default function AddContactPanel({
   sectors,
   onContactAdded,
+  initialTab = 'manual',
 }: AddContactPanelProps) {
-  const [tab, setTab] = useState<Tab>('ai');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [addedPerson, setAddedPerson] = useState<Person | null>(null);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-yellow-200 overflow-hidden">
@@ -165,7 +168,7 @@ export default function AddContactPanel({
             <UserPlus className="w-4.5 h-4.5 text-yellow-700" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900">
-            Add New Contacts
+            Discovery Intake
           </h2>
         </div>
         <div className="flex space-x-1 border-b border-gray-100">
@@ -192,34 +195,28 @@ export default function AddContactPanel({
         </div>
       </div>
 
-      {(tab === 'manual' || tab === 'import') && (
-        <div className="p-6">
-          {tab === 'manual' && (
-            <div className="flex gap-6">
-              <div className="flex-1 max-w-2xl">
-                <ManualAddForm
-                  sectors={sectors}
-                  onContactAdded={onContactAdded}
-                  onPersonAdded={setAddedPerson}
-                />
+      <div className="p-6">
+        {tab === 'manual' && (
+          <div className="flex gap-6">
+            <div className="flex-1 max-w-2xl">
+              <ManualAddForm
+                sectors={sectors}
+                onContactAdded={onContactAdded}
+                onPersonAdded={setAddedPerson}
+              />
+            </div>
+            {addedPerson && (
+              <div className="w-72 flex-shrink-0">
+                <PersonPreview person={addedPerson} />
               </div>
-              {addedPerson && (
-                <div className="w-72 flex-shrink-0">
-                  <PersonPreview person={addedPerson} />
-                </div>
-              )}
-            </div>
-          )}
-          {tab === 'import' && (
-            <div className="max-w-3xl">
-              <CsvImport onContactAdded={onContactAdded} />
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className={tab === 'ai' ? '' : 'hidden'}>
-        <AdminChatbot sectors={sectors} onContactAdded={onContactAdded} />
+            )}
+          </div>
+        )}
+        {tab === 'import' && (
+          <div className="max-w-3xl">
+            <CsvImport onContactAdded={onContactAdded} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -11,12 +11,16 @@ export type AppPage =
   | 'add-contact'
   | 'account';
 
-export type AdminTab = 'overview' | 'agents' | 'discovered' | 'system' | 'access';
+export type AdminTab = 'discovery' | 'verification' | 'growth' | 'system' | 'access';
 
 export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = false): AdminTab {
-  if (tab === 'agents' || tab === 'discovered' || tab === 'system') return tab;
+  if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'system') {
+    return tab;
+  }
+  if (tab === 'agents' || tab === 'discovered') return 'discovery';
+  if (tab === 'overview') return 'growth';
   if (tab === 'access' && canAccessAdminOnlyTabs) return 'access';
-  return 'overview';
+  return 'discovery';
 }
 
 export type DashboardViewMode = 'map' | 'list';

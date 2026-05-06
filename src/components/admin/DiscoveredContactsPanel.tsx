@@ -958,7 +958,7 @@ export default function DiscoveredContactsPanel() {
           No pending discovered contacts
         </p>
         <p className="text-xs text-gray-400">
-          Run the Discovery Agent from the Agents tab to find new contacts.
+          Start a Discovery run or add/import candidates from the Discovery tab.
         </p>
       </div>
     );

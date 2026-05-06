@@ -8,9 +8,6 @@ project_id = "flemish-network"
 [functions.ai-agent]
 verify_jwt = false
 
-[functions.agent-connections]
-verify_jwt = false
-
 [functions.agent-discovery]
 verify_jwt = false
 

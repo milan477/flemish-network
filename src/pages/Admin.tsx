@@ -1,17 +1,24 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Activity, Bot, LayoutDashboard, Users } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Activity, BarChart3, Search, ShieldCheck, Users } from 'lucide-react';
 import {
   supabase,
   type FilterPreset,
   type Person,
+  type Sector,
 } from '../lib/supabase';
 import InteractiveStatsOverview from '../components/admin/InteractiveStatsOverview';
 import { type ProfileSuggestion } from '../components/admin/SuggestedChanges';
+import SuggestedChanges from '../components/admin/SuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 import AccessManagementPanel from '../components/admin/AccessManagementPanel';
 import SystemHealthPanel from '../components/admin/SystemHealthPanel';
+import AddContactPanel from '../components/admin/AddContactPanel';
+import StaleContactsBar from '../components/admin/StaleContactsBar';
+import DerivedLabelsPanel from '../components/admin/DerivedLabelsPanel';
+import DiscoveryPlanningPanel from '../components/admin/DiscoveryPlanningPanel';
+import OpsMetricsPanel from '../components/admin/OpsMetricsPanel';
 import {
   type PersonSectorRow,
 } from '../components/admin/interactiveStatsShared';
@@ -30,9 +37,11 @@ export default function Admin({ onNavigate }: AdminProps) {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
+  const [searchParams] = useSearchParams();
   const activeTab = normalizeAdminTab(tab, isAdmin);
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
   const [derivedLabels, setDerivedLabels] = useState<DerivedLabelSuggestion[]>([]);
@@ -126,6 +135,7 @@ export default function Admin({ onNavigate }: AdminProps) {
         peopleRes,
         orgsRes,
         personSectorsRes,
+        sectorsRes,
       ] = await Promise.all([
         supabase
           .from('people')
@@ -136,11 +146,13 @@ export default function Admin({ onNavigate }: AdminProps) {
         supabase
           .from('person_sectors')
           .select('person_id, sector_id, sectors(name)'),
+        supabase.from('sectors').select('*').order('name'),
       ]);
 
       setPeople((peopleRes.data || []) as Person[]);
       setOrgCount(orgsRes.count || 0);
       setPersonSectors((personSectorsRes.data || []) as unknown as PersonSectorRow[]);
+      setSectors((sectorsRes.data || []) as Sector[]);
     } finally {
       setLoading(false);
     }
@@ -154,9 +166,18 @@ export default function Admin({ onNavigate }: AdminProps) {
 
   useEffect(() => {
     if (tab === 'access' && !isAdmin) {
-      navigate('/admin', { replace: true });
+      navigate('/admin/discovery', { replace: true });
     }
   }, [isAdmin, navigate, tab]);
+
+  useEffect(() => {
+    if (tab === 'agents' || tab === 'discovered') {
+      navigate('/admin/discovery', { replace: true });
+    }
+    if (tab === 'overview') {
+      navigate('/admin/growth', { replace: true });
+    }
+  }, [navigate, tab]);
 
   const handleAskAI = useCallback(
     async (personIds: string[]) => {
@@ -241,10 +262,25 @@ export default function Admin({ onNavigate }: AdminProps) {
 
   const handleTabChange = useCallback(
     (nextTab: AdminTab) => {
-      navigate(nextTab === 'overview' ? '/admin' : `/admin/${nextTab}`);
+      navigate(`/admin/${nextTab}`);
     },
     [navigate]
   );
+
+  const triggerDiscovery = useCallback(async (query: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'trigger',
+          agent_type: 'discovery',
+          params: query ? { query } : {},
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      notifyError(err, { hint: 'Could not start discovery from this recommendation.' });
+    }
+  }, []);
 
   const handleBackfillEmbeddings = useCallback(async () => {
     setEmbeddingRunning(true);
@@ -303,46 +339,46 @@ export default function Admin({ onNavigate }: AdminProps) {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-3xl font-semibold text-gray-900">
-            Admin Dashboard
+            Staff Workspace
           </h1>
         </div>
         <p className="text-gray-600 mb-4">
-          Monitor network statistics, plan discovery coverage, and manage contacts
+          Review discovery intake, verify records, plan growth, and monitor system health.
         </p>
 
         <div className="flex gap-1 border-b border-gray-200">
           <button
-            onClick={() => handleTabChange('overview')}
+            onClick={() => handleTabChange('discovery')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'overview'
+              activeTab === 'discovery'
                 ? 'border-teal-600 text-teal-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <LayoutDashboard className="w-4 h-4" />
-            Overview
+            <Search className="w-4 h-4" />
+            Discovery
           </button>
           <button
-            onClick={() => handleTabChange('agents')}
+            onClick={() => handleTabChange('verification')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'agents'
+              activeTab === 'verification'
                 ? 'border-teal-600 text-teal-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Bot className="w-4 h-4" />
-            Agents
+            <ShieldCheck className="w-4 h-4" />
+            Verification
           </button>
           <button
-            onClick={() => handleTabChange('discovered')}
+            onClick={() => handleTabChange('growth')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'discovered'
+              activeTab === 'growth'
                 ? 'border-teal-600 text-teal-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Users className="w-4 h-4" />
-            Discovered
+            <BarChart3 className="w-4 h-4" />
+            Network Growth
           </button>
           <button
             onClick={() => handleTabChange('system')}
@@ -371,33 +407,81 @@ export default function Admin({ onNavigate }: AdminProps) {
         </div>
       </div>
 
-      {activeTab === 'agents' && <AgentDashboard />}
+      {activeTab === 'discovery' && (
+        <div className="space-y-6">
+          <AddContactPanel
+            sectors={sectors}
+            onContactAdded={loadData}
+            initialTab={searchParams.get('mode') === 'import' ? 'import' : 'manual'}
+          />
+          <AgentDashboard />
+          <DiscoveredContactsPanel />
+        </div>
+      )}
 
-      {activeTab === 'discovered' && <DiscoveredContactsPanel />}
+      {activeTab === 'verification' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="xl:col-span-2 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Stale Records</h2>
+            <StaleContactsBar
+              people={people}
+              onRefresh={loadData}
+              onAskAI={handleAskAI}
+              onMarkCurrent={handleMarkCurrent}
+              aiLoading={aiLoading}
+              aiLoadingIds={aiLoadingIds}
+              noUpdateIds={noUpdateIds}
+            />
+          </div>
+          <div className="space-y-6">
+            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">Profile Suggestions</h2>
+              <SuggestedChanges
+                suggestions={suggestions}
+                onRefresh={handleSuggestionsRefresh}
+              />
+            </div>
+            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-900">Derived Labels</h2>
+              <DerivedLabelsPanel
+                labels={derivedLabels}
+                onRefresh={handleSuggestionsRefresh}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'system' && <SystemHealthPanel />}
 
       {activeTab === 'access' && isAdmin && <AccessManagementPanel />}
 
-      {activeTab === 'overview' && (
-        <InteractiveStatsOverview
-          people={people}
-          orgCount={orgCount}
-          suggestions={suggestions}
-          derivedLabels={derivedLabels}
-          personSectors={personSectors}
-          onNavigate={onNavigate}
-          onReloadData={loadData}
-          onAskAI={handleAskAI}
-          onMarkCurrent={handleMarkCurrent}
-          aiLoading={aiLoading}
-          aiLoadingIds={aiLoadingIds}
-          noUpdateIds={noUpdateIds}
-          onSuggestionsRefresh={handleSuggestionsRefresh}
-          onBackfillEmbeddings={handleBackfillEmbeddings}
-          embeddingProgress={embeddingProgress}
-          embeddingRunning={embeddingRunning}
-        />
+      {activeTab === 'growth' && (
+        <div className="space-y-6">
+          <DiscoveryPlanningPanel
+            onRunDiscovery={(query) => void triggerDiscovery(query)}
+            isRunning={false}
+          />
+          <OpsMetricsPanel />
+          <InteractiveStatsOverview
+            people={people}
+            orgCount={orgCount}
+            suggestions={suggestions}
+            derivedLabels={derivedLabels}
+            personSectors={personSectors}
+            onNavigate={onNavigate}
+            onReloadData={loadData}
+            onAskAI={handleAskAI}
+            onMarkCurrent={handleMarkCurrent}
+            aiLoading={aiLoading}
+            aiLoadingIds={aiLoadingIds}
+            noUpdateIds={noUpdateIds}
+            onSuggestionsRefresh={handleSuggestionsRefresh}
+            onBackfillEmbeddings={handleBackfillEmbeddings}
+            embeddingProgress={embeddingProgress}
+            embeddingRunning={embeddingRunning}
+          />
+        </div>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   buildDashboardLocation,
   normalizePage,
   getCurrentPageFromPathname,
+  normalizeAdminTab,
   type DashboardRouteState,
 } from '../appRouting';
 import { DEFAULT_MAP_FILTERS } from '../supabase';
@@ -181,6 +182,26 @@ describe('appRouting - dashboard URL roundtrip', () => {
 
     const empty = buildDashboardLocation(defaultDashboardRouteState());
     expect(empty.search).toBe('');
+  });
+});
+
+describe('appRouting - admin tabs', () => {
+  it('normalizes canonical staff workspace tabs', () => {
+    expect(normalizeAdminTab('discovery')).toBe('discovery');
+    expect(normalizeAdminTab('verification')).toBe('verification');
+    expect(normalizeAdminTab('growth')).toBe('growth');
+    expect(normalizeAdminTab('system')).toBe('system');
+  });
+
+  it('redirects legacy admin tabs to the new service tabs', () => {
+    expect(normalizeAdminTab('agents')).toBe('discovery');
+    expect(normalizeAdminTab('discovered')).toBe('discovery');
+    expect(normalizeAdminTab('overview')).toBe('growth');
+  });
+
+  it('keeps access admin-only', () => {
+    expect(normalizeAdminTab('access')).toBe('discovery');
+    expect(normalizeAdminTab('access', true)).toBe('access');
   });
 });
 

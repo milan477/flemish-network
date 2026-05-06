@@ -5,16 +5,12 @@ import {
   XCircle,
   Clock,
   Search,
-  ShieldCheck,
-  Link2,
   RefreshCw,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { notifyError } from '../../lib/toast';
-import DiscoveryPlanningPanel from './DiscoveryPlanningPanel';
-import OpsMetricsPanel from './OpsMetricsPanel';
 import StructuredErrorBanner from './StructuredErrorBanner';
 
 interface AgentRun {
@@ -43,8 +39,6 @@ interface ApiQuota {
 
 const AGENT_LABELS: Record<string, { label: string; icon: typeof Search }> = {
   discovery: { label: 'Discovery', icon: Search },
-  verification: { label: 'Verification', icon: ShieldCheck },
-  connection: { label: 'Connections', icon: Link2 },
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: typeof Clock }> = {
@@ -80,6 +74,7 @@ export default function AgentDashboard() {
       supabase
         .from('agent_runs')
         .select('*')
+        .eq('agent_type', 'discovery')
         .order('created_at', { ascending: false })
         .limit(20),
       supabase
@@ -87,7 +82,7 @@ export default function AgentDashboard() {
         .select('*')
         .eq('month', new Date().toISOString().slice(0, 7)),
       supabase
-        .from('profile_suggestions')
+        .from('discovered_contacts')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'pending'),
     ]);
@@ -130,7 +125,7 @@ export default function AgentDashboard() {
           throw error;
         }
       } catch (err) {
-        notifyError(err, { hint: 'Could not trigger the selected agent.' });
+        notifyError(err, { hint: 'Could not start discovery.' });
       }
       setTriggerLoading(null);
       await loadData();
@@ -157,7 +152,7 @@ export default function AgentDashboard() {
         if (error) throw error;
         await loadData();
       } catch (err) {
-        notifyError(err, { hint: 'Could not cancel this agent run.' });
+        notifyError(err, { hint: 'Could not cancel this discovery run.' });
       }
     },
     [loadData]
@@ -197,11 +192,6 @@ export default function AgentDashboard() {
     if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) parts.push(`${r.suggestions_merged} merged`);
     if (typeof r.profiles_checked === 'number') parts.push(`${r.profiles_checked} checked`);
     if (typeof r.profiles_verified === 'number') parts.push(`${r.profiles_verified} verified`);
-    if (typeof r.connections_found === 'number') parts.push(`${r.connections_found} connections`);
-    if (typeof r.new_connections_created === 'number') parts.push(`${r.new_connections_created} new`);
-    if (typeof r.connection_suggestions_upserted === 'number' && r.connection_suggestions_upserted > 0) {
-      parts.push(`${r.connection_suggestions_upserted} affinities`);
-    }
     if (typeof r.child_links_queued === 'number' && r.child_links_queued > 0) parts.push(`${r.child_links_queued} queued`);
     if (typeof r.sitemap_urls_seeded === 'number' && r.sitemap_urls_seeded > 0) parts.push(`${r.sitemap_urls_seeded} sitemap`);
     if (typeof r.rss_urls_seeded === 'number' && r.rss_urls_seeded > 0) parts.push(`${r.rss_urls_seeded} rss`);
@@ -224,10 +214,9 @@ export default function AgentDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Manual Trigger Buttons */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Run Agents</h3>
+          <h3 className="text-base font-semibold text-gray-900">Run Discovery</h3>
           <button
             onClick={loadData}
             className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
@@ -271,31 +260,6 @@ export default function AgentDashboard() {
             )}
           </div>
 
-          <button
-            onClick={() => triggerAgent('verification', { batch_size: 5 })}
-            disabled={triggerLoading === 'verification'}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50"
-          >
-            {triggerLoading === 'verification' ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <ShieldCheck className="w-4 h-4" />
-            )}
-            Verification
-          </button>
-
-          <button
-            onClick={() => triggerAgent('connection', { types: ['colleague', 'alumni', 'local_peer'] })}
-            disabled={triggerLoading === 'connection'}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
-          >
-            {triggerLoading === 'connection' ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Link2 className="w-4 h-4" />
-            )}
-            Connections
-          </button>
         </div>
         {showQueryInput && (
           <p className="mt-3 text-xs text-gray-500">
@@ -305,7 +269,6 @@ export default function AgentDashboard() {
         )}
       </div>
 
-      {/* API Quota Bars + Pending Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-base font-semibold text-gray-900 mb-4">API Quotas</h3>
@@ -337,7 +300,7 @@ export default function AgentDashboard() {
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-4 bg-yellow-50 rounded-lg">
               <p className="text-2xl font-bold text-yellow-700">{pendingSuggestions}</p>
-              <p className="text-xs text-yellow-600 mt-1">Pending Suggestions</p>
+              <p className="text-xs text-yellow-600 mt-1">Pending People</p>
             </div>
             <div className="text-center p-4 bg-blue-50 rounded-lg">
               <p className="text-2xl font-bold text-blue-700">
@@ -361,23 +324,15 @@ export default function AgentDashboard() {
         </div>
       </div>
 
-      <DiscoveryPlanningPanel
-        onRunDiscovery={(query) => triggerAgent('discovery', query ? { query } : {})}
-        isRunning={triggerLoading === 'discovery'}
-      />
-
-      <OpsMetricsPanel />
-
-      {/* Run History Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 pb-3">
-          <h3 className="text-base font-semibold text-gray-900">Run History</h3>
+          <h3 className="text-base font-semibold text-gray-900">Discovery History</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-y border-gray-100">
               <tr>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Agent</th>
+                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Service</th>
                 <th className="text-left py-2.5 px-4 font-medium text-gray-500">Status</th>
                 <th className="text-left py-2.5 px-4 font-medium text-gray-500">Started</th>
                 <th className="text-left py-2.5 px-4 font-medium text-gray-500">Duration</th>
@@ -389,7 +344,7 @@ export default function AgentDashboard() {
               {runs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-gray-400">
-                    No agent runs yet. Use the buttons above to trigger one.
+                    No discovery runs yet. Use the button above to start one.
                   </td>
                 </tr>
               ) : (
@@ -475,7 +430,7 @@ export default function AgentDashboard() {
                       <tr>
                         <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
                           <StructuredErrorBanner
-                            title="Agent run failed"
+                            title="Discovery run failed"
                             error={{
                               name: 'AgentRunError',
                               message: run.error_message,

@@ -1,172 +1,145 @@
 # AI Pipeline Reference
 
-## Behavioral Contracts
-Rules for which function owns which responsibility — violating these causes data corruption or auth failures.
+## Service Map
 
-- `update-profile` → ad hoc single-person preview only. Returns inline suggestions to `ProfileUpdateModal`; **never** writes durable `profile_suggestions` rows.
-- `agent-verify` → owns the durable verification queue. Admin stale-contact flows must call this, not `update-profile`.
-- `derived_label_suggestions` → review queue for sectors, occupation, Flemish entities, locations, and confidence. Promote here first, then refresh embeddings.
-- `agent-scheduler` → owns `agent_runs` lifecycle (start, cancel, timeout, cleanup). UI must not insert/update these rows directly.
-- `connection_suggestions` → soft affinity only. Hard `connections` table gets only evidence-backed relationship types (`colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`).
+| Product service | Route/UI | Edge/API owner | Notes |
+|---|---|---|---|
+| Search The Network | `/` | `search-people` | Server-side routed hybrid people search. Organization search is moving server-side next. |
+| Build A Collection | `/collections`, `/collections/:id` | `suggest-people` | Uses existing records only. Target workflow adds draft approval and organization candidates. |
+| Expand The Database | `/admin/discovery` | `agent-scheduler` -> `agent-discovery` | Prompted and autonomous discovery. Evidence-first review queues; no auto-promotion. |
+| Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
+| Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics | Coverage gaps, source yield, entity pivots, and recommended next discovery actions. |
+| System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, queues, cancellation, housekeeping, API usage. |
+
+## Behavioral Contracts
+
+- `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
+- `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
+- `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`, not `discover-contacts`.
+- `agent-verify` owns durable verification suggestions.
+- `update-profile` is preview mode only for inline profile checks and must not write durable suggestion rows.
+- `derived_label_suggestions` remains the review queue for inferred sectors, occupations, Flemish/Belgian entities, locations, and confidence before promotion.
 - `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
-- `ai-agent` tasks `parse_contacts` and `flemish_search` are frozen legacy. Active contracts: `smart_search`, `merge_text`, `check_profile`.
-- `discover-contacts` owns ad hoc web prospect discovery. `search-contacts` remains only as a deprecated compatibility endpoint for older scripts and returns deprecation/successor headers.
+- `ai-agent` active tasks are `smart_search`, `merge_text`, and `check_profile`. `parse_contacts` and `flemish_search` are legacy and should not be used by new UI.
+- `discover-contacts` and `search-contacts` are legacy compatibility functions and are not product routes.
 
 ## Error Contract
-Phase 6.3 standardizes edge-function failures as `{ error: { code, message, hint? } }`.
+
+Edge-function failures use `{ error: { code, message, hint? } }`.
 
 - `code` is one of `auth_failed`, `forbidden`, `invalid_input`, `not_found`, `quota_exhausted`, `network`, `db_timeout`, `agent_failure`, `unknown`.
 - Agent run persistence maps this to `agent_runs.error_kind`, whose database enum intentionally excludes UI-only `forbidden`/`not_found`.
-- `src/lib/aiService.ts` preserves structured edge errors as `EdgeFunctionError` so admin surfaces can render `message` and `hint`.
+- `src/lib/aiService.ts` preserves structured edge errors as `EdgeFunctionError`.
 - Edge function handlers should be wrapped with `_shared/httpError.ts` `wrapHandler(fn)` and use `jsonError(...)` for expected validation failures.
 
-## Observability Contract
-Phase 6.4 adds an operator-facing Admin -> System surface and structured function logs.
-
-- `src/components/admin/SystemHealthPanel.tsx` reads `agent_runs` and `embedding_jobs`, and loads embedding batch status through `generate-embeddings` `action: 'list_batches'`, to show last success/failure, currently running work, stuck runs, embedding queue depth, oldest pending embedding job, and today's API usage.
-- Operators start discovery, verification, connection, and embedding work from Admin -> System. Agent runs still go through `agent-scheduler`; embeddings go through `generate-embeddings`.
-- Operators cancel running/stuck agent runs through `agent-scheduler` `action: 'cancel'`; housekeeping uses `action: 'housekeeping'`.
-- Edge logs should use `_shared/log.ts` so every line is grep-able as `[fn:<name>] [run:<id>] [evt:<event>] ...`.
-- `docs/RUNBOOK.md` is keyed to `agent_runs.error_kind` / structured error `code`.
-
 ## Gemini Model Routing
-Defined in `supabase/functions/_shared/gemini.ts`. Production defaults:
+
+Defined in `supabase/functions/_shared/gemini.ts`.
 
 | Route | Default Model | Env Override |
 |---|---|---|
 | `query_parsing`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
 | `contact_extraction`, `profile_verification` | `gemini-2.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL`, `GEMINI_PROFILE_MODEL` |
 | `lightweight_text_merge`, `offline_evaluation` | `gemini-2.5-pro` | `GEMINI_PRO_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` |
-| embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` (changing requires full re-embed) |
-
-Gemini 3.x preview models are not operational defaults — use per-route env overrides for evaluation lanes only.
-
-`_shared/gemini.ts` also exposes Gemini context-cache helpers, used selectively inside `agent-discovery` on repeated extraction retries.
-
-## Edge Function: `ai-agent`
-Central LLM orchestrator. Accepts `{ task, context }`. Uses Gemini structured output via shared helpers in `_shared/`.
-
-| Task | Status | Input | Output |
-|---|---|---|---|
-| `smart_search` | Active | `{ query }` | `{ message, keywords: { name[], occupation[], sector[], location_city[], location_state[], current_position[], flemish_connection[], bio[] } }` |
-| `merge_text` | Active | `{ texts[] }` | `{ result }` |
-| `check_profile` | Active | `{ person, searchResults }` | `{ suggestions: [{ field_name, current_value, suggested_value, source }] }` |
-| `parse_contacts` | **Legacy frozen** | `{ description, sectors }` | `{ message, contacts[] }` |
-| `flemish_search` | **Legacy frozen** | `{ query }` | `{ message, keywords: { flemish_connection[], bio[] } }` |
+| embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |
 
 ## Edge Function: `search-people`
-Server-side routed hybrid search for Dashboard NL queries.
 
-1. Takes `{ query, max_results }`. Attempts Gemini keyword extraction + query embedding in parallel; degrades to lexical-only if unavailable.
-2. Classifies query into `direct_lookup`, `faceted`, or `exploratory` via `_shared/searchRouting.ts`.
-3. Calls `search_people_lexical()` (lexical top-K from `people_search_documents`), `match_people()` (person-level vector), and `match_person_text_chunks()` (chunk-level vector) independently.
-4. Fuses ranked lists via reciprocal-rank + exact-name/field/chunk boosts.
-5. Generates snippets from the winning field or matched chunk text.
-6. Returns `{ results, keywords, route, degraded, diagnostics, message, total_with_embeddings }`.
+Server-side routed hybrid search for Search.
 
-## Edge Function: `discover-contacts`
-Ad hoc web discovery for operators. (`search-contacts` is a deprecated compatibility endpoint for older scripts.)
-
-1. Takes `{ query }` → appends "(flemish/belgian professional)" → calls Tavily (advanced, 10 results).
-2. Feeds results to Gemini for structured extraction.
-3. Dedup-checks against `people` (email, LinkedIn URL, normalized name).
-4. Returns `{ message, contacts[] }` with `is_duplicate` flags.
-
-## Edge Function: `update-profile`
-Single-person ad hoc preview. Does **not** write durable `profile_suggestions` rows.
-
-1. Takes `{ personId }` or `{ personIds }` → fetches person from DB.
-2. Searches Tavily for `"{name} {position} {city}"`.
-3. Runs the shared `check_profile` Gemini contract locally (not via `ai-agent` HTTP hop).
-4. Returns inline suggestions to `ProfileUpdateModal`.
-
-## Edge Function: `agent-verify`
-Durable batch verification — writes `profile_suggestions` rows. LinkedIn-first flow.
-
-1. Takes `{ personIds?, batch_size? }` (default 5 to stay inside edge timeout).
-2. For people with `linkedin_url`: Apify scrape → deterministic field diff (position, location, bio, photo).
-3. Fallback when LinkedIn unavailable: Tavily web search + shared `check_profile` Gemini contract.
-4. Writes `profile_suggestions` with `method`, `confidence`, `evidence_url`.
-5. Can write advisory `field_name = '_status', suggested_value = 'may_have_left_us'` suggestions — approving these must not try to write an unknown column onto `people`.
-6. Suggests `profile_photo_url` when Apify returns a photo and none is stored.
+1. Takes `{ query, max_results }`.
+2. Runs Gemini keyword extraction and embedding in parallel, degrading to lexical-only when needed.
+3. Classifies query through `_shared/searchRouting.ts`.
+4. Calls lexical, person-vector, and text-chunk retrieval.
+5. Fuses ranked lists and returns snippets.
 
 ## Edge Function: `agent-discovery`
-Bounded adaptive frontier crawler.
+
+Durable Discovery.
 
 1. Takes `{ query?, run_id, batch_size? }`.
-2. Seeds `discovery_frontier` from: custom query, due `discovery_source_packs`, or evidence-backed entity pivots (blank-query pass reserves space for proven pivots).
-3. Claims 10-20 frontier URLs via `claim_discovery_frontier()`, fetches each page, canonicalizes/stores in `discovery_pages`.
-4. Classifies heuristically first; Gemini fallback for ambiguous pages only.
-5. Runs Gemini extraction on promising pages only. Writes evidence to `discovery_evidence`, merges into `discovered_contacts` via durable `candidate_key` (falls back to identity heuristics).
-6. Upserts `derived_label_suggestions` for new/refreshed candidates.
-7. Uses Apify LinkedIn as limited post-extraction enrichment only — not as a seed lane.
-8. Persists entity pivots (orgs/labs/programs/events from strong candidates), queues same-domain child links.
-9. Enforces per-domain weekly budgets and per-run caps. Revisits due `done` frontier rows.
-10. Transient Gemini/fetch failures → `upstream_retry` (not hard failure). Retries `429`/`5xx`/timeout with backoff + smaller prompt budget.
-11. Writes full telemetry to `agent_runs.results`.
+2. Seeds and claims `discovery_frontier` from prompts, source packs, or evidence-backed pivots.
+3. Fetches pages, stores `discovery_pages`, classifies pages, extracts candidates, and stores evidence.
+4. Merges people into `discovered_contacts` and target organizations into `discovered_organizations`.
+5. Writes `derived_label_suggestions`, entity pivots, follow-up searches, and telemetry.
+6. Never auto-promotes candidates into approved `people` or `organizations`.
 
-## Edge Function: `agent-connections`
-Pure-SQL wrapper around `discover_connections()` RPC. No LLM or web search.
+Discovery operating principles:
 
-1. Takes optional `{ types, run_id, generate_soft_suggestions }`.
-2. Calls `discover_connections()` one relationship type per invocation (avoids DB statement timeout).
-3. Computes and inserts hard edges for: `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`.
-4. Separately scans chunk-vector similarity to upsert `connection_suggestions` (soft affinity only).
-5. Writes telemetry to `agent_runs` with per-type counts + suggestion counts.
+- Treat web search as a way to seed the frontier, not as the evidence substrate.
+- Crawl as a bounded best-first frontier: `seed -> frontier -> fetch -> classify -> extract -> expand -> review -> revisit`.
+- Extract from individual pages with source URLs and excerpts so reviewers can audit every candidate.
+- Use source packs for head coverage; use high-yield domains, same-domain child links, sitemap/RSS URLs, entity pivots, and coverage gaps for adaptive expansion.
+- Use LinkedIn as post-extraction enrichment after a page or candidate is already interesting, not as the main seed lane.
+- Generate entity pivots only from evidence-bearing entities, then feed those pivots into Network Growth planning.
+
+Organization discovery writes one pending row per candidate to `discovered_organizations`:
+
+- `name`, `website_url`, and a concise evidence-backed `description`.
+- `suggested_us_network_status`: `us_based_organization`, `belgian_organization_with_us_presence`, `us_organization_connected_to_flanders`, or `institutional_connector`.
+- `us_locations`: JSON items with city/state, role, label, description, source URL, evidence excerpt, confidence, and `is_primary`.
+- `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status = pending`, and `agent_run_id`.
+
+Each organization location requires direct evidence from an organization page, press release, trusted institutional page, or high-quality partner page. Expansion targets require explicit evidence of US expansion intent. People discovery may create organization pivots, but approved organization records require organization-specific evidence and review through `discovered_organizations`.
+
+## Edge Function: `agent-verify`
+
+Durable verification.
+
+1. Takes `{ personIds? | person_ids?, batch_size? }`.
+2. Uses LinkedIn-first evidence when available, falling back to trusted web search.
+3. Writes reviewable suggestions with method, confidence, evidence URL, and evidence excerpt.
+4. Target expansion includes organization verification and a record-level suggestion queue.
 
 ## Edge Function: `agent-scheduler`
-Single lifecycle-control path for all agent runs.
 
-- Actions: `trigger` (dispatch), `cancel`, `housekeeping` (zombie/cache cleanup), `metrics`, `planning`
-- Dispatches downstream functions while forwarding the caller's `Authorization`/`apikey` headers.
-- Exposes `metrics` action consumed by `OpsMetricsPanel` in Admin Agents tab.
-- Exposes `planning` action consumed by `DiscoveryPlanningPanel` (gap metrics, entity pivots, refill history).
-- Exposes `housekeeping` and `cancel` actions consumed by Admin -> System.
+Lifecycle and planning service.
 
-## Edge Function: `geocode`
-1. Accepts `{ pairs: [{ city, state }] }` (legacy) or `{ candidates: [{ raw_text, city?, state? }] }` (max 25).
-2. Parses raw text deterministically, checks `locations` cache first.
-3. Geocodes US candidates via Nominatim (rate-limited per request).
-4. Caches/updates `locations` with nullable coordinates + `geocode_source`/`geocoded_at`.
-5. Returns `{ parser_confidence, geocoded, review_required, location_id }` per candidate.
+- Actions: `trigger`, `cancel`, `housekeeping`, `metrics`, `planning`
+- Valid trigger `agent_type` values: `discovery`, `verification`
+- Removed trigger values: `connection`
+- `planning` feeds `/admin/growth`.
+- `metrics` feeds `/admin/growth` quality and benchmark panels.
+- `housekeeping` and `cancel` feed `/admin/system`.
 
 ## Edge Function: `generate-embeddings`
-Asynchronous backend-owned embedding refresh via `embedding_jobs` queue.
+
+Backend-owned embedding refresh through `embedding_jobs`.
 
 | Action/Flag | Behavior |
 |---|---|
 | `status_only` | Return outstanding queue count without processing |
 | `backfill: true` | Reconcile dirty `people` rows into queue, then claim a batch |
-| `kick: true` | Claim a small batch immediately (best-effort nudge from frontend saves) |
-| `action: 'start_batch'` | Offline lane: create async Gemini Batch API job, persist manifest in `embedding_batch_runs` |
-| `action: 'list_batches' \| 'poll_batch' \| 'cancel_batch'` | Manage offline batch runs without exposing internal table to public client |
+| `kick: true` | Claim a small batch immediately |
+| `action: 'start_batch'` | Offline Gemini Batch API lane |
+| `action: 'list_batches' \| 'poll_batch' \| 'cancel_batch'` | Manage offline batch runs |
 
-Each job builds: labeled embedding document + `person_text_chunks` embeddings (`bio`, `position`, `combined`). Requeues if `embedding_dirty_at` changed mid-flight.
+Use Gemini context caching only when repeatedly sending large shared prefixes or reusable evidence sets. Use the offline batch path for large embedding refreshes that do not need interactive latency.
 
 ## Edge Function: `suggest-people`
-Collection suggestion via embeddings + Gemini reranking.
 
-1. Takes collection context (members + query seed including occupation/bio).
-2. Calls `match_people()` (person-level vector) and `match_person_text_chunks()` (chunk-level vector).
-3. Rolls chunk matches back up to candidate people.
-4. Gemini reranks candidates.
-5. Returns explicit structured error/message text on failure (does not silently return empty list).
+Collection suggestion via embeddings and Gemini reranking. Current output is people-only; target output includes organizations and an approval/rejection draft workflow.
 
-## Frontend AI Functions (`src/lib/aiService.ts`)
+## Legacy Removal
 
-| Function | Target | Notes |
-|---|---|---|
-| `hybridSearch(query, maxResults)` | `search-people` | Primary Dashboard NL search path. Falls back to client-side scoring on failure. |
-| `discoverContacts(query)` | `discover-contacts` | Ad hoc operator discovery. `searchContacts()` is a deprecated import alias for older scripts. |
-| `smartSearch(query)` | `ai-agent` smart_search | |
-| `suggestPeopleEmbedding(query, options)` | `suggest-people` | Collection suggestions. |
-| `parseContacts(description, sectors)` | `ai-agent` parse_contacts | Legacy frozen. |
-| `flemishSearch(query)` | `ai-agent` flemish_search | Legacy frozen. |
-| `suggestPeople(query)` | client-side keyword scoring | Fallback only when edge functions fail. |
-| `scorePersonAgainstKeywords(person, keywords)` | — | Weighted field matching for fallback path. |
-| `logSearchClick(query, personId)` | `search_clicks` table | Fire-and-forget relevance feedback. |
+Removed from the product surface:
 
-## Known Bugs
-- **Build size:** JS bundle is ~688kb (192kb gzipped), above Vite's 500kb warning threshold.
-- **Historical frontend error handling remains mixed outside Phase 6.3 surfaces.** New user-facing flows should use `src/lib/toast.ts`; admin edge-function errors should render `StructuredErrorBanner`.
-- **`@types/leaflet` and `@types/leaflet.markercluster` in `dependencies`** instead of `devDependencies` in `package.json`.
+- Profile graph section and graph modal
+- Connection scheduler controls
+- `agent-connections`
+- `connections` / `connection_suggestions` UI usage
+- `discover_connections()` scheduling path
+
+Legacy compatibility still present until follow-up migrations/functions are removed:
+
+- `discover-contacts`
+- `search-contacts`
+- `ai-agent` tasks `parse_contacts` and `flemish_search`
+
+## Known Work
+
+- Move organization search server-side with ranked snippets.
+- Add organization collection membership and collection draft approval.
+- Add organization discovery review and organization verification.
+- Normalize Flemish/Belgian facts into canonical, filterable entities with evidence.
+- Code-split Admin, map, XLSX export, and heavy staff panels to remove the Vite chunk warning.

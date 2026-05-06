@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, type ReactNode } from 'react';
 import {
   Navigate,
   Outlet,
@@ -10,12 +10,6 @@ import {
 } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import ErrorBoundary from './components/ErrorBoundary';
-import Dashboard from './pages/Dashboard';
-import PersonProfile from './pages/PersonProfile';
-import OrganizationProfile from './pages/OrganizationProfile';
-import Collections from './pages/Collections';
-import Admin from './pages/Admin';
-import AddContact from './pages/AddContact';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
 import Account from './pages/Account';
@@ -28,6 +22,20 @@ import {
 } from './lib/appRouting';
 import { getLastDashboardLocation } from './lib/dashboardSession';
 import { RequireAuth, RequireRole, useAuth } from './lib/auth';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const PersonProfile = lazy(() => import('./pages/PersonProfile'));
+const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
+const Collections = lazy(() => import('./pages/Collections'));
+const Admin = lazy(() => import('./pages/Admin'));
+
+function PageLoader() {
+  return (
+    <div className="flex h-96 items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-teal-600" />
+    </div>
+  );
+}
 
 function PersonProfileRoute({
   onNavigate,
@@ -135,12 +143,12 @@ export default function App() {
       }
 
       if (normalizedPage === 'admin') {
-        navigate('/admin');
+        navigate('/admin/discovery');
         return;
       }
 
       if (normalizedPage === 'add-contact') {
-        navigate('/contacts/new', {
+        navigate('/admin/discovery?mode=manual', {
           state: { from: currentLocation },
         });
         return;
@@ -174,7 +182,9 @@ export default function App() {
   }, [navigate]);
 
   const wrap = (scope: string, node: ReactNode) => (
-    <ErrorBoundary scope={scope}>{node}</ErrorBoundary>
+    <ErrorBoundary scope={scope}>
+      <Suspense fallback={<PageLoader />}>{node}</Suspense>
+    </ErrorBoundary>
   );
 
   return (
@@ -232,10 +242,7 @@ export default function App() {
             />
             <Route
               path="/contacts/new"
-              element={wrap(
-                'add-contact',
-                <AddContact onNavigate={handleNavigate} />
-              )}
+              element={<Navigate to="/admin/discovery?mode=manual" replace />}
             />
           </Route>
         </Route>

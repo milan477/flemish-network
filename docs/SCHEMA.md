@@ -8,8 +8,7 @@
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude`/`longitude` nullable (pending geocode or ambiguous). |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `flemish_connections` | `id`, `name`, `type` (university/government/company/other), `created_at` | Known aliases canonicalized on insert (e.g. `University of Ghent` → `UGent`). |
-| `connections` | `id`, `from_person_id`, `to_person_id`, `from_organization_id`, `to_organization_id`, `relationship_type`, `strength`, `evidence_url`, `evidence_excerpt`, `evidence_source`, `evidence_key` | Hard graph edges. Unique per unordered person-person pair + `relationship_type`. Live types: `colleague`, `alumni`, `program_peer`, `local_peer`, `lab_peer`, `event_peer`. |
+| `flemish_connections` | `id`, `name`, `type` (university/government/company/other), `created_at` | Canonical Flemish/Belgian fact catalog. Target expansion adds aliases, parent/group support, `is_filterable`, roles, confidence, source URL, and evidence excerpts. Known aliases are canonicalized on insert (e.g. `University of Ghent` → `UGent`). |
 | `staff_users` | `id`, `user_id` (FK→auth.users), `email`, `full_name`, `avatar_url`, `role`, `status`, `last_sign_in_at`, `created_at`, `updated_at` | App-user auth/authz. Intentionally separate from `people`. Roles: `viewer`, `editor`, `admin`. Statuses: `invited`, `active`, `disabled`. |
 
 ## Junction Tables
@@ -19,6 +18,7 @@
 | `person_sectors` | `(person_id, sector_id)` PK |
 | `organization_sectors` | `(organization_id, sector_id)` PK |
 | `person_flemish_connections` | `(person_id, flemish_connection_id)` PK |
+| `organization_flemish_connections` | Target table for `(organization_id, flemish_connection_id)` plus role, confidence, source URL, and evidence excerpt |
 | `person_us_connections` | `id`, `person_id` (FK), `location_id` (FK), `connection_label`, `source_url`, `evidence_excerpt`, `confidence` |
 | `organization_us_locations` | `id`, `organization_id` (FK), `location_id` (FK), `location_role`, `label`, `description`, `source_url`, `evidence_excerpt`, `confidence`, `is_primary` |
 
@@ -27,16 +27,15 @@
 | Table | Key Columns |
 |---|---|
 | `collections` | `id`, `name`, `description`, `created_at`, `updated_at` |
-| `collection_members` | `id`, `collection_id` (FK), `person_id` (FK), `notes`, `added_at`. UNIQUE(collection_id, person_id) |
+| `collection_members` | `id`, `collection_id` (FK), `person_id` (FK), target `organization_id` (FK), `notes`, `added_at`. Current live uniqueness is `UNIQUE(collection_id, person_id)`; target uniqueness also covers organization members. |
 
 ## AI & Suggestions
 
 | Table | Key Columns |
 |---|---|
-| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key`, `reviewed_at` |
+| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key`, `reviewed_at`. Target replacement is a record-level suggestion queue that supports people and organizations. |
 | `derived_label_suggestions` | `id`, `person_id` or `discovered_contact_id`, `label_type`, `label_value`, `normalized_value`, `confidence`, `source`, `method`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
 | `person_text_chunks` | `id`, `person_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
-| `connection_suggestions` | `id`, `from_person_id`, `to_person_id`, `suggestion_type`, `confidence`, `strength`, `source`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
 | `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at` |
 
@@ -68,11 +67,22 @@
 | `ops_search_benchmark_clicks` | Search benchmark click-through metrics |
 | `ops_discovery_review_metrics` | Discovery candidate review rates and latency |
 | `ops_phase_success_metrics` | Cross-phase success metrics (search benchmark pass rate, discovery yield, multi-evidence rate, embedding coverage, etc.) |
-| `ops_connection_suggestion_metrics` | Connection suggestion acceptance stats |
 | `ops_discovery_domain_yield` | Per-domain yield scores |
 | `ops_discovery_coverage_summary` | Geography coverage summary |
 | `coverage_gaps` | Underrepresented metros/states for gap-driven discovery |
 | `people_search_documents` | Denormalized lexical search substrate (internal, `SECURITY DEFINER` sync triggers) |
+
+## Seed Data
+Seed data is carried by migrations so a clean Supabase project can be reconstructed with `supabase db push --linked`.
+
+| Migration | Seed Contract |
+|---|---|
+| `20260324000001_populate_sample_data.sql` | Initial sectors |
+| `20260331000000_phase0_benchmarks_and_metrics.sql` | Fixed search benchmark queries and discovery source benchmarks |
+| `20260331170000_phase2a_discovery_foundation.sql` | Discovery source packs |
+| `20260401030000_phase2b_discovery_learning.sql` | Metro areas and coverage targets |
+
+Future seed edits should land in new migrations and use idempotent SQL (`ON CONFLICT`, `IF NOT EXISTS`, or equivalent) so repeated pushes on a fresh project remain safe.
 
 ## RLS Summary
 - Core reads require an authenticated active staff session via `is_active_staff()`.
@@ -86,3 +96,4 @@
 | Table | Status |
 |---|---|
 | `plans`, `plan_actions`, `plan_suggested_people` | Planner feature removed. Tables remain but are unused. |
+| `connections`, `connection_suggestions`, `discover_connections()` | Person-to-person connection layer removed from product and scheduler/UI surfaces. Drop in a follow-up migration after confirming no backend references remain. |
