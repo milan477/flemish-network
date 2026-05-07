@@ -13,11 +13,20 @@
 | `/admin/growth` | Coverage, source yield, entity pivots, geography gaps, and recommended next discovery actions |
 | `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
 | `/admin/access` | Admin-only staff access management |
-| `/login` | Staff magic-link sign-in |
-| `/auth/callback` | Auth redirect landing |
-| `/account` | Staff profile |
+| `/login` | Staff email/password sign-in and password reset request |
+| `/auth/callback` | Supabase invite/recovery redirect landing; routes password setup to `/account?setPassword=1` |
+| `/account` | Staff profile and password update |
 
 Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The old `/contacts/new`, `/admin/agents`, `/admin/discovered`, and `/admin/overview` migration routes are not part of the active route contract.
+
+## Staff Auth Contract
+
+- Staff sign-in uses Supabase Auth email/password (`signInWithPassword`), not magic links.
+- `/admin/access` invites staff through the `invite-staff-user` edge function. The function requires admin staff auth, writes/updates the approved `staff_users` row, and calls Supabase `auth.admin.inviteUserByEmail`.
+- Invite and recovery emails redirect through `/auth/callback` and then to `/account?setPassword=1`.
+- New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to `/account` until Supabase Auth password update succeeds and the flag is cleared.
+- Client password setup requires at least 12 characters with uppercase, lowercase, number, and symbol characters. Supabase Auth password policy should match or exceed that rule in project settings.
+- Password reset requests use Supabase Auth `resetPasswordForEmail` after checking `can_request_staff_login`.
 
 ## Search API Contract
 

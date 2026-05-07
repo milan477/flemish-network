@@ -10,9 +10,12 @@
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
 | Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics | Coverage gaps, source yield, entity pivots, and recommended next discovery actions. |
 | System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, record-index queues, cancellation, housekeeping, API usage. |
+| Staff Access | `/admin/access` | `invite-staff-user`, Supabase Auth | Admin-only staff invitation and role/status management. |
 
 ## Behavioral Contracts
 
+- Staff login uses Supabase Auth email/password. Magic-link login is not part of the active auth flow.
+- `invite-staff-user` is the only frontend-facing staff invitation endpoint. It requires admin staff auth, writes the approved `staff_users` row with `password_reset_required = true`, and delegates email delivery/user invitation to Supabase Auth `inviteUserByEmail`.
 - `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
 - `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
 - `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`, not `discover-contacts`.

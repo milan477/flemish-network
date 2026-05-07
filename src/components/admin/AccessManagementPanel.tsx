@@ -34,7 +34,7 @@ export default function AccessManagementPanel() {
 
     const { data, error: loadError } = await supabase
       .from('staff_users')
-      .select('id, user_id, email, full_name, avatar_url, role, status, last_sign_in_at, created_at, updated_at')
+      .select('id, user_id, email, full_name, avatar_url, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
       .order('email');
 
     if (loadError) {
@@ -88,15 +88,20 @@ export default function AccessManagementPanel() {
     setError(null);
     setMessage(null);
 
-    const { error: insertError } = await supabase.from('staff_users').insert({
-      email: normalizedEmail,
-      full_name: inviteName.trim() || null,
-      role: inviteRole,
-      status: 'invited',
+    const inviteRedirectTo = new URL('/auth/callback', window.location.origin);
+    inviteRedirectTo.searchParams.set('setPassword', '1');
+
+    const { error: inviteError } = await supabase.functions.invoke('invite-staff-user', {
+      body: {
+        email: normalizedEmail,
+        full_name: inviteName.trim() || null,
+        role: inviteRole,
+        redirect_to: inviteRedirectTo.toString(),
+      },
     });
 
-    if (insertError) {
-      setError(insertError.message);
+    if (inviteError) {
+      setError(inviteError.message);
       setCreating(false);
       return;
     }
@@ -104,7 +109,7 @@ export default function AccessManagementPanel() {
     setInviteEmail('');
     setInviteName('');
     setInviteRole('viewer');
-    setMessage(`Added ${normalizedEmail} to the approved staff list.`);
+    setMessage(`Invited ${normalizedEmail} to set a staff password.`);
     setCreating(false);
     await loadStaffUsers();
   };
@@ -242,7 +247,11 @@ export default function AccessManagementPanel() {
                       {user.email}
                     </p>
                     <p className="text-xs text-gray-400">
-                      {user.user_id ? 'Linked account' : 'Awaiting first sign-in'}
+                      {user.user_id
+                        ? user.password_reset_required
+                          ? 'Password setup required'
+                          : 'Linked account'
+                        : 'Awaiting invite acceptance'}
                     </p>
                   </div>
                   <input

@@ -23,6 +23,7 @@ export interface StaffUser {
   avatar_url?: string | null;
   role: AppRole;
   status: 'invited' | 'active' | 'disabled';
+  password_reset_required?: boolean | null;
   last_sign_in_at?: string | null;
   created_at: string;
   updated_at: string;

@@ -26,6 +26,9 @@ verify_jwt = false
 [functions.geocode]
 verify_jwt = false
 
+[functions.invite-staff-user]
+verify_jwt = false
+
 [functions.search-contacts]
 verify_jwt = false
 

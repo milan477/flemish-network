@@ -8,11 +8,20 @@ export default function AuthCallback() {
   const [searchParams] = useSearchParams();
   const { staffUser, loading, authError } = useAuth();
   const redirect = searchParams.get('redirect') || '/';
+  const shouldSetPassword = searchParams.get('setPassword') === '1';
 
   useEffect(() => {
     if (loading) return;
 
     if (staffUser) {
+      if (shouldSetPassword || staffUser.password_reset_required) {
+        navigate(
+          `/account?setPassword=1&redirect=${encodeURIComponent(redirect)}`,
+          { replace: true }
+        );
+        return;
+      }
+
       navigate(redirect, { replace: true });
       return;
     }
@@ -27,7 +36,7 @@ export default function AuthCallback() {
     navigate(`/login?redirect=${encodeURIComponent(redirect)}`, {
       replace: true,
     });
-  }, [authError, loading, navigate, redirect, staffUser]);
+  }, [authError, loading, navigate, redirect, shouldSetPassword, staffUser]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">

@@ -15,6 +15,10 @@ Flemish Network App
 
 The product should feel like five clear services, not a collection of overlapping agents.
 
+Staff access is an administrative support workflow, not a sixth product
+service. Admins invite approved staff from Access; invited staff set their own
+Supabase Auth password before using the workspace.
+
 ## 1. Search The Network
 
 Purpose: find existing people and organizations already in the database.

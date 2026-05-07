@@ -43,6 +43,7 @@ The app should feel like five services, not a pile of agents.
 - Verification has preview and durable modes. Durable changes write reviewable suggestions.
 - Organization Flemish/Belgian relevance is in scope as filterable canonical facts plus source-backed raw evidence.
 - Staff-facing UI should use product vocabulary: Discovery, Verification, Network Growth, System, Access. Do not show `AI Agent`, `agent-*`, or "Connections agent" as user-facing labels.
+- Staff authentication uses Supabase Auth email/password. Access invites go through Supabase Auth invitation email and require first-password setup; magic-link login is not an active flow.
 
 ## Non-Goals
 

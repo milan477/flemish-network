@@ -68,6 +68,7 @@ interface StaffUserRow extends RowRecord {
   avatar_url: string | null;
   role: string;
   status: string;
+  password_reset_required: boolean;
   last_sign_in_at: string | null;
   created_at: string | null;
   updated_at: string | null;

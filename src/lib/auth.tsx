@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -64,7 +65,7 @@ async function loadApprovedStaffUser(session: Session): Promise<StaffUser> {
 
   const { data, error } = await supabase
     .from('staff_users')
-    .select('id, user_id, email, full_name, avatar_url, role, status, last_sign_in_at, created_at, updated_at')
+    .select('id, user_id, email, full_name, avatar_url, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
     .eq('user_id', session.user.id)
     .maybeSingle();
 
@@ -84,32 +85,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [staffUser, setStaffUser] = useState<StaffUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  const staffUserRef = useRef<StaffUser | null>(null);
 
-  const hydrateSession = useCallback(async (nextSession: Session | null) => {
-    setLoading(true);
+  const updateSession = useCallback((nextSession: Session | null) => {
+    sessionRef.current = nextSession;
     setSession(nextSession);
+  }, []);
+
+  const updateStaffUser = useCallback((nextStaffUser: StaffUser | null) => {
+    staffUserRef.current = nextStaffUser;
+    setStaffUser(nextStaffUser);
+  }, []);
+
+  const hydrateSession = useCallback(async (
+    nextSession: Session | null,
+    options: { showLoading?: boolean } = {}
+  ) => {
+    const showLoading = options.showLoading ?? true;
+    if (showLoading) {
+      setLoading(true);
+    }
+    updateSession(nextSession);
 
     if (!nextSession) {
-      setStaffUser(null);
+      updateStaffUser(null);
       setLoading(false);
       return;
     }
 
     try {
       const approvedStaffUser = await loadApprovedStaffUser(nextSession);
-      setStaffUser(approvedStaffUser);
+      updateStaffUser(approvedStaffUser);
       setAuthError(null);
     } catch (error) {
-      setStaffUser(null);
+      updateStaffUser(null);
       setAuthError(
         error instanceof Error ? error.message : 'Authentication failed.'
       );
       await supabase.auth.signOut();
-      setSession(null);
+      updateSession(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [updateSession, updateStaffUser]);
 
   useEffect(() => {
     let active = true;
@@ -124,7 +143,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       queueMicrotask(() => {
         if (!active) return;
-        void hydrateSession(nextSession);
+        const currentSession = sessionRef.current;
+        const currentStaffUser = staffUserRef.current;
+        const sameStaffSession =
+          Boolean(currentStaffUser) &&
+          Boolean(nextSession) &&
+          currentSession?.user.id === nextSession?.user.id;
+
+        void hydrateSession(nextSession, { showLoading: !sameStaffSession });
       });
     });
 
@@ -144,9 +170,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     setAuthError(null);
     await supabase.auth.signOut();
-    setStaffUser(null);
-    setSession(null);
-  }, []);
+    updateStaffUser(null);
+    updateSession(null);
+  }, [updateSession, updateStaffUser]);
 
   const hasRole = useCallback(
     (role: AppRole) => {
@@ -197,6 +223,19 @@ export function RequireAuth() {
     return (
       <Navigate
         to={`/login?redirect=${encodeURIComponent(redirect)}`}
+        replace
+      />
+    );
+  }
+
+  if (
+    staffUser.password_reset_required &&
+    location.pathname !== '/account'
+  ) {
+    const redirect = `${location.pathname}${location.search}`;
+    return (
+      <Navigate
+        to={`/account?setPassword=1&redirect=${encodeURIComponent(redirect)}`}
         replace
       />
     );
