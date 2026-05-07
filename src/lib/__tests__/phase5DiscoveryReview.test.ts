@@ -17,6 +17,16 @@ const importIntake = readFileSync(
   'utf8'
 );
 
+const discoveredContactsPolicyFix = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260507007000_fix_discovered_contacts_editor_insert_policy.sql'),
+  'utf8'
+);
+
+const approvedPeopleSourceBackfill = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260507009000_backfill_approved_people_manual_import_source.sql'),
+  'utf8'
+);
+
 describe('Phase 5D discovery review contract', () => {
   it('keeps manual and import organization intake pending-only', () => {
     expect(manualIntake).toContain(".from('discovered_organizations')");
@@ -42,5 +52,21 @@ describe('Phase 5D discovery review contract', () => {
     expect(reviewPanel).toContain('organizationSourceLabel');
     expect(reviewPanel).toContain('source_urls');
     expect(reviewPanel).toContain('evidence_excerpt');
+  });
+
+  it('allows editor staff to insert pending people into discovery review', () => {
+    expect(discoveredContactsPolicyFix).toContain('CREATE POLICY "Editors can insert discovered_contacts"');
+    expect(discoveredContactsPolicyFix).toContain('ON public.discovered_contacts FOR INSERT');
+    expect(discoveredContactsPolicyFix).toContain("WITH CHECK (public.has_staff_role('editor'))");
+  });
+
+  it('preserves manual and import provenance when approving pending people', () => {
+    expect(reviewPanel).toContain('function approvedPersonDataSource');
+    expect(reviewPanel).toContain("if (source === 'manual') return 'manual'");
+    expect(reviewPanel).toContain("if (source === 'import') return 'csv_import'");
+    expect(reviewPanel).toContain('data_source: approvedPersonDataSource(contact.source)');
+    expect(approvedPeopleSourceBackfill).toContain("WHEN 'manual' THEN 'manual'");
+    expect(approvedPeopleSourceBackfill).toContain("WHEN 'import' THEN 'csv_import'");
+    expect(approvedPeopleSourceBackfill).toContain('discovered.approved_person_id = person.id');
   });
 });

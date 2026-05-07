@@ -3,12 +3,12 @@
 | Path | Description |
 |---|---|
 | `/` | Search the network. URL state: `view`, `q`, `sector`, `occupation`, `fc×N`, `city`, `state`, `people`, `organizations`, `lectures`, `focusCity`, `focusState` |
-| `/people/:id` | Person profile |
+| `/people/:id` | Person profile. Editor staff can edit and verify profiles; admin staff can permanently delete approved contacts from this page. |
 | `/organizations/:id` | Organization profile |
 | `/collections` | Collection list |
 | `/collections/:id` | Collection detail |
 | `/admin` | Staff workspace default redirect to `/admin/discovery` |
-| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, and pending people plus pending organization review. URL state: optional `prompt` pre-fills the Discovery query box without starting a run. |
+| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and pending people plus pending organization review. URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
 | `/admin/verification` | Stale records, record suggestions, and derived-label review |
 | `/admin/growth` | Coverage, source yield, entity pivots, geography gaps, and recommended next discovery actions |
 | `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
@@ -19,7 +19,7 @@
 
 Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The old `/contacts/new`, `/admin/agents`, `/admin/discovered`, and `/admin/overview` migration routes are not part of the active route contract.
 
-Discovery manual intake and file import create pending candidates only. People are written to `discovered_contacts`; organizations are written to `discovered_organizations` plus evidence rows when evidence is supplied. Reviewer approval in the pending queues is the route path that creates or merges approved `people` or `organizations`; intake and import do not create or update approved records.
+Discovery intake defaults to the prompted Discovery option and starts runs only through `agent-scheduler`. Manual intake and file import create pending candidates only. People are written to `discovered_contacts`; organizations are written to `discovered_organizations` plus evidence rows when evidence is supplied. Reviewer approval in the pending queues is the route path that creates or merges approved `people` or `organizations`; intake and import do not create or update approved records.
 
 ## Staff Auth Contract
 

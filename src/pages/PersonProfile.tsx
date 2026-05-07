@@ -99,7 +99,7 @@ function reconcileConnections(
 }
 
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
-  const { canEdit } = useAuth();
+  const { canEdit, isAdmin } = useAuth();
   const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
@@ -115,6 +115,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showCollections, setShowCollections] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadPerson = useCallback(async () => {
     const [personRes, sectorsRes, allSectorsRes, flemishRes] = await Promise.all([
@@ -369,6 +370,32 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     loadPerson();
   };
 
+  const deletePerson = async () => {
+    if (!person || deleting) return;
+
+    const confirmed = window.confirm(
+      `Delete ${displayName(person)}? This permanently removes the contact and related collection, tag, search, and verification records.`
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setSaveError(null);
+
+    const { error } = await supabase
+      .from('people')
+      .delete()
+      .eq('id', person.id);
+
+    if (error) {
+      setSaveError(`Error deleting contact: ${error.message}`);
+      setDeleting(false);
+      return;
+    }
+
+    onNavigate('dashboard');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-64px)]">
@@ -435,6 +462,20 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                             <Pencil className="w-4 h-4" />
                             <span>Edit Profile</span>
                           </button>
+                          {isAdmin && (
+                            <button
+                              onClick={deletePerson}
+                              disabled={deleting}
+                              className="px-5 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg transition-colors flex items-center space-x-2 border border-red-100 disabled:opacity-50"
+                            >
+                              {deleting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                              <span>Delete Contact</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => setShowUpdateModal(true)}
                             className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
@@ -594,6 +635,7 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
     manual: 'Added manually',
     csv_import: 'Added via CSV import',
     ai_agent: 'Discovery',
+    discovery_agent: 'Discovery',
     self_reported: 'Self-reported',
   };
 

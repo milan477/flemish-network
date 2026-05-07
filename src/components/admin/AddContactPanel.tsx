@@ -7,6 +7,7 @@ import {
   XCircle,
   CheckCircle2,
   Loader2,
+  Search,
   Phone,
   Mail,
   Linkedin,
@@ -36,16 +37,19 @@ import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
 import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/networkScope';
 import { buildCandidateKeyForMode } from '../../lib/csvParser';
+import { notifyError } from '../../lib/toast';
 
 interface AddContactPanelProps {
   sectors: Sector[];
   onContactAdded: () => void;
   initialTab?: Tab;
+  initialDiscoveryPrompt?: string;
 }
 
-type Tab = 'manual' | 'import';
+type Tab = 'discovery' | 'manual' | 'import';
 
 const TABS: { key: Tab; label: string; icon: typeof UserPlus }[] = [
+  { key: 'discovery', label: 'Discovery', icon: Search },
   { key: 'manual', label: 'Add Manually', icon: UserPlus },
   { key: 'import', label: 'Import File', icon: FileUp },
 ];
@@ -87,7 +91,6 @@ interface ManualOrganizationForm {
   flemish_belgian_relevance: string;
   evidence_url: string;
   evidence_excerpt: string;
-  confidence: string;
   sectorIds: string[];
 }
 
@@ -142,7 +145,6 @@ function createEmptyOrganizationForm(): ManualOrganizationForm {
     flemish_belgian_relevance: '',
     evidence_url: '',
     evidence_excerpt: '',
-    confidence: '',
     sectorIds: [],
   };
 }
@@ -183,15 +185,47 @@ function reconcileConnections(
 export default function AddContactPanel({
   sectors,
   onContactAdded,
-  initialTab = 'manual',
+  initialTab = 'discovery',
+  initialDiscoveryPrompt = '',
 }: AddContactPanelProps) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [addedPerson, setAddedPerson] = useState<Person | null>(null);
   const [manualMode, setManualMode] = useState<'people' | 'organizations'>('people');
+  const [discoveryPrompt, setDiscoveryPrompt] = useState(initialDiscoveryPrompt);
+  const [discoveryRunning, setDiscoveryRunning] = useState(false);
 
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!initialDiscoveryPrompt) return;
+    setDiscoveryPrompt(initialDiscoveryPrompt);
+    setTab('discovery');
+  }, [initialDiscoveryPrompt]);
+
+  const handleRunDiscovery = async () => {
+    setDiscoveryRunning(true);
+    const trimmedPrompt = discoveryPrompt.trim();
+
+    try {
+      const { error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'trigger',
+          agent_type: 'discovery',
+          params: trimmedPrompt ? { query: trimmedPrompt } : {},
+        },
+      });
+
+      if (error) throw error;
+      setDiscoveryPrompt('');
+      onContactAdded();
+    } catch (err) {
+      notifyError(err, { hint: 'Could not start discovery.' });
+    } finally {
+      setDiscoveryRunning(false);
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-yellow-200 overflow-hidden">
@@ -229,6 +263,38 @@ export default function AddContactPanel({
       </div>
 
       <div className="p-6">
+        {tab === 'discovery' && (
+          <div className="max-w-3xl space-y-3">
+            <label className="block text-sm font-medium text-gray-700" htmlFor="discovery-prompt">
+              Discovery prompt
+            </label>
+            <textarea
+              id="discovery-prompt"
+              value={discoveryPrompt}
+              onChange={(event) => setDiscoveryPrompt(event.target.value)}
+              className={`${INPUT_CLS} min-h-28 resize-y`}
+              placeholder="Find KU Leuven alumni in Boston biotech, Flemish founders in California, or leave blank for a seeded discovery sweep."
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleRunDiscovery}
+                disabled={discoveryRunning}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+              >
+                {discoveryRunning ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Run Discovery
+              </button>
+              <span className="text-xs text-gray-500">
+                Creates pending people and organizations for review.
+              </span>
+            </div>
+          </div>
+        )}
         {tab === 'manual' && (
           <div className="space-y-4">
             <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
@@ -527,6 +593,7 @@ function ManualAddForm({
     const linkedin = ensureProtocol(form.linkedin_url || '');
     const website = ensureProtocol(form.website_url || '');
     const twitter = ensureProtocol(form.twitter_url || '');
+    const nowIso = new Date().toISOString();
 
     const candidateKey = buildCandidateKeyForMode(
       {
@@ -579,13 +646,14 @@ function ManualAddForm({
             ? form.current_location_country.trim() || null
             : null,
         bio: form.bio || null,
-        phone: form.phone || null,
         email: form.email || null,
         linkedin_url: linkedin || null,
         website_url: website || null,
         sectors: sectorNames,
         flemish_connection: flemishStr || null,
         source: 'manual',
+        status: 'pending',
+        last_seen_at: nowIso,
         source_urls: sourceUrls,
         candidate_key: candidateKey,
         suggested_us_connections: suggestedConnections,
@@ -619,8 +687,8 @@ function ManualAddForm({
       us_network_status: form.us_network_status,
       current_location_city: form.current_location_city || null,
       current_location_country: form.current_location_country || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: nowIso,
+      updated_at: nowIso,
     } as Person);
     setForm(createEmptyForm());
     setFlemishConnections([]);
@@ -1208,10 +1276,7 @@ function ManualOrganizationFormComponent({
       .filter((sector) => form.sectorIds.includes(sector.id))
       .map((sector) => sector.name);
     const sourceUrl = ensureProtocol(form.evidence_url || form.website_url || '');
-    const parsedConfidence = Number(form.confidence);
-    const confidence = Number.isFinite(parsedConfidence)
-      ? Math.max(0, Math.min(1, parsedConfidence))
-      : 0.7;
+    const nowIso = new Date().toISOString();
     const [city, state] = form.location_display.split(',').map((part) => part.trim());
 
     const { data: candidate, error: insertError } = await supabase
@@ -1222,6 +1287,9 @@ function ManualOrganizationFormComponent({
         description: form.description || null,
         candidate_key: candidateKey,
         source: 'manual',
+        status: 'pending',
+        last_seen_at: nowIso,
+        last_evidence_at: sourceUrl || form.evidence_excerpt ? nowIso : null,
         suggested_us_network_status: form.suggested_us_network_status,
         us_locations: form.location_id
           ? [
@@ -1231,14 +1299,14 @@ function ManualOrganizationFormComponent({
                 role: form.location_role || 'other',
                 source_url: sourceUrl,
                 evidence_excerpt: form.evidence_excerpt || null,
-                confidence,
+                confidence: null,
               },
             ]
           : [],
         sectors: sectorNames,
         flemish_belgian_relevance: form.flemish_belgian_relevance || null,
         source_urls: sourceUrl ? [sourceUrl] : [],
-        confidence,
+        confidence: null,
       })
       .select('id')
       .maybeSingle();
@@ -1265,8 +1333,8 @@ function ManualOrganizationFormComponent({
           normalized_location_city: city || null,
           normalized_location_state: state || null,
           normalized_location_country: form.location_id ? 'United States' : null,
-          confidence,
-          observed_at: new Date().toISOString(),
+          confidence: null,
+          observed_at: nowIso,
         });
 
       if (evidenceError) {
@@ -1370,25 +1438,14 @@ function ManualOrganizationFormComponent({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Location Role</label>
-          <input
-            value={form.location_role}
-            onChange={(event) => setField('location_role', event.target.value)}
-            className={INPUT_CLS}
-            placeholder="office, partner site, expansion target"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">Confidence</label>
-          <input
-            value={form.confidence}
-            onChange={(event) => setField('confidence', event.target.value)}
-            className={INPUT_CLS}
-            placeholder="0.8"
-          />
-        </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600">Location Role</label>
+        <input
+          value={form.location_role}
+          onChange={(event) => setField('location_role', event.target.value)}
+          className={INPUT_CLS}
+          placeholder="office, partner site, expansion target"
+        />
       </div>
 
       <div>

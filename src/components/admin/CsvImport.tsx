@@ -21,6 +21,7 @@ import {
   applyMappings,
   buildCandidateKeyForMode,
   downloadTemplate,
+  normalizePeopleStatus,
   parseCSV,
   parseExcel,
   splitImportMultiValue,
@@ -68,6 +69,8 @@ const ORGANIZATION_STATUS_ALIASES = new Map<string, OrganizationUsNetworkStatus>
   ['institutional connector', 'institutional_connector'],
 ]);
 
+const PREVIEW_WORD_LIMIT = 14;
+
 function ensureProtocol(url: string | undefined): string | null {
   const trimmed = (url || '').trim();
   if (!trimmed) return null;
@@ -104,10 +107,14 @@ function normalizeOrgStatus(raw: string | undefined): OrganizationUsNetworkStatu
   return ORGANIZATION_STATUS_ALIASES.get(key) || 'us_organization_connected_to_flanders';
 }
 
-function parseConfidence(raw: string | undefined): number | null {
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return null;
-  return Math.max(0, Math.min(1, parsed));
+function previewText(fieldKey: string, value: string | undefined): string {
+  const normalized = (value || '').trim().replace(/\s+/g, ' ');
+  if (!normalized) return '-';
+  if (fieldKey !== 'bio') return normalized;
+
+  const words = normalized.split(' ');
+  if (words.length <= PREVIEW_WORD_LIMIT) return normalized;
+  return `${words.slice(0, PREVIEW_WORD_LIMIT).join(' ')}...`;
 }
 
 async function checkConflicts(rows: MappedRow[], mode: ImportEntityMode): Promise<ConflictInfo[]> {
@@ -216,7 +223,18 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fields = mode === 'people' ? [...PROFILE_FIELDS, FULL_NAME_FIELD] : ORGANIZATION_FIELDS;
+  const fields = useMemo(
+    () => (mode === 'people' ? [...PROFILE_FIELDS, FULL_NAME_FIELD] : ORGANIZATION_FIELDS),
+    [mode]
+  );
+  const mappedPreviewFields = useMemo(
+    () =>
+      mappings
+        .filter((mapping) => mapping.csvColumn)
+        .map((mapping) => fields.find((field) => field.key === mapping.fieldKey))
+        .filter((field): field is typeof fields[number] => Boolean(field)),
+    [fields, mappings]
+  );
   const requiredMapped = useMemo(() => {
     if (mode === 'people') {
       return Boolean(
@@ -291,6 +309,11 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
 
   const insertPersonCandidate = async (row: MappedRow) => {
     const name = personName(row);
+    const nowIso = new Date().toISOString();
+    const normalizedStatus =
+      normalizePeopleStatus(row.us_network_status) ||
+      (row.current_location_city || row.us_connection_city ? 'us_connected_abroad' : 'us_based');
+
     return supabase.from('discovered_contacts').insert({
       name,
       email: row.email || null,
@@ -304,14 +327,11 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
       website_url: ensureProtocol(row.website_url),
       sectors: splitImportMultiValue(row.sectors),
       source: 'import',
+      status: 'pending',
+      last_seen_at: nowIso,
       source_urls: splitImportMultiValue(row.us_connection_source_url),
       candidate_key: buildCandidateKeyForMode(row, 'people'),
-      suggested_us_network_status:
-        row.us_network_status || row.current_location_city || row.us_connection_city
-          ? /abroad|connected/i.test(row.us_network_status || '') || row.current_location_city
-            ? 'us_connected_abroad'
-            : 'us_based'
-          : 'us_based',
+      suggested_us_network_status: normalizedStatus,
       current_location_city: row.current_location_city || null,
       current_location_country: row.current_location_country || null,
       suggested_us_connections:
@@ -323,15 +343,16 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                 connection_label: row.us_connection_label || null,
                 source_url: ensureProtocol(row.us_connection_source_url),
                 evidence_excerpt: row.us_connection_evidence || null,
-                confidence: parseConfidence(row.us_connection_confidence),
+                confidence: null,
               },
             ]
           : [],
-      discovery_confidence: parseConfidence(row.us_connection_confidence),
+      discovery_confidence: null,
     });
   };
 
   const insertOrganizationCandidate = async (row: MappedRow) => {
+    const nowIso = new Date().toISOString();
     const sourceUrls = splitImportMultiValue(row.source_url).map((url) => ensureProtocol(url)).filter(Boolean);
     const evidenceExcerpt = (row.evidence_excerpt || '').trim();
     const { data, error: insertError } = await supabase
@@ -342,6 +363,9 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         description: row.description || null,
         candidate_key: buildCandidateKeyForMode(row, 'organizations'),
         source: 'import',
+        status: 'pending',
+        last_seen_at: nowIso,
+        last_evidence_at: sourceUrls[0] || evidenceExcerpt ? nowIso : null,
         suggested_us_network_status: normalizeOrgStatus(row.us_network_status),
         us_locations:
           row.location_city && row.location_state
@@ -352,14 +376,14 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                   role: row.location_role || 'other',
                   source_url: sourceUrls[0] || null,
                   evidence_excerpt: evidenceExcerpt || null,
-                  confidence: parseConfidence(row.confidence),
+                  confidence: null,
                 },
               ]
             : [],
         sectors: splitImportMultiValue(row.sectors),
         flemish_belgian_relevance: row.flemish_belgian_relevance || null,
         source_urls: sourceUrls,
-        confidence: parseConfidence(row.confidence),
+        confidence: null,
       })
       .select('id')
       .maybeSingle();
@@ -380,8 +404,8 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
         normalized_location_city: row.location_city || null,
         normalized_location_state: row.location_state || null,
         normalized_location_country: row.location_city ? 'United States' : null,
-        confidence: parseConfidence(row.confidence),
-        observed_at: new Date().toISOString(),
+        confidence: null,
+        observed_at: nowIso,
       });
       if (evidenceError) return { error: evidenceError };
     }
@@ -490,26 +514,24 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             className="hidden"
           />
 
-          {mode === 'people' && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => downloadTemplate('csv')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-1.5 text-xs text-yellow-700 hover:bg-yellow-100"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download CSV template
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadTemplate('xlsx')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-1.5 text-xs text-yellow-700 hover:bg-yellow-100"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download Excel template
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadTemplate('csv', mode)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-1.5 text-xs text-yellow-700 hover:bg-yellow-100"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download {mode === 'people' ? 'people' : 'organization'} CSV template
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadTemplate('xlsx', mode)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-1.5 text-xs text-yellow-700 hover:bg-yellow-100"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download {mode === 'people' ? 'people' : 'organization'} Excel template
+            </button>
+          </div>
         </div>
       )}
 
@@ -654,12 +676,18 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
             </div>
           )}
 
-          <div className="max-h-64 overflow-auto rounded-lg border border-yellow-200">
-            <table className="w-full min-w-[640px] text-xs">
+          <div className="max-h-72 overflow-auto rounded-lg border border-yellow-200">
+            <table
+              className="w-full text-xs"
+              style={{ minWidth: `${Math.max(760, mappedPreviewFields.length * 150 + 120)}px` }}
+            >
               <thead className="sticky top-0 bg-yellow-50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-yellow-700">Name</th>
-                  <th className="px-3 py-2 text-left font-medium text-yellow-700">Evidence</th>
+                  {mappedPreviewFields.map((field) => (
+                    <th key={field.key} className="px-3 py-2 text-left font-medium text-yellow-700">
+                      {field.label}
+                    </th>
+                  ))}
                   <th className="px-3 py-2 text-left font-medium text-yellow-700">Status</th>
                 </tr>
               </thead>
@@ -668,12 +696,18 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
                   const conflicted = conflictIdxSet.has(index);
                   return (
                     <tr key={index} className={conflicted ? 'bg-amber-50/60 text-gray-400' : 'text-gray-700'}>
-                      <td className="px-3 py-2">{mode === 'people' ? personName(row) : row.name}</td>
-                      <td className="px-3 py-2">
-                        {mode === 'people'
-                          ? row.us_connection_source_url || row.us_connection_evidence || row.bio || '-'
-                          : row.source_url || row.evidence_excerpt || '-'}
-                      </td>
+                      {mappedPreviewFields.map((field) => (
+                        <td
+                          key={field.key}
+                          className={`px-3 py-2 align-top ${
+                            field.key === 'bio' ? 'max-w-[260px] whitespace-normal' : 'whitespace-nowrap'
+                          }`}
+                        >
+                          {field.key === '_full_name'
+                            ? personName(row)
+                            : previewText(field.key, row[field.key])}
+                        </td>
+                      ))}
                       <td className="px-3 py-2">
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${conflicted ? 'bg-amber-100 text-amber-700' : 'bg-green-50 text-green-700'}`}>
                           {conflicted ? 'Skip' : 'Pending'}

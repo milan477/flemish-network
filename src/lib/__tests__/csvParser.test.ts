@@ -3,8 +3,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   PROFILE_FIELDS,
+  ORGANIZATION_FIELDS,
   applyMappings,
   buildCandidateKeyForMode,
+  getImportTemplateData,
+  normalizePeopleStatus,
   parseCSV,
   suggestMappingsForMode,
   suggestMappings,
@@ -39,6 +42,12 @@ describe('csvParser US scope fields', () => {
     expect(result.valid[0].us_network_status).toBe('US-connected abroad');
     expect(result.valid[0].current_location_city).toBe('Leuven');
     expect(result.valid[0].us_connection_label).toBe('Yale alumnus');
+  });
+
+  it('normalizes staff-facing people scope values to the database contract', () => {
+    expect(normalizePeopleStatus('US-based')).toBe('us_based');
+    expect(normalizePeopleStatus('US-connected abroad')).toBe('us_connected_abroad');
+    expect(normalizePeopleStatus('needs review')).toBe('needs_review');
   });
 
   it('rejects connected-abroad rows without a US connection location', () => {
@@ -90,6 +99,22 @@ describe('csvParser Phase 5C pending import modes', () => {
     expect(buildCandidateKeyForMode(result.valid[0], 'organizations')).toBe(
       'org:website:flanderstech example'
     );
+  });
+
+  it('exposes current people and organization import templates', () => {
+    const peopleTemplate = getImportTemplateData('people');
+    const organizationTemplate = getImportTemplateData('organizations');
+
+    expect(peopleTemplate.columns).toContain('People Scope');
+    expect(peopleTemplate.columns).toContain('US Connection Source URL');
+    expect(peopleTemplate.columns).not.toContain('US Connection Confidence');
+    expect(peopleTemplate.columns).not.toContain('Phone');
+    expect(peopleTemplate.examples[0]['People Scope']).toBe('US-based');
+
+    expect(organizationTemplate.columns).toEqual(ORGANIZATION_FIELDS.map((field) => field.label));
+    expect(organizationTemplate.columns).toContain('Evidence URL');
+    expect(organizationTemplate.columns).not.toContain('Confidence');
+    expect(organizationTemplate.examples[0]['Organization Scope']).toBe('US organization connected to Flanders');
   });
 
   it('rejects malformed people email and URL values before import', () => {

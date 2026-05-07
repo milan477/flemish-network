@@ -1,18 +1,19 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import AddContactPanel from '../../components/admin/AddContactPanel';
 import AgentDashboard from '../../components/admin/AgentDashboard';
 
-const { invokeMock, tableCounts, agentRuns } = vi.hoisted(() => ({
+const { invokeMock, agentRuns } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
-  tableCounts: {
-    discovered_contacts: 0,
-    discovered_organizations: 0,
-  } as Record<string, number>,
   agentRuns: [] as Array<Record<string, unknown>>,
 }));
 
-vi.mock('../supabase', () => ({
-  supabase: {
+vi.mock('../supabase', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../supabase')>();
+
+  return {
+    ...actual,
+    supabase: {
     functions: {
       invoke: invokeMock,
     },
@@ -29,34 +30,11 @@ vi.mock('../supabase', () => ({
         };
       }
 
-      if (table === 'api_quotas') {
-        return {
-          select: () => ({
-            eq: () => Promise.resolve({ data: [] }),
-          }),
-        };
-      }
-
-      if (table === 'discovered_contacts') {
-        return {
-          select: () => ({
-            eq: () => Promise.resolve({ count: tableCounts.discovered_contacts }),
-          }),
-        };
-      }
-
-      if (table === 'discovered_organizations') {
-        return {
-          select: () => ({
-            eq: () => Promise.resolve({ count: tableCounts.discovered_organizations }),
-          }),
-        };
-      }
-
       throw new Error(`Unexpected table in test: ${table}`);
     },
   },
-}));
+  };
+});
 
 vi.mock('../toast', () => ({
   notifyError: vi.fn(),
@@ -65,15 +43,17 @@ vi.mock('../toast', () => ({
 afterEach(() => {
   cleanup();
   invokeMock.mockReset();
-  tableCounts.discovered_contacts = 0;
-  tableCounts.discovered_organizations = 0;
   agentRuns.length = 0;
 });
 
 describe('Admin Discovery prompt handoff', () => {
   it('prefills the Discovery query without calling the scheduler', async () => {
     render(
-      <AgentDashboard initialDiscoveryPrompt="Find KU Leuven alumni in Boston biotech" />
+      <AddContactPanel
+        sectors={[]}
+        onContactAdded={vi.fn()}
+        initialDiscoveryPrompt="Find KU Leuven alumni in Boston biotech"
+      />
     );
 
     expect(
@@ -85,11 +65,15 @@ describe('Admin Discovery prompt handoff', () => {
   it('only calls the scheduler when staff explicitly starts Discovery', async () => {
     invokeMock.mockResolvedValue({ error: null });
     render(
-      <AgentDashboard initialDiscoveryPrompt="Find Flemish climate founders in California" />
+      <AddContactPanel
+        sectors={[]}
+        onContactAdded={vi.fn()}
+        initialDiscoveryPrompt="Find Flemish climate founders in California"
+      />
     );
 
     await screen.findByDisplayValue('Find Flemish climate founders in California');
-    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run Discovery' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('agent-scheduler', {
@@ -102,16 +86,12 @@ describe('Admin Discovery prompt handoff', () => {
     });
   });
 
-  it('shows pending people and organization counts', async () => {
-    tableCounts.discovered_contacts = 3;
-    tableCounts.discovered_organizations = 2;
-
+  it('keeps quota and summary cards out of Discovery history', async () => {
     render(<AgentDashboard />);
 
-    expect(await screen.findByText('Pending People')).toBeTruthy();
-    expect(screen.getByText('Pending Organizations')).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    expect(await screen.findByText('Discovery History')).toBeTruthy();
+    expect(screen.queryByText('API Quotas')).toBeNull();
+    expect(screen.queryByText('Summary')).toBeNull();
   });
 
   it('summarizes discovery run results for people and organizations', async () => {

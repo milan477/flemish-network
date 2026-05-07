@@ -4,12 +4,12 @@
 
 | Table | Key Columns | Notes |
 |---|---|---|
-| `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `us_network_status`, `current_location_city`, `current_location_country`, `occupation`, `bio`, `profile_photo_url`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. `location_id` is the current US base for `us_based` people only. `us_connected_abroad` people use abroad display fields plus `person_us_connections`. No inline location columns; no scalar `flemish_connection`. Flemish ties normalized via `person_flemish_connections`. |
+| `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `us_network_status`, `current_location_city`, `current_location_country`, `occupation`, `bio`, `profile_photo_url`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. `location_id` is the current US base for `us_based` people only. `us_connected_abroad` people use abroad display fields plus `person_us_connections`. No inline location columns; no scalar `flemish_connection`. Flemish ties normalized via `person_flemish_connections`. `data_source` preserves approved-profile provenance such as `manual`, `csv_import`, `ai_agent`, and legacy `discovery_agent`. |
 | `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `embedding`, `embedding_dirty_at`, `embedding_generated_at`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. Organization embeddings support approved organization semantic search. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude`/`longitude` nullable (pending geocode or ambiguous). |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
 | `flemish_connections` | `id`, `name`, `type` (university/government/company/other), `created_at` | Canonical Flemish/Belgian fact catalog. Target expansion adds aliases, parent/group support, `is_filterable`, roles, confidence, source URL, and evidence excerpts. Known aliases are canonicalized on insert (e.g. `University of Ghent` → `UGent`). |
-| `staff_users` | `id`, `user_id` (FK→auth.users), `email`, `full_name`, `avatar_url`, `role`, `status`, `password_reset_required`, `last_sign_in_at`, `created_at`, `updated_at` | App-user auth/authz. Intentionally separate from `people`. Roles: `viewer`, `editor`, `admin`. Statuses: `invited`, `active`, `disabled`. `password_reset_required` forces invited staff through account password setup before they can use other routes. |
+| `staff_users` | `id`, `user_id` (FK→auth.users), `email`, `full_name`, `avatar_url`, `role`, `status`, `password_reset_required`, `last_sign_in_at`, `created_at`, `updated_at` | App-user auth/authz. Intentionally separate from `people`. Roles: `viewer`, `editor`, `admin`. Viewers can search/read, editors can maintain approved and pending network records, and admins can manage staff access plus permanent approved contact deletion. Statuses: `invited`, `active`, `disabled`. `password_reset_required` forces invited staff through account password setup before they can use other routes. |
 
 ## Junction Tables
 
@@ -48,7 +48,7 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 
 | Table | Key Columns |
 |---|---|
-| `discovered_contacts` | `id`, `name`, `email`, `linkedin_url`, `website_url`, `candidate_key`, `suggested_us_network_status`, `suggested_us_network_confidence`, `current_location_city`, `current_location_country`, `suggested_us_connections`, `suggested_org_pivots`, `status`, `review_outcome`, `reviewed_at`, `approved_person_id` |
+| `discovered_contacts` | `id`, `name`, `email`, `linkedin_url`, `website_url`, `candidate_key`, `source`, `source_urls`, `suggested_us_network_status`, `suggested_us_network_confidence`, `current_location_city`, `current_location_country`, `suggested_us_connections`, `suggested_org_pivots`, `status`, `review_outcome`, `reviewed_at`, `approved_person_id` |
 | `discovered_organizations` | `id`, `name`, `website_url`, `description`, `candidate_key`, `source`, `first_seen_at`, `last_seen_at`, `last_evidence_at`, `evidence_count`, `suggested_us_network_status`, `us_locations`, `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status`, `review_outcome`, `approved_organization_id` |
 | `discovered_organization_evidence` | `id`, `discovered_organization_id` (FK), nullable `discovery_page_id` (FK), unique `evidence_key`, `page_url`, `page_title`, `page_type`, `source_type`, `source_name`, `source_url`, `evidence_excerpt`, `raw_relevance_text`, `raw_location_text`, `raw_sector_text`, normalized location fields, `confidence`, `observed_at`, `created_at`, `updated_at` |
 | `discovery_frontier` | `id`, `url`, `status`, `source_type`, `parent_url`, `domain`, `claimed_at`, `done_at` |
@@ -108,10 +108,10 @@ Future seed edits should land in new migrations and use idempotent SQL (`ON CONF
 
 ## RLS Summary
 - Core reads require an authenticated active staff session via `is_active_staff()`.
-- Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`.
+- Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`; permanent `people` deletion is admin-only because it cascades related approved-record data. Legacy public write policies have been removed from collection membership and US location link tables.
 - `staff_users` supports self read/update for the signed-in row; admins manage all rows.
 - Staff auth users live in Supabase Auth. The app does not store password hashes; `staff_users.password_reset_required` only gates first-password setup after an invite.
-- `discovered_organizations` and `discovered_organization_evidence` are editor-only pending Discovery tables; they do not expose anon or broad authenticated public policies.
+- `discovered_contacts`, `discovered_organizations`, and `discovered_organization_evidence` are editor-only pending Discovery tables; manual intake and import inserts require `has_staff_role('editor')` and do not expose anon or broad authenticated public policies.
 - `person_text_chunks`, `organization_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs`, `organization_embedding_jobs`, and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System record-index queue/batch health; writes still go through queue RPCs and embedding workers.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
 - `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.

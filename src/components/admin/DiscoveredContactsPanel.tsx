@@ -275,6 +275,21 @@ function organizationSourceLabel(source: string): string {
   return source.replace(/_/g, ' ');
 }
 
+function contactSourceLabel(source: string): string {
+  if (source === 'manual') return 'Manual';
+  if (source === 'import') return 'Import';
+  if (source === 'linkedin_search') return 'LinkedIn';
+  if (source === 'frontier_page') return 'Frontier Page';
+  if (source === 'web_search' || source === 'agent_discovery') return 'Discovery';
+  return source.replace(/_/g, ' ');
+}
+
+function approvedPersonDataSource(source: string): string {
+  if (source === 'manual') return 'manual';
+  if (source === 'import') return 'csv_import';
+  return 'ai_agent';
+}
+
 async function checkOrganizationDuplicates(
   organizations: DiscoveredOrganization[]
 ): Promise<OrganizationDuplicateMatch[]> {
@@ -380,7 +395,7 @@ async function approveContact(
       email_verified: contact.email ? false : null,
       linkedin_url: contact.linkedin_url || null,
       website_url: contact.website_url || null,
-      data_source: 'discovery_agent',
+      data_source: approvedPersonDataSource(contact.source),
     })
     .select('id')
     .maybeSingle();
@@ -1004,7 +1019,11 @@ function MergeCompare({
 
 // ── Main Panel ─────────────────────────────────────────────────────
 
-export default function DiscoveredContactsPanel() {
+interface DiscoveredContactsPanelProps {
+  refreshKey?: number;
+}
+
+export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredContactsPanelProps) {
   const [activeQueue, setActiveQueue] = useState<'people' | 'organizations'>('people');
   const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
   const [organizations, setOrganizations] = useState<DiscoveredOrganization[]>([]);
@@ -1151,7 +1170,7 @@ export default function DiscoveredContactsPanel() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, refreshKey]);
 
   useEffect(() => {
     if (loading) return;
@@ -1536,16 +1555,12 @@ export default function DiscoveredContactsPanel() {
                     className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                       contact.source === 'linkedin_search'
                         ? 'bg-blue-50 text-blue-600'
-                        : contact.source === 'frontier_page'
-                          ? 'bg-teal-50 text-teal-700'
-                          : 'bg-amber-50 text-amber-600'
+                      : contact.source === 'frontier_page'
+                        ? 'bg-teal-50 text-teal-700'
+                        : 'bg-amber-50 text-amber-600'
                     }`}
                   >
-                    {contact.source === 'linkedin_search'
-                      ? 'LinkedIn'
-                      : contact.source === 'frontier_page'
-                        ? 'Frontier Page'
-                        : 'Web Search'}
+                    {contactSourceLabel(contact.source)}
                   </span>
                   {evidenceCount > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">

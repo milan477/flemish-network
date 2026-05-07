@@ -204,17 +204,6 @@ export const PROFILE_FIELDS: ProfileField[] = [
     ],
   },
   {
-    key: 'us_connection_confidence',
-    label: 'US Connection Confidence',
-    required: false,
-    aliases: [
-      'us connection confidence',
-      'us tie confidence',
-      'connection confidence',
-      'confidence',
-    ],
-  },
-  {
     key: 'bio',
     label: 'Bio',
     required: false,
@@ -250,19 +239,6 @@ export const PROFILE_FIELDS: ProfileField[] = [
       'email address',
       'mail',
       'contact email',
-    ],
-  },
-  {
-    key: 'phone',
-    label: 'Phone',
-    required: false,
-    aliases: [
-      'phone',
-      'telephone',
-      'tel',
-      'phone number',
-      'mobile',
-      'cell',
     ],
   },
   {
@@ -370,13 +346,31 @@ export const ORGANIZATION_FIELDS: ProfileField[] = [
     required: false,
     aliases: ['evidence excerpt', 'evidence', 'quote', 'source excerpt'],
   },
-  {
-    key: 'confidence',
-    label: 'Confidence',
-    required: false,
-    aliases: ['confidence', 'score', 'relevance score'],
-  },
 ];
+
+export const PEOPLE_STATUS_ALIASES = new Map<string, 'us_based' | 'us_connected_abroad' | 'needs_review'>([
+  ['us based', 'us_based'],
+  ['us based person', 'us_based'],
+  ['us-based', 'us_based'],
+  ['us_based', 'us_based'],
+  ['based in us', 'us_based'],
+  ['based in the us', 'us_based'],
+  ['us connected abroad', 'us_connected_abroad'],
+  ['us-connected abroad', 'us_connected_abroad'],
+  ['us_connected_abroad', 'us_connected_abroad'],
+  ['connected abroad', 'us_connected_abroad'],
+  ['abroad with us ties', 'us_connected_abroad'],
+  ['needs review', 'needs_review'],
+  ['needs_review', 'needs_review'],
+]);
+
+export function normalizePeopleStatus(
+  raw: string | undefined
+): 'us_based' | 'us_connected_abroad' | 'needs_review' | null {
+  const key = (raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!key) return null;
+  return PEOPLE_STATUS_ALIASES.get(key) || null;
+}
 
 export interface CsvParseResult {
   headers: string[];
@@ -791,8 +785,15 @@ export function parseExcel(buffer: ArrayBuffer): CsvParseResult {
   return { headers, rows, totalRows: rows.length };
 }
 
-const TEMPLATE_COLUMNS = PROFILE_FIELDS.map((f) => f.label);
-const TEMPLATE_EXAMPLES: Record<string, string>[] = [
+export interface ImportTemplateData {
+  columns: string[];
+  examples: Record<string, string>[];
+  sheetName: string;
+  filenameBase: string;
+}
+
+const PEOPLE_TEMPLATE_COLUMNS = PROFILE_FIELDS.map((f) => f.label);
+const PEOPLE_TEMPLATE_EXAMPLES: Record<string, string>[] = [
   {
     Title: 'Dr.',
     'First Name': 'Jan',
@@ -810,11 +811,9 @@ const TEMPLATE_EXAMPLES: Record<string, string>[] = [
     'US Connection Label': '',
     'US Connection Source URL': '',
     'US Connection Evidence': '',
-    'US Connection Confidence': '',
     Bio: 'Belgian researcher specializing in AI and machine learning.',
     'Flemish Connection': 'KU Leuven',
     Email: 'jan.desmedt@example.com',
-    Phone: '+1 617-555-0100',
     LinkedIn: 'https://linkedin.com/in/jandesmedt',
     Website: 'https://jandesmedt.example.com',
   },
@@ -835,37 +834,84 @@ const TEMPLATE_EXAMPLES: Record<string, string>[] = [
     'US Connection Label': 'Yale alumnus',
     'US Connection Source URL': 'https://example.com/source',
     'US Connection Evidence': 'Profile notes Yale alumni affiliation.',
-    'US Connection Confidence': '0.85',
     Bio: 'Flemish founder with US university and investor connections.',
     'Flemish Connection': 'VLAIO',
     Email: 'sofie.peeters@example.com',
-    Phone: '',
     LinkedIn: 'https://linkedin.com/in/sofiepeeters',
     Website: 'https://sofiepeeters.example.com',
   },
 ];
 
-export function downloadTemplate(format: 'csv' | 'xlsx') {
-  const exampleRows = TEMPLATE_EXAMPLES.map((example) =>
-    TEMPLATE_COLUMNS.map((col) => example[col] || '')
+const ORGANIZATION_TEMPLATE_COLUMNS = ORGANIZATION_FIELDS.map((f) => f.label);
+const ORGANIZATION_TEMPLATE_EXAMPLES: Record<string, string>[] = [
+  {
+    'Organization Name': 'Flanders Tech Hub',
+    Website: 'https://flanderstech.example',
+    Description: 'US-based technology network connecting Flemish founders and research partners.',
+    'Sector(s)': 'Artificial Intelligence; Research',
+    'Organization Scope': 'US organization connected to Flanders',
+    'US Location City': 'New York',
+    'US Location State': 'New York',
+    'US Location Role': 'partner_site',
+    'Flemish/Belgian Relevance': 'Partnership with imec and Flemish startups.',
+    'Evidence URL': 'https://example.com/partnership',
+    'Evidence Excerpt': 'Announcement describes imec partnership in New York.',
+  },
+  {
+    'Organization Name': 'Leuven BioWorks',
+    Website: 'https://leuvenbioworks.example',
+    Description: 'Belgian life sciences company with a US lab presence.',
+    'Sector(s)': 'Biotechnology; Healthcare',
+    'Organization Scope': 'Belgian organization with US presence',
+    'US Location City': 'Boston',
+    'US Location State': 'Massachusetts',
+    'US Location Role': 'lab',
+    'Flemish/Belgian Relevance': 'Headquartered in Leuven with Flemish research roots.',
+    'Evidence URL': 'https://example.com/us-lab',
+    'Evidence Excerpt': 'Company page lists a Boston lab and Leuven headquarters.',
+  },
+];
+
+export function getImportTemplateData(mode: ImportEntityMode = 'people'): ImportTemplateData {
+  if (mode === 'organizations') {
+    return {
+      columns: ORGANIZATION_TEMPLATE_COLUMNS,
+      examples: ORGANIZATION_TEMPLATE_EXAMPLES,
+      sheetName: 'Organizations',
+      filenameBase: 'flemish_network_organization_import_template',
+    };
+  }
+
+  return {
+    columns: PEOPLE_TEMPLATE_COLUMNS,
+    examples: PEOPLE_TEMPLATE_EXAMPLES,
+    sheetName: 'People',
+    filenameBase: 'flemish_network_people_import_template',
+  };
+}
+
+export function downloadTemplate(format: 'csv' | 'xlsx', mode: ImportEntityMode = 'people') {
+  const template = getImportTemplateData(mode);
+  const exampleRows = template.examples.map((example) =>
+    template.columns.map((col) => example[col] || '')
   );
 
   if (format === 'xlsx') {
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLUMNS, ...exampleRows]);
+    const ws = XLSX.utils.aoa_to_sheet([template.columns, ...exampleRows]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
-    XLSX.writeFile(wb, 'flemish_network_import_template.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, template.sheetName);
+    XLSX.writeFile(wb, `${template.filenameBase}.xlsx`);
   } else {
     const escape = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v);
     const lines = [
-      TEMPLATE_COLUMNS.map(escape).join(','),
+      template.columns.map(escape).join(','),
       ...exampleRows.map((exampleRow) => exampleRow.map(escape).join(',')),
     ];
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'flemish_network_import_template.csv';
+    a.download = `${template.filenameBase}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

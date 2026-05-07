@@ -52,6 +52,7 @@ export default function Admin({ onNavigate }: AdminProps) {
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
   const [derivedLabels, setDerivedLabels] = useState<DerivedLabelSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [discoveryRefreshKey, setDiscoveryRefreshKey] = useState(0);
 
   const [aiLoading, setAiLoading] = useState(false);
   const [aiLoadingIds, setAiLoadingIds] = useState<Set<string>>(new Set());
@@ -133,8 +134,11 @@ export default function Admin({ onNavigate }: AdminProps) {
     );
   }, []);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (options?: { showSpinner?: boolean }) => {
+    const showSpinner = options?.showSpinner ?? true;
+    if (showSpinner) {
+      setLoading(true);
+    }
 
     try {
       const [
@@ -160,7 +164,9 @@ export default function Admin({ onNavigate }: AdminProps) {
       setPersonSectors((personSectorsRes.data || []) as unknown as PersonSectorRow[]);
       setSectors((sectorsRes.data || []) as Sector[]);
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -414,11 +420,15 @@ export default function Admin({ onNavigate }: AdminProps) {
         <div className="space-y-6">
           <AddContactPanel
             sectors={sectors}
-            onContactAdded={loadData}
-            initialTab={searchParams.get('mode') === 'import' ? 'import' : 'manual'}
+            onContactAdded={() => {
+              loadData({ showSpinner: false });
+              setDiscoveryRefreshKey((current) => current + 1);
+            }}
+            initialTab={searchParams.get('mode') === 'import' ? 'import' : 'discovery'}
+            initialDiscoveryPrompt={discoveryPrompt}
           />
-          <AgentDashboard initialDiscoveryPrompt={discoveryPrompt} />
-          <DiscoveredContactsPanel />
+          <AgentDashboard refreshKey={discoveryRefreshKey} />
+          <DiscoveredContactsPanel refreshKey={discoveryRefreshKey} />
         </div>
       )}
 

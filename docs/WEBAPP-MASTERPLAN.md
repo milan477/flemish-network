@@ -335,7 +335,7 @@ Goal: make `agent-discovery` the only durable discovery workflow for new people 
 Scope:
 
 - Prompted discovery calls `agent-scheduler` with `agent_type = "discovery"`.
-- Manual discovery intake supports people and organizations with form entry and CSV/XLSX import.
+- Discovery intake defaults to the prompted Discovery form, with adjacent manual add and CSV/XLSX import options for people and organizations.
 - `agent-discovery` persists pending people to `discovered_contacts`.
 - `agent-discovery` persists pending organizations to `discovered_organizations`.
 - Discovery review UI handles pending people and pending organizations.
@@ -347,12 +347,13 @@ Todos:
 - `[done]` Add Phase 5A organization staging schema, evidence table, dedupe indexes, editor-only RLS, types, tests, and schema/AI docs.
 - `[done]` Find and remove active UI calls to `discover-contacts`, `search-contacts`, `parse_contacts`, and `flemish_search`.
 - `[done]` Replace prompted discovery calls with `agent-scheduler` -> `agent-discovery`; `/admin/discovery?prompt=...` remains prefill-only until staff clicks Run.
+- `[done]` Move the prompted Discovery runner into the Discovery intake card and leave Discovery history as a compact run log.
 - `[done]` Extend `agent-discovery` extraction and persistence for pending organizations.
 - `[done]` Add organization dedupe against approved organizations and pending discovered organizations.
 - `[done]` Extend manual discovery intake so staff can add pending people and pending organizations through forms.
 - `[done]` Extend import so staff can upload people and organizations through CSV/XLSX, with clear validation and no direct writes to approved `people` or `organizations`.
 - `[done]` Add pending organization review UI alongside pending people, including approve, reject, merge, source URL, and evidence excerpt handling.
-- `[done]` Store organization source URLs, evidence excerpts, confidence, sectors, locations, and Flemish/Belgian relevance.
+- `[done]` Store organization source URLs, evidence excerpts, sectors, locations, and Flemish/Belgian relevance without asking staff to enter confidence scores.
 - `[done]` Add fresh Phase 5 people and organization import fixture files for valid pending-candidate imports.
 - `[done]` Update Discovery dashboard pending summaries and run result summaries for people plus organizations.
 - `[done]` Add source guards that keep active UI free of legacy Discovery callers.

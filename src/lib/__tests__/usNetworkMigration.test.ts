@@ -7,6 +7,11 @@ const sql = readFileSync(
   'utf8'
 );
 
+const rlsLockdownSql = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260507008000_lock_down_remaining_public_write_policies.sql'),
+  'utf8'
+);
+
 describe('US network scope migration', () => {
   it('adds constrained people and organization scope statuses', () => {
     expect(sql).toContain('people_us_network_status_check');
@@ -30,5 +35,18 @@ describe('US network scope migration', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS discovered_organizations');
     expect(sql).toContain('approved_organization_id uuid REFERENCES organizations(id)');
     expect(sql).toContain('us_locations jsonb');
+  });
+
+  it('locks US connection and organization location writes to editor staff', () => {
+    expect(rlsLockdownSql).toContain('DROP POLICY IF EXISTS "Public insert person_us_connections"');
+    expect(rlsLockdownSql).toContain('DROP POLICY IF EXISTS "Public insert organization_us_locations"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Staff can read person_us_connections"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can insert person_us_connections"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can update person_us_connections"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can delete person_us_connections"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Staff can read organization_us_locations"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can insert organization_us_locations"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can update organization_us_locations"');
+    expect(rlsLockdownSql).toContain('CREATE POLICY "Editors can delete organization_us_locations"');
   });
 });

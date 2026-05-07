@@ -66,6 +66,7 @@ Quality gates before autonomy:
 - Frontier/planning actions produce new useful pages, not repeated versions of the same query.
 - Discovery never auto-promotes to `people` or `organizations`; it creates pending review work.
 - Manual intake and imports never auto-promote to `people` or `organizations`; row-level validation blocks malformed contact fields, malformed URLs, organization rows without evidence, and partial US location evidence before pending candidates are created.
+- Import preview shows the mapped row columns in a horizontally scrollable table, truncating long bios, and successful imports refresh the pending review queues immediately.
 - Organization candidates are promoted only through explicit reviewer approval or merge, with source URLs and evidence excerpts visible in review.
 - Active UI source must not call retired Discovery endpoints or retired `ai-agent` Discovery tasks; prompted Discovery runs only through `agent-scheduler`.
 

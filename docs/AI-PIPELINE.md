@@ -19,7 +19,7 @@
 - `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
 - `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
 - `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`; retired Discovery compatibility endpoints must not be reintroduced.
-- `/admin/discovery?prompt=<encoded prompt>` is a staff-controlled handoff only: it pre-fills the Discovery query box and must not call `agent-scheduler` until staff explicitly starts Discovery.
+- `/admin/discovery?prompt=<encoded prompt>` is a staff-controlled handoff only: it pre-fills the Discovery intake prompt box and must not call `agent-scheduler` until staff explicitly starts Discovery.
 - `agent-verify` owns durable verification suggestions.
 - `update-profile` is preview mode only for inline profile checks and must not write durable suggestion rows.
 - `derived_label_suggestions` remains the review queue for inferred sectors, occupations, Flemish/Belgian entities, locations, and confidence before promotion.
@@ -91,9 +91,9 @@ Organization page evidence is stored separately in `discovered_organization_evid
 
 Each organization location requires direct evidence from an organization page, press release, trusted institutional page, or high-quality partner page. Expansion targets require explicit evidence of US expansion intent. People discovery may create organization pivots, but approved organization records require organization-specific evidence and review through `discovered_organizations`.
 
-Manual Discovery intake and CSV/XLSX imports share the pending-candidate contract. People intake/import writes `discovered_contacts` with `source = manual` or `source = import`, candidate keys, source URLs, suggested US scope, optional US connection evidence, sectors, and Flemish/Belgian text. Organization intake/import writes `discovered_organizations` with `source = manual` or `source = import`, candidate keys, source URLs, sectors, US locations, Flemish/Belgian relevance, confidence, and `discovered_organization_evidence` rows when source evidence is supplied. These paths check approved and pending conflicts and never create or update approved `people` or `organizations`.
+Manual Discovery intake and CSV/XLSX imports share the pending-candidate contract. People intake/import writes `discovered_contacts` with `source = manual` or `source = import`, candidate keys, source URLs, suggested US scope, optional US connection evidence, sectors, and Flemish/Belgian text. Organization intake/import writes `discovered_organizations` with `source = manual` or `source = import`, candidate keys, source URLs, sectors, US locations, Flemish/Belgian relevance, and `discovered_organization_evidence` rows when source evidence is supplied. Manual forms and CSV/XLSX templates do not ask staff to enter confidence scores; confidence is reserved for automated evidence assessment and reviewer judgment. These paths check approved and pending conflicts, refresh the pending review queues after writes, and never create or update approved `people` or `organizations`.
 
-Discovery review has separate pending people and pending organization queues. People can be approved, rejected, or merged using the existing pending-contact review behavior. Organization approval is reviewer-controlled: it writes the approved `organizations` row, `organization_sectors`, normalized `organization_us_locations`, `organizations.flemish_link`, review metadata on `discovered_organizations`, and then queues organization embeddings. Organization rejection leaves the approved organization tables unchanged. Organization merge updates the selected approved organization, adds sectors/locations, records `approved_merge`, and queues organization embeddings.
+Discovery review has separate pending people and pending organization queues. People can be approved, rejected, or merged using the existing pending-contact review behavior; approval preserves pending provenance by writing `people.data_source = manual` for manual intake, `csv_import` for CSV/XLSX imports, and `ai_agent` for Discovery-created people. Organization approval is reviewer-controlled: it writes the approved `organizations` row, `organization_sectors`, normalized `organization_us_locations`, `organizations.flemish_link`, review metadata on `discovered_organizations`, and then queues organization embeddings. Organization rejection leaves the approved organization tables unchanged. Organization merge updates the selected approved organization, adds sectors/locations, records `approved_merge`, and queues organization embeddings.
 
 ## Edge Function: `agent-verify`
 
@@ -114,7 +114,7 @@ Lifecycle and planning service.
 - `planning` feeds `/admin/growth`.
 - `metrics` feeds `/admin/growth` quality and benchmark panels.
 - `housekeeping` and `cancel` feed `/admin/system`.
-- Prompted Discovery UI triggers only `agent-scheduler` with `{ action: "trigger", agent_type: "discovery", params: { query? } }`; prompt URL handoffs prefill the query but do not start a run.
+- Prompted Discovery UI lives in the Discovery intake card and triggers only `agent-scheduler` with `{ action: "trigger", agent_type: "discovery", params: { query? } }`; prompt URL handoffs prefill the query but do not start a run.
 
 ## Edge Function: `generate-embeddings`
 

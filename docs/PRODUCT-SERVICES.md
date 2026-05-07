@@ -15,8 +15,7 @@ Flemish Network App
 
 The product should feel like five clear services, not a collection of overlapping agents.
 
-Staff access is an administrative support workflow, not a sixth product
-service. Admins invite approved staff from Access; invited staff set their own
+Staff access is an administrative support workflow, not a sixth product service. Viewers can search/read the network, editors can maintain pending and approved records, and admins can manage staff access plus destructive approved-record deletion. Admins invite approved staff from Access; invited staff set their own
 Supabase Auth password before using the workspace.
 
 ## 1. Search The Network
@@ -113,7 +112,7 @@ Modes:
 - **File import:** staff upload people or organizations from CSV/XLSX into pending review queues.
 - **Autonomous discovery:** system chooses work from source packs, coverage gaps, high-yield domains, and evidence-backed pivots.
 
-The AI assistant should not be a separate contact-discovery workflow. It should simply link the user to the discovery prompt box and pass the prompt into this service.
+The AI assistant should not be a separate contact-discovery workflow. It should simply link the user to the Discovery intake prompt box and pass the prompt into this service.
 
 User examples:
 
@@ -135,7 +134,7 @@ Scope:
 - Put candidates in review queues
 - Generate follow-up searches
 
-Manual intake and imports create pending candidates only. They do not create or update approved `people` or `organizations`; approval, merge, and rejection happen in Discovery review. Discovery review has separate people and organization queues, and organization cards show source URLs and evidence excerpts before a reviewer promotes or merges the candidate.
+Discovery intake defaults to prompted discovery, with manual add and file import as adjacent intake options. Manual intake and imports create pending candidates only. They do not create or update approved `people` or `organizations`; approval, merge, and rejection happen in Discovery review. Discovery review has separate people and organization queues, and organization cards show source URLs and evidence excerpts before a reviewer promotes or merges the candidate.
 
 Output:
 

@@ -87,12 +87,17 @@ describe('Phase 4 collection member migration', () => {
     expect(migration).toContain('idx_collection_members_organization');
   });
 
-  it('allows RLS-checked inserts and updates for either member type only', () => {
-    expect(migration).toContain('CREATE POLICY "Allow public insert access on collection_members"');
-    expect(migration).toContain('CREATE POLICY "Allow public update access on collection_members"');
-    expect(migration).toContain('collection_id IS NOT NULL');
-    expect(migration).toContain('(person_id IS NOT NULL AND organization_id IS NULL)');
-    expect(migration).toContain('(person_id IS NULL AND organization_id IS NOT NULL)');
+  it('keeps collection member writes behind editor staff RLS', () => {
+    const lockdownMigration = readFileSync(
+      resolve(process.cwd(), 'supabase/migrations/20260507008000_lock_down_remaining_public_write_policies.sql'),
+      'utf8'
+    );
+    expect(lockdownMigration).toContain('DROP POLICY IF EXISTS "Allow public insert access on collection_members"');
+    expect(lockdownMigration).toContain('DROP POLICY IF EXISTS "Allow public update access on collection_members"');
+    expect(lockdownMigration).not.toContain('CREATE POLICY "Allow public insert access on collection_members"');
+    expect(lockdownMigration).not.toContain('CREATE POLICY "Allow public update access on collection_members"');
+    expect(lockdownMigration).toContain('Editors can insert collection_members');
+    expect(lockdownMigration).toContain('Editors can update collection_members');
   });
 
   it('updates frontend and edge collection member types for mixed members', () => {

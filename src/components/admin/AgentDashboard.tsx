@@ -30,13 +30,6 @@ interface AgentRun {
   created_at: string;
 }
 
-interface ApiQuota {
-  provider: string;
-  month: string;
-  calls_used: number;
-  calls_limit: number;
-}
-
 const AGENT_LABELS: Record<string, { label: string; icon: typeof Search }> = {
   discovery: { label: 'Discovery', icon: Search },
 };
@@ -53,59 +46,30 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; icon: typeof Clo
 };
 
 interface AgentDashboardProps {
-  initialDiscoveryPrompt?: string;
+  refreshKey?: number;
 }
 
-export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDashboardProps) {
+export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [quotas, setQuotas] = useState<ApiQuota[]>([]);
-  const [pendingPeople, setPendingPeople] = useState(0);
-  const [pendingOrganizations, setPendingOrganizations] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [triggerLoading, setTriggerLoading] = useState<string | null>(null);
-  const [discoveryQuery, setDiscoveryQuery] = useState('');
-  const [showQueryInput, setShowQueryInput] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
-    const [runsRes, quotasRes, pendingPeopleRes, pendingOrganizationsRes] = await Promise.all([
-      supabase
-        .from('agent_runs')
-        .select('*')
-        .eq('agent_type', 'discovery')
-        .order('created_at', { ascending: false })
-        .limit(20),
-      supabase
-        .from('api_quotas')
-        .select('*')
-        .eq('month', new Date().toISOString().slice(0, 7)),
-      supabase
-        .from('discovered_contacts')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending'),
-      supabase
-        .from('discovered_organizations')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending'),
-    ]);
+    const runsRes = await supabase
+      .from('agent_runs')
+      .select('*')
+      .eq('agent_type', 'discovery')
+      .order('created_at', { ascending: false })
+      .limit(20);
 
     setRuns((runsRes.data || []) as AgentRun[]);
-    setQuotas((quotasRes.data || []) as ApiQuota[]);
-    setPendingPeople(pendingPeopleRes.count || 0);
-    setPendingOrganizations(pendingOrganizationsRes.count || 0);
     setLoading(false);
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    if (!initialDiscoveryPrompt) return;
-    setDiscoveryQuery(initialDiscoveryPrompt);
-    setShowQueryInput(true);
-  }, [initialDiscoveryPrompt]);
+  }, [loadData, refreshKey]);
 
   // Poll every 5s while any run is still "running" or "pending", and tick `now` every 1s for live timer
   useEffect(() => {
@@ -118,37 +82,6 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
       clearInterval(tickInterval);
     };
   }, [runs, loadData]);
-
-  const triggerAgent = useCallback(
-    async (agentType: string, params?: Record<string, unknown>) => {
-      setTriggerLoading(agentType);
-      try {
-        const { error } = await supabase.functions.invoke('agent-scheduler', {
-          body: {
-            action: 'trigger',
-            agent_type: agentType,
-            params: params || {},
-          },
-        });
-
-        if (error) {
-          throw error;
-        }
-      } catch (err) {
-        notifyError(err, { hint: 'Could not start discovery.' });
-      }
-      setTriggerLoading(null);
-      await loadData();
-    },
-    [loadData]
-  );
-
-  const handleDiscoveryTrigger = useCallback(() => {
-    const trimmedQuery = discoveryQuery.trim();
-    triggerAgent('discovery', trimmedQuery ? { query: trimmedQuery } : {});
-    setDiscoveryQuery('');
-    setShowQueryInput(false);
-  }, [discoveryQuery, triggerAgent]);
 
   const cancelRun = useCallback(
     async (runId: string) => {
@@ -167,9 +100,6 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
     },
     [loadData]
   );
-
-  const getQuota = (provider: string): ApiQuota | undefined =>
-    quotas.find((q) => q.provider === provider);
 
   const formatDate = (date: string | null) => {
     if (!date) return '—';
@@ -244,15 +174,11 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
     );
   }
 
-  const tavilyQuota = getQuota('tavily');
-  const braveQuota = getQuota('brave');
-  const apifyQuota = getQuota('apify');
-
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Run Discovery</h3>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex items-center justify-between p-6 pb-3">
+          <h3 className="text-base font-semibold text-gray-900">Discovery History</h3>
           <button
             onClick={loadData}
             className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
@@ -260,113 +186,6 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
           </button>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowQueryInput(!showQueryInput)}
-              disabled={triggerLoading === 'discovery'}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {triggerLoading === 'discovery' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-              Discovery
-            </button>
-            {showQueryInput && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={discoveryQuery}
-                  onChange={(e) => setDiscoveryQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleDiscoveryTrigger()}
-                  placeholder="Optional custom query..."
-                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                  autoFocus
-                />
-                <button
-                  onClick={handleDiscoveryTrigger}
-                  className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg"
-                >
-                  Run
-                </button>
-              </div>
-            )}
-          </div>
-
-        </div>
-        {showQueryInput && (
-          <p className="mt-3 text-xs text-gray-500">
-            Leave the query blank to run a seeded discovery sweep across source packs and proven
-            entity pivots. Add a query to focus the run on a specific topic, group, or metro.
-          </p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-base font-semibold text-gray-900 mb-4">API Quotas</h3>
-          <div className="space-y-4">
-            <QuotaBar
-              label="Tavily"
-              used={tavilyQuota?.calls_used ?? 0}
-              limit={tavilyQuota?.calls_limit ?? 1000}
-              color="bg-teal-500"
-            />
-            <QuotaBar
-              label="Brave"
-              used={braveQuota?.calls_used ?? 0}
-              limit={braveQuota?.calls_limit ?? 2000}
-              color="bg-orange-500"
-            />
-            <QuotaBar
-              label="Apify"
-              used={apifyQuota?.calls_used ?? 0}
-              limit={apifyQuota?.calls_limit ?? 500}
-              color="bg-violet-500"
-              unit="credits"
-            />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-base font-semibold text-gray-900 mb-4">Summary</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <p className="text-2xl font-bold text-yellow-700">{pendingPeople}</p>
-              <p className="text-xs text-yellow-600 mt-1">Pending People</p>
-            </div>
-            <div className="text-center p-4 bg-teal-50 rounded-lg">
-              <p className="text-2xl font-bold text-teal-700">{pendingOrganizations}</p>
-              <p className="text-xs text-teal-600 mt-1">Pending Organizations</p>
-            </div>
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <p className="text-2xl font-bold text-blue-700">
-                {runs.filter((r) => r.status === 'completed').length}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">Completed Runs</p>
-            </div>
-            <div className="text-center p-4 bg-red-50 rounded-lg">
-              <p className="text-2xl font-bold text-red-700">
-                {runs.filter((r) => r.status === 'failed').length}
-              </p>
-              <p className="text-xs text-red-600 mt-1">Failed Runs</p>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <p className="text-2xl font-bold text-green-700">
-                ${runs.reduce((sum, r) => sum + (r.cost_estimate_usd || 0), 0).toFixed(2)}
-              </p>
-              <p className="text-xs text-green-600 mt-1">Total Cost</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 pb-3">
-          <h3 className="text-base font-semibold text-gray-900">Discovery History</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -489,40 +308,6 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function QuotaBar({
-  label,
-  used,
-  limit,
-  color,
-  unit = 'calls',
-}: {
-  label: string;
-  used: number;
-  limit: number;
-  color: string;
-  unit?: string;
-}) {
-  const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
-  const isHigh = pct > 80;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm text-gray-700">{label}</span>
-        <span className={`text-xs font-medium ${isHigh ? 'text-red-500' : 'text-gray-500'}`}>
-          {used.toLocaleString()} / {limit.toLocaleString()} {unit}
-        </span>
-      </div>
-      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-        <div
-          className={`${isHigh ? 'bg-red-500' : color} h-2 rounded-full transition-all duration-500`}
-          style={{ width: `${pct}%` }}
-        />
       </div>
     </div>
   );
