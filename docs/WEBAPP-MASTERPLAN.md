@@ -57,8 +57,7 @@ The app should feel like five services, not a pile of agents.
 Completed in the current cleanup pass:
 
 - `[done]` Admin route vocabulary now uses Discovery, Verification, Network Growth, System, and Access.
-- `[done]` `/contacts/new` redirects to `/admin/discovery?mode=manual`.
-- `[done]` `/admin/agents` and `/admin/discovered` redirect to `/admin/discovery`; `/admin/overview` redirects to `/admin/growth`.
+- `[done]` Manual add/import entry points use `/admin/discovery`; obsolete legacy routes are not part of the active route contract.
 - `[done]` Standalone discovery chatbot UI was removed from the active staff flow.
 - `[done]` Profile person-to-person Network section and graph modal were removed.
 - `[done]` `agent-scheduler` rejects `connection` runs.
@@ -122,20 +121,18 @@ Scope:
 - `/admin` becomes a staff workspace.
 - Staff tabs are Discovery, Verification, Network Growth, System, and Access.
 - Manual add/import lives inside Discovery.
-- Old admin routes redirect during migration.
+- Obsolete migration routes are not part of the active route contract.
 - The standalone discovery chatbot path is removed.
 
 Todos:
 
 - `[done]` Normalize admin tabs to `discovery`, `verification`, `growth`, `system`, and `access`.
 - `[done]` Redirect `/admin` to Discovery by default.
-- `[done]` Redirect `/contacts/new` to `/admin/discovery?mode=manual`.
-- `[done]` Redirect `/admin/agents` and `/admin/discovered` to `/admin/discovery`.
-- `[done]` Redirect `/admin/overview` to `/admin/growth`.
+- `[done]` Remove obsolete `/contacts/new`, `/admin/agents`, `/admin/discovered`, and `/admin/overview` route support from the active route contract.
 - `[done]` Move manual add/import into Discovery.
 - `[done]` Remove `AdminChatbot` from the active UI.
-- `[next]` Search visible text for `AI Agent`, `agent-*`, "Connections agent", and legacy tab names, then rename remaining staff-facing labels.
-- `[next]` Add or keep route normalization tests for old route redirects.
+- `[done]` Search visible text for `AI Agent`, `agent-*`, "Connections agent", and legacy tab names, then rename remaining staff-facing labels.
+- `[done]` Add route normalization tests for canonical staff tabs and unknown admin tabs.
 
 Out of scope:
 
@@ -146,7 +143,7 @@ Out of scope:
 Exit criteria:
 
 - Staff users can reach the five tabs from `/admin`.
-- Legacy URLs land on the right staff tab.
+- Obsolete legacy URLs are not advertised or linked from the active app.
 - No visible staff navigation item is named after an edge function or internal agent.
 
 Verification:
@@ -161,7 +158,6 @@ rg "AI Agent|Connections agent" src
 Manual checks:
 
 - Open `/admin`, `/admin/discovery`, `/admin/verification`, `/admin/growth`, `/admin/system`, `/admin/access`.
-- Open `/contacts/new`, `/admin/agents`, `/admin/discovered`, and `/admin/overview` and confirm redirects.
 - Confirm navigation and tab labels use product vocabulary instead of internal edge-function names.
 
 ## Phase 2 - Remove Person-To-Person Connection Product Layer
@@ -181,7 +177,7 @@ Todos:
 - `[done]` Remove connection scheduler controls from staff UI.
 - `[done]` Remove `agent-connections` function surface.
 - `[done]` Reject connection runs in `agent-scheduler`.
-- `[next]` Add scheduler test that `agent_type = "connection"` returns `invalid_input`.
+- `[done]` Add scheduler test that `agent_type = "connection"` returns `invalid_input`.
 - `[later]` Add a DB migration that drops unused connection RPCs, views, tables, policies, and metrics after confirming no live backend references remain.
 - `[later]` Regenerate Supabase types after the DB cleanup migration.
 - `[later]` Remove stale connection tests that only protect deleted behavior.

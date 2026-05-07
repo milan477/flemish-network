@@ -198,7 +198,7 @@ export default function StaleContactsBar({
                     </p>
                     {hasNoUpdates && (
                       <p className="text-xs text-green-600 mt-0.5 font-medium">
-                        AI found no updates needed
+                        Verification found no updates needed
                       </p>
                     )}
                   </div>

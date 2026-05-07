@@ -41,6 +41,10 @@ const AGENT_LABELS: Record<string, { label: string; icon: typeof Search }> = {
   discovery: { label: 'Discovery', icon: Search },
 };
 
+function serviceLabelForRun(agentType: string): string {
+  return AGENT_LABELS[agentType]?.label || 'Service run';
+}
+
 const STATUS_STYLES: Record<string, { bg: string; text: string; icon: typeof Clock }> = {
   pending: { bg: 'bg-gray-100', text: 'text-gray-600', icon: Clock },
   running: { bg: 'bg-blue-100', text: 'text-blue-700', icon: Loader2 },
@@ -351,7 +355,6 @@ export default function AgentDashboard() {
                 runs.map((run) => {
                   const style = STATUS_STYLES[run.status] || STATUS_STYLES.pending;
                   const StatusIcon = style.icon;
-                  const agent = AGENT_LABELS[run.agent_type];
                   const isExpanded = expandedRunId === run.id;
                   const hasSteps = run.results && Array.isArray(run.results.steps);
 
@@ -368,7 +371,7 @@ export default function AgentDashboard() {
                               ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
                               : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
                           )}
-                          {agent?.label || run.agent_type}
+                          {serviceLabelForRun(run.agent_type)}
                         </span>
                       </td>
                       <td className="py-2.5 px-4">

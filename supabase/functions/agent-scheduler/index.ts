@@ -9,6 +9,11 @@ import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import { EMBEDDING_MODEL } from "../_shared/embeddings.ts";
 import { getGeminiModelSummary } from "../_shared/gemini.ts";
 import { createLogger } from "../_shared/log.ts";
+import {
+  SCHEDULER_AGENT_FUNCTIONS,
+  schedulerAgentTypeError,
+  type SchedulerAgentType,
+} from "../_shared/scheduler.ts";
 
 const log = createLogger("agent-scheduler");
 
@@ -19,13 +24,7 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-type AgentType = "discovery" | "verification";
 type SchedulerAction = "trigger" | "cancel" | "housekeeping" | "planning" | "metrics";
-
-const AGENT_FUNCTIONS: Record<AgentType, string> = {
-  discovery: "agent-discovery",
-  verification: "agent-verify",
-};
 
 Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -112,23 +111,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
     const requestedAgentType = typeof body.agent_type === "string" ? body.agent_type : "";
     const params = body.params || {};
 
-    if (requestedAgentType === "connection") {
-      return jsonError(
-        400,
-        "invalid_input",
-        "Connection runs have been removed. Use Discovery for database expansion and Network Growth for coverage planning.",
-      );
+    const agentTypeError = schedulerAgentTypeError(requestedAgentType);
+    if (agentTypeError) {
+      return agentTypeError;
     }
 
-    if (!requestedAgentType || !(requestedAgentType in AGENT_FUNCTIONS)) {
-      return jsonError(
-        400,
-        "invalid_input",
-        `Invalid agent_type. Must be one of: ${Object.keys(AGENT_FUNCTIONS).join(", ")}`,
-      );
-    }
-
-    const agentType = requestedAgentType as AgentType;
+    const agentType = requestedAgentType as SchedulerAgentType;
 
     const runId = await triggerAgentRun(
       supabase,
@@ -395,7 +383,7 @@ async function triggerAgentRun(
   supabase: SupabaseAdminClient,
   supabaseUrl: string,
   req: Request,
-  agentType: AgentType,
+  agentType: SchedulerAgentType,
   params: Record<string, unknown>
 ): Promise<string> {
   const { data: run, error: insertError } = await supabase
@@ -427,7 +415,7 @@ async function triggerAgentRun(
     throw new Error(runningError.message || "Failed to start agent run");
   }
 
-  const functionName = AGENT_FUNCTIONS[agentType];
+  const functionName = SCHEDULER_AGENT_FUNCTIONS[agentType];
   const forwardedAuth = req.headers.get("Authorization") || req.headers.get("authorization");
   const forwardedApiKey = req.headers.get("apikey") || req.headers.get("Apikey");
   const dispatchHeaders: Record<string, string> = {

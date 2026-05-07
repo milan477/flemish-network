@@ -94,7 +94,7 @@ export default function DuplicateCompare({
         <div className="grid grid-cols-2 gap-4 mb-5">
           <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
             <p className="text-[10px] uppercase tracking-wider text-blue-500 font-semibold mb-2">
-              New (AI-Discovered)
+              New Discovery Candidate
             </p>
             <p className="text-sm font-semibold text-gray-900">
               {newContact.name}

@@ -26,7 +26,7 @@ import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '.
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
-import { normalizeAdminTab, type AdminTab } from '../lib/appRouting';
+import { isCanonicalAdminTab, normalizeAdminTab, type AdminTab } from '../lib/appRouting';
 const VERIFY_BATCH_SIZE = 5;
 
 interface AdminProps {
@@ -171,11 +171,8 @@ export default function Admin({ onNavigate }: AdminProps) {
   }, [isAdmin, navigate, tab]);
 
   useEffect(() => {
-    if (tab === 'agents' || tab === 'discovered') {
+    if (tab && !isCanonicalAdminTab(tab)) {
       navigate('/admin/discovery', { replace: true });
-    }
-    if (tab === 'overview') {
-      navigate('/admin/growth', { replace: true });
     }
   }, [navigate, tab]);
 
@@ -226,8 +223,8 @@ export default function Admin({ onNavigate }: AdminProps) {
           });
         }
       } catch (err) {
-        console.warn('[Admin] AI suggestion check failed (non-fatal)', err);
-        notifyError(err, { hint: 'Could not complete the AI suggestion check.' });
+        console.warn('[Admin] verification suggestion check failed (non-fatal)', err);
+        notifyError(err, { hint: 'Could not complete the verification suggestion check.' });
       }
 
       setAiLoading(false);

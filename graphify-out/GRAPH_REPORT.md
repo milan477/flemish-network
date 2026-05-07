@@ -1,156 +1,116 @@
-# Graph Report - .  (2026-05-06)
+# Graph Report - flemish-network  (2026-05-06)
 
 ## Corpus Check
-- 132 files · ~153,197 words
+- 121 files · ~153,175 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1431 nodes · 2567 edges · 117 communities detected
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 241 edges (avg confidence: 0.78)
+- 582 nodes · 681 edges · 77 communities detected
+- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 81 edges (avg confidence: 0.75)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Canonicalize Url|Canonicalize Url]]
-- [[_COMMUNITY_Create Admin Client|Create Admin Client]]
-- [[_COMMUNITY_Normalized Data Rules|Normalized Data Rules]]
-- [[_COMMUNITY_Handle Click Outside|Handle Click Outside]]
-- [[_COMMUNITY_Build Check Profile Prompt|Build Check Profile Prompt]]
-- [[_COMMUNITY_Agent Connections Edge|Agent Connections Edge]]
-- [[_COMMUNITY_Access Management Panel|Access Management Panel]]
-- [[_COMMUNITY_Staff Profile Form|Staff Profile Form]]
-- [[_COMMUNITY_Apify Error|Apify Error]]
-- [[_COMMUNITY_AI Agent Call Wrapper|AI Agent Call Wrapper]]
-- [[_COMMUNITY_AI Agent Task Contracts|AI Agent Task Contracts]]
-- [[_COMMUNITY_Discovery Agent Run Tracking|Discovery Agent Run Tracking]]
-- [[_COMMUNITY_Format Derived Label Confidence|Format Derived Label Confidence]]
-- [[_COMMUNITY_Append Labeled Line|Append Labeled Line]]
-- [[_COMMUNITY_Check Duplicate|Check Duplicate]]
-- [[_COMMUNITY_Build Dedupe Key|Build Dedupe Key]]
-- [[_COMMUNITY_Build Sector Lookup|Build Sector Lookup]]
-- [[_COMMUNITY_Build Fallback Keywords|Build Fallback Keywords]]
-- [[_COMMUNITY_Build People Csv|Build People Csv]]
-- [[_COMMUNITY_Collection Detail Route|Collection Detail Route]]
-- [[_COMMUNITY_Build Dashboard Location|Build Dashboard Location]]
-- [[_COMMUNITY_Build Network Clusters|Build Network Clusters]]
-- [[_COMMUNITY_Access Token|Access Token]]
-- [[_COMMUNITY_Format Age|Format Age]]
-- [[_COMMUNITY_Build Bio|Build Bio]]
-- [[_COMMUNITY_Cancel Editing|Cancel Editing]]
-- [[_COMMUNITY_Web Search|Web Search]]
-- [[_COMMUNITY_Access Token 2|Access Token 2]]
-- [[_COMMUNITY_Build City Key|Build City Key]]
-- [[_COMMUNITY_Can Use Session Storage|Can Use Session Storage]]
-- [[_COMMUNITY_Verification Agent Run Tracking|Verification Agent Run Tracking]]
-- [[_COMMUNITY_Smoke Edge Functions|Smoke Edge Functions]]
-- [[_COMMUNITY_Alaska And Hawaii Insets|Alaska And Hawaii Insets]]
-- [[_COMMUNITY_Error Boundary|Error Boundary]]
-- [[_COMMUNITY_Unified Search Bar|Unified Search Bar]]
-- [[_COMMUNITY_Map Controller|Map Controller]]
-- [[_COMMUNITY_Add Contact|Add Contact]]
-- [[_COMMUNITY_Format Date|Format Date]]
-- [[_COMMUNITY_Stale Contacts Bar|Stale Contacts Bar]]
-- [[_COMMUNITY_Connections Summary|Connections Summary]]
-- [[_COMMUNITY_Build Network Preset|Build Network Preset]]
-- [[_COMMUNITY_Is Location Only Query|Is Location Only Query]]
-- [[_COMMUNITY_Full Validation Loop Rationale|Full Validation Loop Rationale]]
-- [[_COMMUNITY_Add Existing|Add Existing]]
-- [[_COMMUNITY_Build Counts|Build Counts]]
-- [[_COMMUNITY_Availability Overview|Availability Overview]]
-- [[_COMMUNITY_Build Category Counts|Build Category Counts]]
-- [[_COMMUNITY_Organization|Organization]]
-- [[_COMMUNITY_Handle Create New|Handle Create New]]
-- [[_COMMUNITY_Concept Discovery Frontier Crawler|Concept Discovery Frontier Crawler]]
-- [[_COMMUNITY_Edge Functions Self Authenticate|Edge Functions Self Authenticate]]
-- [[_COMMUNITY_Handle Click Outside 2|Handle Click Outside 2]]
-- [[_COMMUNITY_Duplicate Compare|Duplicate Compare]]
-- [[_COMMUNITY_Generate Migration|Generate Migration]]
-- [[_COMMUNITY_Handle Reset|Handle Reset]]
-- [[_COMMUNITY_Classify Person|Classify Person]]
-- [[_COMMUNITY_Geocode Batch|Geocode Batch]]
-- [[_COMMUNITY_Base|Base]]
-- [[_COMMUNITY_Concept Search Query Routing|Concept Search Query Routing]]
-- [[_COMMUNITY_Geographic Visualization Asset|Geographic Visualization Asset]]
-- [[_COMMUNITY_Auth Provider|Auth Provider]]
-- [[_COMMUNITY_Derived Location Summary|Derived Location Summary]]
-- [[_COMMUNITY_Edge Error Description|Edge Error Description]]
-- [[_COMMUNITY_Normalize Verification Suggestions|Normalize Verification Suggestions]]
-- [[_COMMUNITY_AI Agent Gemini Structured Call|AI Agent Gemini Structured Call]]
-- [[_COMMUNITY_Concept Verification Field Risk Routing|Concept Verification Field Risk Routing]]
-- [[_COMMUNITY_Rationale Stable Gemini 2 5|Rationale Stable Gemini 2 5]]
-- [[_COMMUNITY_Gemini Model Routing|Gemini Model Routing]]
-- [[_COMMUNITY_Discover Contacts Canonical Handler|Discover Contacts Canonical Handler]]
-- [[_COMMUNITY_Edge Discover Contacts|Edge Discover Contacts]]
-- [[_COMMUNITY_Flemish Connection Selector|Flemish Connection Selector]]
-- [[_COMMUNITY_Src Components Navigation|Src Components Navigation]]
-- [[_COMMUNITY_Src Components Admin Access Management|Src Components Admin Access Management]]
-- [[_COMMUNITY_Src Components Admin Derived Labels|Src Components Admin Derived Labels]]
-- [[_COMMUNITY_Src Components Admin Contact Card|Src Components Admin Contact Card]]
-- [[_COMMUNITY_Src Components Admin Ops Metrics|Src Components Admin Ops Metrics]]
-- [[_COMMUNITY_Src Components Admin Discovery Planning|Src Components Admin Discovery Planning]]
-- [[_COMMUNITY_Src Lib Auth Auth Provider|Src Lib Auth Auth Provider]]
-- [[_COMMUNITY_Flemish Connections Lib|Flemish Connections Lib]]
-- [[_COMMUNITY_Src Lib Dashboard Session|Src Lib Dashboard Session]]
-- [[_COMMUNITY_Flemish Connection Sync Lib|Flemish Connection Sync Lib]]
-- [[_COMMUNITY_Src Pages Login|Src Pages Login]]
-- [[_COMMUNITY_Src Pages Account|Src Pages Account]]
-- [[_COMMUNITY_Src Pages Auth Callback|Src Pages Auth Callback]]
-- [[_COMMUNITY_Edge Search Contacts Legacy Alias|Edge Search Contacts Legacy Alias]]
-- [[_COMMUNITY_Shared Ai Contracts Shared Prompts|Shared Ai Contracts Shared Prompts]]
-- [[_COMMUNITY_Shared Database Types Deno Schema|Shared Database Types Deno Schema]]
-- [[_COMMUNITY_Src Lib App Routing|Src Lib App Routing]]
-- [[_COMMUNITY_Src Lib Filter Parser|Src Lib Filter Parser]]
-- [[_COMMUNITY_Src Pages Dashboard|Src Pages Dashboard]]
-- [[_COMMUNITY_Html App Entry Point|Html App Entry Point]]
-- [[_COMMUNITY_AGENTS Graphify Rules|AGENTS Graphify Rules]]
-- [[_COMMUNITY_AI Strategy Document|AI Strategy Document]]
-- [[_COMMUNITY_Concept Entity Pivot Discovery|Concept Entity Pivot Discovery]]
-- [[_COMMUNITY_Concept Geographic Gap Seeking Coverage|Concept Geographic Gap Seeking Coverage]]
-- [[_COMMUNITY_Concept Bio Chunk Vectors|Concept Bio Chunk Vectors]]
-- [[_COMMUNITY_Rationale Conservative Connection Graph Edges|Rationale Conservative Connection Graph Edges]]
-- [[_COMMUNITY_Dashboard Route|Dashboard Route]]
-- [[_COMMUNITY_Person Profile Route People Id|Person Profile Route People Id]]
-- [[_COMMUNITY_Organization Profile Route Organizations Id|Organization Profile Route Organizations Id]]
-- [[_COMMUNITY_Collections Route Collections|Collections Route Collections]]
-- [[_COMMUNITY_Admin Route Admin|Admin Route Admin]]
-- [[_COMMUNITY_Add Contact Route Contacts New|Add Contact Route Contacts New]]
-- [[_COMMUNITY_Login Route Login|Login Route Login]]
-- [[_COMMUNITY_Auth Callback Route Auth Callback|Auth Callback Route Auth Callback]]
-- [[_COMMUNITY_Account Route Account|Account Route Account]]
-- [[_COMMUNITY_GEMINI API KEY Secret|GEMINI API KEY Secret]]
-- [[_COMMUNITY_TAVILY API KEY Secret|TAVILY API KEY Secret]]
-- [[_COMMUNITY_BRAVE API KEY Secret|BRAVE API KEY Secret]]
-- [[_COMMUNITY_APIFY TOKEN Secret|APIFY TOKEN Secret]]
-- [[_COMMUNITY_SUPABASE SERVICE ROLE KEY Secret|SUPABASE SERVICE ROLE KEY Secret]]
-- [[_COMMUNITY_Gemini Model Override Env Vars|Gemini Model Override Env Vars]]
-- [[_COMMUNITY_VITE SUPABASE URL Frontend Env|VITE SUPABASE URL Frontend Env]]
-- [[_COMMUNITY_VITE SUPABASE ANON KEY Frontend|VITE SUPABASE ANON KEY Frontend]]
-- [[_COMMUNITY_Phase 0 Benchmarks README|Phase 0 Benchmarks README]]
-- [[_COMMUNITY_Dashboard Search Session Cache|Dashboard Search Session Cache]]
-- [[_COMMUNITY_Last Dashboard Location Session State|Last Dashboard Location Session State]]
+- [[_COMMUNITY_Community 0|Community 0]]
+- [[_COMMUNITY_Community 1|Community 1]]
+- [[_COMMUNITY_Community 2|Community 2]]
+- [[_COMMUNITY_Community 3|Community 3]]
+- [[_COMMUNITY_Community 4|Community 4]]
+- [[_COMMUNITY_Community 5|Community 5]]
+- [[_COMMUNITY_Community 6|Community 6]]
+- [[_COMMUNITY_Community 7|Community 7]]
+- [[_COMMUNITY_Community 8|Community 8]]
+- [[_COMMUNITY_Community 9|Community 9]]
+- [[_COMMUNITY_Community 10|Community 10]]
+- [[_COMMUNITY_Community 11|Community 11]]
+- [[_COMMUNITY_Community 12|Community 12]]
+- [[_COMMUNITY_Community 13|Community 13]]
+- [[_COMMUNITY_Community 14|Community 14]]
+- [[_COMMUNITY_Community 15|Community 15]]
+- [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
+- [[_COMMUNITY_Community 20|Community 20]]
+- [[_COMMUNITY_Community 21|Community 21]]
+- [[_COMMUNITY_Community 23|Community 23]]
+- [[_COMMUNITY_Community 24|Community 24]]
+- [[_COMMUNITY_Community 25|Community 25]]
+- [[_COMMUNITY_Community 27|Community 27]]
+- [[_COMMUNITY_Community 28|Community 28]]
+- [[_COMMUNITY_Community 29|Community 29]]
+- [[_COMMUNITY_Community 30|Community 30]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 33|Community 33]]
+- [[_COMMUNITY_Community 35|Community 35]]
+- [[_COMMUNITY_Community 36|Community 36]]
+- [[_COMMUNITY_Community 37|Community 37]]
+- [[_COMMUNITY_Community 39|Community 39]]
+- [[_COMMUNITY_Community 40|Community 40]]
+- [[_COMMUNITY_Community 42|Community 42]]
+- [[_COMMUNITY_Community 43|Community 43]]
+- [[_COMMUNITY_Community 44|Community 44]]
+- [[_COMMUNITY_Community 45|Community 45]]
+- [[_COMMUNITY_Community 46|Community 46]]
+- [[_COMMUNITY_Community 47|Community 47]]
+- [[_COMMUNITY_Community 48|Community 48]]
+- [[_COMMUNITY_Community 49|Community 49]]
+- [[_COMMUNITY_Community 50|Community 50]]
+- [[_COMMUNITY_Community 51|Community 51]]
+- [[_COMMUNITY_Community 52|Community 52]]
+- [[_COMMUNITY_Community 53|Community 53]]
+- [[_COMMUNITY_Community 54|Community 54]]
+- [[_COMMUNITY_Community 55|Community 55]]
+- [[_COMMUNITY_Community 56|Community 56]]
+- [[_COMMUNITY_Community 57|Community 57]]
+- [[_COMMUNITY_Community 58|Community 58]]
+- [[_COMMUNITY_Community 59|Community 59]]
+- [[_COMMUNITY_Community 60|Community 60]]
+- [[_COMMUNITY_Community 61|Community 61]]
+- [[_COMMUNITY_Community 62|Community 62]]
+- [[_COMMUNITY_Community 63|Community 63]]
+- [[_COMMUNITY_Community 64|Community 64]]
+- [[_COMMUNITY_Community 65|Community 65]]
+- [[_COMMUNITY_Community 66|Community 66]]
+- [[_COMMUNITY_Community 67|Community 67]]
+- [[_COMMUNITY_Community 68|Community 68]]
+- [[_COMMUNITY_Community 69|Community 69]]
+- [[_COMMUNITY_Community 70|Community 70]]
+- [[_COMMUNITY_Community 71|Community 71]]
+- [[_COMMUNITY_Community 72|Community 72]]
+- [[_COMMUNITY_Community 73|Community 73]]
+- [[_COMMUNITY_Community 74|Community 74]]
+- [[_COMMUNITY_Community 75|Community 75]]
+- [[_COMMUNITY_Community 76|Community 76]]
+- [[_COMMUNITY_Community 77|Community 77]]
+- [[_COMMUNITY_Community 78|Community 78]]
+- [[_COMMUNITY_Community 79|Community 79]]
+- [[_COMMUNITY_Community 80|Community 80]]
+- [[_COMMUNITY_Community 81|Community 81]]
+- [[_COMMUNITY_Community 82|Community 82]]
+- [[_COMMUNITY_Community 83|Community 83]]
+- [[_COMMUNITY_Community 84|Community 84]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `normalizeWhitespace()` - 26 edges
-2. `processFrontierRow()` - 22 edges
-3. `safeString()` - 20 edges
-4. `normalizeWhitespace()` - 20 edges
-5. `safeStr()` - 18 edges
-6. `People Records` - 16 edges
-7. `notifyError()` - 15 edges
-8. `maybeHarvestProvenDomain()` - 12 edges
-9. `normalizeEmail()` - 11 edges
-10. `normalizeLinkedInUrl()` - 11 edges
+1. `People Records` - 15 edges
+2. `Supabase Public Schema Types` - 10 edges
+3. `people Table` - 10 edges
+4. `Search People Hybrid Search Handler` - 9 edges
+5. `Network Scope Types` - 9 edges
+6. `Five Product Services` - 9 edges
+7. `Expand The Database` - 9 edges
+8. `Smoke Edge Function Checks` - 8 edges
+9. `Person Flemish Connection Accessors` - 8 edges
+10. `agent-discovery Edge Function` - 8 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Smoke Edge Function Checks` --conceptually_related_to--> `AI Legacy Removal`  [AMBIGUOUS]
-  scripts/smoke_edge_functions.ts → docs/AI-PIPELINE.md
-- `Add To Collection Dropdown` --references--> `RLS Summary`  [INFERRED]
-  src/components/AddToCollectionDropdown.tsx → docs/SCHEMA.md
-- `Add To Collection Dropdown` --references--> `Phase 4 Collections Draft Workflow`  [INFERRED]
-  src/components/AddToCollectionDropdown.tsx → docs/WEBAPP-MASTERPLAN.md
-- `_shared/verification.ts (Shared Verification Core)` --conceptually_related_to--> `Concept: Verification Field Risk Routing`  [INFERRED]
-  supabase/functions/_shared/verification.ts → docs/AI-STRATEGY.md
-- `Structured Errors Contract` --semantically_similar_to--> `AI Pipeline Error Contract`  [INFERRED] [semantically similar]
-  CLAUDE.md → docs/AI-PIPELINE.md
+- `AI Legacy Removal` --conceptually_related_to--> `Smoke Edge Function Checks`  [AMBIGUOUS]
+  docs/AI-PIPELINE.md → scripts/smoke_edge_functions.ts
+- `RLS Summary` --references--> `Add To Collection Dropdown`  [INFERRED]
+  docs/SCHEMA.md → src/components/AddToCollectionDropdown.tsx
+- `Phase 4 Collections Draft Workflow` --references--> `Add To Collection Dropdown`  [INFERRED]
+  docs/WEBAPP-MASTERPLAN.md → src/components/AddToCollectionDropdown.tsx
+- `Flemish Network Intelligence Platform` --implements--> `Tailwind Source Content Configuration`  [INFERRED]
+  AGENTS.md → tailwind.config.js
+- `US Cities Locations Migration Generator` --implements--> `locations Table`  [EXTRACTED]
+  generate_migration.js → docs/SCHEMA.md
 
 ## Hyperedges (group relationships)
 - **Product Services Route And Edge Owners** — PRODUCT_SearchTheNetwork, PRODUCT_BuildCollection, PRODUCT_ExpandDatabase, PRODUCT_VerifyEnrich, PRODUCT_NetworkGrowth, ROUTES_FrontendRouteContract, AI_ServiceMap [EXTRACTED 1.00]
@@ -176,630 +136,436 @@
 
 ## Communities
 
-### Community 0 - "Canonicalize Url"
-Cohesion: 0.07
-Nodes (103): canonicalizeUrl(), clamp(), classifyPageHeuristically(), countPatternMatches(), decodeXmlEntities(), extractCanonicalHref(), extractDomain(), extractFeedItemUrls() (+95 more)
-
-### Community 1 - "Create Admin Client"
-Cohesion: 0.05
-Nodes (57): createAdminClient(), defaultCodeForStatus(), getUserDisplayName(), HttpError, normalizeEmail(), requireStaffRole(), callGemini(), checkDuplicates() (+49 more)
-
-### Community 2 - "Normalized Data Rules"
+### Community 0 - "Community 0"
 Cohesion: 0.04
-Nodes (75): Normalized Data Rules, Flemish Network Intelligence Platform, Required Agent Workflow, Scheduler Owns Run Lifecycle Rule, Active Source Of Truth Docs, agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function (+67 more)
+Nodes (74): Normalized Data Rules, Flemish Network Intelligence Platform, Required Agent Workflow, Scheduler Owns Run Lifecycle Rule, Active Source Of Truth Docs, agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function (+66 more)
 
-### Community 3 - "Handle Click Outside"
-Cohesion: 0.05
-Nodes (47): handleClickOutside(), handleCreateCollection(), toggleCollection(), addBot(), addContactToDb(), handleAdd(), handleAddAll(), handleAddNewFromCompare() (+39 more)
-
-### Community 4 - "Build Check Profile Prompt"
+### Community 1 - "Community 1"
 Cohesion: 0.06
-Nodes (46): buildCheckProfilePrompt(), buildMergeTextPrompt(), buildParseContactsPrompt(), buildSearchPrompt(), clampConfidence(), getAiAgentTaskDefinition(), getAiAgentTasks(), getEmptyFlemishSearchKeywords() (+38 more)
+Nodes (50): Staff Profile Form, Staff Auth Callback Redirect, Collection Detail Routing, Collections List, Dashboard AI Filters, Dashboard Data Loading, Dashboard Filter Chips, Dashboard Flemish Options (+42 more)
 
-### Community 5 - "Agent Connections Edge"
-Cohesion: 0.06
-Nodes (57): agent-connections Edge Function, agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function, ai-agent Edge Function, AI Pipeline Behavioral Contracts, discover-contacts Edge Function, AI Pipeline Error Contract (+49 more)
-
-### Community 6 - "Access Management Panel"
+### Community 2 - "Community 2"
 Cohesion: 0.05
-Nodes (56): AccessManagementPanel Component, Staff Access Management, Availability Filters, AvailabilityOverview Component, ClusterPopover Component, Location Contact Grouping, CollectionDetail Component, Collection Embedding Suggestions (+48 more)
+Nodes (48): AccessManagementPanel Component, Staff Access Management, Availability Filters, AvailabilityOverview Component, ClusterPopover Component, Location Contact Grouping, CollectionDetail Component, Collection Embedding Suggestions (+40 more)
 
-### Community 7 - "Staff Profile Form"
-Cohesion: 0.05
-Nodes (53): Staff Profile Form, Add Contact Page, Staff Auth Callback Redirect, Collection Detail Routing, Collections List, Dashboard AI Filters, Dashboard Data Loading, Dashboard Filter Chips (+45 more)
-
-### Community 8 - "Apify Error"
-Cohesion: 0.09
-Nodes (45): ApifyError, fetchWithRetry(), getApifyUsage(), runApifyActor(), runAsync(), runSync(), buildDedupeKey(), buildLinkedInCurrentPosition() (+37 more)
-
-### Community 9 - "AI Agent Call Wrapper"
-Cohesion: 0.05
-Nodes (51): AI Agent Call Wrapper, Discover Contacts Edge Request, Deterministic Search Keyword Fallback, Flemish Search AI Task, Hybrid People Search, Client Keyword Scoring, Parse Contacts AI Task, Smart Search (+43 more)
-
-### Community 10 - "AI Agent Task Contracts"
+### Community 3 - "Community 3"
 Cohesion: 0.06
 Nodes (47): AI Agent Task Contracts, Profile Check Contract, Search Keyword Contracts, AI Contracts Tests, Apify Actor Client, LinkedIn Actor Registry, Supabase Admin Client Factory, Staff Role Guard (+39 more)
 
-### Community 11 - "Discovery Agent Run Tracking"
-Cohesion: 0.05
-Nodes (47): Discovery Agent Run Tracking, Discovery Candidate Deduplication, Discovery Child Link Expansion, Discovery Contact Extraction, Coverage Gaps, Discovery Derived Labels, Discovered Contacts Store, Discovery Evidence Store (+39 more)
+### Community 4 - "Community 4"
+Cohesion: 0.07
+Nodes (38): Deterministic Search Keyword Fallback, Hybrid People Search, Client Keyword Scoring, Smart Search, Embedding People Suggestions, Client People Suggestion Fallback, Apply Import Mappings, Import Template Download (+30 more)
 
-### Community 12 - "Format Derived Label Confidence"
+### Community 5 - "Community 5"
 Cohesion: 0.08
-Nodes (33): formatDerivedLabelConfidence(), getDerivedLabelBadgeClasses(), getDerivedLabelMetadata(), getDerivedLocationSummary(), isCanonicalDerivedLabel(), normalizeDerivedLabelSuggestions(), approveLabel(), addToCache() (+25 more)
+Nodes (33): agent-connections Edge Function, ai-agent Edge Function, Frontend AI Functions, Gemini Model Routing, generate-embeddings Edge Function, geocode Edge Function, search-people Edge Function, suggest-people Edge Function (+25 more)
 
-### Community 13 - "Append Labeled Line"
-Cohesion: 0.13
-Nodes (39): appendLabeledLine(), buildBioChunks(), buildPersonTextChunks(), buildStructuredEmbeddingText(), cancelAsyncEmbeddingBatch(), createAsyncEmbeddingBatch(), embedBatch(), embedSingle() (+31 more)
-
-### Community 14 - "Check Duplicate"
+### Community 6 - "Community 6"
 Cohesion: 0.09
-Nodes (35): async(), checkDuplicate(), createEmptyForm(), emptyUsConnection(), ensureProtocol(), handleSubmit(), insertContact(), normalizeConnectionName() (+27 more)
+Nodes (28): Apply Embedding Outputs, Async Embedding Batch Lifecycle, Embedding Batch Runs Table, Embedding Jobs Queue, Generate Embeddings Handler, People Embedding Columns, Structured Person Embedding Text, Person Text Chunks (+20 more)
 
-### Community 15 - "Build Dedupe Key"
+### Community 7 - "Community 7"
+Cohesion: 0.14
+Nodes (24): agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function, AI Pipeline Behavioral Contracts, discover-contacts Edge Function, AI Pipeline Error Contract, Legacy AI Aliases, update-profile Edge Function (+16 more)
+
+### Community 8 - "Community 8"
+Cohesion: 0.12
+Nodes (19): Discovery Agent Run Tracking, Discovery Candidate Deduplication, Discovery Child Link Expansion, Discovery Contact Extraction, Coverage Gaps, Discovery Derived Labels, Discovered Contacts Store, Discovery Evidence Store (+11 more)
+
+### Community 9 - "Community 9"
 Cohesion: 0.17
-Nodes (28): buildDedupeKey(), buildDiscoveryDerivedLabels(), buildLocationSeed(), buildSubjectKey(), buildVerificationDerivedLabels(), clampConfidence(), deriveProfileConfidence(), deriveSourceQuality() (+20 more)
+Nodes (7): buildGapDiscoveryQuery(), loadDiscoveryPlanning(), markZombieRuns(), pickPrimarySector(), purgeExpiredCache(), runHousekeeping(), uniqueByQuery()
 
-### Community 16 - "Build Sector Lookup"
-Cohesion: 0.14
-Nodes (28): buildSectorLookup(), checkDuplicates(), confidenceLabel(), getErrorMessage(), handleBulkSectorAssign(), handleCancelImport(), handleConfirm(), handleFile() (+20 more)
+### Community 10 - "Community 10"
+Cohesion: 0.2
+Nodes (6): checkDuplicate(), createEmptyForm(), emptyUsConnection(), ensureProtocol(), handleSubmit(), insertContact()
 
-### Community 17 - "Build Fallback Keywords"
-Cohesion: 0.15
-Nodes (22): buildFallbackKeywords(), buildFallbackTerms(), callAI(), discoverContacts(), flemishSearch(), getIndexedString(), getNestedString(), hybridSearch() (+14 more)
-
-### Community 18 - "Build People Csv"
-Cohesion: 0.25
-Nodes (15): buildPeopleCsv(), buildPeopleWorksheetData(), downloadFile(), enrichPeopleForExport(), escapeCsvField(), escapeHtml(), exportPeopleToCsv(), exportPeopleToExcel() (+7 more)
-
-### Community 19 - "Collection Detail Route"
-Cohesion: 0.14
-Nodes (10): CollectionDetailRoute(), CollectionsIndexRoute(), OrganizationProfileRoute(), ProtectedLayout(), wrap(), loadApprovedStaffUser(), normalizeAuthError(), RequireAuth() (+2 more)
-
-### Community 20 - "Build Dashboard Location"
+### Community 11 - "Community 11"
 Cohesion: 0.22
-Nodes (12): buildDashboardLocation(), buildDashboardSearchParams(), buildDashboardStateFromPreset(), defaultDashboardRouteState(), getCurrentPageFromPathname(), normalizeAdminTab(), normalizePage(), parseBooleanParam() (+4 more)
+Nodes (8): buildDashboardLocation(), buildDashboardSearchParams(), buildDashboardStateFromPreset(), defaultDashboardRouteState(), parseBooleanParam(), parseDashboardRouteState(), sanitizeValues(), roundtrip()
 
-### Community 21 - "Build Network Clusters"
-Cohesion: 0.34
-Nodes (13): buildNetworkClusters(), clusterLocation(), currentAbroadBaseLabel(), isUsConnectedAbroad(), locationMatches(), organizationMatchesLocation(), organizationPlacementLocations(), organizationUsLocationLabel() (+5 more)
+### Community 12 - "Community 12"
+Cohesion: 0.21
+Nodes (7): approveContact(), getVal(), mergeIntoExisting(), mergeTextViaAI(), Edge Error Description, Notify Error, Sonner Toast Wrapper
 
-### Community 22 - "Access Token"
-Cohesion: 0.27
-Nodes (11): accessToken(), authedClient(), fmt(), isRecord(), parseArgs(), positiveInt(), previewPerson(), printVerificationReport() (+3 more)
+### Community 13 - "Community 13"
+Cohesion: 0.2
+Nodes (4): formatAge(), formatDuration(), isRecord(), providerUsage()
 
-### Community 23 - "Format Age"
-Cohesion: 0.33
-Nodes (10): formatAge(), formatDate(), formatDuration(), isRecord(), numberFrom(), providerUsage(), runCompletedAt(), runStartedAt() (+2 more)
+### Community 14 - "Community 14"
+Cohesion: 0.23
+Nodes (7): ensureProtocol(), handleFileUpload(), handleRemovePhoto(), reconcileConnections(), saveEdits(), setField(), startEditing()
 
-### Community 24 - "Build Bio"
-Cohesion: 0.45
-Nodes (9): buildBio(), csvEscape(), generateName(), occupationFor(), pick(), rowFor(), slugify(), titleFor() (+1 more)
-
-### Community 25 - "Cancel Editing"
-Cohesion: 0.36
-Nodes (9): cancelEditing(), ensureProtocol(), handleAddCustomFlemish(), organizationUsLocationLabel(), saveEdits(), setField(), startEditing(), toggleEditFlemish() (+1 more)
-
-### Community 26 - "Web Search"
-Cohesion: 0.49
-Nodes (8): cacheResults(), callBrave(), callTavily(), coerceCachedResults(), formatResultsForLLM(), getOrCreateQuota(), incrementQuota(), searchWeb()
-
-### Community 27 - "Access Token 2"
-Cohesion: 0.31
-Nodes (8): accessToken(), fmt(), isRecord(), parseArgs(), positiveInt(), printDiscoveryReport(), triggerDiscovery(), waitForRun()
-
-### Community 28 - "Build City Key"
-Cohesion: 0.36
-Nodes (8): buildCityKey(), buildCounts(), countUniqueBy(), formatBatchDate(), formatBatchNumber(), hasText(), parseCityKey(), StatCard()
-
-### Community 29 - "Can Use Session Storage"
-Cohesion: 0.47
-Nodes (8): canUseSessionStorage(), getCachedDashboardSearch(), getLastDashboardLocation(), normalizeQuery(), readSearchCache(), setCachedDashboardSearch(), setLastDashboardLocation(), writeSearchCache()
-
-### Community 30 - "Verification Agent Run Tracking"
+### Community 15 - "Community 15"
 Cohesion: 0.25
 Nodes (9): Verification Agent Run Tracking, Verification Candidate Fetch, Verification Derived Labels, Agent Verify Handler, Mark Person Verified, Person Verification Runner, Verification Suggestions, Update Profile Handler (+1 more)
 
-### Community 31 - "Smoke Edge Functions"
-Cohesion: 0.61
-Nodes (6): cleanupSmokeSession(), isObject(), main(), provisionSmokeSession(), runOne(), serviceFetch()
+### Community 16 - "Community 16"
+Cohesion: 0.28
+Nodes (9): AI Agent Call Wrapper, Discover Contacts Edge Request, Flemish Search AI Task, Parse Contacts AI Task, Describe Client Error, Structured Edge Function Error Model, Extract Edge Function Error, Ops Metrics Panel (+1 more)
 
-### Community 32 - "Alaska And Hawaii Insets"
+### Community 17 - "Community 17"
 Cohesion: 0.32
 Nodes (8): Alaska And Hawaii Insets, Map Image Asset, Black Background, Cartographic Basemap Design, Light Gray Land Fill, White Circular Region Marker, State Boundary Lines, United States Map
 
-### Community 33 - "Error Boundary"
+### Community 20 - "Community 20"
 Cohesion: 0.33
-Nodes (1): ErrorBoundary
+Nodes (6): ContactCard Component, Discovered Contact Review, Discovered Contact Edit Form, DiscoveryPlanningPanel Component, Discovery Planning Payload, Agent Scheduler Planning Endpoint
 
-### Community 34 - "Unified Search Bar"
-Cohesion: 0.53
-Nodes (4): handleClear(), handler(), handleSubmit(), handleSuggestionClick()
-
-### Community 35 - "Map Controller"
-Cohesion: 0.53
-Nodes (4): MapController(), resetView(), zoomIn(), zoomOut()
-
-### Community 37 - "Add Contact"
-Cohesion: 0.33
-Nodes (2): AddContact(), useSmartBack()
-
-### Community 38 - "Format Date"
-Cohesion: 0.53
-Nodes (4): formatDate(), formatDuration(), getQuota(), summarizeResults()
-
-### Community 39 - "Stale Contacts Bar"
-Cohesion: 0.6
-Nodes (3): daysSince(), handleCheckAll(), handleConfirmCurrent()
-
-### Community 40 - "Connections Summary"
-Cohesion: 0.8
-Nodes (3): ConnectionsSummary(), countCollectionCoverage(), summarizeConnections()
-
-### Community 41 - "Build Network Preset"
-Cohesion: 0.7
-Nodes (3): buildNetworkPreset(), getFreshnessTier(), mapCategoryToNetworkOccupation()
-
-### Community 42 - "Is Location Only Query"
-Cohesion: 0.7
-Nodes (3): isLocationOnlyQuery(), normalizeQueryTerm(), parseFiltersFromQuery()
-
-### Community 43 - "Full Validation Loop Rationale"
+### Community 21 - "Community 21"
 Cohesion: 0.4
 Nodes (5): Full Validation Loop Rationale, Phase 6 Handoff Hardening, Handoff Readiness Rationale, Phase 6.6 Performance Pass, Phase 6 Recommended Sequencing Rationale
 
-### Community 44 - "Add Existing"
-Cohesion: 0.7
-Nodes (4): addExisting(), handleCreate(), normalizeName(), removeSelected()
-
-### Community 48 - "Build Counts"
-Cohesion: 0.83
-Nodes (2): buildCounts(), FlemishConnectionChart()
-
-### Community 49 - "Availability Overview"
-Cohesion: 0.83
-Nodes (2): AvailabilityOverview(), countMatches()
-
-### Community 50 - "Build Category Counts"
-Cohesion: 0.83
-Nodes (2): buildCategoryCounts(), OccupationOverview()
-
-### Community 51 - "Organization"
-Cohesion: 0.67
-Nodes (2): organization(), person()
-
-### Community 52 - "Handle Create New"
-Cohesion: 0.67
-Nodes (2): handleCreateNew(), handleSaveCollection()
-
-### Community 53 - "Concept Discovery Frontier Crawler"
+### Community 23 - "Community 23"
 Cohesion: 0.5
 Nodes (4): Concept: Discovery Frontier Crawler, Concept: Domain Yield Learning, Concept: Evidence-Driven System Design, Rationale: Store Evidence Not Just Final Fields
 
-### Community 54 - "Edge Functions Self Authenticate"
+### Community 24 - "Community 24"
 Cohesion: 0.67
 Nodes (4): Edge Functions Self-Authenticate, Supabase Auth Gates the App, RLS Summary, staff_users Table
 
-### Community 55 - "Handle Click Outside 2"
-Cohesion: 0.67
-Nodes (2): handleClickOutside(), handleSelect()
-
-### Community 56 - "Duplicate Compare"
-Cohesion: 0.67
-Nodes (2): DuplicateCompare(), getVal()
-
-### Community 57 - "Generate Migration"
-Cohesion: 0.67
-Nodes (1): processLineByLine()
-
-### Community 58 - "Handle Reset"
-Cohesion: 0.67
-Nodes (1): handleReset()
-
-### Community 59 - "Classify Person"
-Cohesion: 0.67
-Nodes (1): classifyPerson()
-
-### Community 60 - "Geocode Batch"
-Cohesion: 0.67
-Nodes (1): geocodeBatch()
-
-### Community 61 - "Base"
-Cohesion: 0.67
-Nodes (1): base()
-
-### Community 62 - "Concept Search Query Routing"
-Cohesion: 0.67
-Nodes (3): Concept: Search Query Routing, Concept: Reciprocal-Rank Fusion Search, _shared/searchRouting.ts
-
-### Community 63 - "Geographic Visualization Asset"
-Cohesion: 1.0
-Nodes (3): Geographic Visualization Asset, Leaflet Map Component, USA Blank State Map (SVG-style)
-
-### Community 64 - "Auth Provider"
-Cohesion: 0.67
-Nodes (3): Auth Provider, Authentication Route Guards, Approved Staff User Activation
-
-### Community 65 - "Derived Location Summary"
-Cohesion: 0.67
-Nodes (3): Derived Location Summary, Derived Label Normalization, Derived Label Suggestion Model
-
-### Community 66 - "Edge Error Description"
-Cohesion: 0.67
-Nodes (3): Edge Error Description, Notify Error, Sonner Toast Wrapper
-
-### Community 67 - "Normalize Verification Suggestions"
-Cohesion: 1.0
-Nodes (3): Normalize Verification Suggestions, Verification Risk Guidance, Verification Suggestion Model
-
-### Community 68 - "AI Agent Gemini Structured Call"
+### Community 25 - "Community 25"
 Cohesion: 0.67
 Nodes (3): AI Agent Gemini Structured Call, AI Agent Structured Task Handler, AI Agent Task Registry
 
-### Community 71 - "Concept Verification Field Risk Routing"
-Cohesion: 1.0
-Nodes (2): Concept: Verification Field Risk Routing, _shared/verification.ts (Shared Verification Core)
+### Community 27 - "Community 27"
+Cohesion: 0.67
+Nodes (3): Auth Provider, Authentication Route Guards, Approved Staff User Activation
 
-### Community 72 - "Rationale Stable Gemini 2 5"
-Cohesion: 1.0
-Nodes (2): Rationale: Stable Gemini 2.5 as Production Defaults, _shared/gemini.ts (Model Routing)
+### Community 28 - "Community 28"
+Cohesion: 0.67
+Nodes (3): Derived Location Summary, Derived Label Normalization, Derived Label Suggestion Model
 
-### Community 78 - "Gemini Model Routing"
+### Community 29 - "Community 29"
 Cohesion: 1.0
-Nodes (2): Gemini Model Routing, Archived Gemini Model Strategy
+Nodes (3): Normalize Verification Suggestions, Verification Risk Guidance, Verification Suggestion Model
 
-### Community 79 - "Discover Contacts Canonical Handler"
+### Community 30 - "Community 30"
+Cohesion: 0.67
+Nodes (3): Concept: Search Query Routing, Concept: Reciprocal-Rank Fusion Search, _shared/searchRouting.ts
+
+### Community 31 - "Community 31"
+Cohesion: 1.0
+Nodes (3): Geographic Visualization Asset, Leaflet Map Component, USA Blank State Map (SVG-style)
+
+### Community 33 - "Community 33"
 Cohesion: 1.0
 Nodes (2): Discover Contacts Canonical Handler, Search Contacts Compatibility Handler
 
-### Community 85 - "Edge Discover Contacts"
+### Community 35 - "Community 35"
 Cohesion: 1.0
-Nodes (1): Edge Function: discover-contacts
+Nodes (2): Concept: Verification Field Risk Routing, _shared/verification.ts (Shared Verification Core)
 
-### Community 88 - "Flemish Connection Selector"
+### Community 36 - "Community 36"
 Cohesion: 1.0
-Nodes (1): FlemishConnectionSelector Component
+Nodes (2): Rationale: Stable Gemini 2.5 as Production Defaults, _shared/gemini.ts (Model Routing)
 
-### Community 90 - "Src Components Navigation"
+### Community 37 - "Community 37"
 Cohesion: 1.0
-Nodes (1): src/components/Navigation.tsx
+Nodes (2): Gemini Model Routing, Archived Gemini Model Strategy
 
-### Community 91 - "Src Components Admin Access Management"
-Cohesion: 1.0
-Nodes (1): src/components/admin/AccessManagementPanel.tsx
-
-### Community 92 - "Src Components Admin Derived Labels"
-Cohesion: 1.0
-Nodes (1): src/components/admin/DerivedLabelsPanel.tsx
-
-### Community 93 - "Src Components Admin Contact Card"
-Cohesion: 1.0
-Nodes (1): src/components/admin/ContactCard.tsx
-
-### Community 95 - "Src Components Admin Ops Metrics"
-Cohesion: 1.0
-Nodes (1): src/components/admin/OpsMetricsPanel.tsx
-
-### Community 99 - "Src Components Admin Discovery Planning"
-Cohesion: 1.0
-Nodes (1): src/components/admin/DiscoveryPlanningPanel.tsx
-
-### Community 100 - "Src Lib Auth Auth Provider"
-Cohesion: 1.0
-Nodes (1): src/lib/auth.tsx (AuthProvider)
-
-### Community 101 - "Flemish Connections Lib"
-Cohesion: 1.0
-Nodes (1): flemishConnections Lib
-
-### Community 102 - "Src Lib Dashboard Session"
-Cohesion: 1.0
-Nodes (1): src/lib/dashboardSession.ts
-
-### Community 103 - "Flemish Connection Sync Lib"
-Cohesion: 1.0
-Nodes (1): flemishConnectionSync Lib
-
-### Community 109 - "Src Pages Login"
-Cohesion: 1.0
-Nodes (1): src/pages/Login.tsx
-
-### Community 110 - "Src Pages Account"
-Cohesion: 1.0
-Nodes (1): src/pages/Account.tsx
-
-### Community 111 - "Src Pages Auth Callback"
-Cohesion: 1.0
-Nodes (1): src/pages/AuthCallback.tsx
-
-### Community 113 - "Edge Search Contacts Legacy Alias"
-Cohesion: 1.0
-Nodes (1): Edge Function: search-contacts (legacy alias)
-
-### Community 114 - "Shared Ai Contracts Shared Prompts"
-Cohesion: 1.0
-Nodes (1): _shared/aiContracts.ts (Shared Prompts/Schemas)
-
-### Community 115 - "Shared Database Types Deno Schema"
-Cohesion: 1.0
-Nodes (1): _shared/database.types.ts (Deno Schema Shim)
-
-### Community 116 - "Src Lib App Routing"
-Cohesion: 1.0
-Nodes (1): src/lib/appRouting.ts
-
-### Community 117 - "Src Lib Filter Parser"
-Cohesion: 1.0
-Nodes (1): src/lib/filterParser.ts
-
-### Community 118 - "Src Pages Dashboard"
-Cohesion: 1.0
-Nodes (1): src/pages/Dashboard.tsx
-
-### Community 119 - "Html App Entry Point"
-Cohesion: 1.0
-Nodes (1): index.html (App Entry Point)
-
-### Community 120 - "AGENTS Graphify Rules"
-Cohesion: 1.0
-Nodes (1): AGENTS.md (Graphify Rules)
-
-### Community 121 - "AI Strategy Document"
-Cohesion: 1.0
-Nodes (1): AI Strategy Document
-
-### Community 122 - "Concept Entity Pivot Discovery"
-Cohesion: 1.0
-Nodes (1): Concept: Entity-Pivot Discovery
-
-### Community 123 - "Concept Geographic Gap Seeking Coverage"
-Cohesion: 1.0
-Nodes (1): Concept: Geographic Gap-Seeking Coverage
-
-### Community 124 - "Concept Bio Chunk Vectors"
-Cohesion: 1.0
-Nodes (1): Concept: Bio-Chunk Vectors
-
-### Community 125 - "Rationale Conservative Connection Graph Edges"
-Cohesion: 1.0
-Nodes (1): Rationale: Conservative Connection Graph Edges
-
-### Community 126 - "Dashboard Route"
-Cohesion: 1.0
-Nodes (1): Dashboard Route /
-
-### Community 127 - "Person Profile Route People Id"
-Cohesion: 1.0
-Nodes (1): Person Profile Route /people/:id
-
-### Community 128 - "Organization Profile Route Organizations Id"
-Cohesion: 1.0
-Nodes (1): Organization Profile Route /organizations/:id
-
-### Community 129 - "Collections Route Collections"
-Cohesion: 1.0
-Nodes (1): Collections Route /collections
-
-### Community 130 - "Admin Route Admin"
-Cohesion: 1.0
-Nodes (1): Admin Route /admin
-
-### Community 131 - "Add Contact Route Contacts New"
-Cohesion: 1.0
-Nodes (1): Add Contact Route /contacts/new
-
-### Community 132 - "Login Route Login"
-Cohesion: 1.0
-Nodes (1): Login Route /login
-
-### Community 133 - "Auth Callback Route Auth Callback"
-Cohesion: 1.0
-Nodes (1): Auth Callback Route /auth/callback
-
-### Community 134 - "Account Route Account"
-Cohesion: 1.0
-Nodes (1): Account Route /account
-
-### Community 135 - "GEMINI API KEY Secret"
-Cohesion: 1.0
-Nodes (1): GEMINI_API_KEY Secret
-
-### Community 136 - "TAVILY API KEY Secret"
-Cohesion: 1.0
-Nodes (1): TAVILY_API_KEY Secret
-
-### Community 137 - "BRAVE API KEY Secret"
-Cohesion: 1.0
-Nodes (1): BRAVE_API_KEY Secret
-
-### Community 138 - "APIFY TOKEN Secret"
-Cohesion: 1.0
-Nodes (1): APIFY_TOKEN Secret
-
-### Community 139 - "SUPABASE SERVICE ROLE KEY Secret"
-Cohesion: 1.0
-Nodes (1): SUPABASE_SERVICE_ROLE_KEY Secret
-
-### Community 140 - "Gemini Model Override Env Vars"
-Cohesion: 1.0
-Nodes (1): Gemini Model Override Env Vars
-
-### Community 141 - "VITE SUPABASE URL Frontend Env"
-Cohesion: 1.0
-Nodes (1): VITE_SUPABASE_URL Frontend Env
-
-### Community 142 - "VITE SUPABASE ANON KEY Frontend"
-Cohesion: 1.0
-Nodes (1): VITE_SUPABASE_ANON_KEY Frontend Env
-
-### Community 143 - "Phase 0 Benchmarks README"
-Cohesion: 1.0
-Nodes (1): Phase 0 Benchmarks README
-
-### Community 161 - "Dashboard Search Session Cache"
+### Community 39 - "Community 39"
 Cohesion: 1.0
 Nodes (1): Dashboard Search Session Cache
 
-### Community 162 - "Last Dashboard Location Session State"
+### Community 40 - "Community 40"
 Cohesion: 1.0
 Nodes (1): Last Dashboard Location Session State
 
+### Community 42 - "Community 42"
+Cohesion: 1.0
+Nodes (1): Edge Function: discover-contacts
+
+### Community 43 - "Community 43"
+Cohesion: 1.0
+Nodes (1): src/components/Navigation.tsx
+
+### Community 44 - "Community 44"
+Cohesion: 1.0
+Nodes (1): src/components/admin/AccessManagementPanel.tsx
+
+### Community 45 - "Community 45"
+Cohesion: 1.0
+Nodes (1): src/components/admin/DerivedLabelsPanel.tsx
+
+### Community 46 - "Community 46"
+Cohesion: 1.0
+Nodes (1): src/components/admin/ContactCard.tsx
+
+### Community 47 - "Community 47"
+Cohesion: 1.0
+Nodes (1): src/components/admin/OpsMetricsPanel.tsx
+
+### Community 48 - "Community 48"
+Cohesion: 1.0
+Nodes (1): src/components/admin/DiscoveryPlanningPanel.tsx
+
+### Community 49 - "Community 49"
+Cohesion: 1.0
+Nodes (1): src/lib/auth.tsx (AuthProvider)
+
+### Community 50 - "Community 50"
+Cohesion: 1.0
+Nodes (1): src/lib/dashboardSession.ts
+
+### Community 51 - "Community 51"
+Cohesion: 1.0
+Nodes (1): src/pages/Login.tsx
+
+### Community 52 - "Community 52"
+Cohesion: 1.0
+Nodes (1): src/pages/Account.tsx
+
+### Community 53 - "Community 53"
+Cohesion: 1.0
+Nodes (1): src/pages/AuthCallback.tsx
+
+### Community 54 - "Community 54"
+Cohesion: 1.0
+Nodes (1): Edge Function: search-contacts (legacy alias)
+
+### Community 55 - "Community 55"
+Cohesion: 1.0
+Nodes (1): _shared/aiContracts.ts (Shared Prompts/Schemas)
+
+### Community 56 - "Community 56"
+Cohesion: 1.0
+Nodes (1): _shared/database.types.ts (Deno Schema Shim)
+
+### Community 57 - "Community 57"
+Cohesion: 1.0
+Nodes (1): src/lib/appRouting.ts
+
+### Community 58 - "Community 58"
+Cohesion: 1.0
+Nodes (1): src/lib/filterParser.ts
+
+### Community 59 - "Community 59"
+Cohesion: 1.0
+Nodes (1): src/pages/Dashboard.tsx
+
+### Community 60 - "Community 60"
+Cohesion: 1.0
+Nodes (1): index.html (App Entry Point)
+
+### Community 61 - "Community 61"
+Cohesion: 1.0
+Nodes (1): AGENTS.md (Graphify Rules)
+
+### Community 62 - "Community 62"
+Cohesion: 1.0
+Nodes (1): AI Strategy Document
+
+### Community 63 - "Community 63"
+Cohesion: 1.0
+Nodes (1): Concept: Entity-Pivot Discovery
+
+### Community 64 - "Community 64"
+Cohesion: 1.0
+Nodes (1): Concept: Geographic Gap-Seeking Coverage
+
+### Community 65 - "Community 65"
+Cohesion: 1.0
+Nodes (1): Concept: Bio-Chunk Vectors
+
+### Community 66 - "Community 66"
+Cohesion: 1.0
+Nodes (1): Rationale: Conservative Connection Graph Edges
+
+### Community 67 - "Community 67"
+Cohesion: 1.0
+Nodes (1): Dashboard Route /
+
+### Community 68 - "Community 68"
+Cohesion: 1.0
+Nodes (1): Person Profile Route /people/:id
+
+### Community 69 - "Community 69"
+Cohesion: 1.0
+Nodes (1): Organization Profile Route /organizations/:id
+
+### Community 70 - "Community 70"
+Cohesion: 1.0
+Nodes (1): Collections Route /collections
+
+### Community 71 - "Community 71"
+Cohesion: 1.0
+Nodes (1): Admin Route /admin
+
+### Community 72 - "Community 72"
+Cohesion: 1.0
+Nodes (1): Add Contact Route /contacts/new
+
+### Community 73 - "Community 73"
+Cohesion: 1.0
+Nodes (1): Login Route /login
+
+### Community 74 - "Community 74"
+Cohesion: 1.0
+Nodes (1): Auth Callback Route /auth/callback
+
+### Community 75 - "Community 75"
+Cohesion: 1.0
+Nodes (1): Account Route /account
+
+### Community 76 - "Community 76"
+Cohesion: 1.0
+Nodes (1): GEMINI_API_KEY Secret
+
+### Community 77 - "Community 77"
+Cohesion: 1.0
+Nodes (1): TAVILY_API_KEY Secret
+
+### Community 78 - "Community 78"
+Cohesion: 1.0
+Nodes (1): BRAVE_API_KEY Secret
+
+### Community 79 - "Community 79"
+Cohesion: 1.0
+Nodes (1): APIFY_TOKEN Secret
+
+### Community 80 - "Community 80"
+Cohesion: 1.0
+Nodes (1): SUPABASE_SERVICE_ROLE_KEY Secret
+
+### Community 81 - "Community 81"
+Cohesion: 1.0
+Nodes (1): Gemini Model Override Env Vars
+
+### Community 82 - "Community 82"
+Cohesion: 1.0
+Nodes (1): VITE_SUPABASE_URL Frontend Env
+
+### Community 83 - "Community 83"
+Cohesion: 1.0
+Nodes (1): VITE_SUPABASE_ANON_KEY Frontend Env
+
+### Community 84 - "Community 84"
+Cohesion: 1.0
+Nodes (1): Phase 0 Benchmarks README
+
 ## Ambiguous Edges - Review These
+- `Smoke Edge Function Checks` → `AI Legacy Removal`  [AMBIGUOUS]
+  scripts/smoke_edge_functions.ts · relation: conceptually_related_to
 - `Supabase Auth Gates the App` → `staff_users Table`  [AMBIGUOUS]
   CLAUDE.md · relation: references
-- `AI Legacy Removal` → `Smoke Edge Function Checks`  [AMBIGUOUS]
-  scripts/smoke_edge_functions.ts · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **187 isolated node(s):** `Edge Function: discover-contacts`, `_shared/searchRouting.ts`, `_shared/gemini.ts (Model Routing)`, `_shared/verification.ts (Shared Verification Core)`, `FlemishConnectionSelector Component` (+182 more)
+- **182 isolated node(s):** `US Cities Locations Migration Generator`, `ESLint TypeScript React Configuration`, `Vitest jsdom Test Configuration`, `PostCSS Tailwind Autoprefixer Configuration`, `Load Verification Person` (+177 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Error Boundary`** (7 nodes): `ErrorBoundary`, `.buildReport()`, `.componentDidCatch()`, `.getDerivedStateFromError()`, `.render()`, `ErrorBoundary.tsx`, `ErrorBoundary.tsx`
+- **Thin community `Community 33`** (2 nodes): `Discover Contacts Canonical Handler`, `Search Contacts Compatibility Handler`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Add Contact`** (6 nodes): `AddContact()`, `useSmartBack.ts`, `AddContact.tsx`, `useSmartBack.ts`, `AddContact.tsx`, `useSmartBack()`
+- **Thin community `Community 35`** (2 nodes): `Concept: Verification Field Risk Routing`, `_shared/verification.ts (Shared Verification Core)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Build Counts`** (4 nodes): `buildCounts()`, `FlemishConnectionChart()`, `FlemishConnectionChart.tsx`, `FlemishConnectionChart.tsx`
+- **Thin community `Community 36`** (2 nodes): `Rationale: Stable Gemini 2.5 as Production Defaults`, `_shared/gemini.ts (Model Routing)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Availability Overview`** (4 nodes): `AvailabilityOverview()`, `countMatches()`, `AvailabilityOverview.tsx`, `AvailabilityOverview.tsx`
+- **Thin community `Community 37`** (2 nodes): `Gemini Model Routing`, `Archived Gemini Model Strategy`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Build Category Counts`** (4 nodes): `buildCategoryCounts()`, `OccupationOverview()`, `OccupationOverview.tsx`, `OccupationOverview.tsx`
+- **Thin community `Community 39`** (1 nodes): `Dashboard Search Session Cache`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Organization`** (4 nodes): `organization()`, `person()`, `networkScope.test.ts`, `networkScope.test.ts`
+- **Thin community `Community 40`** (1 nodes): `Last Dashboard Location Session State`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Handle Create New`** (4 nodes): `handleCreateNew()`, `handleSaveCollection()`, `Collections.tsx`, `Collections.tsx`
+- **Thin community `Community 42`** (1 nodes): `Edge Function: discover-contacts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Handle Click Outside 2`** (4 nodes): `handleClickOutside()`, `handleSelect()`, `CitySearch.tsx`, `CitySearch.tsx`
+- **Thin community `Community 43`** (1 nodes): `src/components/Navigation.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Duplicate Compare`** (4 nodes): `DuplicateCompare()`, `getVal()`, `DuplicateCompare.tsx`, `DuplicateCompare.tsx`
+- **Thin community `Community 44`** (1 nodes): `src/components/admin/AccessManagementPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Generate Migration`** (3 nodes): `generate_migration.js`, `processLineByLine()`, `generate_migration.js`
+- **Thin community `Community 45`** (1 nodes): `src/components/admin/DerivedLabelsPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Handle Reset`** (3 nodes): `handleReset()`, `FilterPanel.tsx`, `FilterPanel.tsx`
+- **Thin community `Community 46`** (1 nodes): `src/components/admin/ContactCard.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Classify Person`** (3 nodes): `classifyPerson()`, `occupationCategories.ts`, `occupationCategories.ts`
+- **Thin community `Community 47`** (1 nodes): `src/components/admin/OpsMetricsPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Geocode Batch`** (3 nodes): `geocodeBatch()`, `geocoding.ts`, `geocoding.ts`
+- **Thin community `Community 48`** (1 nodes): `src/components/admin/DiscoveryPlanningPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Base`** (3 nodes): `base()`, `filterParser.test.ts`, `filterParser.test.ts`
+- **Thin community `Community 49`** (1 nodes): `src/lib/auth.tsx (AuthProvider)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Concept Verification Field Risk Routing`** (2 nodes): `Concept: Verification Field Risk Routing`, `_shared/verification.ts (Shared Verification Core)`
+- **Thin community `Community 50`** (1 nodes): `src/lib/dashboardSession.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rationale Stable Gemini 2 5`** (2 nodes): `Rationale: Stable Gemini 2.5 as Production Defaults`, `_shared/gemini.ts (Model Routing)`
+- **Thin community `Community 51`** (1 nodes): `src/pages/Login.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Gemini Model Routing`** (2 nodes): `Gemini Model Routing`, `Archived Gemini Model Strategy`
+- **Thin community `Community 52`** (1 nodes): `src/pages/Account.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Discover Contacts Canonical Handler`** (2 nodes): `Discover Contacts Canonical Handler`, `Search Contacts Compatibility Handler`
+- **Thin community `Community 53`** (1 nodes): `src/pages/AuthCallback.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Edge Discover Contacts`** (1 nodes): `Edge Function: discover-contacts`
+- **Thin community `Community 54`** (1 nodes): `Edge Function: search-contacts (legacy alias)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Flemish Connection Selector`** (1 nodes): `FlemishConnectionSelector Component`
+- **Thin community `Community 55`** (1 nodes): `_shared/aiContracts.ts (Shared Prompts/Schemas)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Navigation`** (1 nodes): `src/components/Navigation.tsx`
+- **Thin community `Community 56`** (1 nodes): `_shared/database.types.ts (Deno Schema Shim)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Admin Access Management`** (1 nodes): `src/components/admin/AccessManagementPanel.tsx`
+- **Thin community `Community 57`** (1 nodes): `src/lib/appRouting.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Admin Derived Labels`** (1 nodes): `src/components/admin/DerivedLabelsPanel.tsx`
+- **Thin community `Community 58`** (1 nodes): `src/lib/filterParser.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Admin Contact Card`** (1 nodes): `src/components/admin/ContactCard.tsx`
+- **Thin community `Community 59`** (1 nodes): `src/pages/Dashboard.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Admin Ops Metrics`** (1 nodes): `src/components/admin/OpsMetricsPanel.tsx`
+- **Thin community `Community 60`** (1 nodes): `index.html (App Entry Point)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Components Admin Discovery Planning`** (1 nodes): `src/components/admin/DiscoveryPlanningPanel.tsx`
+- **Thin community `Community 61`** (1 nodes): `AGENTS.md (Graphify Rules)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Lib Auth Auth Provider`** (1 nodes): `src/lib/auth.tsx (AuthProvider)`
+- **Thin community `Community 62`** (1 nodes): `AI Strategy Document`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Flemish Connections Lib`** (1 nodes): `flemishConnections Lib`
+- **Thin community `Community 63`** (1 nodes): `Concept: Entity-Pivot Discovery`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Lib Dashboard Session`** (1 nodes): `src/lib/dashboardSession.ts`
+- **Thin community `Community 64`** (1 nodes): `Concept: Geographic Gap-Seeking Coverage`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Flemish Connection Sync Lib`** (1 nodes): `flemishConnectionSync Lib`
+- **Thin community `Community 65`** (1 nodes): `Concept: Bio-Chunk Vectors`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Pages Login`** (1 nodes): `src/pages/Login.tsx`
+- **Thin community `Community 66`** (1 nodes): `Rationale: Conservative Connection Graph Edges`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Pages Account`** (1 nodes): `src/pages/Account.tsx`
+- **Thin community `Community 67`** (1 nodes): `Dashboard Route /`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Pages Auth Callback`** (1 nodes): `src/pages/AuthCallback.tsx`
+- **Thin community `Community 68`** (1 nodes): `Person Profile Route /people/:id`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Edge Search Contacts Legacy Alias`** (1 nodes): `Edge Function: search-contacts (legacy alias)`
+- **Thin community `Community 69`** (1 nodes): `Organization Profile Route /organizations/:id`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Shared Ai Contracts Shared Prompts`** (1 nodes): `_shared/aiContracts.ts (Shared Prompts/Schemas)`
+- **Thin community `Community 70`** (1 nodes): `Collections Route /collections`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Shared Database Types Deno Schema`** (1 nodes): `_shared/database.types.ts (Deno Schema Shim)`
+- **Thin community `Community 71`** (1 nodes): `Admin Route /admin`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Lib App Routing`** (1 nodes): `src/lib/appRouting.ts`
+- **Thin community `Community 72`** (1 nodes): `Add Contact Route /contacts/new`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Lib Filter Parser`** (1 nodes): `src/lib/filterParser.ts`
+- **Thin community `Community 73`** (1 nodes): `Login Route /login`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Src Pages Dashboard`** (1 nodes): `src/pages/Dashboard.tsx`
+- **Thin community `Community 74`** (1 nodes): `Auth Callback Route /auth/callback`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Html App Entry Point`** (1 nodes): `index.html (App Entry Point)`
+- **Thin community `Community 75`** (1 nodes): `Account Route /account`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `AGENTS Graphify Rules`** (1 nodes): `AGENTS.md (Graphify Rules)`
+- **Thin community `Community 76`** (1 nodes): `GEMINI_API_KEY Secret`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `AI Strategy Document`** (1 nodes): `AI Strategy Document`
+- **Thin community `Community 77`** (1 nodes): `TAVILY_API_KEY Secret`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Concept Entity Pivot Discovery`** (1 nodes): `Concept: Entity-Pivot Discovery`
+- **Thin community `Community 78`** (1 nodes): `BRAVE_API_KEY Secret`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Concept Geographic Gap Seeking Coverage`** (1 nodes): `Concept: Geographic Gap-Seeking Coverage`
+- **Thin community `Community 79`** (1 nodes): `APIFY_TOKEN Secret`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Concept Bio Chunk Vectors`** (1 nodes): `Concept: Bio-Chunk Vectors`
+- **Thin community `Community 80`** (1 nodes): `SUPABASE_SERVICE_ROLE_KEY Secret`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Rationale Conservative Connection Graph Edges`** (1 nodes): `Rationale: Conservative Connection Graph Edges`
+- **Thin community `Community 81`** (1 nodes): `Gemini Model Override Env Vars`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Dashboard Route`** (1 nodes): `Dashboard Route /`
+- **Thin community `Community 82`** (1 nodes): `VITE_SUPABASE_URL Frontend Env`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Person Profile Route People Id`** (1 nodes): `Person Profile Route /people/:id`
+- **Thin community `Community 83`** (1 nodes): `VITE_SUPABASE_ANON_KEY Frontend Env`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Organization Profile Route Organizations Id`** (1 nodes): `Organization Profile Route /organizations/:id`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Collections Route Collections`** (1 nodes): `Collections Route /collections`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Admin Route Admin`** (1 nodes): `Admin Route /admin`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Add Contact Route Contacts New`** (1 nodes): `Add Contact Route /contacts/new`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Login Route Login`** (1 nodes): `Login Route /login`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Auth Callback Route Auth Callback`** (1 nodes): `Auth Callback Route /auth/callback`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Account Route Account`** (1 nodes): `Account Route /account`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `GEMINI API KEY Secret`** (1 nodes): `GEMINI_API_KEY Secret`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `TAVILY API KEY Secret`** (1 nodes): `TAVILY_API_KEY Secret`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `BRAVE API KEY Secret`** (1 nodes): `BRAVE_API_KEY Secret`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `APIFY TOKEN Secret`** (1 nodes): `APIFY_TOKEN Secret`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `SUPABASE SERVICE ROLE KEY Secret`** (1 nodes): `SUPABASE_SERVICE_ROLE_KEY Secret`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Gemini Model Override Env Vars`** (1 nodes): `Gemini Model Override Env Vars`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `VITE SUPABASE URL Frontend Env`** (1 nodes): `VITE_SUPABASE_URL Frontend Env`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `VITE SUPABASE ANON KEY Frontend`** (1 nodes): `VITE_SUPABASE_ANON_KEY Frontend Env`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Phase 0 Benchmarks README`** (1 nodes): `Phase 0 Benchmarks README`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Dashboard Search Session Cache`** (1 nodes): `Dashboard Search Session Cache`
-  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Last Dashboard Location Session State`** (1 nodes): `Last Dashboard Location Session State`
+- **Thin community `Community 84`** (1 nodes): `Phase 0 Benchmarks README`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
+- **What is the exact relationship between `Smoke Edge Function Checks` and `AI Legacy Removal`?**
+  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `Supabase Auth Gates the App` and `staff_users Table`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **What is the exact relationship between `AI Legacy Removal` and `Smoke Edge Function Checks`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `normalizeWhitespace()` connect `Canonicalize Url` to `Append Labeled Line`, `Check Duplicate`?**
-  _High betweenness centrality (0.068) - this node is a cross-community bridge._
-- **Why does `canonicalizeFlemishConnection()` connect `Check Duplicate` to `Format Derived Label Confidence`?**
-  _High betweenness centrality (0.046) - this node is a cross-community bridge._
-- **Why does `resolveLocationId()` connect `Format Derived Label Confidence` to `Handle Click Outside`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
-- **Are the 17 inferred relationships involving `normalizeWhitespace()` (e.g. with `normalizeName()` and `normalizeEmail()`) actually correct?**
-  _`normalizeWhitespace()` has 17 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 3 inferred relationships involving `processFrontierRow()` (e.g. with `fetchPage()` and `classifyPageHeuristically()`) actually correct?**
-  _`processFrontierRow()` has 3 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 2 inferred relationships involving `People Records` (e.g. with `Copyable Error Report` and `Staff Access Management`) actually correct?**
+  _`People Records` has 2 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `US Cities Locations Migration Generator`, `ESLint TypeScript React Configuration`, `Vitest jsdom Test Configuration` to the rest of the system?**
+  _182 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Community 0` be split into smaller, more focused modules?**
+  _Cohesion score 0.04 - nodes in this community are weakly interconnected._
+- **Should `Community 1` be split into smaller, more focused modules?**
+  _Cohesion score 0.06 - nodes in this community are weakly interconnected._
+- **Should `Community 2` be split into smaller, more focused modules?**
+  _Cohesion score 0.05 - nodes in this community are weakly interconnected._

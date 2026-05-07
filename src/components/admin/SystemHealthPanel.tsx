@@ -82,6 +82,10 @@ const AGENTS: Array<{ kind: HealthAgentKind; label: string }> = [
 
 const STUCK_AFTER_MS = 2 * 60 * 1000;
 
+function serviceLabelForKind(kind: string): string {
+  return AGENTS.find((agent) => agent.kind === kind)?.label || 'Service run';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -507,7 +511,7 @@ export default function SystemHealthPanel() {
             {stuckRuns.map((run) => (
               <div key={run.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <div>
-                  <div className="font-medium text-gray-900">{run.agent_type}</div>
+                  <div className="font-medium text-gray-900">{serviceLabelForKind(run.agent_type)}</div>
                   <div className="text-sm text-gray-500">
                     Started {formatDate(run.started_at)} · heartbeat {formatDate(run.heartbeat_at)}
                   </div>

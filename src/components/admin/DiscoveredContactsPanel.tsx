@@ -641,7 +641,7 @@ function MergeCompare({
                         <td className="px-3 py-2.5">
                           {willAIMerge ? (
                             <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded font-medium">
-                              AI merge
+                              Merge
                             </span>
                           ) : existVal ? (
                             <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">
@@ -661,8 +661,7 @@ function MergeCompare({
             </div>
 
             <p className="text-[10px] text-gray-400 mt-2">
-              Fields marked "AI merge" will combine both values using AI instead
-              of replacing.
+              Fields marked "Merge" will combine both values instead of replacing.
             </p>
           </div>
         ) : (

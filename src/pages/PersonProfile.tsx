@@ -440,7 +440,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                             className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
                           >
                             <RotateCw className="w-4 h-4" />
-                            <span>AI Update</span>
+                            <span>Verification Preview</span>
                           </button>
                           <div className="relative">
                             <button

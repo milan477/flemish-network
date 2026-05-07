@@ -17,10 +17,18 @@ export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = 
   if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'system') {
     return tab;
   }
-  if (tab === 'agents' || tab === 'discovered') return 'discovery';
-  if (tab === 'overview') return 'growth';
   if (tab === 'access' && canAccessAdminOnlyTabs) return 'access';
   return 'discovery';
+}
+
+export function isCanonicalAdminTab(tab?: string | null): tab is AdminTab {
+  return (
+    tab === 'discovery' ||
+    tab === 'verification' ||
+    tab === 'growth' ||
+    tab === 'system' ||
+    tab === 'access'
+  );
 }
 
 export type DashboardViewMode = 'map' | 'list';
@@ -175,7 +183,6 @@ export function buildDashboardLocation(state: DashboardRouteState): {
 export function getCurrentPageFromPathname(pathname: string): AppPage {
   if (pathname.startsWith('/collections')) return 'collections';
   if (pathname.startsWith('/admin')) return 'admin';
-  if (pathname.startsWith('/contacts/new')) return 'add-contact';
   if (pathname.startsWith('/account')) return 'account';
   if (pathname.startsWith('/people')) return 'dashboard';
   if (pathname.startsWith('/organizations')) return 'dashboard';

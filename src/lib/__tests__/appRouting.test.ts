@@ -5,6 +5,7 @@ import {
   defaultDashboardRouteState,
   buildDashboardStateFromPreset,
   buildDashboardLocation,
+  isCanonicalAdminTab,
   normalizePage,
   getCurrentPageFromPathname,
   normalizeAdminTab,
@@ -193,15 +194,27 @@ describe('appRouting - admin tabs', () => {
     expect(normalizeAdminTab('system')).toBe('system');
   });
 
-  it('redirects legacy admin tabs to the new service tabs', () => {
+  it('defaults unknown admin tabs to discovery', () => {
     expect(normalizeAdminTab('agents')).toBe('discovery');
     expect(normalizeAdminTab('discovered')).toBe('discovery');
-    expect(normalizeAdminTab('overview')).toBe('growth');
+    expect(normalizeAdminTab('overview')).toBe('discovery');
+    expect(normalizeAdminTab('unknown')).toBe('discovery');
   });
 
   it('keeps access admin-only', () => {
     expect(normalizeAdminTab('access')).toBe('discovery');
     expect(normalizeAdminTab('access', true)).toBe('access');
+  });
+
+  it('identifies canonical admin tabs', () => {
+    expect(isCanonicalAdminTab('discovery')).toBe(true);
+    expect(isCanonicalAdminTab('verification')).toBe(true);
+    expect(isCanonicalAdminTab('growth')).toBe(true);
+    expect(isCanonicalAdminTab('system')).toBe(true);
+    expect(isCanonicalAdminTab('access')).toBe(true);
+    expect(isCanonicalAdminTab('agents')).toBe(false);
+    expect(isCanonicalAdminTab('overview')).toBe(false);
+    expect(isCanonicalAdminTab(undefined)).toBe(false);
   });
 });
 
@@ -238,7 +251,6 @@ describe('appRouting - normalizePage / getCurrentPageFromPathname', () => {
     expect(getCurrentPageFromPathname('/admin/system')).toBe('admin');
     expect(getCurrentPageFromPathname('/collections')).toBe('collections');
     expect(getCurrentPageFromPathname('/collections/abc')).toBe('collections');
-    expect(getCurrentPageFromPathname('/contacts/new')).toBe('add-contact');
     expect(getCurrentPageFromPathname('/account')).toBe('account');
     expect(getCurrentPageFromPathname('/people/123')).toBe('dashboard');
     expect(getCurrentPageFromPathname('/organizations/abc')).toBe('dashboard');

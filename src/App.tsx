@@ -234,15 +234,11 @@ export default function App() {
           <Route element={<RequireRole role="editor" />}>
             <Route
               path="/admin"
-              element={wrap('admin', <Admin onNavigate={handleNavigate} />)}
+              element={<Navigate to="/admin/discovery" replace />}
             />
             <Route
               path="/admin/:tab"
               element={wrap('admin', <Admin onNavigate={handleNavigate} />)}
-            />
-            <Route
-              path="/contacts/new"
-              element={<Navigate to="/admin/discovery?mode=manual" replace />}
             />
           </Route>
         </Route>
