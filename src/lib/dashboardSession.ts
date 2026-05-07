@@ -1,4 +1,4 @@
-import type { Person } from './supabase';
+import type { Organization, Person } from './supabase';
 
 const SEARCH_CACHE_KEY = 'dashboard-search-cache-v1';
 const LAST_DASHBOARD_LOCATION_KEY = 'last-dashboard-location-v1';
@@ -9,6 +9,7 @@ export interface CachedDashboardSearch {
   scope?: string;
   nameMatches: Person[];
   aiResults: Person[];
+  organizationResults?: Organization[];
   snippets: Array<[string, string]>;
   updatedAt: number;
 }

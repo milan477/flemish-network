@@ -339,6 +339,11 @@ export default function DirectoryGrid({
                         </span>
                       </div>
                     )}
+                    {snippets?.get(org.id) && (
+                      <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
+                        {snippets.get(org.id)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </button>
@@ -357,7 +362,7 @@ export default function DirectoryGrid({
         </div>
       )}
 
-      {isSearchMode && !aiLoading && nameMatches.length === 0 && aiResults.length === 0 && (
+      {isSearchMode && !aiLoading && nameMatches.length === 0 && aiResults.length === 0 && organizations.length === 0 && (
         <div className="text-center py-12">
           <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
             <Search className="w-7 h-7 text-gray-300" />

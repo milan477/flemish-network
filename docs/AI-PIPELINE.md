@@ -4,7 +4,7 @@
 
 | Product service | Route/UI | Edge/API owner | Notes |
 |---|---|---|---|
-| Search The Network | `/` | `search-people` | Server-side routed hybrid people search. Organization search is moving server-side next. |
+| Search The Network | `/` | `search-people` | Server-side routed hybrid people search plus Phase 3 lexical organization search. |
 | Build A Collection | `/collections`, `/collections/:id` | `suggest-people` | Uses existing records only. Target workflow adds draft approval and organization candidates. |
 | Expand The Database | `/admin/discovery` | `agent-scheduler` -> `agent-discovery` | Prompted and autonomous discovery. Evidence-first review queues; no auto-promotion. |
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
@@ -45,13 +45,17 @@ Defined in `supabase/functions/_shared/gemini.ts`.
 
 ## Edge Function: `search-people`
 
-Server-side routed hybrid search for Search.
+Server-side Search The Network endpoint for approved people and organizations.
 
-1. Takes `{ query, max_results }`.
-2. Runs Gemini keyword extraction and embedding in parallel, degrading to lexical-only when needed.
-3. Classifies query through `_shared/searchRouting.ts`.
-4. Calls lexical, person-vector, and text-chunk retrieval.
-5. Fuses ranked lists and returns snippets.
+1. Takes `{ query, max_results, match_mode?, filters? }`.
+2. Supported filters include `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and `flemish_connections`.
+3. Runs Gemini keyword extraction and people-query embedding in parallel, degrading to lexical-only when needed.
+4. Classifies query through `_shared/searchRouting.ts`.
+5. Calls people lexical, people-vector, and people text-chunk retrieval; organizations use `search_organizations_lexical` only in Phase 3.
+6. Applies structured criteria coverage for sector, location, occupation/type, and Flemish/Belgian relevance.
+7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
+
+Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link`, US network status, and US locations. Organization-to-Collection membership is intentionally deferred to Phase 4.
 
 ## Edge Function: `agent-discovery`
 
@@ -138,7 +142,6 @@ Legacy compatibility still present until follow-up migrations/functions are remo
 
 ## Known Work
 
-- Move organization search server-side with ranked snippets.
 - Add organization collection membership and collection draft approval.
 - Add organization discovery review and organization verification.
 - Normalize Flemish/Belgian facts into canonical, filterable entities with evidence.

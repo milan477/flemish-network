@@ -62,6 +62,8 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
+  const [peopleCount, setPeopleCount] = useState(0);
+  const [showAllPeople, setShowAllPeople] = useState(false);
   const [orgSectors, setOrgSectors] = useState<{ id: string; name: string }[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,12 +102,26 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   }, [organizationId]);
 
   const loadPeople = useCallback(async () => {
-    const { data } = await supabase
-      .from('people').select('*, locations(*), person_us_connections(*, locations(*))')
+    let query = supabase
+      .from('people')
+      .select('*, locations(*), person_us_connections(*, locations(*))', {
+        count: 'exact',
+      })
       .eq('organization_id', organizationId)
-      .limit(6);
+      .order('name');
+
+    if (!showAllPeople) {
+      query = query.limit(6);
+    }
+
+    const { data, count } = await query;
 
     setPeople(data || []);
+    setPeopleCount(count || 0);
+  }, [organizationId, showAllPeople]);
+
+  useEffect(() => {
+    setShowAllPeople(false);
   }, [organizationId]);
 
   useEffect(() => {
@@ -638,9 +654,13 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                 <Users className="w-5 h-5 text-gray-600" />
                 <h2 className="text-lg font-semibold text-gray-900">Key Contacts</h2>
               </div>
-              {people.length > 6 && (
-                <button className="text-yellow-600 hover:text-yellow-700 font-medium text-sm">
-                  See all {people.length} contacts
+              {peopleCount > 6 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllPeople((value) => !value)}
+                  className="text-yellow-600 hover:text-yellow-700 font-medium text-sm"
+                >
+                  {showAllPeople ? 'Show fewer contacts' : `See all ${peopleCount} contacts`}
                 </button>
               )}
             </div>

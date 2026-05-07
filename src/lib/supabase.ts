@@ -214,10 +214,12 @@ export interface Collection {
 export interface CollectionMember {
   id: string;
   collection_id: string;
-  person_id: string;
+  person_id: string | null;
+  organization_id: string | null;
   notes?: string;
   added_at: string;
   person?: Person;
+  organization?: Organization;
 }
 
 export interface MapFilters {

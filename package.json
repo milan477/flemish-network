@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:deno": "deno test --allow-env --allow-net supabase/functions/_shared/__tests__/",
+    "seed:phase3": "tsx scripts/seed_phase3_search_dataset.ts",
     "smoke": "tsx scripts/smoke_edge_functions.ts"
   },
   "dependencies": {

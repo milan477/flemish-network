@@ -25,7 +25,7 @@ The app should feel like five services, not a pile of agents.
 
 | Product service | Route | Primary UI | Backend owner |
 |---|---|---|---|
-| Search The Network | `/` | Search map/list, filters, ranked people and organizations | `search-people`; organization search still needs server-side parity |
+| Search The Network | `/` | Search map/list, filters, ranked people and organizations | `search-people` |
 | Build A Collection | `/collections`, `/collections/:id` | Collection list/detail, draft workflow, candidate approval | `suggest-people`; target adds organizations |
 | Expand The Database | `/admin/discovery` | Manual intake, import, prompted discovery, pending candidate review | `agent-scheduler` -> `agent-discovery` |
 | Verify And Enrich Records | `/admin/verification` | Stale records, suggestions, derived labels, inline verification | `agent-verify`; `update-profile` remains preview mode until consolidated |
@@ -72,7 +72,7 @@ Known legacy still present:
 - `[later]` Generated Supabase types still include connection artifacts until the DB cleanup migration and type regeneration happen.
 - `[later]` Legacy compatibility functions `discover-contacts`, `search-contacts`, and `ai-agent` tasks `parse_contacts` / `flemish_search` still exist until replacement flows are complete.
 - `[later]` Collections are still people-first in live UI and schema.
-- `[later]` Organization search still needs full server-side ranked result parity.
+- `[done]` Organization search has server-side ranked lexical result parity for Phase 3.
 
 ## Phase 0 - Documentation And Service Map
 
@@ -212,22 +212,24 @@ Scope:
 - Move organization search server-side instead of fetching/filtering all organizations client-side.
 - Return ranked organization results with rationale/snippets.
 - Keep filters based on normalized people/organization facts.
-- Allow adding selected people or organizations to Collections.
+- Keep add-to-collection controls people-only in Phase 3; organization collection membership is Phase 4.
 
 Todos:
-
-- `[next]` Identify current organization search path and any full-table frontend loads.
-- `[next]` Extend `search-people` or add a clearly named search service contract that returns people and organizations together.
-- `[next]` Add organization lexical search substrate or reuse a normalized search document table.
-- `[next]` Add organization ranking, snippets, source/rationale fields, and facet metadata.
-- `[next]` Update Search UI to consume server-side organization results.
-- `[next]` Add pagination or result limits so Search does not fetch whole organization tables.
-- `[later]` Include organization Flemish/Belgian facts once Phase 6 lands.
+- `[done]` Add `scripts/seed_phase3_search_dataset.ts` / `npm run seed:phase3` to reset approved people/organizations and seed 160 synthetic people plus 75 synthetic organizations.
+- `[done]` Identify and replace the active-query organization path that fetched and filtered the full organization table in the dashboard.
+- `[done]` Extend `search-people` so it returns mixed people and organization results together.
+- `[done]` Add `organization_search_documents`, sync triggers/indexes, and `search_organizations_lexical`.
+- `[done]` Add organization ranking, snippets, rationale fields, and structured criteria coverage.
+- `[done]` Update Search UI/cache to consume server-side organization results.
+- `[done]` Add capped organization browse loads so Search does not fetch whole organization tables.
+- `[later]` Include canonical organization Flemish/Belgian facts once Phase 6 lands.
+- `[later]` Add organization add-to-collection controls after Phase 4 adds organization collection membership.
 
 Out of scope:
 
 - Discovering new organizations from Search.
 - Collection draft workflow.
+- Organization-to-Collection membership and add controls.
 
 Exit criteria:
 
@@ -241,8 +243,10 @@ Verification:
 ```sh
 npm run typecheck
 npm test
+npm run test:deno
 npm run build
 rg "from\\('organizations'\\)|from\\(\"organizations\"\\)" src
+graphify update .
 ```
 
 Focused tests to add:
@@ -250,7 +254,7 @@ Focused tests to add:
 - Query returns mixed people and organization results for a Flemish/Belgian entity.
 - Organization results include snippet/rationale.
 - Empty or broad queries respect result limits.
-- Organization filters use canonical facts after Phase 6.
+- Organization filters cover sector, location, and existing Flemish/Belgian text facts; canonical organization facts remain Phase 6.
 
 Manual checks:
 
@@ -277,7 +281,7 @@ Todos:
 - `[next]` Extend `suggest-people` or rename behind a collection suggestion service contract that returns people and organizations.
 - `[next]` Add draft state for suggested candidates, approval/rejection, and reasons.
 - `[next]` Update collection detail UI to render people and organization members.
-- `[next]` Update add-to-collection controls for organizations.
+- `[next]` Update add-to-collection controls for organizations. This is explicitly deferred from Phase 3 because live collection membership is still people-only.
 - `[next]` Add explicit "send gap to Discovery" action without auto-running discovery.
 
 Out of scope:

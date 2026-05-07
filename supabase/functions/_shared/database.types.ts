@@ -125,8 +125,27 @@ interface SectorRow extends RowRecord {
   created_at: string | null;
 }
 
+interface OrganizationRow extends RowRecord {
+  id: string;
+  name: string;
+  type: string | null;
+  description: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  location_id: string | null;
+  us_network_status: string | null;
+  flemish_link: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 interface PersonSectorRow extends RowRecord {
   person_id: string;
+  sector_id: string;
+}
+
+interface OrganizationSectorRow extends RowRecord {
+  organization_id: string;
   sector_id: string;
 }
 
@@ -264,6 +283,29 @@ interface PeopleSearchDocumentRow extends RowRecord {
   updated_at: string | null;
 }
 
+interface OrganizationSearchDocumentRow extends RowRecord {
+  organization_id: string;
+  name: string;
+  name_normalized: string;
+  type: string;
+  type_normalized: string;
+  description: string;
+  description_normalized: string;
+  flemish_link: string;
+  flemish_link_normalized: string;
+  sector_names: string;
+  sector_names_normalized: string;
+  primary_location_text: string;
+  primary_location_text_normalized: string;
+  location_text: string;
+  location_text_normalized: string;
+  us_network_status: string;
+  us_network_status_normalized: string;
+  search_text: string;
+  search_tsv: unknown;
+  updated_at: string | null;
+}
+
 interface SearchPeopleLexicalRow extends RowRecord {
   person_id: string;
   lexical_score: number;
@@ -275,17 +317,19 @@ interface SearchPeopleLexicalRow extends RowRecord {
   match_text: string | null;
 }
 
+interface SearchOrganizationsLexicalRow extends RowRecord {
+  organization_id: string;
+  lexical_score: number;
+  exact_name_match: boolean;
+  name_score: number;
+  text_score: number;
+  ts_score: number;
+  match_field: string | null;
+  match_text: string | null;
+}
+
 interface MatchPeopleRow extends RowRecord {
   id: string;
-  name: string;
-  first_name: string | null;
-  last_name: string | null;
-  current_position: string | null;
-  location_id: string | null;
-  flemish_connection: string | null;
-  bio: string | null;
-  occupation: string | null;
-  available_for_lectures: boolean | null;
   similarity: number;
 }
 
@@ -735,9 +779,11 @@ export type Database = {
       web_search_cache: Table<WebSearchCacheRow>;
       staff_users: Table<StaffUserRow>;
       people: Table<PeopleRow>;
+      organizations: Table<OrganizationRow>;
       locations: Table<LocationRow>;
       sectors: Table<SectorRow>;
       person_sectors: Table<PersonSectorRow>;
+      organization_sectors: Table<OrganizationSectorRow>;
       flemish_connections: Table<FlemishConnectionRow>;
       person_flemish_connections: Table<PersonFlemishConnectionRow>;
       person_us_connections: Table<PersonUsConnectionRow>;
@@ -748,6 +794,7 @@ export type Database = {
       embedding_batch_runs: Table<EmbeddingBatchRunRow>;
       connections: Table<ConnectionRow>;
       people_search_documents: Table<PeopleSearchDocumentRow>;
+      organization_search_documents: Table<OrganizationSearchDocumentRow>;
       person_text_chunks: Table<PersonTextChunkRow>;
       derived_label_suggestions: Table<DerivedLabelSuggestionRow>;
       connection_suggestions: Table<ConnectionSuggestionRow>;
@@ -841,6 +888,14 @@ export type Database = {
           match_count?: number;
         };
         Returns: SearchPeopleLexicalRow[];
+      };
+      search_organizations_lexical: {
+        Args: {
+          search_query: string;
+          search_route?: string;
+          match_count?: number;
+        };
+        Returns: SearchOrganizationsLexicalRow[];
       };
       match_people: {
         Args: {

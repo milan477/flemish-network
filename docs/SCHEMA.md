@@ -38,6 +38,8 @@
 | `person_text_chunks` | `id`, `person_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
 | `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at` |
+| `people_search_documents` | `person_id` (PK/FK), denormalized name, role, occupation, Flemish connection names, sector names, location text, `search_text`, `search_tsv`, `updated_at` |
+| `organization_search_documents` | `organization_id` (PK/FK), denormalized name, type, description, `flemish_link`, sector names, primary/all US location text, `us_network_status`, `search_text`, `search_tsv`, `updated_at` |
 
 ## Discovery Pipeline
 
@@ -70,7 +72,17 @@
 | `ops_discovery_domain_yield` | Per-domain yield scores |
 | `ops_discovery_coverage_summary` | Geography coverage summary |
 | `coverage_gaps` | Underrepresented metros/states for gap-driven discovery |
-| `people_search_documents` | Denormalized lexical search substrate (internal, `SECURITY DEFINER` sync triggers) |
+| `people_search_documents` | Denormalized people lexical search substrate (internal sync triggers) |
+| `organization_search_documents` | Denormalized organization lexical search substrate (internal sync triggers) |
+
+## Search RPCs
+
+| RPC | Contract |
+|---|---|
+| `search_people_lexical(search_query, search_route, match_count)` | Returns approved people lexical candidates with score components, `match_field`, and `match_text`; fused with vectors/chunks in `search-people`. |
+| `search_organizations_lexical(search_query, search_route, match_count)` | Returns approved organization lexical candidates with score components, `match_field`, and `match_text`; Phase 3 organization search is lexical-only. |
+
+`organization_search_documents` refreshes from `organizations`, `organization_sectors`, `sectors`, `organization_us_locations`, and `locations`. Organization Flemish/Belgian relevance remains the existing `organizations.flemish_link` text field in Phase 3; canonical `organization_flemish_connections` remains Phase 6 work.
 
 ## Seed Data
 Seed data is carried by migrations so a clean Supabase project can be reconstructed with `supabase db push --linked`.
@@ -81,6 +93,7 @@ Seed data is carried by migrations so a clean Supabase project can be reconstruc
 | `20260331000000_phase0_benchmarks_and_metrics.sql` | Fixed search benchmark queries and discovery source benchmarks |
 | `20260331170000_phase2a_discovery_foundation.sql` | Discovery source packs |
 | `20260401030000_phase2b_discovery_learning.sql` | Metro areas and coverage targets |
+| `scripts/seed_phase3_search_dataset.ts` (`npm run seed:phase3`) | Destructive synthetic Phase 3 reset/reseed. Requires `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `PHASE3_RESET_CONFIRM=ofzuhajxwxggybkuzefq`. Deletes approved people/organizations and dependent search, embedding, sector/Flemish/location-link, and collection membership rows; preserves staff users, source packs, discovery history, sectors, locations, and Flemish catalog rows; seeds 160 fake people and 75 fake organizations. |
 
 Future seed edits should land in new migrations and use idempotent SQL (`ON CONFLICT`, `IF NOT EXISTS`, or equivalent) so repeated pushes on a fresh project remain safe.
 
@@ -88,7 +101,7 @@ Future seed edits should land in new migrations and use idempotent SQL (`ON CONF
 - Core reads require an authenticated active staff session via `is_active_staff()`.
 - Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`.
 - `staff_users` supports self read/update for the signed-in row; admins manage all rows.
-- `person_text_chunks`, `people_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs` and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System queue/batch health; writes still go through queue RPCs and `generate-embeddings`.
+- `person_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs` and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System queue/batch health; writes still go through queue RPCs and `generate-embeddings`.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
 - `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.
 

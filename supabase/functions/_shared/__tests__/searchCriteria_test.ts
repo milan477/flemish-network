@@ -46,6 +46,25 @@ Deno.test("structured criteria coverage: KU Leuven biotech Boston covers all fac
   assert(criteriaCoveragePasses(coverage, "any"));
 });
 
+Deno.test("structured criteria coverage: organization sector location and Flemish coverage", () => {
+  const keywords = emptyKeywords();
+  keywords.flemish_connection = ["imec"];
+  keywords.sector = ["semiconductor"];
+  keywords.location_state = ["California"];
+
+  const coverage = calculateStructuredCriteriaCoverage(keywords, {
+    current_position: "Research lab",
+    occupation: "Research lab",
+    flemish_connection_names: "imec",
+    sector_names: "Semiconductor, AI",
+    location_text: "San Francisco, CA | San Diego, CA | California",
+  });
+
+  assertEquals(coverage.total, 3);
+  assertEquals(coverage.matched, 3);
+  assert(criteriaCoveragePasses(coverage, "all"));
+});
+
 Deno.test("structured criteria coverage: all rejects partial overlap and any accepts it", () => {
   const keywords = emptyKeywords();
   keywords.flemish_connection = ["KU Leuven"];

@@ -24,7 +24,7 @@ import { geocodeBatch } from '../lib/geocoding';
 import { isLocationOnlyQuery, parseFiltersFromQuery } from '../lib/filterParser';
 import {
   scorePersonAgainstFilter,
-  hybridSearch,
+  networkSearch,
   type HybridSearchResultItem,
 } from '../lib/aiService';
 import {
@@ -144,7 +144,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       if (cached) {
         setNameMatches(cached.nameMatches);
         setAiResults(cached.aiResults);
+        setPeople([...cached.nameMatches, ...cached.aiResults]);
+        setOrganizations(cached.organizationResults || []);
         setSnippets(new Map(cached.snippets));
+        const cachedClusters = buildNetworkClusters(
+          [...cached.nameMatches, ...cached.aiResults],
+          cached.organizationResults || [],
+          currentFilters
+        );
+        setClusters(cachedClusters);
+        setStats({
+          people: cached.nameMatches.length + cached.aiResults.length,
+          organizations: (cached.organizationResults || []).length,
+          cities: new Set(cachedClusters.map((cluster) => cluster.city)).size,
+        });
         setAiLoading(false);
         return;
       }
@@ -182,7 +195,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             })()
           : Promise.resolve([]);
 
-        const hybridPromise = hybridSearch(
+        const hybridPromise = networkSearch(
           query,
           30,
           currentMatchMode,
@@ -197,10 +210,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
         const nameResultIds = new Set(nameResults.map((person) => person.id));
         const fusedResults = hybridResult.results.filter(
-          (result) => !nameResultIds.has(result.id)
+          (result) =>
+            result.entity_type !== 'person' || !nameResultIds.has(result.id)
         );
-        const aiPeople = fusedResults.map(
-          (result: HybridSearchResultItem) => result as unknown as Person
+        const fusedPeopleResults = fusedResults.filter(
+          (result): result is Extract<HybridSearchResultItem, { entity_type: 'person' }> =>
+            result.entity_type === 'person'
+        );
+        const organizationResults = fusedResults.filter(
+          (result): result is Extract<HybridSearchResultItem, { entity_type: 'organization' }> =>
+            result.entity_type === 'organization'
+        );
+        const aiPeople = fusedPeopleResults.map(
+          (result) => result as unknown as Person
+        );
+        const searchOrganizations = organizationResults.map(
+          (result) => result as unknown as Organization
         );
         const nextSnippets = new Map<string, string>();
 
@@ -210,13 +235,27 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
         setNameMatches(nameResults);
         setAiResults(aiPeople);
+        setPeople([...nameResults, ...aiPeople]);
+        setOrganizations(searchOrganizations);
         setSnippets(nextSnippets);
+        const searchClusters = buildNetworkClusters(
+          [...nameResults, ...aiPeople],
+          searchOrganizations,
+          currentFilters
+        );
+        setClusters(searchClusters);
+        setStats({
+          people: nameResults.length + aiPeople.length,
+          organizations: searchOrganizations.length,
+          cities: new Set(searchClusters.map((cluster) => cluster.city)).size,
+        });
 
         setCachedDashboardSearch({
           query,
           scope: cacheScope,
           nameMatches: nameResults,
           aiResults: aiPeople,
+          organizationResults: searchOrganizations,
           snippets: Array.from(nextSnippets.entries()),
         });
       } catch (error) {
@@ -270,7 +309,6 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const loadData = useCallback(
     async (
       currentFilters: MapFilters,
-      currentQuery: string,
       aiFilters: ActiveAiFilter[],
       currentMatchMode: SearchMatchMode
     ) => {
@@ -303,20 +341,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       if (currentFilters.showOrganizations) {
         const { data } = await supabase
           .from('organizations')
-          .select('*, locations(*), organization_us_locations(*, locations(*))');
+          .select('*, locations(*), organization_us_locations(*, locations(*))')
+          .limit(150);
         let rawOrganizations = (data || []) as Organization[];
-
-        if (currentQuery) {
-          const normalizedQuery = currentQuery.toLowerCase();
-          rawOrganizations = rawOrganizations.filter(
-            (organization) =>
-              organization.name.toLowerCase().includes(normalizedQuery) ||
-              (organization.description &&
-                organization.description.toLowerCase().includes(normalizedQuery)) ||
-              (organization.type &&
-                organization.type.toLowerCase().includes(normalizedQuery))
-          );
-        }
 
         if (currentFilters.availableForLectures) {
           rawOrganizations = [];
@@ -446,7 +473,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, []);
 
   useEffect(() => {
-    loadData(filters, activeQuery, activeFilters, effectiveMatchMode);
+    if (activeQuery) {
+      setLoading(false);
+      return;
+    }
+
+    loadData(filters, activeFilters, effectiveMatchMode);
   }, [activeFilters, activeQuery, effectiveMatchMode, filters, loadData]);
 
   useEffect(() => {

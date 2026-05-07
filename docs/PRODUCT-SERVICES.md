@@ -39,12 +39,13 @@ Output:
 - Ranked people and organization results
 - Clear match rationale/snippets
 - Facets/filters
-- Ability to add selected people or organizations to a collection
+- Ability to add selected people to a collection; organization collection membership is a Phase 4 target
 
 Important distinction:
 
 - Flemish/Belgian connections are profile facts and search fields.
 - They are not person-to-person edges.
+- Phase 3 organization search uses approved organization records and existing `flemish_link` facts only. Canonical organization Flemish/Belgian facts and organization add-to-collection controls are later phases.
 
 ## 2. Build A Collection
 

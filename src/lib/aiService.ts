@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import {
   US_STATES,
   type MapFilters,
+  type Organization,
   type Person,
   type SearchMatchMode,
 } from './supabase';
@@ -496,7 +497,8 @@ export async function suggestPeople(query: string): Promise<{ person: Person; re
 
 // ---------- Hybrid Search (server-side) ----------
 
-export interface HybridSearchResultItem {
+export interface HybridPersonSearchResultItem {
+  entity_type: 'person';
   id: string;
   name: string;
   first_name: string | null;
@@ -515,10 +517,35 @@ export interface HybridSearchResultItem {
   locations: { city: string; state: string } | null;
   score: number;
   snippet: string;
+  rationale?: string;
 }
+
+export interface HybridOrganizationSearchResultItem {
+  entity_type: 'organization';
+  id: string;
+  name: string;
+  type: string | null;
+  description: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  location_id: string | null;
+  locations: { city: string; state: string } | null;
+  us_network_status: string | null;
+  flemish_link: string | null;
+  organization_us_locations?: Organization['organization_us_locations'];
+  score: number;
+  snippet: string;
+  rationale?: string;
+}
+
+export type HybridSearchResultItem =
+  | HybridPersonSearchResultItem
+  | HybridOrganizationSearchResultItem;
 
 export interface HybridSearchResponse {
   results: HybridSearchResultItem[];
+  people?: HybridPersonSearchResultItem[];
+  organizations?: HybridOrganizationSearchResultItem[];
   keywords: SmartSearchKeywords;
   message: string;
   total_with_embeddings: number;
@@ -528,6 +555,7 @@ export interface HybridSearchResponse {
     lexical_candidates: number;
     vector_candidates: number;
     fused_candidates: number;
+    organization_lexical_candidates?: number;
   };
 }
 
@@ -549,6 +577,8 @@ export async function hybridSearch(
         match_mode: matchMode,
         filters: filters
           ? {
+              show_people: filters.showPeople,
+              show_organizations: filters.showOrganizations,
               sector: filters.sector,
               person_scope: filters.personScope,
               occupation: filters.occupation,
@@ -594,7 +624,8 @@ export async function hybridSearch(
       .sort((a, b) => b.score - a.score)
       .slice(0, maxResults);
 
-    const results: HybridSearchResultItem[] = scored.map((s) => ({
+    const results: HybridPersonSearchResultItem[] = scored.map((s) => ({
+      entity_type: 'person',
       id: s.person.id,
       name: s.person.name,
       first_name: s.person.first_name ?? null,
@@ -615,10 +646,13 @@ export async function hybridSearch(
         : null,
       score: s.score,
       snippet: '',
+      rationale: 'Matched by degraded local keyword scoring.',
     }));
 
     return {
       results,
+      people: results,
+      organizations: [],
       keywords: res.keywords,
       message: 'Search is running in degraded fallback mode; results are limited to the first 200 profiles.',
       total_with_embeddings: 0,
@@ -626,6 +660,8 @@ export async function hybridSearch(
     };
   }
 }
+
+export const networkSearch = hybridSearch;
 
 /** Log a search result click for relevance feedback (fire-and-forget) */
 export function logSearchClick(query: string, personId: string): void {

@@ -20,11 +20,21 @@ describe('dashboardSession - search cache', () => {
       query: 'AI in Boston',
       nameMatches: [],
       aiResults: [],
+      organizationResults: [
+        {
+          id: 'o1',
+          name: 'imec California Deep Tech Hub',
+          type: 'Research lab',
+          created_at: '',
+          updated_at: '',
+        },
+      ],
       snippets: [['p1', 'snippet text']],
     });
     const got = getCachedDashboardSearch('AI in Boston');
     expect(got).not.toBeNull();
     expect(got?.snippets).toEqual([['p1', 'snippet text']]);
+    expect(got?.organizationResults?.[0].name).toBe('imec California Deep Tech Hub');
     expect(got?.updatedAt).toBeTypeOf('number');
   });
 

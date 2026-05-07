@@ -30,6 +30,7 @@ import {
   mergeSearchKeywords,
   normalizePersonScope,
   normalizeSearchMatchMode,
+  type ManualSearchFilters,
 } from "../_shared/searchCriteria.ts";
 
 const corsHeaders = {
@@ -52,7 +53,8 @@ const EMPTY_KEYWORDS: SmartSearchKeywords = {
   bio: [],
 };
 
-interface SearchResultItem {
+interface PersonSearchResultItem {
+  entity_type: "person";
   id: string;
   name: string;
   first_name: string | null;
@@ -75,10 +77,42 @@ interface SearchResultItem {
   person_us_connections?: unknown[];
   score: number;
   snippet: string;
+  rationale: string;
 }
+
+interface OrganizationSearchResultItem {
+  entity_type: "organization";
+  id: string;
+  name: string;
+  type: string | null;
+  description: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  location_id: string | null;
+  locations: { city: string | null; state: string | null } | null;
+  us_network_status: string | null;
+  flemish_link: string | null;
+  organization_us_locations?: unknown[];
+  score: number;
+  snippet: string;
+  rationale: string;
+}
+
+type MixedSearchResultItem = PersonSearchResultItem | OrganizationSearchResultItem;
 
 interface LexicalCandidateRow {
   person_id: string;
+  lexical_score: number;
+  exact_name_match: boolean;
+  name_score: number;
+  text_score: number;
+  ts_score: number;
+  match_field: string | null;
+  match_text: string | null;
+}
+
+interface OrganizationLexicalCandidateRow {
+  organization_id: string;
   lexical_score: number;
   exact_name_match: boolean;
   name_score: number;
@@ -106,6 +140,17 @@ interface SearchDocumentRow extends SearchDocumentSnippetSource {
   person_id: string;
 }
 
+interface OrganizationSearchDocumentRow {
+  organization_id: string;
+  type: string | null;
+  description: string | null;
+  flemish_link: string | null;
+  sector_names: string | null;
+  primary_location_text: string | null;
+  location_text: string | null;
+  us_network_status: string | null;
+}
+
 interface PersonRow {
   id: string;
   name: string;
@@ -127,7 +172,28 @@ interface PersonRow {
   person_us_connections?: unknown[];
 }
 
+interface OrganizationRow {
+  id: string;
+  name: string;
+  type: string | null;
+  description: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  location_id: string | null;
+  locations: { city: string | null; state: string | null } | null;
+  us_network_status: string | null;
+  flemish_link: string | null;
+  organization_us_locations?: unknown[];
+}
+
 interface PersonQueryRow extends Omit<PersonRow, "locations"> {
+  locations:
+    | { city: string | null; state: string | null }
+    | { city: string | null; state: string | null }[]
+    | null;
+}
+
+interface OrganizationQueryRow extends Omit<OrganizationRow, "locations"> {
   locations:
     | { city: string | null; state: string | null }
     | { city: string | null; state: string | null }[]
@@ -137,6 +203,13 @@ interface PersonQueryRow extends Omit<PersonRow, "locations"> {
 function normalizeLocationRelation(
   value: PersonQueryRow["locations"]
 ): PersonRow["locations"] {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function normalizeOrganizationLocationRelation(
+  value: OrganizationQueryRow["locations"]
+): OrganizationRow["locations"] {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
 }
@@ -207,6 +280,70 @@ function buildFallbackDocument(person: PersonRow): SearchDocumentRow {
   };
 }
 
+function buildFallbackOrganizationDocument(
+  organization: OrganizationRow
+): OrganizationSearchDocumentRow {
+  const locationText = organization.locations?.city
+    ? `${organization.locations.city}, ${organization.locations.state || ""}`.trim().replace(/,\s*$/, "")
+    : null;
+
+  return {
+    organization_id: organization.id,
+    type: organization.type,
+    description: organization.description,
+    flemish_link: organization.flemish_link,
+    sector_names: null,
+    primary_location_text: locationText,
+    location_text: locationText,
+    us_network_status: organization.us_network_status,
+  };
+}
+
+function organizationSnippetSource(
+  document: OrganizationSearchDocumentRow
+): SearchDocumentSnippetSource {
+  return {
+    current_position: document.type,
+    occupation: document.type,
+    bio: document.description,
+    flemish_connection_names: document.flemish_link,
+    sector_names: document.sector_names,
+    location_text: document.location_text || document.primary_location_text,
+  };
+}
+
+function rationaleFromMatch(
+  entityType: "person" | "organization",
+  matchField: string | null | undefined,
+  score: number
+): string {
+  const label = entityType === "person" ? "person" : "organization";
+  const scoreText = Math.round(score * 1000) / 1000;
+
+  switch (matchField) {
+    case "name":
+      return `Matched ${label} name; score ${scoreText}.`;
+    case "current_position":
+      return `Matched role or position; score ${scoreText}.`;
+    case "occupation":
+    case "type":
+      return `Matched type or occupation; score ${scoreText}.`;
+    case "flemish_connection":
+      return `Matched Flemish or Belgian relevance; score ${scoreText}.`;
+    case "sector":
+      return `Matched sector criteria; score ${scoreText}.`;
+    case "location":
+      return `Matched location criteria; score ${scoreText}.`;
+    case "us_network_status":
+      return `Matched US network status; score ${scoreText}.`;
+    case "bio":
+    case "description":
+      return `Matched descriptive text; score ${scoreText}.`;
+    default:
+      return `Matched ranked ${label} search signals; score ${scoreText}.`;
+  }
+}
+
 function routeLabel(route: SearchRoute): string {
   switch (route) {
     case "direct_lookup":
@@ -259,22 +396,30 @@ Deno.serve(wrapHandler(async (req: Request) => {
         ])
       : [EMPTY_KEYWORDS, null];
 
+    const filters: Record<string, unknown> | null =
+      body?.filters && typeof body.filters === "object"
+      ? body.filters as Record<string, unknown>
+      : null;
+    const showPeople = filters?.show_people !== false;
+    const showOrganizations = filters?.show_organizations !== false;
     const criteriaKeywords = mergeSearchKeywords(
       keywords,
-      buildManualFilterKeywords(body?.filters)
+      buildManualFilterKeywords(filters as ManualSearchFilters | null)
     );
-    const personScope = normalizePersonScope(body?.filters?.person_scope);
+    const personScope = normalizePersonScope(filters?.person_scope);
     const route = classifySearchRoute(query, criteriaKeywords);
     const config = getSearchRouteConfig(route);
 
-    const [lexicalResponse, vectorResponse, chunkResponse] = await Promise.all([
-      supabase.rpc("search_people_lexical", {
-        search_query: query,
-        search_route: route,
-        match_count: config.lexicalTopK,
-      }),
+    const [lexicalResponse, vectorResponse, chunkResponse, organizationLexicalResponse] = await Promise.all([
+      showPeople
+        ? supabase.rpc("search_people_lexical", {
+            search_query: query,
+            search_route: route,
+            match_count: config.lexicalTopK,
+          })
+        : { data: [] as LexicalCandidateRow[], error: null },
       (async () => {
-        if (!queryEmbedding) {
+        if (!showPeople || !queryEmbedding) {
           return { data: [] as VectorCandidateRow[], error: null };
         }
 
@@ -286,7 +431,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         });
       })(),
       (async () => {
-        if (!queryEmbedding) {
+        if (!showPeople || !queryEmbedding) {
           return { data: [] as ChunkCandidateRow[], error: null };
         }
 
@@ -297,6 +442,13 @@ Deno.serve(wrapHandler(async (req: Request) => {
           similarity_threshold: Math.max(0.35, config.vectorSimilarityThreshold - 0.08),
         });
       })(),
+      showOrganizations
+        ? supabase.rpc("search_organizations_lexical", {
+            search_query: query,
+            search_route: route,
+            match_count: config.lexicalTopK,
+          })
+        : { data: [] as OrganizationLexicalCandidateRow[], error: null },
     ]);
 
     if (lexicalResponse.error) {
@@ -311,9 +463,15 @@ Deno.serve(wrapHandler(async (req: Request) => {
       throw chunkResponse.error;
     }
 
-    const lexicalMatches = lexicalResponse.data || [];
+    if (organizationLexicalResponse.error) {
+      throw organizationLexicalResponse.error;
+    }
+
+    const lexicalMatches = (lexicalResponse.data || []) as LexicalCandidateRow[];
     const vectorMatches = vectorResponse.data || [];
     const chunkMatches = chunkResponse.data || [];
+    const organizationLexicalMatches =
+      (organizationLexicalResponse.data || []) as OrganizationLexicalCandidateRow[];
 
     const lexicalByPerson = new Map<string, LexicalCandidateRow>();
     const lexicalRanks = new Map<string, number>();
@@ -349,10 +507,20 @@ Deno.serve(wrapHandler(async (req: Request) => {
       ])
     );
 
-    if (candidateIds.length === 0) {
+    const organizationLexicalById = new Map<string, OrganizationLexicalCandidateRow>();
+    const organizationLexicalRanks = new Map<string, number>();
+    organizationLexicalMatches.forEach((candidate, index) => {
+      organizationLexicalById.set(candidate.organization_id, candidate);
+      organizationLexicalRanks.set(candidate.organization_id, index + 1);
+    });
+    const organizationCandidateIds = Array.from(organizationLexicalById.keys());
+
+    if (candidateIds.length === 0 && organizationCandidateIds.length === 0) {
       return new Response(
         JSON.stringify({
           results: [],
+          people: [],
+          organizations: [],
           keywords: criteriaKeywords,
           match_mode: matchMode,
           route,
@@ -361,10 +529,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
             lexical_candidates: 0,
             vector_candidates: 0,
             chunk_candidates: 0,
+            organization_lexical_candidates: 0,
             fused_candidates: 0,
             structured_criteria: 0,
           },
-          message: "No matching profiles found.",
+          message: "No matching network records found.",
           total_with_embeddings: 0,
         }),
         {
@@ -375,18 +544,22 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const [peopleResponse, documentsResponse, embeddingCountResponse] =
       await Promise.all([
-        supabase
-          .from("people")
-          .select(
-            "id, name, first_name, last_name, title, current_position, bio, occupation, profile_photo_url, email, linkedin_url, last_verified_at, location_id, us_network_status, current_location_city, current_location_country, locations(city, state), person_us_connections(*, locations(city, state))"
-          )
-          .in("id", candidateIds),
-        supabase
-          .from("people_search_documents")
-          .select(
-            "person_id, current_position, occupation, bio, flemish_connection_names, sector_names, location_text"
-          )
-          .in("person_id", candidateIds),
+        candidateIds.length > 0
+          ? supabase
+              .from("people")
+              .select(
+                "id, name, first_name, last_name, title, current_position, bio, occupation, profile_photo_url, email, linkedin_url, last_verified_at, location_id, us_network_status, current_location_city, current_location_country, locations(city, state), person_us_connections(*, locations(city, state))"
+              )
+              .in("id", candidateIds)
+          : { data: [] as PersonQueryRow[], error: null },
+        candidateIds.length > 0
+          ? supabase
+              .from("people_search_documents")
+              .select(
+                "person_id, current_position, occupation, bio, flemish_connection_names, sector_names, location_text"
+              )
+              .in("person_id", candidateIds)
+          : { data: [] as SearchDocumentRow[], error: null },
         supabase
           .from("people")
           .select("id", { count: "exact", head: true })
@@ -422,7 +595,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const searchTerms = buildSearchTerms(query, criteriaKeywords);
-    const scored = candidateIds
+    const scoredPeople = candidateIds
       .map((personId) => {
         const person = peopleById.get(personId);
         if (!person) return null;
@@ -493,7 +666,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
       .sort((a, b) => b.fusedScore - a.fusedScore)
       .slice(0, limit);
 
-    const results: SearchResultItem[] = scored.map(({ person, document, fusedScore, snippet }) => ({
+    const peopleResults: PersonSearchResultItem[] = scoredPeople.map(({ person, document, fusedScore, snippet }) => ({
+      entity_type: "person",
       id: person.id,
       name: person.name,
       first_name: person.first_name,
@@ -516,11 +690,144 @@ Deno.serve(wrapHandler(async (req: Request) => {
       person_us_connections: person.person_us_connections || [],
       score: Math.round(fusedScore * 1000) / 1000,
       snippet,
+      rationale: rationaleFromMatch("person", lexicalByPerson.get(person.id)?.match_field, fusedScore),
     }));
+
+    const [organizationsResponse, organizationDocumentsResponse] =
+      await Promise.all([
+        organizationCandidateIds.length > 0
+          ? supabase
+              .from("organizations")
+              .select(
+                "id, name, type, description, logo_url, website_url, location_id, us_network_status, flemish_link, locations(city, state), organization_us_locations(*, locations(city, state))"
+              )
+              .in("id", organizationCandidateIds)
+          : { data: [] as OrganizationQueryRow[], error: null },
+        organizationCandidateIds.length > 0
+          ? supabase
+              .from("organization_search_documents")
+              .select(
+                "organization_id, type, description, flemish_link, sector_names, primary_location_text, location_text, us_network_status"
+              )
+              .in("organization_id", organizationCandidateIds)
+          : { data: [] as OrganizationSearchDocumentRow[], error: null },
+      ]);
+
+    if (organizationsResponse.error) {
+      throw organizationsResponse.error;
+    }
+
+    if (organizationDocumentsResponse.error) {
+      throw organizationDocumentsResponse.error;
+    }
+
+    const organizations = ((organizationsResponse.data || []) as unknown as OrganizationQueryRow[]).map((organization) => ({
+      ...organization,
+      locations: normalizeOrganizationLocationRelation(organization.locations),
+    }));
+    const organizationDocuments =
+      (organizationDocumentsResponse.data || []) as OrganizationSearchDocumentRow[];
+    const organizationsById = new Map<string, OrganizationRow>();
+    for (const organization of organizations) {
+      organizationsById.set(organization.id, organization);
+    }
+
+    const organizationDocumentsById = new Map<string, OrganizationSearchDocumentRow>();
+    for (const document of organizationDocuments) {
+      organizationDocumentsById.set(document.organization_id, document);
+    }
+
+    const scoredOrganizations = organizationCandidateIds
+      .map((organizationId) => {
+        const organization = organizationsById.get(organizationId);
+        const lexical = organizationLexicalById.get(organizationId);
+        if (!organization || !lexical) return null;
+
+        const lexicalRank = organizationLexicalRanks.get(organizationId);
+        const lexicalSignal = clampScore(lexical.lexical_score);
+        const exactBoost = lexical.exact_name_match ? config.exactBoost : 0;
+        const nameBoost = config.nameBoost * clampScore((lexical.name_score || 0) / 1.2);
+        const fieldBoost = getFieldBoost(route, lexical.match_field || null);
+        const fusedScore =
+          config.lexicalWeight * reciprocalRank(lexicalRank) +
+          config.lexicalSignalWeight * lexicalSignal +
+          0.6 * exactBoost +
+          0.8 * nameBoost +
+          fieldBoost;
+
+        if (fusedScore < config.minimumScore) {
+          return null;
+        }
+
+        const document =
+          organizationDocumentsById.get(organizationId) ||
+          buildFallbackOrganizationDocument(organization);
+        const snippetSource = organizationSnippetSource(document);
+        const coverage = calculateStructuredCriteriaCoverage(criteriaKeywords, snippetSource);
+        if (!criteriaCoveragePasses(coverage, matchMode)) {
+          return null;
+        }
+
+        const coverageBoost = coverage.total > 0 ? 0.04 * coverage.score : 0;
+        const snippet = pickSearchSnippet(snippetSource, searchTerms, query, {
+          match_field: lexical.match_field,
+          match_text: lexical.match_text,
+        });
+
+        return {
+          organization,
+          fusedScore: fusedScore + coverageBoost,
+          snippet,
+          matchField: lexical.match_field,
+        };
+      })
+      .filter((value): value is NonNullable<typeof value> => Boolean(value))
+      .sort((a, b) => b.fusedScore - a.fusedScore)
+      .slice(0, limit);
+
+    const organizationResults: OrganizationSearchResultItem[] = scoredOrganizations.map(({
+      organization,
+      fusedScore,
+      snippet,
+      matchField,
+    }) => ({
+      entity_type: "organization",
+      id: organization.id,
+      name: organization.name,
+      type: organization.type,
+      description: organization.description,
+      logo_url: organization.logo_url,
+      website_url: organization.website_url,
+      location_id: organization.location_id,
+      locations: organization.locations,
+      us_network_status: organization.us_network_status,
+      flemish_link: organization.flemish_link,
+      organization_us_locations: organization.organization_us_locations || [],
+      score: Math.round(fusedScore * 1000) / 1000,
+      snippet,
+      rationale: rationaleFromMatch("organization", matchField, fusedScore),
+    }));
+
+    const results: MixedSearchResultItem[] = [
+      ...peopleResults,
+      ...organizationResults,
+    ]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    const visiblePeople = results.filter(
+      (result): result is PersonSearchResultItem => result.entity_type === "person"
+    );
+    const visibleOrganizations = results.filter(
+      (result): result is OrganizationSearchResultItem =>
+        result.entity_type === "organization"
+    );
 
     return new Response(
       JSON.stringify({
         results,
+        people: visiblePeople,
+        organizations: visibleOrganizations,
         keywords: criteriaKeywords,
         match_mode: matchMode,
         route,
@@ -529,7 +836,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
           lexical_candidates: lexicalMatches.length,
           vector_candidates: vectorMatches.length,
           chunk_candidates: chunkMatches.length,
-          fused_candidates: candidateIds.length,
+          organization_lexical_candidates: organizationLexicalMatches.length,
+          fused_candidates: candidateIds.length + organizationCandidateIds.length,
           structured_criteria: calculateStructuredCriteriaCoverage(
             criteriaKeywords,
             {
@@ -541,7 +849,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
             }
           ).total,
         },
-        message: `Found ${results.length} relevant people using ${routeLabel(route)}.`,
+        message: `Found ${visiblePeople.length} people and ${visibleOrganizations.length} organizations using ${routeLabel(route)}.`,
         total_with_embeddings: embeddingCountResponse.count || 0,
       }),
       {
