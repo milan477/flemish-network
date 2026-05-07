@@ -35,7 +35,7 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 `/` uses the `search-people` edge function as the Search The Network backend.
 
 - Request: `{ query, max_results, match_mode?, filters? }`
-- Filters sent from the route state: `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and `flemish_connections`.
+- Filters sent from the route state: `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and alias-aware canonical `flemish_connections`.
 - Response: `results` is a ranked mixed list with `entity_type = "person" | "organization"`, `score`, `snippet`, and `rationale`; `people` and `organizations` mirror the visible typed subsets.
 - Active organization searches use server results. The dashboard no longer fetches the full organization table to filter active queries in the browser; browse mode uses capped organization loads.
 

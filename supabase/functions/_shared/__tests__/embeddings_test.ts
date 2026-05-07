@@ -31,17 +31,17 @@ Deno.test("buildOrganizationStructuredEmbeddingText includes organization-specif
     description:
       "Runs applied AI programs with Flemish universities and US labs.",
     sectors: ["AI", "Research"],
-    flemishLink: "Founded by Flemish university partners.",
+    flemishLink: "UGent University of Ghent relevance Founded by Flemish university partners.",
     locationText: "New York, NY; Boston, MA",
     usNetworkStatus: "belgian_organization_with_us_presence",
     websiteUrl: "https://example.org",
   });
 
   assertStringIncludes(text, "Organization: Flanders AI Hub");
-  assertStringIncludes(
-    text,
-    "Flemish or Belgian relevance: Founded by Flemish university partners.",
-  );
+    assertStringIncludes(
+      text,
+    "Flemish or Belgian relevance: UGent University of Ghent relevance Founded by Flemish university partners.",
+    );
   assertStringIncludes(text, "US locations: New York, NY; Boston, MA");
 });
 
@@ -52,7 +52,7 @@ Deno.test("buildOrganizationTextChunks creates bounded mixed organization chunks
     description:
       "Runs applied AI programs with Flemish universities and US labs. Supports industry pilots across the Northeast.",
     sectors: ["AI", "Research"],
-    flemishLink: "Founded by Flemish university partners.",
+    flemishLink: "UGent relevance Founded by Flemish university partners.",
     locationText: "New York, NY",
     usNetworkStatus: "belgian_organization_with_us_presence",
     websiteUrl: "https://example.org",

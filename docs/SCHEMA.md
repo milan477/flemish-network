@@ -5,10 +5,11 @@
 | Table | Key Columns | Notes |
 |---|---|---|
 | `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `us_network_status`, `current_location_city`, `current_location_country`, `occupation`, `bio`, `profile_photo_url`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. `location_id` is the current US base for `us_based` people only. `us_connected_abroad` people use abroad display fields plus `person_us_connections`. No inline location columns; no scalar `flemish_connection`. Flemish ties normalized via `person_flemish_connections`. `data_source` preserves approved-profile provenance such as `manual`, `csv_import`, `ai_agent`, and legacy `discovery_agent`. |
-| `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `embedding`, `embedding_dirty_at`, `embedding_generated_at`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. Organization embeddings support approved organization semantic search. |
+| `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `embedding`, `embedding_dirty_at`, `embedding_generated_at`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. Organization embeddings support approved organization semantic search. `flemish_link` is deprecated compatibility text after Phase 6A; approved organization Flemish/Belgian facts should use `organization_flemish_connections` and the column should be removed after Phase 6 write/read paths move off it. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude`/`longitude` nullable (pending geocode or ambiguous). |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
-| `flemish_connections` | `id`, `name`, `type` (university/government/company/other), `created_at` | Canonical Flemish/Belgian fact catalog. Target expansion adds aliases, parent/group support, `is_filterable`, roles, confidence, source URL, and evidence excerpts. Known aliases are canonicalized on insert (e.g. `University of Ghent` → `UGent`). |
+| `flemish_connections` | `id`, `name`, `normalized_name`, `entity_type`, `type` (legacy compatibility), `parent_id`, `connection_group`, `is_filterable`, `created_at`, `updated_at` | Canonical Flemish/Belgian fact catalog. `name` is the stable display label; `normalized_name` is the uniqueness/lookup key. `entity_type` is the current canonical category; legacy `type` remains compatibility only while source paths migrate. `parent_id` and `connection_group` support grouped catalog entries. `is_filterable = true` only for broad entities that may appear as default filter chips. Seeded filterable entities include KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, and VIB. |
+| `flemish_connection_aliases` | `id`, `flemish_connection_id` (FK), `alias`, `normalized_alias`, `source`, `status`, `confidence`, `source_url`, `evidence_excerpt`, `created_at`, `updated_at` | Dynamic alias table for seeded, staff-approved, model-discovered, and migration aliases. Approved aliases resolve to their canonical `flemish_connections` row; model/import-discovered aliases can be stored without silently creating new filter chips. `University of Ghent` resolves to `UGent`; FIT expansions resolve to the canonical FIT catalog row. `normalized_alias` is unique where active/approved alias status allows canonical lookup. |
 | `staff_users` | `id`, `user_id` (FK→auth.users), `email`, `full_name`, `avatar_url`, `role`, `status`, `password_reset_required`, `last_sign_in_at`, `created_at`, `updated_at` | App-user auth/authz. Intentionally separate from `people`. Roles: `viewer`, `editor`, `admin`. Viewers can search/read, editors can maintain approved and pending network records, and admins can manage staff access plus permanent approved contact deletion. Statuses: `invited`, `active`, `disabled`. `password_reset_required` forces invited staff through account password setup before they can use other routes. |
 
 ## Junction Tables
@@ -17,8 +18,8 @@
 |---|---|
 | `person_sectors` | `(person_id, sector_id)` PK |
 | `organization_sectors` | `(organization_id, sector_id)` PK |
-| `person_flemish_connections` | `(person_id, flemish_connection_id)` PK |
-| `organization_flemish_connections` | Target table for `(organization_id, flemish_connection_id)` plus role, confidence, source URL, and evidence excerpt |
+| `person_flemish_connections` | `(person_id, flemish_connection_id)` PK plus `role`, `confidence`, `source_url`, `evidence_excerpt`, `created_at`, `updated_at` |
+| `organization_flemish_connections` | `(organization_id, flemish_connection_id)` PK plus `role`, `confidence`, `source_url`, `evidence_excerpt`, `created_at`, `updated_at` |
 | `person_us_connections` | `id`, `person_id` (FK), `location_id` (FK), `connection_label`, `source_url`, `evidence_excerpt`, `confidence` |
 | `organization_us_locations` | `id`, `organization_id` (FK), `location_id` (FK), `location_role`, `label`, `description`, `source_url`, `evidence_excerpt`, `confidence`, `is_primary` |
 
@@ -41,8 +42,8 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 | `organization_text_chunks` | `id`, `organization_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
 | `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at` |
-| `people_search_documents` | `person_id` (PK/FK), denormalized name, role, occupation, Flemish connection names, sector names, location text, `search_text`, `search_tsv`, `updated_at` |
-| `organization_search_documents` | `organization_id` (PK/FK), denormalized name, type, description, `flemish_link`, sector names, primary/all US location text including organization location role/label/description, `us_network_status`, `search_text`, `search_tsv`, `updated_at` |
+| `people_search_documents` | `person_id` (PK/FK), denormalized name, role, occupation, canonical Flemish connection names plus approved aliases and relationship evidence text, sector names, location text, `search_text`, `search_tsv`, `updated_at` |
+| `organization_search_documents` | `organization_id` (PK/FK), denormalized name, type, description, canonical Flemish/Belgian fact text from `organization_flemish_connections` plus approved aliases and relationship evidence, sector names, primary/all US location text including organization location role/label/description, `us_network_status`, `search_text`, `search_tsv`, `updated_at` |
 
 ## Discovery Pipeline
 
@@ -91,7 +92,9 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 | `match_organizations(query_embedding, match_count, similarity_threshold)` | Returns approved organization vector candidates from `organizations.embedding`. |
 | `match_organization_text_chunks(query_embedding, match_count, similarity_threshold, exclude_organization_id)` | Returns approved organization text-chunk vector candidates. |
 
-`organization_search_documents` refreshes from `organizations`, `organization_sectors`, `sectors`, `organization_us_locations`, and `locations`. `organization_us_locations` also keeps `organizations.location_id` aligned to the primary or first approved US location. Organization embedding jobs refresh when organization profile fields, sectors, US locations, or referenced location names change. Organization Flemish/Belgian relevance remains the existing `organizations.flemish_link` text field; canonical `organization_flemish_connections` remains future work.
+Phase 6A adds SQL lookup helpers for Flemish/Belgian facts. They normalize raw input, resolve exact canonical names and approved aliases, and can create/reuse canonical rows for migration or editor-owned write paths. SQL and TypeScript canonicalization must stay aligned; 6B owns moving active search/filter code to alias-aware helper behavior.
+
+`people_search_documents` and `organization_search_documents` include canonical Flemish/Belgian fact names, approved aliases, role text, and evidence excerpts where present. `organization_search_documents` refreshes from `organizations`, `organization_sectors`, `sectors`, `organization_us_locations`, `locations`, and `organization_flemish_connections`/`flemish_connections`/approved aliases, not from `organizations.flemish_link`. `organization_us_locations` also keeps `organizations.location_id` aligned to the primary or first approved US location. Organization embedding jobs refresh when organization profile fields, sectors, US locations, referenced location names, or approved organization Flemish/Belgian facts change. Phase 6A triggers also refresh people/organization search documents and queue embeddings when person or organization Flemish fact rows or aliases change.
 
 ## Seed Data
 Seed data is carried by migrations so a clean Supabase project can be reconstructed with `supabase db push --linked`.
@@ -102,6 +105,7 @@ Seed data is carried by migrations so a clean Supabase project can be reconstruc
 | `20260331000000_phase0_benchmarks_and_metrics.sql` | Fixed search benchmark queries and discovery source benchmarks |
 | `20260331170000_phase2a_discovery_foundation.sql` | Discovery source packs |
 | `20260401030000_phase2b_discovery_learning.sql` | Metro areas and coverage targets |
+| Phase 6A Flemish fact normalization migration | Canonical Flemish/Belgian catalog fields, dynamic aliases, evidence-backed person and organization fact junctions, lookup helpers, RLS, triggers, broad filterable seeds, alias seeds, and idempotent person/organization fact backfills. Applied to linked project `ofzuhajxwxggybkuzefq` with `supabase db push --linked`; generated Supabase types were refreshed from the remote schema. |
 | `scripts/seed_phase3_search_dataset.ts` (`npm run seed:phase3`) | Destructive synthetic Phase 3 reset/reseed. Requires `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `PHASE3_RESET_CONFIRM=ofzuhajxwxggybkuzefq`. Deletes approved people/organizations and dependent search, embedding, sector/Flemish/location-link, and collection membership rows; preserves staff users, source packs, discovery history, sectors, locations, and Flemish catalog rows; seeds 160 fake people and 75 fake organizations. |
 
 Future seed edits should land in new migrations and use idempotent SQL (`ON CONFLICT`, `IF NOT EXISTS`, or equivalent) so repeated pushes on a fresh project remain safe.
@@ -114,7 +118,8 @@ Future seed edits should land in new migrations and use idempotent SQL (`ON CONF
 - `discovered_contacts`, `discovered_organizations`, and `discovered_organization_evidence` are editor-only pending Discovery tables; manual intake and import inserts require `has_staff_role('editor')` and do not expose anon or broad authenticated public policies.
 - `person_text_chunks`, `organization_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs`, `organization_embedding_jobs`, and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System record-index queue/batch health; writes still go through queue RPCs and embedding workers.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
-- `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.
+- `flemish_connections`, `flemish_connection_aliases`, `person_flemish_connections`, and `organization_flemish_connections` are staff-read and editor/admin-write. Use the shared staff-role helpers (`is_active_staff()`, `has_staff_role('editor')`, `has_staff_role('admin')`) and do not expose anon/public writes.
+- `person_sectors` and Flemish/Belgian fact junctions use idempotent insert/delete semantics for relationship maintenance. Evidence fields on the fact junctions may be updated by editor/admin-owned approved-record workflows.
 
 ## Legacy (in DB, unused in frontend)
 | Table | Status |

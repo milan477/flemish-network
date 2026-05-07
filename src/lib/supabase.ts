@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import type { FlemishConnection, PersonFlemishConnectionLink } from './flemishConnections';
+import type {
+  FlemishConnection,
+  OrganizationFlemishConnectionLink,
+  PersonFlemishConnectionLink,
+} from './flemishConnections';
 import { DEFAULT_FLEMISH_CONNECTIONS } from './flemishConnections';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -131,6 +135,7 @@ export interface Organization {
   locations?: { id: string; city: string; state: string; latitude: number | null; longitude: number | null; };
   us_network_status?: OrganizationUsNetworkStatus;
   organization_us_locations?: OrganizationUsLocation[];
+  organization_flemish_connections?: OrganizationFlemishConnectionLink[];
   flemish_link?: string;
   created_at: string;
   updated_at: string;

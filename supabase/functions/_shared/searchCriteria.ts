@@ -127,6 +127,38 @@ const DEFAULT_SECTOR_CANONICAL: Record<string, string> = {
   research: "Research",
 };
 
+const DEFAULT_FLEMISH_CANONICAL: Record<string, string> = {
+  "ku leuven": "KU Leuven",
+  "katholieke universiteit leuven": "KU Leuven",
+  "catholic university of leuven": "KU Leuven",
+  ugent: "UGent",
+  "university of ghent": "UGent",
+  "ghent university": "UGent",
+  "universiteit gent": "UGent",
+  vub: "VUB",
+  "vrije universiteit brussel": "VUB",
+  imec: "imec",
+  "interuniversity microelectronics centre": "imec",
+  baef: "BAEF",
+  "belgian american educational foundation": "BAEF",
+  "flemish government": "Flemish Government",
+  "government of flanders": "Flemish Government",
+  "flanders government": "Flemish Government",
+  fit: "FIT",
+  "flanders investment trade": "FIT",
+  "flanders investment & trade": "FIT",
+  "flanders investment and trade": "FIT",
+  vlerick: "Vlerick",
+  "vlerick business school": "Vlerick",
+  vito: "VITO",
+  "flemish institute for technological research": "VITO",
+  "vlaamse instelling voor technologisch onderzoek": "VITO",
+  "flanders make": "Flanders Make",
+  vib: "VIB",
+  "vlaams instituut voor biotechnologie": "VIB",
+  "flanders institute for biotechnology": "VIB",
+};
+
 function normalizeText(value: string | null | undefined): string {
   return (value || "")
     .toLowerCase()
@@ -213,6 +245,31 @@ function expandSectorTerms(terms: string[]): string[] {
     if (!normalized) continue;
     expanded.push(term);
     const canonical = DEFAULT_SECTOR_CANONICAL[normalized];
+    if (canonical) expanded.push(canonical);
+    for (const alias of canonicalToAliases.get(normalized) || []) {
+      expanded.push(alias);
+    }
+  }
+
+  return uniqueDisplay(expanded);
+}
+
+function expandFlemishConnectionTerms(terms: string[]): string[] {
+  const expanded: string[] = [];
+  const canonicalToAliases = new Map<string, string[]>();
+  for (const [alias, canonical] of Object.entries(DEFAULT_FLEMISH_CANONICAL)) {
+    const key = normalizeText(canonical);
+    canonicalToAliases.set(key, [
+      ...(canonicalToAliases.get(key) || []),
+      alias,
+    ]);
+  }
+
+  for (const term of terms) {
+    const normalized = normalizeText(term);
+    if (!normalized) continue;
+    expanded.push(term);
+    const canonical = DEFAULT_FLEMISH_CANONICAL[normalized];
     if (canonical) expanded.push(canonical);
     for (const alias of canonicalToAliases.get(normalized) || []) {
       expanded.push(alias);
@@ -369,9 +426,9 @@ export function buildManualFilterKeywords(
     keywords.location_state = expandStateTerms([filters.state]);
   }
   if (Array.isArray(filters.flemish_connections)) {
-    keywords.flemish_connection = filters.flemish_connections.filter((value) =>
-      typeof value === "string"
-    ) as string[];
+    keywords.flemish_connection = expandFlemishConnectionTerms(
+      filters.flemish_connections.filter((value) => typeof value === "string") as string[],
+    );
   }
 
   return keywords;
@@ -418,7 +475,7 @@ export function calculateStructuredCriteriaCoverage(
   if ((keywords.flemish_connection || []).length > 0) {
     criteria.push(
       termsMatchText(
-        keywords.flemish_connection,
+        expandFlemishConnectionTerms(keywords.flemish_connection),
         document.flemish_connection_names,
       ),
     );

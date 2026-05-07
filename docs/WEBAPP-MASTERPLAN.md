@@ -225,7 +225,7 @@ Todos:
 - `[done]` Add organization ranking, snippets, rationale fields, and structured criteria coverage.
 - `[done]` Update Search UI/cache to consume server-side organization results.
 - `[done]` Add capped organization browse loads so Search does not fetch whole organization tables.
-- `[later]` Include canonical organization Flemish/Belgian facts once Phase 6 lands.
+- `[later]` Move organization search/filter behavior from raw Flemish/Belgian text to Phase 6 canonical facts in Phase 6B.
 - `[done]` Add organization add-to-collection controls after Phase 4 adds organization collection membership.
 
 Out of scope:
@@ -257,7 +257,7 @@ Focused tests to add:
 - Query returns mixed people and organization results for a Flemish/Belgian entity.
 - Organization results include snippet/rationale.
 - Empty or broad queries respect result limits.
-- Organization filters cover sector, location, and existing Flemish/Belgian text facts; canonical organization facts remain Phase 6.
+- Organization filters cover sector, location, and existing Flemish/Belgian text facts; canonical organization fact search/filter behavior moves in Phase 6B.
 
 Manual checks:
 
@@ -418,15 +418,19 @@ Scope:
 
 Todos:
 
-- `[next]` Design migration for canonical catalog fields: aliases, parent, group, entity type, filterability.
-- `[next]` Seed broad useful filters such as KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, and VIB.
-- `[next]` Add `organization_flemish_connections` with role, confidence, source URL, and evidence excerpt.
-- `[next]` Migrate existing person facts into canonical entities.
+- `[done]` Phase 6A schema contract defines canonical catalog fields: stable name, normalized key, entity type, parent/group support, filterability, and timestamps.
+- `[done]` Phase 6A schema contract adds dynamic `flemish_connection_aliases` for seed, staff, model, and migration aliases with review/status metadata and evidence.
+- `[done]` Phase 6A schema contract expands `person_flemish_connections` with role, confidence, source URL, evidence excerpt, and timestamps.
+- `[done]` Phase 6A schema contract adds `organization_flemish_connections` with role, confidence, source URL, evidence excerpt, and timestamps.
+- `[done]` Phase 6A schema contract includes lookup helpers, RLS, triggers, broad filterable seeds, alias seeds, and idempotent backfill/migration requirements.
+- `[done]` Phase 6A migration was pushed to linked Supabase project `ofzuhajxwxggybkuzefq`, generated types were regenerated, and the remote schema/data contract was verified.
+- `[done]` Phase 6B moves shared TypeScript canonicalization, search documents, Dashboard filter chips, collection suggestions, match criteria, and embedding text onto canonical facts plus approved aliases and relationship evidence.
+- `[done]` Phase 6B migration was pushed to linked Supabase project `ofzuhajxwxggybkuzefq`; `search-people`, `suggest-people`, and `generate-embeddings` were deployed and verified active.
 - `[next]` Update derived label suggestion approval to canonicalize before insert.
 - `[next]` Update discovery extraction to produce canonical entity plus raw evidence.
 - `[next]` Update verification to propose normalized people and organization facts.
-- `[next]` Update search filters and chips to use `is_filterable`.
-- `[next]` Refresh search documents and embeddings after approved fact changes.
+- `[done]` Search filters and chips query `is_filterable = true`; non-filterable facts stay searchable through evidence/snippets but are not default chips.
+- `[done]` Search documents and embeddings are refreshed from approved canonical fact changes and alias changes.
 
 Out of scope:
 

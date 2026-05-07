@@ -88,6 +88,16 @@ describe('parseFiltersFromQuery', () => {
       const { filters } = parseFiltersFromQuery('vub or ugent or imec', base());
       expect(filters.flemishConnections.sort()).toEqual(['UGent', 'VUB', 'imec'].sort());
     });
+
+    it('canonicalizes seeded aliases to broad filter chips', () => {
+      const { filters } = parseFiltersFromQuery('University of Ghent and Flanders Investment & Trade', base());
+      expect(filters.flemishConnections.sort()).toEqual(['FIT', 'UGent'].sort());
+    });
+
+    it('does not expose non-filterable known facts as default query filters', () => {
+      const { filters } = parseFiltersFromQuery('Fayat fellowship alumni', base());
+      expect(filters.flemishConnections).toEqual([]);
+    });
   });
 
   describe('lectures', () => {

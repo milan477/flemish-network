@@ -49,9 +49,9 @@ describe('organization embeddings migration', () => {
   });
 
   it('updates edge database types for organization semantic search tables and RPCs', () => {
-    expect(edgeDatabaseTypes).toContain('embedding_dirty_at: string | null;');
-    expect(edgeDatabaseTypes).toContain('organization_embedding_jobs: Table<OrganizationEmbeddingJobRow>;');
-    expect(edgeDatabaseTypes).toContain('organization_text_chunks: Table<OrganizationTextChunkRow>;');
+    expect(edgeDatabaseTypes).toMatch(/embedding_dirty_at:\s+string \| null/);
+    expect(edgeDatabaseTypes).toContain('organization_embedding_jobs: {');
+    expect(edgeDatabaseTypes).toContain('organization_text_chunks: {');
     expect(edgeDatabaseTypes).toContain('match_organizations');
     expect(edgeDatabaseTypes).toContain('match_organization_text_chunks');
     expect(edgeDatabaseTypes).toContain('claim_organization_embedding_jobs');

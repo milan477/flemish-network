@@ -48,7 +48,7 @@ Important distinction:
 
 - Flemish/Belgian connections are profile facts and search fields.
 - They are not person-to-person edges.
-- Organization search uses approved organization records and existing `flemish_link` facts only. Canonical organization Flemish/Belgian facts are a later normalization phase.
+- Organization search uses approved organization records and canonical organization Flemish/Belgian facts. The old raw organization relevance text is compatibility-only during the Phase 6 migration.
 
 ## 2. Build A Collection
 
@@ -258,10 +258,12 @@ Keep them as:
 - Verification fields
 - Normalized tables
 
-Current required normalized tables for people:
+Current required normalized tables:
 
 - `flemish_connections`
 - `person_flemish_connections`
+- `flemish_connection_aliases`
+- `organization_flemish_connections`
 
 Target concept:
 
@@ -310,10 +312,7 @@ Examples:
   -> subject: organization
 ```
 
-Open design question:
-
-- People already have `flemish_connections + person_flemish_connections`.
-- Organizations need an equivalent normalized structure or a clear extension of the current model, because `organizations.flemish_link` is too weak for search, filtering, evidence, and discovery planning.
+Default search/filter chips should come only from broad `is_filterable` canonical facts. Specific phrases, raw relevance, and model/import-discovered variants should be preserved as aliases, roles, or evidence without automatically becoming default chips.
 
 ## Service Interaction Schema
 

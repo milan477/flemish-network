@@ -8,6 +8,10 @@ export interface FlemishConnection {
   id: string;
   name: string;
   type: FlemishConnectionType;
+  entity_type?: FlemishConnectionType | null;
+  parent_id?: string | null;
+  connection_group?: string | null;
+  is_filterable?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -15,6 +19,20 @@ export interface FlemishConnection {
 export interface PersonFlemishConnectionLink {
   person_id?: string;
   flemish_connection_id?: string;
+  role?: string | null;
+  confidence?: number | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  flemish_connections?: FlemishConnection | FlemishConnection[] | null;
+}
+
+export interface OrganizationFlemishConnectionLink {
+  organization_id?: string;
+  flemish_connection_id?: string;
+  role?: string | null;
+  confidence?: number | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
   flemish_connections?: FlemishConnection | FlemishConnection[] | null;
 }
 
@@ -23,14 +41,22 @@ export interface HasFlemishConnections {
   person_flemish_connections?: PersonFlemishConnectionLink[] | null;
 }
 
-const KNOWN_CONNECTIONS: Array<{
+export interface CanonicalFlemishConnectionCatalogEntry {
   name: string;
   type: FlemishConnectionType;
+  connection_group: string;
+  is_filterable: boolean;
+  aliases: string[];
   patterns: RegExp[];
-}> = [
+}
+
+export const CANONICAL_FLEMISH_CONNECTIONS: CanonicalFlemishConnectionCatalogEntry[] = [
   {
     name: 'KU Leuven',
     type: 'university',
+    connection_group: 'education_research',
+    is_filterable: true,
+    aliases: ['Katholieke Universiteit Leuven', 'Catholic University of Leuven'],
     patterns: [
       /\bku\s*leuven\b/i,
       /\bkatholieke\s+universiteit\s+leuven\b/i,
@@ -40,6 +66,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'UGent',
     type: 'university',
+    connection_group: 'education_research',
+    is_filterable: true,
+    aliases: ['University of Ghent', 'Ghent University', 'Universiteit Gent'],
     patterns: [
       /\bugent\b/i,
       /\bghent\s+university\b/i,
@@ -50,6 +79,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'VUB',
     type: 'university',
+    connection_group: 'education_research',
+    is_filterable: true,
+    aliases: ['Vrije Universiteit Brussel', 'Free University of Brussels'],
     patterns: [
       /\bvub\b/i,
       /\bvrije\s+universiteit\s+brussel\b/i,
@@ -58,6 +90,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'UAntwerp',
     type: 'university',
+    connection_group: 'education_research',
+    is_filterable: false,
+    aliases: ['University of Antwerp', 'Universiteit Antwerpen', 'Universiteit van Antwerpen'],
     patterns: [
       /\buantwerp\b/i,
       /\buniversity\s+of\s+antwerp\b/i,
@@ -68,6 +103,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'UHasselt',
     type: 'university',
+    connection_group: 'education_research',
+    is_filterable: false,
+    aliases: ['Hasselt University', 'Universiteit Hasselt'],
     patterns: [
       /\buhasselt\b/i,
       /\bhasselt\s+university\b/i,
@@ -77,6 +115,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'imec',
     type: 'company',
+    connection_group: 'innovation_research',
+    is_filterable: true,
+    aliases: ['Interuniversity Microelectronics Centre', 'IMEC'],
     patterns: [
       /\bimec\b/i,
       /\binteruniversity\s+microelectronics\s+centre\b/i,
@@ -85,6 +126,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'BAEF',
     type: 'other',
+    connection_group: 'funding_exchange',
+    is_filterable: true,
+    aliases: ['Belgian American Educational Foundation'],
     patterns: [
       /\bbaef\b/i,
       /\bbelgian\s+american\s+educational\s+foundation\b/i,
@@ -93,6 +137,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'Fayat Fellowship',
     type: 'other',
+    connection_group: 'funding_exchange',
+    is_filterable: false,
+    aliases: ['Fayat'],
     patterns: [
       /\bfayat\b/i,
       /\bfayat\s+fellow(?:ship)?\b/i,
@@ -101,6 +148,9 @@ const KNOWN_CONNECTIONS: Array<{
   {
     name: 'Flemish Government',
     type: 'government',
+    connection_group: 'government_trade',
+    is_filterable: true,
+    aliases: ['Government of Flanders', 'Flanders Government', 'Vlaamse overheid'],
     patterns: [
       /\bflemish\s+government\b/i,
       /\bgovernment\s+of\s+flanders\b/i,
@@ -108,12 +158,58 @@ const KNOWN_CONNECTIONS: Array<{
     ],
   },
   {
-    name: 'Flanders Investment & Trade',
+    name: 'FIT',
     type: 'government',
+    connection_group: 'government_trade',
+    is_filterable: true,
+    aliases: ['Flanders Investment & Trade', 'Flanders Investment and Trade', 'Flanders Investment Trade'],
     patterns: [
       /\bflanders\s+investment\s*&\s*trade\b/i,
       /\bflanders\s+investment\s+and\s+trade\b/i,
       /\bfit\b/i,
+    ],
+  },
+  {
+    name: 'Vlerick',
+    type: 'university',
+    connection_group: 'education_research',
+    is_filterable: true,
+    aliases: ['Vlerick Business School'],
+    patterns: [/\bvlerick\b/i, /\bvlerick\s+business\s+school\b/i],
+  },
+  {
+    name: 'VITO',
+    type: 'company',
+    connection_group: 'innovation_research',
+    is_filterable: true,
+    aliases: [
+      'Flemish Institute for Technological Research',
+      'Vlaamse Instelling voor Technologisch Onderzoek',
+    ],
+    patterns: [
+      /\bvito\b/i,
+      /\bflemish\s+institute\s+for\s+technological\s+research\b/i,
+      /\bvlaamse\s+instelling\s+voor\s+technologisch\s+onderzoek\b/i,
+    ],
+  },
+  {
+    name: 'Flanders Make',
+    type: 'company',
+    connection_group: 'innovation_research',
+    is_filterable: true,
+    aliases: ['Flanders Make strategic research centre'],
+    patterns: [/\bflanders\s+make\b/i],
+  },
+  {
+    name: 'VIB',
+    type: 'company',
+    connection_group: 'innovation_research',
+    is_filterable: true,
+    aliases: ['Vlaams Instituut voor Biotechnologie', 'Flanders Institute for Biotechnology'],
+    patterns: [
+      /\bvib\b/i,
+      /\bvlaams\s+instituut\s+voor\s+biotechnologie\b/i,
+      /\bflanders\s+institute\s+for\s+biotechnology\b/i,
     ],
   },
 ];
@@ -121,7 +217,11 @@ const KNOWN_CONNECTIONS: Array<{
 export const DEFAULT_FLEMISH_CONNECTIONS: Array<{
   name: string;
   type: FlemishConnectionType;
-}> = KNOWN_CONNECTIONS.map(({ name, type }) => ({ name, type }));
+}> = CANONICAL_FLEMISH_CONNECTIONS
+  .filter((connection) => connection.is_filterable)
+  .map(({ name, type }) => ({ name, type }));
+
+const KNOWN_CONNECTIONS = CANONICAL_FLEMISH_CONNECTIONS;
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -193,6 +293,8 @@ export function inferFlemishConnectionType(rawName: string): FlemishConnectionTy
 export function canonicalizeFlemishConnection(rawValue: string): {
   name: string;
   type: FlemishConnectionType;
+  is_filterable?: boolean;
+  connection_group?: string;
 } | null {
   const value = sanitizeToken(rawValue);
   if (!value) return null;
@@ -232,6 +334,24 @@ export function canonicalizeFlemishConnection(rawValue: string): {
   };
 }
 
+export function canonicalizeFlemishConnectionFilter(rawValue: string): string | null {
+  const value = sanitizeToken(rawValue);
+  if (!value) return null;
+
+  for (const known of CANONICAL_FLEMISH_CONNECTIONS) {
+    if (!known.is_filterable) continue;
+    if (
+      known.name.toLowerCase() === value.toLowerCase() ||
+      known.aliases.some((alias) => alias.toLowerCase() === value.toLowerCase()) ||
+      known.patterns.some((pattern) => pattern.test(value))
+    ) {
+      return known.name;
+    }
+  }
+
+  return null;
+}
+
 export function extractFlemishConnectionsFromText(text: string): Array<{
   name: string;
   type: FlemishConnectionType;
@@ -265,6 +385,40 @@ export function extractFlemishConnectionsFromText(text: string): Array<{
   });
 
   return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function flattenOrganizationFlemishConnections(
+  links?: OrganizationFlemishConnectionLink[] | null
+): FlemishConnection[] {
+  if (!links?.length) return [];
+
+  const seen = new Map<string, FlemishConnection>();
+
+  links.forEach((link) => {
+    const raw = link.flemish_connections;
+    const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    rows.forEach((row) => {
+      if (!row?.id || !row.name) return;
+      if (!seen.has(row.id)) {
+        seen.set(row.id, row);
+      }
+    });
+  });
+
+  return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getOrganizationFlemishConnectionText(organization: {
+  organization_flemish_connections?: OrganizationFlemishConnectionLink[] | null;
+} | null | undefined): string {
+  if (!organization) return '';
+
+  const canonical = flattenOrganizationFlemishConnections(
+    organization.organization_flemish_connections
+  ).map((connection) => connection.name);
+  if (canonical.length > 0) return canonical.join(', ');
+
+  return '';
 }
 
 export function flattenPersonFlemishConnections(

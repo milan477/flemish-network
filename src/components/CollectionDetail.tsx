@@ -27,7 +27,10 @@ import {
   type Person,
   displayName,
 } from '../lib/supabase';
-import { getPersonFlemishConnectionText } from '../lib/flemishConnections';
+import {
+  getOrganizationFlemishConnectionText,
+  getPersonFlemishConnectionText,
+} from '../lib/flemishConnections';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type CollectionSuggestionGap } from '../lib/aiService';
 import { printCollectionBriefing } from '../lib/exportService';
@@ -194,7 +197,7 @@ export default function CollectionDetail({
         organizationIds.length > 0
           ? supabase
               .from('organizations')
-              .select('*, locations(*)')
+              .select('*, locations(*), organization_flemish_connections(flemish_connection_id, flemish_connections(id, name, type, entity_type, is_filterable))')
               .in('id', organizationIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
@@ -371,7 +374,8 @@ export default function CollectionDetail({
       if (flemishText) queryParts.push(flemishText);
       if (m.organization?.type) queryParts.push(m.organization.type);
       if (m.organization?.description) queryParts.push(m.organization.description);
-      if (m.organization?.flemish_link) queryParts.push(m.organization.flemish_link);
+      const organizationFlemishText = getOrganizationFlemishConnectionText(m.organization);
+      if (organizationFlemishText) queryParts.push(organizationFlemishText);
     });
     const query = queryParts.join('. ') || collection.name;
 
@@ -786,7 +790,7 @@ export default function CollectionDetail({
                 ? [person.locations?.city, person.locations?.state].filter(Boolean).join(', ')
                 : [organization?.locations?.city, organization?.locations?.state].filter(Boolean).join(', ');
               const roleText = person?.current_position || organization?.type;
-              const detailText = organization?.description || organization?.flemish_link;
+              const detailText = organization?.description || getOrganizationFlemishConnectionText(organization);
 
               return (
                 <div key={member.id} className="p-6 hover:bg-gray-50/50 transition-colors">

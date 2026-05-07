@@ -6,7 +6,10 @@ import {
   type Person,
   type SearchMatchMode,
 } from './supabase';
-import { getPersonFlemishConnectionText } from './flemishConnections';
+import {
+  getOrganizationFlemishConnectionText,
+  getPersonFlemishConnectionText,
+} from './flemishConnections';
 import {
   organizationMatchesLocation,
   personMatchesLocation,
@@ -66,10 +69,11 @@ function organizationMatchesText(
   organization: Organization,
   needle: string
 ): boolean {
+  const flemishConnectionText = getOrganizationFlemishConnectionText(organization);
   return fuzzyMatch(needle, organization.type || '') ||
     fuzzyMatch(needle, organization.name || '') ||
     fuzzyMatch(needle, organization.description || '') ||
-    fuzzyMatch(needle, organization.flemish_link || '');
+    fuzzyMatch(needle, flemishConnectionText);
 }
 
 function buildPersonCriteria(filters: MapFilters): MatchCriterion<Person>[] {

@@ -105,10 +105,9 @@ describe('Phase 4 collection member migration', () => {
     expect(frontendTypes).toContain('organization_id: string | null;');
     expect(frontendTypes).toContain('person?: Person;');
     expect(frontendTypes).toContain('organization?: Organization;');
-    expect(edgeDatabaseTypes).toContain('interface CollectionMemberRow');
-    expect(edgeDatabaseTypes).toContain('person_id: string | null;');
-    expect(edgeDatabaseTypes).toContain('organization_id: string | null;');
-    expect(edgeDatabaseTypes).toContain('collection_members: Table<CollectionMemberRow>;');
+    expect(edgeDatabaseTypes).toContain('collection_members: {');
+    expect(edgeDatabaseTypes).toMatch(/person_id:\s+string \| null/);
+    expect(edgeDatabaseTypes).toMatch(/organization_id:\s+string \| null/);
   });
 });
 

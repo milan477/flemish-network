@@ -118,7 +118,7 @@ Phase 4 acceptance criteria:
 - `suggest-people` is described to users and docs as collection suggestions, while the deployed function name remains unchanged.
 - Organization candidates come from approved organization lexical, vector, and text-chunk retrieval when embeddings are available.
 - Collection prompts may produce a Discovery handoff, but Phase 4 does not add autonomous Discovery, persistent gap analytics, or persistent draft tables.
-- Canonical organization Flemish/Belgian facts remain a later normalization phase.
+- Collection organization retrieval uses canonical organization Flemish/Belgian facts when available; durable organization verification remains a later record-level verification phase.
 
 ## Planning / Next Searches Evaluation
 

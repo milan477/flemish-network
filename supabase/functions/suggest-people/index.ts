@@ -113,7 +113,6 @@ interface OrganizationRow {
   name: string;
   type: string | null;
   description: string | null;
-  flemish_link: string | null;
 }
 
 interface OrganizationSearchDocumentRow {
@@ -281,7 +280,7 @@ function textFromOrganizationDocument(
       document?.type || organization.type,
       document?.sector_names,
       document?.location_text || document?.primary_location_text,
-      document?.flemish_link || organization.flemish_link,
+      document?.flemish_link,
       document?.description || organization.description,
       document?.us_network_status,
     ].filter(Boolean).join(" | "),
@@ -645,7 +644,7 @@ async function retrieveCandidates(
       candidateOrganizationIds.size > 0
         ? supabase
           .from("organizations")
-          .select("id, name, type, description, flemish_link")
+          .select("id, name, type, description")
           .in("id", Array.from(candidateOrganizationIds))
         : { data: [] as OrganizationRow[], error: null },
       candidateOrganizationIds.size > 0

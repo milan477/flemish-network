@@ -199,7 +199,6 @@ interface OrganizationRow {
   location_id: string | null;
   locations: { city: string | null; state: string | null } | null;
   us_network_status: string | null;
-  flemish_link: string | null;
   organization_us_locations?: unknown[];
 }
 
@@ -329,7 +328,7 @@ function buildFallbackOrganizationDocument(
     organization_id: organization.id,
     type: organization.type,
     description: organization.description,
-    flemish_link: organization.flemish_link,
+    flemish_link: "",
     sector_names: null,
     primary_location_text: locationText,
     location_text: locationText,
@@ -824,7 +823,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           ? supabase
               .from("organizations")
               .select(
-                "id, name, type, description, logo_url, website_url, location_id, us_network_status, flemish_link, locations(city, state), organization_us_locations(*, locations(city, state))"
+                "id, name, type, description, logo_url, website_url, location_id, us_network_status, locations(city, state), organization_us_locations(*, locations(city, state))"
               )
               .in("id", organizationCandidateIds)
           : { data: [] as OrganizationQueryRow[], error: null },
@@ -949,7 +948,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       location_id: organization.location_id,
       locations: organization.locations,
       us_network_status: organization.us_network_status,
-      flemish_link: organization.flemish_link,
+      flemish_link: organizationDocumentsById.get(organization.id)?.flemish_link || null,
       organization_us_locations: organization.organization_us_locations || [],
       score: Math.round(fusedScore * 1000) / 1000,
       snippet,

@@ -341,7 +341,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       if (currentFilters.showOrganizations) {
         const { data } = await supabase
           .from('organizations')
-          .select('*, locations(*), organization_us_locations(*, locations(*))')
+          .select('*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, flemish_connections(id, name, type, entity_type, is_filterable))')
           .limit(150);
         let rawOrganizations = (data || []) as Organization[];
 
@@ -463,6 +463,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     supabase
       .from('flemish_connections')
       .select('name')
+      .eq('is_filterable', true)
       .order('name')
       .then(({ data }) => {
         const names = ((data || []) as Pick<FlemishConnection, 'name'>[]).map(

@@ -44,6 +44,8 @@ interface PersonRow {
   location_id: string | null;
   embedding_dirty_at: string | null;
   person_flemish_connections?: {
+    role?: string | null;
+    evidence_excerpt?: string | null;
     flemish_connections:
       | { name: string | null }
       | { name: string | null }[]
@@ -71,13 +73,13 @@ interface OrganizationRow {
   website_url: string | null;
   location_id: string | null;
   us_network_status: string | null;
-  flemish_link: string | null;
   embedding_dirty_at?: string | null;
 }
 
 interface OrganizationSearchDocumentRow {
   organization_id: string;
   sector_names: string | null;
+  flemish_link: string | null;
   primary_location_text: string | null;
   location_text: string | null;
 }
@@ -304,7 +306,12 @@ function buildFlemishConnectionNames(person: PersonRow): string[] {
     const rows = Array.isArray(raw) ? raw : raw ? [raw] : [];
     for (const row of rows) {
       const name = row?.name?.trim();
-      if (name) names.add(name);
+      if (!name) continue;
+      const evidence = [link.role, link.evidence_excerpt]
+        .map((value) => value?.trim())
+        .filter(Boolean)
+        .join(" ");
+      names.add(evidence ? `${name} ${evidence}` : name);
     }
   }
 
@@ -350,7 +357,7 @@ function buildOrganizationEmbeddingInput(
     type: organization.type || "",
     description: organization.description || "",
     sectors: splitSearchDocumentValues(searchDocument?.sector_names),
-    flemishLink: organization.flemish_link || "",
+    flemishLink: searchDocument?.flemish_link || "",
     locationText: searchDocument?.location_text ||
       searchDocument?.primary_location_text ||
       buildLocationText(location),
@@ -639,7 +646,7 @@ async function prepareEmbeddingJobs(
         ? supabase
           .from("people")
           .select(
-            "id, name, current_position, bio, occupation, location_id, embedding_dirty_at, person_flemish_connections(flemish_connections(name))",
+            "id, name, current_position, bio, occupation, location_id, embedding_dirty_at, person_flemish_connections(role, evidence_excerpt, flemish_connections(name))",
           )
           .in("id", personIds)
         : { data: [], error: null },
@@ -653,7 +660,7 @@ async function prepareEmbeddingJobs(
         ? supabase
           .from("organizations")
           .select(
-            "id, name, type, description, website_url, location_id, us_network_status, flemish_link, embedding_dirty_at",
+            "id, name, type, description, website_url, location_id, us_network_status, embedding_dirty_at",
           )
           .in("id", organizationIds)
         : { data: [], error: null },
@@ -661,7 +668,7 @@ async function prepareEmbeddingJobs(
         ? supabase
           .from("organization_search_documents")
           .select(
-            "organization_id, sector_names, primary_location_text, location_text",
+            "organization_id, sector_names, flemish_link, primary_location_text, location_text",
           )
           .in("organization_id", organizationIds)
         : { data: [], error: null },

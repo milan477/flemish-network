@@ -59,10 +59,10 @@ describe('Phase 5A discovery organization contract', () => {
   });
 
   it('updates edge database types for the new organization evidence contract', () => {
-    expect(edgeDatabaseTypes).toContain('candidate_key: string;');
-    expect(edgeDatabaseTypes).toContain('last_evidence_at: string | null;');
-    expect(edgeDatabaseTypes).toContain('evidence_count: number;');
-    expect(edgeDatabaseTypes).toContain('interface DiscoveredOrganizationEvidenceRow');
-    expect(edgeDatabaseTypes).toContain('discovered_organization_evidence: Table<DiscoveredOrganizationEvidenceRow>;');
+    expect(edgeDatabaseTypes).toMatch(/candidate_key:\s+string \| null/);
+    expect(edgeDatabaseTypes).toMatch(/last_evidence_at:\s+string \| null/);
+    expect(edgeDatabaseTypes).toMatch(/evidence_count:\s+number/);
+    expect(edgeDatabaseTypes).toContain('discovered_organization_evidence: {');
+    expect(edgeDatabaseTypes).toContain('discovered_organization_id: string');
   });
 });

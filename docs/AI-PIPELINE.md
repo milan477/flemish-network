@@ -55,10 +55,10 @@ Server-side Search The Network endpoint for approved people and organizations.
 3. Runs Gemini keyword extraction and original-query embedding in parallel, degrading to lexical-only when needed.
 4. Parses shared search intent, preserving `original_query` for semantic retrieval while using canonical structured terms for lexical retrieval.
 5. Calls people and organization lexical, record-vector, and text-chunk retrieval, then fuses those ranking signals.
-6. Applies structured criteria coverage for sector, location, occupation/type, and Flemish/Belgian relevance.
+6. Applies structured criteria coverage for sector, location, occupation/type, and canonical Flemish/Belgian relevance. `filters.flemish_connections` is alias-aware and resolves broad filterable facts such as KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, and VIB.
 7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
 
-Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link`, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
+Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link` as compatibility output populated from canonical organization Flemish/Belgian facts, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
 
 ## Edge Function: `agent-discovery`
 

@@ -1,4 +1,9 @@
 import { type MapFilters, DEFAULT_MAP_FILTERS } from './supabase';
+import {
+  CANONICAL_FLEMISH_CONNECTIONS,
+  canonicalizeFlemishConnectionFilter,
+  DEFAULT_FLEMISH_CONNECTIONS,
+} from './flemishConnections';
 
 export interface FilterResult {
   message: string;
@@ -21,7 +26,7 @@ const OCCUPATION_ALIASES: Record<string, string[]> = {
   'Executive/Leadership': ['executive', 'ceo', 'cto', 'director', 'leadership', 'vp'],
 };
 
-const FLEMISH_CONNECTIONS = ['KU Leuven', 'UGent', 'VUB', 'UAntwerp', 'BAEF', 'imec', 'Fayat'];
+const FLEMISH_CONNECTIONS = DEFAULT_FLEMISH_CONNECTIONS.map((connection) => connection.name);
 
 const US_STATES: Record<string, string[]> = {
   'AL': ['alabama', 'al'],
@@ -219,13 +224,24 @@ export function parseFiltersFromQuery(query: string, currentFilters: MapFilters)
   // Flemish Connections
   const connections: string[] = [];
   for (const conn of FLEMISH_CONNECTIONS) {
-    if (q.includes(conn.toLowerCase())) {
-      connections.push(conn);
+    const canonical = canonicalizeFlemishConnectionFilter(conn);
+    if (canonical && q.includes(conn.toLowerCase())) {
+      connections.push(canonical);
     }
   }
+  for (const connection of CANONICAL_FLEMISH_CONNECTIONS) {
+    if (!connection.is_filterable) continue;
+    if (connection.patterns.some((pattern) => pattern.test(query))) {
+      connections.push(connection.name);
+    }
+  }
+  const queryCanonicalConnection = canonicalizeFlemishConnectionFilter(query);
+  if (queryCanonicalConnection) {
+    connections.push(queryCanonicalConnection);
+  }
   if (connections.length > 0) {
-    nextFilters.flemishConnections = connections;
-    detected.push(...connections);
+    nextFilters.flemishConnections = Array.from(new Set(connections));
+    detected.push(...nextFilters.flemishConnections);
   }
 
   // Lectures

@@ -147,7 +147,27 @@ Deno.test("manual filters merge into structured search keywords", () => {
 
   assertEquals(merged.sector, ["biotech", "biotechnology"]);
   assertEquals(merged.location_city, ["boston"]);
-  assertEquals(merged.flemish_connection, ["ku leuven"]);
+  assertEquals(merged.flemish_connection, [
+    "ku leuven",
+    "katholieke universiteit leuven",
+    "catholic university of leuven",
+  ]);
+});
+
+Deno.test("Flemish aliases satisfy canonical structured coverage", () => {
+  const keywords = emptyKeywords();
+  keywords.flemish_connection = ["University of Ghent"];
+
+  const coverage = calculateStructuredCriteriaCoverage(keywords, {
+    current_position: null,
+    occupation: null,
+    flemish_connection_names: "UGent Ghent University Universiteit Gent",
+    sector_names: null,
+    location_text: null,
+  });
+
+  assertEquals(coverage.total, 1);
+  assertEquals(coverage.matched, 1);
 });
 
 Deno.test("normalizeSearchMatchMode defaults to all", () => {
