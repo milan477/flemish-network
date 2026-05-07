@@ -396,9 +396,28 @@ export interface SuggestPeopleResult {
   similarity: number;
 }
 
+export interface CollectionSuggestionCandidate {
+  entity_type: 'person' | 'organization';
+  id: string;
+  name: string;
+  reason: string;
+  score: number;
+  snippet?: string;
+  source_search: string;
+}
+
+export interface CollectionSuggestionGap {
+  should_offer: boolean;
+  reason?: string;
+  suggested_prompt?: string;
+}
+
 export interface SuggestPeopleResponse {
   message: string;
   suggestions: SuggestPeopleResult[];
+  candidates: CollectionSuggestionCandidate[];
+  searches: unknown[];
+  gap: CollectionSuggestionGap;
 }
 
 /**
@@ -407,7 +426,12 @@ export interface SuggestPeopleResponse {
  */
 export async function suggestPeopleEmbedding(
   query: string,
-  options?: { collection_id?: string; exclude_ids?: string[]; max_results?: number }
+  options?: {
+    collection_id?: string;
+    exclude_ids?: string[];
+    exclude_organization_ids?: string[];
+    max_results?: number;
+  }
 ): Promise<SuggestPeopleResponse> {
   try {
     const { data, error } = await supabase.functions.invoke('suggest-people', {
@@ -415,19 +439,46 @@ export async function suggestPeopleEmbedding(
         query,
         collection_id: options?.collection_id,
         exclude_ids: options?.exclude_ids,
+        exclude_organization_ids: options?.exclude_organization_ids,
         max_results: options?.max_results || 15,
       },
     });
 
     if (error) throw await extractEdgeError(error, 'People suggestion request failed');
-    if (!data?.suggestions) throw new Error('No suggestions returned');
+    if (!data?.suggestions && !data?.candidates) throw new Error('No suggestions returned');
+
+    const candidates = Array.isArray(data.candidates)
+      ? (data.candidates as CollectionSuggestionCandidate[])
+      : (data.suggestions || []).map((suggestion: SuggestPeopleResult) => ({
+          entity_type: 'person' as const,
+          id: suggestion.id,
+          name: suggestion.name,
+          reason: suggestion.reason,
+          score: suggestion.similarity,
+          source_search: query,
+        }));
 
     return {
       message:
         typeof data.message === 'string'
           ? data.message
-          : `Found ${data.suggestions.length} relevant people.`,
-      suggestions: data.suggestions as SuggestPeopleResult[],
+          : `Found ${candidates.length} collection candidates.`,
+      suggestions: Array.isArray(data.suggestions)
+        ? (data.suggestions as SuggestPeopleResult[])
+        : candidates
+            .filter((candidate) => candidate.entity_type === 'person')
+            .map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              reason: candidate.reason,
+              similarity: candidate.score,
+            })),
+      candidates,
+      searches: Array.isArray(data.searches) ? data.searches : [],
+      gap:
+        data.gap && typeof data.gap === 'object'
+          ? (data.gap as CollectionSuggestionGap)
+          : { should_offer: false },
     };
   } catch (error) {
     // Fallback to client-side scoring
@@ -460,6 +511,16 @@ export async function suggestPeopleEmbedding(
           reason: item.reason,
           similarity: item.score,
         })),
+        candidates: filteredFallback.map((item) => ({
+          entity_type: 'person',
+          id: item.person.id,
+          name: item.person.name,
+          reason: item.reason,
+          score: item.score,
+          source_search: query,
+        })),
+        searches: [{ query, targets: ['person'] }],
+        gap: { should_offer: false },
       };
     }
 

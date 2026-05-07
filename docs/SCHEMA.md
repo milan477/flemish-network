@@ -27,7 +27,7 @@
 | Table | Key Columns |
 |---|---|
 | `collections` | `id`, `name`, `description`, `created_at`, `updated_at` |
-| `collection_members` | `id`, `collection_id` (FK), `person_id` (FK), target `organization_id` (FK), `notes`, `added_at`. Current live uniqueness is `UNIQUE(collection_id, person_id)`; target uniqueness also covers organization members. |
+| `collection_members` | `id`, `collection_id` (FK), nullable `person_id` (FK), nullable `organization_id` (FK), `notes`, `added_at`. Exactly one of `person_id` or `organization_id` is required. Partial unique indexes prevent duplicate people and duplicate organizations independently per collection. |
 
 ## AI & Suggestions
 

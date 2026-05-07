@@ -1,12 +1,12 @@
-# Graph Report - flemish-network  (2026-05-06)
+# Graph Report - flemish-network  (2026-05-07)
 
 ## Corpus Check
-- 124 files · ~156,927 words
+- 127 files · ~161,149 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 611 nodes · 677 edges · 93 communities detected
-- Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 65 edges (avg confidence: 0.77)
+- 639 nodes · 717 edges · 102 communities detected
+- Extraction: 90% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 68 edges (avg confidence: 0.77)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
@@ -21,6 +21,7 @@
 - [[_COMMUNITY_Community 8|Community 8]]
 - [[_COMMUNITY_Community 9|Community 9]]
 - [[_COMMUNITY_Community 10|Community 10]]
+- [[_COMMUNITY_Community 11|Community 11]]
 - [[_COMMUNITY_Community 12|Community 12]]
 - [[_COMMUNITY_Community 13|Community 13]]
 - [[_COMMUNITY_Community 14|Community 14]]
@@ -34,20 +35,20 @@
 - [[_COMMUNITY_Community 22|Community 22]]
 - [[_COMMUNITY_Community 23|Community 23]]
 - [[_COMMUNITY_Community 24|Community 24]]
-- [[_COMMUNITY_Community 26|Community 26]]
+- [[_COMMUNITY_Community 27|Community 27]]
 - [[_COMMUNITY_Community 28|Community 28]]
-- [[_COMMUNITY_Community 29|Community 29]]
+- [[_COMMUNITY_Community 30|Community 30]]
 - [[_COMMUNITY_Community 31|Community 31]]
 - [[_COMMUNITY_Community 32|Community 32]]
 - [[_COMMUNITY_Community 33|Community 33]]
-- [[_COMMUNITY_Community 34|Community 34]]
+- [[_COMMUNITY_Community 35|Community 35]]
 - [[_COMMUNITY_Community 36|Community 36]]
 - [[_COMMUNITY_Community 37|Community 37]]
 - [[_COMMUNITY_Community 38|Community 38]]
 - [[_COMMUNITY_Community 39|Community 39]]
-- [[_COMMUNITY_Community 40|Community 40]]
-- [[_COMMUNITY_Community 42|Community 42]]
-- [[_COMMUNITY_Community 44|Community 44]]
+- [[_COMMUNITY_Community 41|Community 41]]
+- [[_COMMUNITY_Community 43|Community 43]]
+- [[_COMMUNITY_Community 45|Community 45]]
 - [[_COMMUNITY_Community 46|Community 46]]
 - [[_COMMUNITY_Community 47|Community 47]]
 - [[_COMMUNITY_Community 48|Community 48]]
@@ -60,15 +61,14 @@
 - [[_COMMUNITY_Community 55|Community 55]]
 - [[_COMMUNITY_Community 58|Community 58]]
 - [[_COMMUNITY_Community 59|Community 59]]
+- [[_COMMUNITY_Community 60|Community 60]]
+- [[_COMMUNITY_Community 61|Community 61]]
+- [[_COMMUNITY_Community 62|Community 62]]
 - [[_COMMUNITY_Community 64|Community 64]]
-- [[_COMMUNITY_Community 65|Community 65]]
 - [[_COMMUNITY_Community 66|Community 66]]
 - [[_COMMUNITY_Community 67|Community 67]]
-- [[_COMMUNITY_Community 68|Community 68]]
-- [[_COMMUNITY_Community 69|Community 69]]
 - [[_COMMUNITY_Community 70|Community 70]]
 - [[_COMMUNITY_Community 71|Community 71]]
-- [[_COMMUNITY_Community 72|Community 72]]
 - [[_COMMUNITY_Community 73|Community 73]]
 - [[_COMMUNITY_Community 74|Community 74]]
 - [[_COMMUNITY_Community 75|Community 75]]
@@ -103,18 +103,27 @@
 - [[_COMMUNITY_Community 104|Community 104]]
 - [[_COMMUNITY_Community 105|Community 105]]
 - [[_COMMUNITY_Community 106|Community 106]]
+- [[_COMMUNITY_Community 107|Community 107]]
+- [[_COMMUNITY_Community 108|Community 108]]
+- [[_COMMUNITY_Community 109|Community 109]]
+- [[_COMMUNITY_Community 110|Community 110]]
+- [[_COMMUNITY_Community 111|Community 111]]
+- [[_COMMUNITY_Community 112|Community 112]]
+- [[_COMMUNITY_Community 113|Community 113]]
+- [[_COMMUNITY_Community 114|Community 114]]
+- [[_COMMUNITY_Community 115|Community 115]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `people Table` - 10 edges
-2. `Network Scope Types` - 9 edges
-3. `Five Product Services` - 9 edges
-4. `Expand The Database` - 9 edges
-5. `Smoke Edge Function Checks` - 8 edges
-6. `agent-discovery Edge Function` - 8 edges
-7. `Active Source Of Truth Docs` - 8 edges
-8. `Process Frontier Page` - 7 edges
-9. `Person Verification Runner` - 7 edges
-10. `Add To Collection Dropdown` - 7 edges
+2. `Five Product Services` - 9 edges
+3. `Expand The Database` - 9 edges
+4. `Smoke Edge Function Checks` - 8 edges
+5. `agent-discovery Edge Function` - 8 edges
+6. `Active Source Of Truth Docs` - 8 edges
+7. `Process Frontier Page` - 7 edges
+8. `Person Verification Runner` - 7 edges
+9. `Add To Collection Dropdown` - 7 edges
+10. `agent_runs Table` - 7 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `AI Legacy Removal` --conceptually_related_to--> `Smoke Edge Function Checks`  [AMBIGUOUS]
@@ -153,12 +162,12 @@
 ## Communities
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (61): Normalized Data Rules, Flemish Network Intelligence Platform, Required Agent Workflow, Scheduler Owns Run Lifecycle Rule, agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function, AI Behavioral Contracts (+53 more)
+Cohesion: 0.04
+Nodes (74): Normalized Data Rules, Flemish Network Intelligence Platform, Required Agent Workflow, Scheduler Owns Run Lifecycle Rule, Active Source Of Truth Docs, agent-discovery Edge Function, agent-scheduler Edge Function, agent-verify Edge Function (+66 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.06
-Nodes (39): Staff Profile Form, Staff Auth Callback Redirect, Collection Detail Routing, Collections List, Connected Abroad Import Contract Tests, People Export Formatting Tests, Natural Language Filter Parser Tests, Flemish Connection Refresh RPC Tests (+31 more)
+Cohesion: 0.08
+Nodes (13): applyRerankAndBackfill(), asRecord(), cleanText(), collectionSuggestionKey(), fallbackCollectionSuggestionPlan(), parseCollectionSuggestionPlan(), parseRerankedCollectionCandidates(), clampScore() (+5 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.08
@@ -181,40 +190,44 @@ Cohesion: 0.1
 Nodes (23): CollectionDetail Component, Collection Embedding Suggestions, Collection Member Notes, CollectionModal Component, Collection Creation Suggestions, ConnectionsSummary Component, Relationship Counts And Collection Coverage, CsvImport Component (+15 more)
 
 ### Community 7 - "Community 7"
+Cohesion: 0.1
+Nodes (23): Flemish Connection Refresh RPC Tests, Coordinate Cache, Geocode Batch, Geocode Edge Function, Add To Cache, Bundled Cities Fallback, Locations Cache, Locations Table (+15 more)
+
+### Community 8 - "Community 8"
 Cohesion: 0.12
 Nodes (19): Discovery Agent Run Tracking, Discovery Candidate Deduplication, Discovery Child Link Expansion, Discovery Contact Extraction, Coverage Gaps, Discovery Derived Labels, Discovered Contacts Store, Discovery Evidence Store (+11 more)
 
-### Community 8 - "Community 8"
+### Community 9 - "Community 9"
 Cohesion: 0.19
 Nodes (11): buildFallbackKeywords(), buildFallbackTerms(), getIndexedString(), getNestedString(), hybridSearch(), scorePersonAgainstFilter(), scorePersonAgainstKeywords(), smartSearch() (+3 more)
 
-### Community 9 - "Community 9"
+### Community 10 - "Community 10"
+Cohesion: 0.15
+Nodes (9): approveContact(), getVal(), mergeIntoExisting(), mergeTextViaAI(), parseTitleFromName(), personNamePartsForInsert(), Edge Error Description, Notify Error (+1 more)
+
+### Community 11 - "Community 11"
 Cohesion: 0.16
 Nodes (7): buildGapDiscoveryQuery(), loadDiscoveryPlanning(), markZombieRuns(), pickPrimarySector(), purgeExpiredCache(), runHousekeeping(), uniqueByQuery()
 
-### Community 10 - "Community 10"
+### Community 12 - "Community 12"
 Cohesion: 0.18
 Nodes (9): buildDashboardLocation(), buildDashboardSearchParams(), buildDashboardStateFromPreset(), defaultDashboardRouteState(), parseBooleanParam(), parseDashboardRouteState(), sanitizeValues(), roundtrip() (+1 more)
 
-### Community 12 - "Community 12"
+### Community 13 - "Community 13"
 Cohesion: 0.15
 Nodes (14): Apply Embedding Outputs, Async Embedding Batch Lifecycle, Embedding Batch Runs Table, Embedding Jobs Queue, Generate Embeddings Handler, People Embedding Columns, Structured Person Embedding Text, Person Text Chunks (+6 more)
 
-### Community 13 - "Community 13"
+### Community 14 - "Community 14"
 Cohesion: 0.15
 Nodes (14): Derived Label Builder, Derived Label Suggestion Upsert, Location Label Seed, Derived Labels Tests, Discovery Frontier Link Scorer, Heuristic Discovery Page Classifier, Discovery Page Fetcher, Sitemap And Feed Frontier Harvester (+6 more)
 
-### Community 14 - "Community 14"
+### Community 15 - "Community 15"
 Cohesion: 0.2
 Nodes (6): checkDuplicate(), createEmptyForm(), emptyUsConnection(), ensureProtocol(), handleSubmit(), insertContact()
 
-### Community 15 - "Community 15"
-Cohesion: 0.17
-Nodes (13): Active Source Of Truth Docs, AI Service Map, Dataverse Web API Integration, Microsoft Dynamics Integration References, Auth Provider Wrapper, React App Bootstrap, Edge Function Smoke Harness, Vitest jsdom Test Configuration (+5 more)
-
 ### Community 16 - "Community 16"
-Cohesion: 0.21
-Nodes (7): approveContact(), getVal(), mergeIntoExisting(), mergeTextViaAI(), Edge Error Description, Notify Error, Sonner Toast Wrapper
+Cohesion: 0.31
+Nodes (11): addUniqueId(), collectionSuggestionCandidateKey(), collectionSuggestionDraftReducer(), getAcceptedDraftCandidates(), getCollectionSuggestionExclusionPayload(), includesId(), isRejectedSuppressed(), keyForCandidate() (+3 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.2
@@ -248,7 +261,7 @@ Nodes (8): canUseSessionStorage(), getCachedDashboardSearch(), getLastDashboardL
 Cohesion: 0.32
 Nodes (8): Alaska And Hawaii Insets, Map Image Asset, Black Background, Cartographic Basemap Design, Light Gray Land Fill, White Circular Region Marker, State Boundary Lines, United States Map
 
-### Community 26 - "Community 26"
+### Community 27 - "Community 27"
 Cohesion: 0.33
 Nodes (6): ContactCard Component, Discovered Contact Review, Discovered Contact Edit Form, DiscoveryPlanningPanel Component, Discovery Planning Payload, Agent Scheduler Planning Endpoint
 
@@ -256,73 +269,73 @@ Nodes (6): ContactCard Component, Discovered Contact Review, Discovered Contact 
 Cohesion: 0.4
 Nodes (5): Full Validation Loop Rationale, Phase 6 Handoff Hardening, Handoff Readiness Rationale, Phase 6.6 Performance Pass, Phase 6 Recommended Sequencing Rationale
 
-### Community 29 - "Community 29"
-Cohesion: 0.5
-Nodes (4): Collection Member Exclusion, Gemini Candidate Reranking, Suggest People Handler, Suggest People Semantic Retrieval
-
-### Community 31 - "Community 31"
+### Community 30 - "Community 30"
 Cohesion: 0.67
 Nodes (4): Describe Client Error, Structured Edge Function Error Model, Extract Edge Function Error, Structured Error Banner
 
-### Community 32 - "Community 32"
+### Community 31 - "Community 31"
 Cohesion: 0.5
 Nodes (4): Concept: Discovery Frontier Crawler, Concept: Domain Yield Learning, Concept: Evidence-Driven System Design, Rationale: Store Evidence Not Just Final Fields
 
-### Community 33 - "Community 33"
+### Community 32 - "Community 32"
 Cohesion: 0.67
 Nodes (4): Edge Functions Self-Authenticate, Supabase Auth Gates the App, RLS Summary, staff_users Table
 
-### Community 34 - "Community 34"
+### Community 33 - "Community 33"
 Cohesion: 0.67
 Nodes (3): AI Agent Gemini Structured Call, AI Agent Structured Task Handler, AI Agent Task Registry
 
-### Community 36 - "Community 36"
+### Community 35 - "Community 35"
 Cohesion: 0.67
 Nodes (3): Auth Provider, Authentication Route Guards, Approved Staff User Activation
 
-### Community 37 - "Community 37"
+### Community 36 - "Community 36"
 Cohesion: 0.67
 Nodes (3): Derived Location Summary, Derived Label Normalization, Derived Label Suggestion Model
 
-### Community 38 - "Community 38"
+### Community 37 - "Community 37"
 Cohesion: 1.0
 Nodes (3): Normalize Verification Suggestions, Verification Risk Guidance, Verification Suggestion Model
 
-### Community 39 - "Community 39"
+### Community 38 - "Community 38"
 Cohesion: 0.67
 Nodes (3): Concept: Search Query Routing, Concept: Reciprocal-Rank Fusion Search, _shared/searchRouting.ts
 
-### Community 40 - "Community 40"
+### Community 39 - "Community 39"
 Cohesion: 1.0
 Nodes (3): Geographic Visualization Asset, Leaflet Map Component, USA Blank State Map (SVG-style)
 
-### Community 42 - "Community 42"
+### Community 41 - "Community 41"
 Cohesion: 1.0
 Nodes (2): Discover Contacts Canonical Handler, Search Contacts Compatibility Handler
 
-### Community 44 - "Community 44"
+### Community 43 - "Community 43"
 Cohesion: 1.0
 Nodes (2): UnifiedSearchBar Component, People And Organization Typeahead Search
 
-### Community 46 - "Community 46"
+### Community 45 - "Community 45"
 Cohesion: 1.0
 Nodes (2): ErrorBoundary Component, Copyable Error Report
 
-### Community 47 - "Community 47"
+### Community 46 - "Community 46"
 Cohesion: 1.0
 Nodes (2): AccessManagementPanel Component, Staff Access Management
 
-### Community 48 - "Community 48"
+### Community 47 - "Community 47"
 Cohesion: 1.0
 Nodes (2): Completeness Filters, DataQualityChart Component
 
-### Community 49 - "Community 49"
+### Community 48 - "Community 48"
 Cohesion: 1.0
 Nodes (2): Availability Filters, AvailabilityOverview Component
 
-### Community 50 - "Community 50"
+### Community 49 - "Community 49"
 Cohesion: 1.0
 Nodes (2): Location Only Query Detection, Query Filter Parser
+
+### Community 50 - "Community 50"
+Cohesion: 1.0
+Nodes (2): Collection Detail Routing, Collections List
 
 ### Community 51 - "Community 51"
 Cohesion: 1.0
@@ -352,175 +365,207 @@ Nodes (1): Ops Metrics Panel
 Cohesion: 1.0
 Nodes (1): Route State Back Navigation
 
+### Community 60 - "Community 60"
+Cohesion: 1.0
+Nodes (1): Dashboard Search Cache Scope
+
+### Community 61 - "Community 61"
+Cohesion: 1.0
+Nodes (1): Organization US Location Labels
+
+### Community 62 - "Community 62"
+Cohesion: 1.0
+Nodes (1): Natural Language Filter Parser Tests
+
 ### Community 64 - "Community 64"
 Cohesion: 1.0
-Nodes (1): Edge Function: discover-contacts
-
-### Community 65 - "Community 65"
-Cohesion: 1.0
-Nodes (1): src/components/Navigation.tsx
+Nodes (1): US Network Migration Schema Tests
 
 ### Community 66 - "Community 66"
 Cohesion: 1.0
-Nodes (1): src/components/admin/AccessManagementPanel.tsx
+Nodes (1): Connected Abroad Import Contract Tests
 
 ### Community 67 - "Community 67"
 Cohesion: 1.0
-Nodes (1): src/components/admin/DerivedLabelsPanel.tsx
-
-### Community 68 - "Community 68"
-Cohesion: 1.0
-Nodes (1): src/components/admin/ContactCard.tsx
-
-### Community 69 - "Community 69"
-Cohesion: 1.0
-Nodes (1): src/components/admin/OpsMetricsPanel.tsx
+Nodes (1): People Export Formatting Tests
 
 ### Community 70 - "Community 70"
 Cohesion: 1.0
-Nodes (1): src/components/admin/DiscoveryPlanningPanel.tsx
+Nodes (1): Staff Profile Form
 
 ### Community 71 - "Community 71"
 Cohesion: 1.0
-Nodes (1): src/lib/auth.tsx (AuthProvider)
-
-### Community 72 - "Community 72"
-Cohesion: 1.0
-Nodes (1): src/lib/dashboardSession.ts
+Nodes (1): Staff Auth Callback Redirect
 
 ### Community 73 - "Community 73"
 Cohesion: 1.0
-Nodes (1): src/pages/Login.tsx
+Nodes (1): Edge Function: discover-contacts
 
 ### Community 74 - "Community 74"
 Cohesion: 1.0
-Nodes (1): src/pages/Account.tsx
+Nodes (1): src/components/Navigation.tsx
 
 ### Community 75 - "Community 75"
 Cohesion: 1.0
-Nodes (1): src/pages/AuthCallback.tsx
+Nodes (1): src/components/admin/AccessManagementPanel.tsx
 
 ### Community 76 - "Community 76"
 Cohesion: 1.0
-Nodes (1): Edge Function: search-contacts (legacy alias)
+Nodes (1): src/components/admin/DerivedLabelsPanel.tsx
 
 ### Community 77 - "Community 77"
 Cohesion: 1.0
-Nodes (1): _shared/aiContracts.ts (Shared Prompts/Schemas)
+Nodes (1): src/components/admin/ContactCard.tsx
 
 ### Community 78 - "Community 78"
 Cohesion: 1.0
-Nodes (1): _shared/database.types.ts (Deno Schema Shim)
+Nodes (1): src/components/admin/OpsMetricsPanel.tsx
 
 ### Community 79 - "Community 79"
 Cohesion: 1.0
-Nodes (1): src/lib/appRouting.ts
+Nodes (1): src/components/admin/DiscoveryPlanningPanel.tsx
 
 ### Community 80 - "Community 80"
 Cohesion: 1.0
-Nodes (1): src/lib/filterParser.ts
+Nodes (1): src/lib/auth.tsx (AuthProvider)
 
 ### Community 81 - "Community 81"
 Cohesion: 1.0
-Nodes (1): src/pages/Dashboard.tsx
+Nodes (1): src/lib/dashboardSession.ts
 
 ### Community 82 - "Community 82"
 Cohesion: 1.0
-Nodes (1): index.html (App Entry Point)
+Nodes (1): src/pages/Login.tsx
 
 ### Community 83 - "Community 83"
 Cohesion: 1.0
-Nodes (1): AGENTS.md (Graphify Rules)
+Nodes (1): src/pages/Account.tsx
 
 ### Community 84 - "Community 84"
 Cohesion: 1.0
-Nodes (1): AI Strategy Document
+Nodes (1): src/pages/AuthCallback.tsx
 
 ### Community 85 - "Community 85"
 Cohesion: 1.0
-Nodes (1): Concept: Entity-Pivot Discovery
+Nodes (1): Edge Function: search-contacts (legacy alias)
 
 ### Community 86 - "Community 86"
 Cohesion: 1.0
-Nodes (1): Concept: Geographic Gap-Seeking Coverage
+Nodes (1): _shared/aiContracts.ts (Shared Prompts/Schemas)
 
 ### Community 87 - "Community 87"
 Cohesion: 1.0
-Nodes (1): Concept: Bio-Chunk Vectors
+Nodes (1): _shared/database.types.ts (Deno Schema Shim)
 
 ### Community 88 - "Community 88"
 Cohesion: 1.0
-Nodes (1): Rationale: Conservative Connection Graph Edges
+Nodes (1): src/lib/appRouting.ts
 
 ### Community 89 - "Community 89"
 Cohesion: 1.0
-Nodes (1): Dashboard Route /
+Nodes (1): src/lib/filterParser.ts
 
 ### Community 90 - "Community 90"
 Cohesion: 1.0
-Nodes (1): Person Profile Route /people/:id
+Nodes (1): src/pages/Dashboard.tsx
 
 ### Community 91 - "Community 91"
 Cohesion: 1.0
-Nodes (1): Organization Profile Route /organizations/:id
+Nodes (1): index.html (App Entry Point)
 
 ### Community 92 - "Community 92"
 Cohesion: 1.0
-Nodes (1): Collections Route /collections
+Nodes (1): AGENTS.md (Graphify Rules)
 
 ### Community 93 - "Community 93"
 Cohesion: 1.0
-Nodes (1): Admin Route /admin
+Nodes (1): AI Strategy Document
 
 ### Community 94 - "Community 94"
 Cohesion: 1.0
-Nodes (1): Add Contact Route /contacts/new
+Nodes (1): Concept: Entity-Pivot Discovery
 
 ### Community 95 - "Community 95"
 Cohesion: 1.0
-Nodes (1): Login Route /login
+Nodes (1): Concept: Geographic Gap-Seeking Coverage
 
 ### Community 96 - "Community 96"
 Cohesion: 1.0
-Nodes (1): Auth Callback Route /auth/callback
+Nodes (1): Concept: Bio-Chunk Vectors
 
 ### Community 97 - "Community 97"
 Cohesion: 1.0
-Nodes (1): Account Route /account
+Nodes (1): Rationale: Conservative Connection Graph Edges
 
 ### Community 98 - "Community 98"
 Cohesion: 1.0
-Nodes (1): GEMINI_API_KEY Secret
+Nodes (1): Dashboard Route /
 
 ### Community 99 - "Community 99"
 Cohesion: 1.0
-Nodes (1): TAVILY_API_KEY Secret
+Nodes (1): Person Profile Route /people/:id
 
 ### Community 100 - "Community 100"
 Cohesion: 1.0
-Nodes (1): BRAVE_API_KEY Secret
+Nodes (1): Organization Profile Route /organizations/:id
 
 ### Community 101 - "Community 101"
 Cohesion: 1.0
-Nodes (1): APIFY_TOKEN Secret
+Nodes (1): Collections Route /collections
 
 ### Community 102 - "Community 102"
 Cohesion: 1.0
-Nodes (1): SUPABASE_SERVICE_ROLE_KEY Secret
+Nodes (1): Admin Route /admin
 
 ### Community 103 - "Community 103"
 Cohesion: 1.0
-Nodes (1): Gemini Model Override Env Vars
+Nodes (1): Add Contact Route /contacts/new
 
 ### Community 104 - "Community 104"
 Cohesion: 1.0
-Nodes (1): VITE_SUPABASE_URL Frontend Env
+Nodes (1): Login Route /login
 
 ### Community 105 - "Community 105"
 Cohesion: 1.0
-Nodes (1): VITE_SUPABASE_ANON_KEY Frontend Env
+Nodes (1): Auth Callback Route /auth/callback
 
 ### Community 106 - "Community 106"
+Cohesion: 1.0
+Nodes (1): Account Route /account
+
+### Community 107 - "Community 107"
+Cohesion: 1.0
+Nodes (1): GEMINI_API_KEY Secret
+
+### Community 108 - "Community 108"
+Cohesion: 1.0
+Nodes (1): TAVILY_API_KEY Secret
+
+### Community 109 - "Community 109"
+Cohesion: 1.0
+Nodes (1): BRAVE_API_KEY Secret
+
+### Community 110 - "Community 110"
+Cohesion: 1.0
+Nodes (1): APIFY_TOKEN Secret
+
+### Community 111 - "Community 111"
+Cohesion: 1.0
+Nodes (1): SUPABASE_SERVICE_ROLE_KEY Secret
+
+### Community 112 - "Community 112"
+Cohesion: 1.0
+Nodes (1): Gemini Model Override Env Vars
+
+### Community 113 - "Community 113"
+Cohesion: 1.0
+Nodes (1): VITE_SUPABASE_URL Frontend Env
+
+### Community 114 - "Community 114"
+Cohesion: 1.0
+Nodes (1): VITE_SUPABASE_ANON_KEY Frontend Env
+
+### Community 115 - "Community 115"
 Cohesion: 1.0
 Nodes (1): Phase 0 Benchmarks README
 
@@ -533,19 +578,21 @@ Nodes (1): Phase 0 Benchmarks README
 ## Knowledge Gaps
 - **195 isolated node(s):** `US Cities Locations Migration Generator`, `ESLint TypeScript React Configuration`, `Vitest jsdom Test Configuration`, `PostCSS Tailwind Autoprefixer Configuration`, `Load Verification Person` (+190 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 42`** (2 nodes): `Discover Contacts Canonical Handler`, `Search Contacts Compatibility Handler`
+- **Thin community `Community 41`** (2 nodes): `Discover Contacts Canonical Handler`, `Search Contacts Compatibility Handler`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 44`** (2 nodes): `UnifiedSearchBar Component`, `People And Organization Typeahead Search`
+- **Thin community `Community 43`** (2 nodes): `UnifiedSearchBar Component`, `People And Organization Typeahead Search`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 46`** (2 nodes): `ErrorBoundary Component`, `Copyable Error Report`
+- **Thin community `Community 45`** (2 nodes): `ErrorBoundary Component`, `Copyable Error Report`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 47`** (2 nodes): `AccessManagementPanel Component`, `Staff Access Management`
+- **Thin community `Community 46`** (2 nodes): `AccessManagementPanel Component`, `Staff Access Management`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 48`** (2 nodes): `Completeness Filters`, `DataQualityChart Component`
+- **Thin community `Community 47`** (2 nodes): `Completeness Filters`, `DataQualityChart Component`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 49`** (2 nodes): `Availability Filters`, `AvailabilityOverview Component`
+- **Thin community `Community 48`** (2 nodes): `Availability Filters`, `AvailabilityOverview Component`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 50`** (2 nodes): `Location Only Query Detection`, `Query Filter Parser`
+- **Thin community `Community 49`** (2 nodes): `Location Only Query Detection`, `Query Filter Parser`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 50`** (2 nodes): `Collection Detail Routing`, `Collections List`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 51`** (2 nodes): `Concept: Verification Field Risk Routing`, `_shared/verification.ts (Shared Verification Core)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -561,91 +608,107 @@ Nodes (1): Phase 0 Benchmarks README
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 59`** (1 nodes): `Route State Back Navigation`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 64`** (1 nodes): `Edge Function: discover-contacts`
+- **Thin community `Community 60`** (1 nodes): `Dashboard Search Cache Scope`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 65`** (1 nodes): `src/components/Navigation.tsx`
+- **Thin community `Community 61`** (1 nodes): `Organization US Location Labels`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 66`** (1 nodes): `src/components/admin/AccessManagementPanel.tsx`
+- **Thin community `Community 62`** (1 nodes): `Natural Language Filter Parser Tests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 67`** (1 nodes): `src/components/admin/DerivedLabelsPanel.tsx`
+- **Thin community `Community 64`** (1 nodes): `US Network Migration Schema Tests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 68`** (1 nodes): `src/components/admin/ContactCard.tsx`
+- **Thin community `Community 66`** (1 nodes): `Connected Abroad Import Contract Tests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 69`** (1 nodes): `src/components/admin/OpsMetricsPanel.tsx`
+- **Thin community `Community 67`** (1 nodes): `People Export Formatting Tests`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `src/components/admin/DiscoveryPlanningPanel.tsx`
+- **Thin community `Community 70`** (1 nodes): `Staff Profile Form`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 71`** (1 nodes): `src/lib/auth.tsx (AuthProvider)`
+- **Thin community `Community 71`** (1 nodes): `Staff Auth Callback Redirect`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 72`** (1 nodes): `src/lib/dashboardSession.ts`
+- **Thin community `Community 73`** (1 nodes): `Edge Function: discover-contacts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 73`** (1 nodes): `src/pages/Login.tsx`
+- **Thin community `Community 74`** (1 nodes): `src/components/Navigation.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 74`** (1 nodes): `src/pages/Account.tsx`
+- **Thin community `Community 75`** (1 nodes): `src/components/admin/AccessManagementPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 75`** (1 nodes): `src/pages/AuthCallback.tsx`
+- **Thin community `Community 76`** (1 nodes): `src/components/admin/DerivedLabelsPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 76`** (1 nodes): `Edge Function: search-contacts (legacy alias)`
+- **Thin community `Community 77`** (1 nodes): `src/components/admin/ContactCard.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 77`** (1 nodes): `_shared/aiContracts.ts (Shared Prompts/Schemas)`
+- **Thin community `Community 78`** (1 nodes): `src/components/admin/OpsMetricsPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 78`** (1 nodes): `_shared/database.types.ts (Deno Schema Shim)`
+- **Thin community `Community 79`** (1 nodes): `src/components/admin/DiscoveryPlanningPanel.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 79`** (1 nodes): `src/lib/appRouting.ts`
+- **Thin community `Community 80`** (1 nodes): `src/lib/auth.tsx (AuthProvider)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 80`** (1 nodes): `src/lib/filterParser.ts`
+- **Thin community `Community 81`** (1 nodes): `src/lib/dashboardSession.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 81`** (1 nodes): `src/pages/Dashboard.tsx`
+- **Thin community `Community 82`** (1 nodes): `src/pages/Login.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 82`** (1 nodes): `index.html (App Entry Point)`
+- **Thin community `Community 83`** (1 nodes): `src/pages/Account.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `AGENTS.md (Graphify Rules)`
+- **Thin community `Community 84`** (1 nodes): `src/pages/AuthCallback.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `AI Strategy Document`
+- **Thin community `Community 85`** (1 nodes): `Edge Function: search-contacts (legacy alias)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 85`** (1 nodes): `Concept: Entity-Pivot Discovery`
+- **Thin community `Community 86`** (1 nodes): `_shared/aiContracts.ts (Shared Prompts/Schemas)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `Concept: Geographic Gap-Seeking Coverage`
+- **Thin community `Community 87`** (1 nodes): `_shared/database.types.ts (Deno Schema Shim)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 87`** (1 nodes): `Concept: Bio-Chunk Vectors`
+- **Thin community `Community 88`** (1 nodes): `src/lib/appRouting.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 88`** (1 nodes): `Rationale: Conservative Connection Graph Edges`
+- **Thin community `Community 89`** (1 nodes): `src/lib/filterParser.ts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `Dashboard Route /`
+- **Thin community `Community 90`** (1 nodes): `src/pages/Dashboard.tsx`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 90`** (1 nodes): `Person Profile Route /people/:id`
+- **Thin community `Community 91`** (1 nodes): `index.html (App Entry Point)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 91`** (1 nodes): `Organization Profile Route /organizations/:id`
+- **Thin community `Community 92`** (1 nodes): `AGENTS.md (Graphify Rules)`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 92`** (1 nodes): `Collections Route /collections`
+- **Thin community `Community 93`** (1 nodes): `AI Strategy Document`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 93`** (1 nodes): `Admin Route /admin`
+- **Thin community `Community 94`** (1 nodes): `Concept: Entity-Pivot Discovery`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 94`** (1 nodes): `Add Contact Route /contacts/new`
+- **Thin community `Community 95`** (1 nodes): `Concept: Geographic Gap-Seeking Coverage`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 95`** (1 nodes): `Login Route /login`
+- **Thin community `Community 96`** (1 nodes): `Concept: Bio-Chunk Vectors`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 96`** (1 nodes): `Auth Callback Route /auth/callback`
+- **Thin community `Community 97`** (1 nodes): `Rationale: Conservative Connection Graph Edges`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 97`** (1 nodes): `Account Route /account`
+- **Thin community `Community 98`** (1 nodes): `Dashboard Route /`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 98`** (1 nodes): `GEMINI_API_KEY Secret`
+- **Thin community `Community 99`** (1 nodes): `Person Profile Route /people/:id`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 99`** (1 nodes): `TAVILY_API_KEY Secret`
+- **Thin community `Community 100`** (1 nodes): `Organization Profile Route /organizations/:id`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 100`** (1 nodes): `BRAVE_API_KEY Secret`
+- **Thin community `Community 101`** (1 nodes): `Collections Route /collections`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 101`** (1 nodes): `APIFY_TOKEN Secret`
+- **Thin community `Community 102`** (1 nodes): `Admin Route /admin`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 102`** (1 nodes): `SUPABASE_SERVICE_ROLE_KEY Secret`
+- **Thin community `Community 103`** (1 nodes): `Add Contact Route /contacts/new`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 103`** (1 nodes): `Gemini Model Override Env Vars`
+- **Thin community `Community 104`** (1 nodes): `Login Route /login`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 104`** (1 nodes): `VITE_SUPABASE_URL Frontend Env`
+- **Thin community `Community 105`** (1 nodes): `Auth Callback Route /auth/callback`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 105`** (1 nodes): `VITE_SUPABASE_ANON_KEY Frontend Env`
+- **Thin community `Community 106`** (1 nodes): `Account Route /account`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 106`** (1 nodes): `Phase 0 Benchmarks README`
+- **Thin community `Community 107`** (1 nodes): `GEMINI_API_KEY Secret`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 108`** (1 nodes): `TAVILY_API_KEY Secret`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 109`** (1 nodes): `BRAVE_API_KEY Secret`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 110`** (1 nodes): `APIFY_TOKEN Secret`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 111`** (1 nodes): `SUPABASE_SERVICE_ROLE_KEY Secret`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 112`** (1 nodes): `Gemini Model Override Env Vars`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 113`** (1 nodes): `VITE_SUPABASE_URL Frontend Env`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 114`** (1 nodes): `VITE_SUPABASE_ANON_KEY Frontend Env`
+  Too small to be a meaningful cluster - may be noise or needs more connections extracted.
+- **Thin community `Community 115`** (1 nodes): `Phase 0 Benchmarks README`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
@@ -655,13 +718,13 @@ _Questions this graph is uniquely positioned to answer:_
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
 - **What is the exact relationship between `Supabase Auth Gates the App` and `staff_users Table`?**
   _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **Why does `Five Product Services` connect `Community 0` to `Community 15`?**
-  _High betweenness centrality (0.005) - this node is a cross-community bridge._
-- **Why does `people Table` connect `Community 2` to `Community 5`?**
-  _High betweenness centrality (0.004) - this node is a cross-community bridge._
-- **Why does `Active Source Of Truth Docs` connect `Community 15` to `Community 0`?**
+- **Why does `personNamePartsForInsert()` connect `Community 10` to `Community 15`?**
+  _High betweenness centrality (0.003) - this node is a cross-community bridge._
+- **Why does `fuzzyMatch()` connect `Community 7` to `Community 10`?**
   _High betweenness centrality (0.003) - this node is a cross-community bridge._
 - **What connects `US Cities Locations Migration Generator`, `ESLint TypeScript React Configuration`, `Vitest jsdom Test Configuration` to the rest of the system?**
   _195 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.05 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.04 - nodes in this community are weakly interconnected._
+- **Should `Community 1` be split into smaller, more focused modules?**
+  _Cohesion score 0.08 - nodes in this community are weakly interconnected._

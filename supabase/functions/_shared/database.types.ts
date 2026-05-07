@@ -191,6 +191,23 @@ interface OrganizationUsLocationRow extends RowRecord {
   updated_at: string | null;
 }
 
+interface CollectionRow extends RowRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface CollectionMemberRow extends RowRecord {
+  id: string;
+  collection_id: string;
+  person_id: string | null;
+  organization_id: string | null;
+  notes: string | null;
+  added_at: string | null;
+}
+
 interface ProfileSuggestionRow extends RowRecord {
   id: string;
   person_id: string;
@@ -788,6 +805,8 @@ export type Database = {
       person_flemish_connections: Table<PersonFlemishConnectionRow>;
       person_us_connections: Table<PersonUsConnectionRow>;
       organization_us_locations: Table<OrganizationUsLocationRow>;
+      collections: Table<CollectionRow>;
+      collection_members: Table<CollectionMemberRow>;
       profile_suggestions: Table<ProfileSuggestionRow>;
       search_clicks: Table<SearchClickRow>;
       embedding_jobs: Table<EmbeddingJobRow>;
