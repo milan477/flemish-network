@@ -18,6 +18,7 @@ import {
   ArrowLeft,
   RefreshCw,
   AlertTriangle,
+  Building2,
 } from 'lucide-react';
 import {
   supabase,
@@ -25,6 +26,9 @@ import {
   personNamePartsForInsert,
   displayName,
   type Person,
+  type Organization,
+  type OrganizationUsLocationRole,
+  type OrganizationUsNetworkStatus,
   type Sector,
 } from '../../lib/supabase';
 import {
@@ -91,9 +95,67 @@ interface DiscoveryEvidence {
   created_at: string;
 }
 
+interface DiscoveredOrganization {
+  id: string;
+  name: string;
+  website_url: string | null;
+  description: string | null;
+  candidate_key: string | null;
+  source: string;
+  suggested_us_network_status: OrganizationUsNetworkStatus | null;
+  us_locations: SuggestedOrganizationLocation[] | null;
+  sectors: string[] | null;
+  flemish_belgian_relevance: string | null;
+  source_urls: string[] | null;
+  confidence: number | null;
+  status: string;
+  review_outcome: string | null;
+  reviewed_at: string | null;
+  approved_organization_id: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  last_evidence_at: string | null;
+  evidence_count: number | null;
+}
+
+interface SuggestedOrganizationLocation {
+  city?: string | null;
+  state?: string | null;
+  role?: OrganizationUsLocationRole | string | null;
+  label?: string | null;
+  description?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  confidence?: number | null;
+}
+
+interface DiscoveryOrganizationEvidence {
+  discovered_organization_id: string;
+  page_url: string;
+  page_title: string | null;
+  page_type: string | null;
+  source_type: string | null;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  raw_relevance_text: string | null;
+  raw_location_text: string | null;
+  raw_sector_text: string | null;
+  normalized_location_city: string | null;
+  normalized_location_state: string | null;
+  normalized_location_country: string | null;
+  confidence: number | null;
+  created_at: string;
+}
+
 interface DuplicateMatch {
   contactId: string;
   existingPerson: Person;
+  reason: string;
+}
+
+interface OrganizationDuplicateMatch {
+  organizationId: string;
+  existingOrganization: Organization;
   reason: string;
 }
 
@@ -169,6 +231,82 @@ async function checkDuplicates(
           contactId: contact.id,
           existingPerson: person,
           reason: `Name match: ${person.name || pFullName}`,
+        });
+        break;
+      }
+    }
+  }
+
+  return matches;
+}
+
+function normalizeWebsite(value: string | null | undefined): string {
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '');
+}
+
+function normalizeName(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function organizationStatusLabel(status: OrganizationUsNetworkStatus | null | undefined): string {
+  switch (status) {
+    case 'belgian_organization_with_us_presence':
+      return 'Belgian org with US presence';
+    case 'us_organization_connected_to_flanders':
+      return 'US org connected to Flanders';
+    case 'institutional_connector':
+      return 'Institutional connector';
+    case 'us_based_organization':
+      return 'US-based organization';
+    default:
+      return 'Needs scope review';
+  }
+}
+
+function organizationSourceLabel(source: string): string {
+  if (source === 'manual') return 'Manual';
+  if (source === 'import') return 'Import';
+  if (source === 'agent_discovery' || source === 'frontier_page') return 'Discovery';
+  return source.replace(/_/g, ' ');
+}
+
+async function checkOrganizationDuplicates(
+  organizations: DiscoveredOrganization[]
+): Promise<OrganizationDuplicateMatch[]> {
+  const { data: approvedOrganizations } = await supabase
+    .from('organizations')
+    .select('*, organization_us_locations(*, locations(*))');
+  if (!approvedOrganizations || approvedOrganizations.length === 0) return [];
+
+  const matches: OrganizationDuplicateMatch[] = [];
+
+  for (const candidate of organizations) {
+    const candidateWebsite = normalizeWebsite(candidate.website_url);
+    const candidateName = normalizeName(candidate.name);
+
+    for (const organization of approvedOrganizations as Organization[]) {
+      const approvedWebsite = normalizeWebsite(organization.website_url);
+      const approvedName = normalizeName(organization.name);
+
+      if (candidateWebsite && approvedWebsite && candidateWebsite === approvedWebsite) {
+        matches.push({
+          organizationId: candidate.id,
+          existingOrganization: organization,
+          reason: `Website match: ${organization.website_url}`,
+        });
+        break;
+      }
+
+      if (candidateName && candidateName === approvedName) {
+        matches.push({
+          organizationId: candidate.id,
+          existingOrganization: organization,
+          reason: `Name match: ${organization.name}`,
         });
         break;
       }
@@ -302,10 +440,120 @@ async function approveContact(
           ? 'approved_us_based'
           : 'approved_us_connected_abroad',
       approved_person_id: person.id,
+      reviewed_at: new Date().toISOString(),
     })
     .eq('id', contact.id);
 
   kickEmbeddingWorker();
+  return !reviewError;
+}
+
+function normalizeOrganizationLocations(
+  locations: SuggestedOrganizationLocation[] | null | undefined
+): SuggestedOrganizationLocation[] {
+  if (!Array.isArray(locations)) return [];
+  return locations.filter((location) => location.city && location.state);
+}
+
+function sectorMatches(candidateSectors: string[] | null | undefined, sectors: Sector[]): Sector[] {
+  const wanted = new Set((candidateSectors || []).map((name) => normalizeName(name)));
+  if (wanted.size === 0) return [];
+  return sectors.filter((sector) => wanted.has(normalizeName(sector.name)));
+}
+
+async function writeOrganizationSectors(
+  organizationId: string,
+  candidateSectors: string[] | null | undefined,
+  sectors: Sector[]
+) {
+  const matched = sectorMatches(candidateSectors, sectors);
+  if (matched.length === 0) return;
+
+  await supabase.from('organization_sectors').upsert(
+    matched.map((sector) => ({
+      organization_id: organizationId,
+      sector_id: sector.id,
+    })),
+    {
+      onConflict: 'organization_id,sector_id',
+      ignoreDuplicates: true,
+    }
+  );
+}
+
+async function writeOrganizationLocations(
+  organizationId: string,
+  locations: SuggestedOrganizationLocation[] | null | undefined
+) {
+  const normalizedLocations = normalizeOrganizationLocations(locations);
+
+  for (const [index, location] of normalizedLocations.entries()) {
+    const locationId = await resolveOrCreateLocationId(location.city || null, location.state || null, {
+      createIfMissing: true,
+    });
+    if (!locationId) continue;
+
+    await supabase.from('organization_us_locations').insert({
+        organization_id: organizationId,
+        location_id: locationId,
+        location_role: location.role || 'other',
+        label: location.label || (index === 0 ? 'Primary US location' : null),
+        description: location.description || null,
+        source_url: location.source_url || null,
+        evidence_excerpt: location.evidence_excerpt || null,
+        confidence: location.confidence ?? null,
+        is_primary: index === 0,
+      }
+    );
+  }
+}
+
+async function approveOrganization(
+  organization: DiscoveredOrganization,
+  sectors: Sector[],
+  networkStatus: OrganizationUsNetworkStatus
+): Promise<boolean> {
+  const locations = normalizeOrganizationLocations(organization.us_locations);
+  const primaryLocation = locations[0];
+  const primaryLocationId = primaryLocation
+    ? await resolveOrCreateLocationId(primaryLocation.city || null, primaryLocation.state || null, {
+        createIfMissing: true,
+      })
+    : null;
+
+  const { data: approvedOrganization, error } = await supabase
+    .from('organizations')
+    .insert({
+      name: organization.name,
+      type: 'Company',
+      description: organization.description || null,
+      website_url: organization.website_url || null,
+      location_id: primaryLocationId,
+      us_network_status: networkStatus,
+      flemish_link: organization.flemish_belgian_relevance || null,
+    })
+    .select('id')
+    .maybeSingle();
+
+  if (error || !approvedOrganization) return false;
+
+  await writeOrganizationSectors(approvedOrganization.id, organization.sectors, sectors);
+  await writeOrganizationLocations(approvedOrganization.id, organization.us_locations);
+
+  const { error: reviewError } = await supabase
+    .from('discovered_organizations')
+    .update({
+      status: 'approved',
+      review_outcome: 'approved_new',
+      reviewed_at: new Date().toISOString(),
+      approved_organization_id: approvedOrganization.id,
+    })
+    .eq('id', organization.id);
+
+  kickEmbeddingWorker({
+    entityType: 'organization',
+    organizationIds: [approvedOrganization.id],
+  });
   return !reviewError;
 }
 
@@ -415,10 +663,63 @@ async function mergeIntoExisting(
       status: 'approved',
       review_outcome: 'approved_merge',
       approved_person_id: existingPerson.id,
+      reviewed_at: new Date().toISOString(),
     })
     .eq('id', contact.id);
 
   kickEmbeddingWorker();
+  return !reviewError;
+}
+
+async function mergeOrganizationIntoExisting(
+  organization: DiscoveredOrganization,
+  existingOrganization: Organization,
+  sectors: Sector[]
+): Promise<boolean> {
+  const updates: Record<string, unknown> = {};
+
+  if (organization.description && organization.description !== existingOrganization.description) {
+    updates.description = existingOrganization.description
+      ? `${existingOrganization.description}\n\n${organization.description}`
+      : organization.description;
+  }
+  if (organization.website_url && !existingOrganization.website_url) {
+    updates.website_url = organization.website_url;
+  }
+  if (organization.suggested_us_network_status) {
+    updates.us_network_status = organization.suggested_us_network_status;
+  }
+  if (organization.flemish_belgian_relevance) {
+    updates.flemish_link = existingOrganization.flemish_link
+      ? `${existingOrganization.flemish_link}\n\n${organization.flemish_belgian_relevance}`
+      : organization.flemish_belgian_relevance;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase
+      .from('organizations')
+      .update(updates)
+      .eq('id', existingOrganization.id);
+    if (error) return false;
+  }
+
+  await writeOrganizationSectors(existingOrganization.id, organization.sectors, sectors);
+  await writeOrganizationLocations(existingOrganization.id, organization.us_locations);
+
+  const { error: reviewError } = await supabase
+    .from('discovered_organizations')
+    .update({
+      status: 'approved',
+      review_outcome: 'approved_merge',
+      reviewed_at: new Date().toISOString(),
+      approved_organization_id: existingOrganization.id,
+    })
+    .eq('id', organization.id);
+
+  kickEmbeddingWorker({
+    entityType: 'organization',
+    organizationIds: [existingOrganization.id],
+  });
   return !reviewError;
 }
 
@@ -704,7 +1005,9 @@ function MergeCompare({
 // ── Main Panel ─────────────────────────────────────────────────────
 
 export default function DiscoveredContactsPanel() {
+  const [activeQueue, setActiveQueue] = useState<'people' | 'organizations'>('people');
   const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
+  const [organizations, setOrganizations] = useState<DiscoveredOrganization[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -720,19 +1023,30 @@ export default function DiscoveredContactsPanel() {
   const [evidenceByContact, setEvidenceByContact] = useState<
     Map<string, DiscoveryEvidence[]>
   >(new Map());
+  const [evidenceByOrganization, setEvidenceByOrganization] = useState<
+    Map<string, DiscoveryOrganizationEvidence[]>
+  >(new Map());
   const [labelsByContact, setLabelsByContact] = useState<
     Map<string, DerivedLabelSuggestion[]>
   >(new Map());
   const [checkingDupes, setCheckingDupes] = useState(false);
+  const [organizationDuplicates, setOrganizationDuplicates] = useState<
+    Map<string, OrganizationDuplicateMatch>
+  >(new Map());
   const [mergeTarget, setMergeTarget] = useState<{
     contact: DiscoveredContact;
     match: DuplicateMatch;
   } | null>(null);
 
   const loadData = useCallback(async () => {
-    const [contactsRes, sectorsRes] = await Promise.all([
+    const [contactsRes, organizationsRes, sectorsRes] = await Promise.all([
       supabase
         .from('discovered_contacts')
+        .select('*')
+        .eq('status', 'pending')
+        .order('last_seen_at', { ascending: false }),
+      supabase
+        .from('discovered_organizations')
         .select('*')
         .eq('status', 'pending')
         .order('last_seen_at', { ascending: false }),
@@ -740,9 +1054,11 @@ export default function DiscoveredContactsPanel() {
     ]);
 
     const loadedContacts = (contactsRes.data || []) as DiscoveredContact[];
+    const loadedOrganizations = (organizationsRes.data || []) as DiscoveredOrganization[];
     const loadedSectors = (sectorsRes.data || []) as Sector[];
 
     setContacts(loadedContacts);
+    setOrganizations(loadedOrganizations);
     setSectors(loadedSectors);
     setLoading(false);
 
@@ -786,16 +1102,50 @@ export default function DiscoveredContactsPanel() {
       setLabelsByContact(new Map());
     }
 
+    if (loadedOrganizations.length > 0) {
+      const organizationIds = loadedOrganizations.map((organization) => organization.id);
+      const { data: organizationEvidence } = await supabase
+        .from('discovered_organization_evidence')
+        .select(
+          'discovered_organization_id, page_url, page_title, page_type, source_type, source_url, evidence_excerpt, raw_relevance_text, raw_location_text, raw_sector_text, normalized_location_city, normalized_location_state, normalized_location_country, confidence, created_at'
+        )
+        .in('discovered_organization_id', organizationIds)
+        .order('created_at', { ascending: false });
+
+      const grouped = new Map<string, DiscoveryOrganizationEvidence[]>();
+      (((organizationEvidence || []) as DiscoveryOrganizationEvidence[]) || []).forEach((row) => {
+        const existing = grouped.get(row.discovered_organization_id) || [];
+        existing.push(row);
+        grouped.set(row.discovered_organization_id, existing);
+      });
+      setEvidenceByOrganization(grouped);
+    } else {
+      setEvidenceByOrganization(new Map());
+    }
+
     // Check for duplicates
-    if (loadedContacts.length > 0) {
+    if (loadedContacts.length > 0 || loadedOrganizations.length > 0) {
       setCheckingDupes(true);
-      const matches = await checkDuplicates(loadedContacts);
+      const [matches, organizationMatches] = await Promise.all([
+        loadedContacts.length > 0 ? checkDuplicates(loadedContacts) : Promise.resolve([]),
+        loadedOrganizations.length > 0
+          ? checkOrganizationDuplicates(loadedOrganizations)
+          : Promise.resolve([]),
+      ]);
       const dupeMap = new Map<string, DuplicateMatch>();
       for (const m of matches) {
         dupeMap.set(m.contactId, m);
       }
       setDuplicates(dupeMap);
+      const organizationDupeMap = new Map<string, OrganizationDuplicateMatch>();
+      for (const match of organizationMatches) {
+        organizationDupeMap.set(match.organizationId, match);
+      }
+      setOrganizationDuplicates(organizationDupeMap);
       setCheckingDupes(false);
+    } else {
+      setDuplicates(new Map());
+      setOrganizationDuplicates(new Map());
     }
   }, []);
 
@@ -803,11 +1153,21 @@ export default function DiscoveredContactsPanel() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (activeQueue === 'people' && contacts.length === 0 && organizations.length > 0) {
+      setActiveQueue('organizations');
+    }
+    if (activeQueue === 'organizations' && organizations.length === 0 && contacts.length > 0) {
+      setActiveQueue('people');
+    }
+  }, [activeQueue, contacts.length, loading, organizations.length]);
+
   const handleReject = useCallback(async (contact: DiscoveredContact) => {
     setActionId(contact.id);
     await supabase
       .from('discovered_contacts')
-      .update({ status: 'rejected', review_outcome: 'rejected' })
+      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
       .eq('id', contact.id);
     setContacts((prev) => prev.filter((c) => c.id !== contact.id));
     setDuplicates((prev) => {
@@ -825,6 +1185,7 @@ export default function DiscoveredContactsPanel() {
       .update({
         suggested_us_network_status: 'needs_review',
         review_outcome: 'needs_review',
+        reviewed_at: new Date().toISOString(),
       })
       .eq('id', contact.id);
     setContacts((prev) =>
@@ -889,12 +1250,81 @@ export default function DiscoveredContactsPanel() {
     const ids = contacts.map((c) => c.id);
     await supabase
       .from('discovered_contacts')
-      .update({ status: 'rejected', review_outcome: 'rejected' })
+      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
       .in('id', ids);
     setContacts([]);
     setDuplicates(new Map());
     setActionId(null);
   }, [contacts]);
+
+  const handleRejectOrganization = useCallback(async (organization: DiscoveredOrganization) => {
+    setActionId(organization.id);
+    await supabase
+      .from('discovered_organizations')
+      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
+      .eq('id', organization.id);
+    setOrganizations((prev) => prev.filter((item) => item.id !== organization.id));
+    setOrganizationDuplicates((prev) => {
+      const next = new Map(prev);
+      next.delete(organization.id);
+      return next;
+    });
+    setActionId(null);
+  }, []);
+
+  const handleApproveOrganization = useCallback(
+    async (organization: DiscoveredOrganization) => {
+      setActionId(organization.id);
+      const ok = await approveOrganization(
+        organization,
+        sectors,
+        organization.suggested_us_network_status || 'us_organization_connected_to_flanders'
+      );
+      if (ok) {
+        setOrganizations((prev) => prev.filter((item) => item.id !== organization.id));
+        setOrganizationDuplicates((prev) => {
+          const next = new Map(prev);
+          next.delete(organization.id);
+          return next;
+        });
+      }
+      setActionId(null);
+    },
+    [sectors]
+  );
+
+  const handleMergeOrganization = useCallback(
+    async (organization: DiscoveredOrganization, match: OrganizationDuplicateMatch) => {
+      setActionId(organization.id);
+      const ok = await mergeOrganizationIntoExisting(
+        organization,
+        match.existingOrganization,
+        sectors
+      );
+      if (ok) {
+        setOrganizations((prev) => prev.filter((item) => item.id !== organization.id));
+        setOrganizationDuplicates((prev) => {
+          const next = new Map(prev);
+          next.delete(organization.id);
+          return next;
+        });
+      }
+      setActionId(null);
+    },
+    [sectors]
+  );
+
+  const handleRejectAllOrganizations = useCallback(async () => {
+    setActionId('all-organizations');
+    const ids = organizations.map((organization) => organization.id);
+    await supabase
+      .from('discovered_organizations')
+      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
+      .in('id', ids);
+    setOrganizations([]);
+    setOrganizationDuplicates(new Map());
+    setActionId(null);
+  }, [organizations]);
 
   const handleMerged = useCallback(() => {
     const contactId = mergeTarget?.contact.id;
@@ -947,24 +1377,56 @@ export default function DiscoveredContactsPanel() {
     );
   }
 
-  if (contacts.length === 0) {
+  const totalPending = contacts.length + organizations.length;
+  const queueTabs = (
+    <div className="bg-white rounded-xl p-1 shadow-sm border border-gray-100 inline-flex">
+      {[
+        { key: 'people' as const, label: 'People', count: contacts.length, icon: Users },
+        { key: 'organizations' as const, label: 'Organizations', count: organizations.length, icon: Building2 },
+      ].map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => setActiveQueue(tab.key)}
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
+              activeQueue === tab.key
+                ? 'bg-yellow-100 text-yellow-800'
+                : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {tab.label}
+            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px]">
+              {tab.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  if (totalPending === 0) {
     return (
-      <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
-        <div className="w-14 h-14 mx-auto rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-          <Users className="w-7 h-7 text-gray-300" />
+      <div className="space-y-4">
+        {queueTabs}
+        <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+            <Users className="w-7 h-7 text-gray-300" />
+          </div>
+          <p className="text-sm font-medium text-gray-500 mb-1">
+            No pending discovered candidates
+          </p>
+          <p className="text-xs text-gray-400">
+            Start a Discovery run or add/import candidates from the Discovery tab.
+          </p>
         </div>
-        <p className="text-sm font-medium text-gray-500 mb-1">
-          No pending discovered contacts
-        </p>
-        <p className="text-xs text-gray-400">
-          Start a Discovery run or add/import candidates from the Discovery tab.
-        </p>
       </div>
     );
   }
 
   // Show merge compare view
-  if (mergeTarget) {
+  if (activeQueue === 'people' && mergeTarget) {
     return (
       <MergeCompare
         contact={mergeTarget.contact}
@@ -980,9 +1442,14 @@ export default function DiscoveredContactsPanel() {
 
   const dupeCount = duplicates.size;
   const newCount = contacts.length - dupeCount;
+  const organizationDupeCount = organizationDuplicates.size;
+  const organizationNewCount = organizations.length - organizationDupeCount;
 
   return (
     <div className="space-y-4">
+      {queueTabs}
+      {activeQueue === 'people' ? (
+        <>
       {/* Bulk actions */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
         <div className="text-sm text-gray-700">
@@ -1397,6 +1864,301 @@ export default function DiscoveredContactsPanel() {
           </div>
         );
       })}
+        </>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold text-gray-900">{organizations.length}</span>{' '}
+              pending organization{organizations.length !== 1 ? 's' : ''}
+              {checkingDupes ? (
+                <span className="ml-2 text-xs text-gray-400">
+                  <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                  Checking duplicates...
+                </span>
+              ) : organizationDupeCount > 0 ? (
+                <span className="ml-2 text-xs text-amber-600">
+                  ({organizationDupeCount} duplicate{organizationDupeCount !== 1 ? 's' : ''},{' '}
+                  {organizationNewCount} new)
+                </span>
+              ) : null}
+            </div>
+            <button
+              onClick={handleRejectAllOrganizations}
+              disabled={actionId !== null || organizations.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Reject All
+            </button>
+          </div>
+
+          {organizations.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+                <Building2 className="w-7 h-7 text-gray-300" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">No pending organizations</p>
+            </div>
+          ) : (
+            organizations.map((organization) => {
+              const isActioning = actionId === organization.id || actionId === 'all-organizations';
+              const dupeMatch = organizationDuplicates.get(organization.id);
+              const evidenceRows = evidenceByOrganization.get(organization.id) || [];
+              const evidenceCount = organization.evidence_count || evidenceRows.length;
+              const confidence =
+                typeof organization.confidence === 'number'
+                  ? Math.round(organization.confidence * 100)
+                  : null;
+              const locations = normalizeOrganizationLocations(organization.us_locations);
+
+              return (
+                <div
+                  key={organization.id}
+                  className={`bg-white rounded-xl border transition-all px-5 py-4 ${
+                    dupeMatch
+                      ? 'border-amber-200 bg-amber-50/20'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {dupeMatch && (
+                    <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-amber-100/60 rounded-lg">
+                      <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                      <span className="text-[11px] text-amber-700 font-medium">
+                        Possible duplicate: {dupeMatch.reason}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-gray-900">{organization.name}</p>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-teal-50 text-teal-700 rounded font-medium">
+                          {organizationSourceLabel(organization.source)}
+                        </span>
+                        {evidenceCount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">
+                            {evidenceCount} evidence
+                          </span>
+                        )}
+                        {confidence !== null && confidence > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded font-medium">
+                            {confidence}% confidence
+                          </span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded font-medium">
+                          {organizationStatusLabel(organization.suggested_us_network_status)}
+                        </span>
+                      </div>
+
+                      {organization.description && (
+                        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
+                          {organization.description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                        {locations.map((location, index) => (
+                          <span
+                            key={`${location.city}-${location.state}-${index}`}
+                            className="inline-flex items-center gap-1 text-xs text-gray-400"
+                          >
+                            <MapPin className="w-3 h-3" />
+                            {location.city}, {location.state}
+                            {location.role ? ` (${location.role})` : ''}
+                          </span>
+                        ))}
+                        {organization.flemish_belgian_relevance && (
+                          <span className="text-xs text-yellow-600">
+                            {organization.flemish_belgian_relevance}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+                        {organization.website_url && (
+                          <a
+                            href={
+                              organization.website_url.startsWith('http')
+                                ? organization.website_url
+                                : `https://${organization.website_url}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700"
+                          >
+                            <Globe className="w-3 h-3" />
+                            Website
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+
+                      {organization.sectors && organization.sectors.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {organization.sectors.map((sector) => (
+                            <span
+                              key={sector}
+                              className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded"
+                            >
+                              {sector}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {evidenceRows.length > 0 && (
+                        <div className="pt-0.5">
+                          <button
+                            onClick={() => toggleEvidence(organization.id)}
+                            className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            {expandedEvidence.has(organization.id) ? (
+                              <ChevronUp className="w-2.5 h-2.5" />
+                            ) : (
+                              <ChevronDown className="w-2.5 h-2.5" />
+                            )}
+                            Evidence
+                          </button>
+                          {expandedEvidence.has(organization.id) && (
+                            <div className="mt-2 space-y-2">
+                              {evidenceRows.slice(0, 5).map((evidence, index) => (
+                                <div
+                                  key={`${evidence.page_url}-${index}`}
+                                  className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-medium text-gray-700 truncate">
+                                        {evidence.page_title || evidence.page_url}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400">
+                                        {evidence.page_type || evidence.source_type || 'page'} ·{' '}
+                                        {evidence.confidence
+                                          ? `${Math.round(evidence.confidence * 100)}% confidence`
+                                          : 'confidence n/a'}
+                                      </p>
+                                    </div>
+                                    <a
+                                      href={evidence.page_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] text-blue-500 hover:text-blue-600 flex-shrink-0"
+                                    >
+                                      Open
+                                    </a>
+                                  </div>
+                                  {evidence.evidence_excerpt && (
+                                    <p className="mt-1.5 text-[11px] text-gray-600 leading-relaxed">
+                                      {evidence.evidence_excerpt}
+                                    </p>
+                                  )}
+                                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-400">
+                                    {evidence.raw_location_text && (
+                                      <span>Location: {evidence.raw_location_text}</span>
+                                    )}
+                                    {evidence.raw_sector_text && (
+                                      <span>Sector: {evidence.raw_sector_text}</span>
+                                    )}
+                                    {evidence.raw_relevance_text && (
+                                      <span>Flemish/Belgian: {evidence.raw_relevance_text}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {organization.source_urls && organization.source_urls.length > 0 && (
+                        <div className="pt-0.5">
+                          <button
+                            onClick={() => toggleSources(organization.id)}
+                            className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            {expandedSources.has(organization.id) ? (
+                              <ChevronUp className="w-2.5 h-2.5" />
+                            ) : (
+                              <ChevronDown className="w-2.5 h-2.5" />
+                            )}
+                            {organization.source_urls.length} source
+                            {organization.source_urls.length !== 1 ? 's' : ''}
+                          </button>
+                          {expandedSources.has(organization.id) && (
+                            <div className="mt-1 space-y-0.5 pl-3.5">
+                              {organization.source_urls.map((url, index) => (
+                                <a
+                                  key={`${url}-${index}`}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-[10px] text-blue-500 hover:text-blue-600 truncate max-w-[400px]"
+                                >
+                                  {url}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
+                      {dupeMatch ? (
+                        <>
+                          <button
+                            onClick={() => handleMergeOrganization(organization, dupeMatch)}
+                            disabled={isActioning}
+                            className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {isActioning ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <GitMerge className="w-3 h-3" />
+                            )}
+                            Merge
+                          </button>
+                          <button
+                            onClick={() => handleApproveOrganization(organization)}
+                            disabled={isActioning}
+                            className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            <Building2 className="w-3 h-3" />
+                            Add Anyway
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleApproveOrganization(organization)}
+                          disabled={isActioning}
+                          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {isActioning ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Building2 className="w-3 h-3" />
+                          )}
+                          Approve
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleRejectOrganization(organization)}
+                        disabled={isActioning}
+                        className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <X className="w-3 h-3" />
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </>
+      )}
     </div>
   );
 }

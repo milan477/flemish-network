@@ -89,34 +89,6 @@ function buildFallbackKeywords(query: string): SmartSearchKeywords {
   };
 }
 
-export interface ParsedContact {
-  name: string;
-  current_position: string;
-  occupation: string;
-  location_city: string;
-  location_state: string;
-  suggested_us_network_status?: 'us_based' | 'us_connected_abroad' | 'needs_review';
-  suggested_us_network_confidence?: number;
-  current_location_city?: string;
-  current_location_country?: string;
-  suggested_us_connections?: Array<{
-    location_city: string;
-    location_state: string;
-    connection_label: string;
-    source_url?: string;
-    evidence_excerpt?: string;
-    confidence?: number;
-  }>;
-  bio: string;
-  flemish_connection: string;
-  sectors: string[];
-}
-
-export interface ParseContactsResult {
-  message: string;
-  contacts: ParsedContact[];
-}
-
 interface AIResponse<T> {
   success: boolean;
   data?: T;
@@ -150,27 +122,6 @@ async function callAI<T>(
   return result.data;
 }
 
-export async function parseContacts(
-  description: string,
-  sectors: string[]
-): Promise<ParseContactsResult> {
-  const result = await callAI<ParseContactsResult>('parse_contacts', {
-    description,
-    sectors,
-  });
-
-  if (!result.message || !Array.isArray(result.contacts)) {
-    throw new Error('Invalid parse_contacts response');
-  }
-  for (const c of result.contacts) {
-    if (typeof c.name !== 'string' || !c.name) {
-      throw new Error('Contact missing required name field');
-    }
-  }
-
-  return result;
-}
-
 export interface DiscoveredWebContact {
   name: string;
   bio: string;
@@ -191,37 +142,6 @@ export interface DiscoveredWebContact {
 }
 
 export type SearchedContact = DiscoveredWebContact;
-
-export interface DiscoverContactsResult {
-  message: string;
-  contacts: DiscoveredWebContact[];
-}
-
-export async function discoverContacts(
-  query: string
-): Promise<DiscoverContactsResult> {
-  const { data, error } = await supabase.functions.invoke('discover-contacts', {
-    body: { query },
-  });
-
-  if (error) {
-    throw await extractEdgeError(error, 'Discovery request failed');
-  }
-
-  const result = data as DiscoverContactsResult;
-
-  if (!result || (!result.message && !result.contacts)) {
-    throw new Error('Invalid discovery response');
-  }
-
-  return {
-    message: result.message || 'Discovery complete.',
-    contacts: Array.isArray(result.contacts) ? result.contacts : [],
-  };
-}
-
-/** @deprecated Use discoverContacts. Retained for older scripts importing this helper. */
-export const searchContacts = discoverContacts;
 
 export interface SmartSearchKeywords {
   name: string[];
@@ -357,36 +277,6 @@ export function scorePersonAgainstFilter(
     }
   }
   return false;
-}
-
-export interface FlemishSearchKeywords {
-  flemish_connection: string[];
-  bio: string[];
-}
-
-export interface FlemishSearchResult {
-  message: string;
-  keywords: FlemishSearchKeywords;
-}
-
-export async function flemishSearch(
-  query: string
-): Promise<FlemishSearchResult> {
-  const result = await callAI<FlemishSearchResult>('flemish_search', { query });
-
-  if (!result.message || !result.keywords) {
-    throw new Error('Invalid flemish_search response');
-  }
-
-  const kw = result.keywords;
-  for (const key of Object.keys(kw) as (keyof FlemishSearchKeywords)[]) {
-    if (!Array.isArray(kw[key])) {
-      kw[key] = [];
-    }
-    kw[key] = kw[key].map((v) => (typeof v === 'string' ? v.toLowerCase() : '')).filter(Boolean);
-  }
-
-  return result;
 }
 
 export interface SuggestPeopleResult {

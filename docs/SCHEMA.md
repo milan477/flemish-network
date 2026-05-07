@@ -49,7 +49,8 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 | Table | Key Columns |
 |---|---|
 | `discovered_contacts` | `id`, `name`, `email`, `linkedin_url`, `website_url`, `candidate_key`, `suggested_us_network_status`, `suggested_us_network_confidence`, `current_location_city`, `current_location_country`, `suggested_us_connections`, `suggested_org_pivots`, `status`, `review_outcome`, `reviewed_at`, `approved_person_id` |
-| `discovered_organizations` | `id`, `name`, `website_url`, `description`, `suggested_us_network_status`, `us_locations`, `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status`, `review_outcome`, `approved_organization_id` |
+| `discovered_organizations` | `id`, `name`, `website_url`, `description`, `candidate_key`, `source`, `first_seen_at`, `last_seen_at`, `last_evidence_at`, `evidence_count`, `suggested_us_network_status`, `us_locations`, `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status`, `review_outcome`, `approved_organization_id` |
+| `discovered_organization_evidence` | `id`, `discovered_organization_id` (FK), nullable `discovery_page_id` (FK), unique `evidence_key`, `page_url`, `page_title`, `page_type`, `source_type`, `source_name`, `source_url`, `evidence_excerpt`, `raw_relevance_text`, `raw_location_text`, `raw_sector_text`, normalized location fields, `confidence`, `observed_at`, `created_at`, `updated_at` |
 | `discovery_frontier` | `id`, `url`, `status`, `source_type`, `parent_url`, `domain`, `claimed_at`, `done_at` |
 | `discovery_domains` | `id`, `domain`, `yield_score`, `weekly_budget`, `weekly_used`, `last_run_at` |
 | `discovery_pages` | `id`, `url`, `domain`, `page_type`, `raw_text`, `fetched_at` |
@@ -110,6 +111,7 @@ Future seed edits should land in new migrations and use idempotent SQL (`ON CONF
 - Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`.
 - `staff_users` supports self read/update for the signed-in row; admins manage all rows.
 - Staff auth users live in Supabase Auth. The app does not store password hashes; `staff_users.password_reset_required` only gates first-password setup after an invite.
+- `discovered_organizations` and `discovered_organization_evidence` are editor-only pending Discovery tables; they do not expose anon or broad authenticated public policies.
 - `person_text_chunks`, `organization_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs`, `organization_embedding_jobs`, and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System record-index queue/batch health; writes still go through queue RPCs and embedding workers.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
 - `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.

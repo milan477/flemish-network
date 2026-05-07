@@ -3,39 +3,9 @@ import type { GeminiModelRoute } from "./gemini.ts";
 export type JsonSchema = Record<string, unknown>;
 
 export type AiAgentTask =
-  | "parse_contacts"
   | "smart_search"
-  | "flemish_search"
   | "merge_text"
   | "check_profile";
-
-export interface ParsedContact {
-  name: string;
-  current_position: string;
-  occupation: string;
-  location_city: string;
-  location_state: string;
-  suggested_us_network_status: "us_based" | "us_connected_abroad" | "needs_review";
-  suggested_us_network_confidence: number;
-  current_location_city: string;
-  current_location_country: string;
-  suggested_us_connections: Array<{
-    location_city: string;
-    location_state: string;
-    connection_label: string;
-    source_url: string;
-    evidence_excerpt: string;
-    confidence: number;
-  }>;
-  bio: string;
-  flemish_connection: string;
-  sectors: string[];
-}
-
-export interface ParseContactsResult {
-  message: string;
-  contacts: ParsedContact[];
-}
 
 export interface SmartSearchKeywords {
   name: string[];
@@ -51,16 +21,6 @@ export interface SmartSearchKeywords {
 export interface SmartSearchResult {
   message: string;
   keywords: SmartSearchKeywords;
-}
-
-export interface FlemishSearchKeywords {
-  flemish_connection: string[];
-  bio: string[];
-}
-
-export interface FlemishSearchResult {
-  message: string;
-  keywords: FlemishSearchKeywords;
 }
 
 export interface ProfileCheckSuggestion {
@@ -94,10 +54,8 @@ export const VALID_PROFILE_SUGGESTION_FIELDS = [
   "location_state",
 ] as const;
 
-type TaskStatus = "active" | "frozen";
-
 export interface AiTaskDefinition {
-  status: TaskStatus;
+  status: "active";
   modelRoute: GeminiModelRoute;
   systemPrompt: string;
   schema: JsonSchema;
@@ -117,21 +75,6 @@ function toLowercaseStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function clampConfidence(value: unknown): number {
-  return Number.isFinite(Number(value))
-    ? Math.max(0, Math.min(1, Number(value)))
-    : 0;
-}
-
-function normalizePersonUsNetworkStatus(
-  value: unknown
-): ParsedContact["suggested_us_network_status"] {
-  if (value === "us_connected_abroad" || value === "needs_review") {
-    return value;
-  }
-  return "us_based";
-}
-
 const EMPTY_SMART_SEARCH_KEYWORDS: SmartSearchKeywords = {
   name: [],
   occupation: [],
@@ -142,68 +85,6 @@ const EMPTY_SMART_SEARCH_KEYWORDS: SmartSearchKeywords = {
   flemish_connection: [],
   bio: [],
 };
-
-const EMPTY_FLEMISH_SEARCH_KEYWORDS: FlemishSearchKeywords = {
-  flemish_connection: [],
-  bio: [],
-};
-
-function normalizeParsedContacts(payload: unknown): ParseContactsResult {
-  const obj =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : {};
-  const contactsRaw = Array.isArray(obj.contacts) ? obj.contacts : [];
-
-  return {
-    message: safeString(obj.message),
-    contacts: contactsRaw.map((contact) => {
-      const row =
-        contact && typeof contact === "object"
-          ? (contact as Record<string, unknown>)
-          : {};
-
-      return {
-        name: safeString(row.name),
-        current_position: safeString(row.current_position),
-        occupation: safeString(row.occupation),
-        location_city: safeString(row.location_city),
-        location_state: safeString(row.location_state),
-        suggested_us_network_status: normalizePersonUsNetworkStatus(
-          row.suggested_us_network_status,
-        ),
-        suggested_us_network_confidence: clampConfidence(
-          row.suggested_us_network_confidence,
-        ),
-        current_location_city: safeString(row.current_location_city),
-        current_location_country: safeString(row.current_location_country),
-        suggested_us_connections: Array.isArray(row.suggested_us_connections)
-          ? row.suggested_us_connections.map((connection) => {
-            const connectionRow =
-              connection && typeof connection === "object"
-                ? (connection as Record<string, unknown>)
-                : {};
-            return {
-              location_city: safeString(connectionRow.location_city),
-              location_state: safeString(connectionRow.location_state),
-              connection_label: safeString(connectionRow.connection_label),
-              source_url: safeString(connectionRow.source_url),
-              evidence_excerpt: safeString(connectionRow.evidence_excerpt),
-              confidence: clampConfidence(connectionRow.confidence),
-            };
-          }).filter((connection) =>
-            connection.location_city && connection.location_state
-          )
-          : [],
-        bio: safeString(row.bio),
-        flemish_connection: safeString(row.flemish_connection),
-        sectors: Array.isArray(row.sectors)
-          ? row.sectors.map((sector) => safeString(sector)).filter(Boolean)
-          : [],
-      };
-    }),
-  };
-}
 
 export function normalizeSmartSearchResult(payload: unknown): SmartSearchResult {
   const obj =
@@ -224,27 +105,6 @@ export function normalizeSmartSearchResult(payload: unknown): SmartSearchResult 
       location_city: toLowercaseStringArray(keywords.location_city),
       location_state: toLowercaseStringArray(keywords.location_state),
       current_position: toLowercaseStringArray(keywords.current_position),
-      flemish_connection: toLowercaseStringArray(keywords.flemish_connection),
-      bio: toLowercaseStringArray(keywords.bio),
-    },
-  };
-}
-
-export function normalizeFlemishSearchResult(
-  payload: unknown
-): FlemishSearchResult {
-  const obj =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : {};
-  const keywords =
-    obj.keywords && typeof obj.keywords === "object"
-      ? (obj.keywords as Record<string, unknown>)
-      : {};
-
-  return {
-    message: safeString(obj.message),
-    keywords: {
       flemish_connection: toLowercaseStringArray(keywords.flemish_connection),
       bio: toLowercaseStringArray(keywords.bio),
     },
@@ -292,25 +152,6 @@ export function normalizeProfileCheckResult(
   };
 }
 
-const PARSE_CONTACTS_SYSTEM_PROMPT = `You are a data extraction assistant for a Flemish-American network directory that tracks people in the US with connections to Flanders (Belgium).
-
-Given a user's description of one or more contacts, extract each person's details into structured records.
-
-Rules:
-- Extract the full name, position/role, location, and any Flemish/Belgian connection
-- For location, use US city names and 2-letter state abbreviations (e.g. MA, NY, CA)
-- Classify US scope:
-  - us_based means the person's current base is in the United States; put that city/state in location_city/location_state.
-  - us_connected_abroad means the person appears to be based outside the US but has a concrete US tie; put current abroad base in current_location_city/current_location_country and put every US tie in suggested_us_connections.
-  - needs_review means the available evidence is ambiguous.
-- suggested_us_connections must contain US city/state, a short connection label, evidence, and confidence for US-connected-abroad candidates.
-- For sectors, choose from ONLY these options: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research
-- If the description mentions multiple people (numbered list, semicolons, or separate sentences), extract each one separately
-- If information is not provided for a field, use an empty string
-- The bio field should be a brief summary if enough context is given, otherwise empty
-- The flemish_connection field captures any Belgian/Flemish institutional or personal connection mentioned (e.g. "From Ghent", "KU Leuven alumnus", "BAEF fellow")
-- Always provide a friendly message summarizing what you extracted`;
-
 export const SMART_SEARCH_SYSTEM_PROMPT = `You are a search assistant for a professional network directory of Flemish-connected people in the United States.
 
 Given a natural language search query, extract structured search keywords for each profile field. These keywords will be used for fuzzy similarity matching against profiles.
@@ -334,21 +175,6 @@ Rules:
 - Maximum 5 keywords per field
 - Always provide a brief message describing what you're searching for`;
 
-const FLEMISH_SEARCH_SYSTEM_PROMPT = `You are a search assistant for a Flemish-American professional network directory. The user is searching for Flemish connections using natural language.
-
-Given a natural language query, extract normalized lowercase keywords and specify which profile fields to search.
-
-You may ONLY return keywords for these two fields:
-- flemish_connection: Belgian/Flemish institutional or personal connections (universities, organizations, cities, fellowships)
-- bio: biographical text that may mention Flemish/Belgian connections
-
-Rules:
-- All keywords must be lowercase
-- Generate synonyms and abbreviations (e.g. "University of Antwerp" -> ["university of antwerp", "uantwerp", "ua", "antwerpen"])
-- Maximum 6 keywords per field
-- Always populate both fields with relevant keywords
-- Always provide a brief message describing what you're searching for`;
-
 const MERGE_TEXT_SYSTEM_PROMPT = `You are a text merging assistant for a professional network directory.
 
 Given two versions of a text field (e.g. bio, flemish_connection), merge them into a single coherent text that preserves all unique information from both versions. Remove redundancies but keep all distinct facts. Keep the tone professional and concise. Return only the merged text, nothing else.`;
@@ -368,80 +194,6 @@ Rules:
 - Set evidence_url to the supporting result URL and evidence_excerpt to a short quote/paraphrase from that same result
 - Set confidence to a number between 0 and 1
 - If no changes are found, return an empty suggestions array`;
-
-const PARSE_CONTACTS_SCHEMA: JsonSchema = {
-  type: "OBJECT",
-  properties: {
-    message: {
-      type: "STRING",
-      description: "Brief message about what was extracted",
-    },
-    contacts: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          name: { type: "STRING" },
-          current_position: { type: "STRING" },
-          occupation: {
-            type: "STRING",
-            description: "Job type category (e.g. Researcher, Creative, Executive)",
-          },
-          location_city: { type: "STRING" },
-          location_state: { type: "STRING" },
-          suggested_us_network_status: {
-            type: "STRING",
-            enum: ["us_based", "us_connected_abroad", "needs_review"],
-          },
-          suggested_us_network_confidence: { type: "NUMBER" },
-          current_location_city: { type: "STRING" },
-          current_location_country: { type: "STRING" },
-          suggested_us_connections: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                location_city: { type: "STRING" },
-                location_state: { type: "STRING" },
-                connection_label: { type: "STRING" },
-                source_url: { type: "STRING" },
-                evidence_excerpt: { type: "STRING" },
-                confidence: { type: "NUMBER" },
-              },
-              required: [
-                "location_city",
-                "location_state",
-                "connection_label",
-                "source_url",
-                "evidence_excerpt",
-                "confidence",
-              ],
-            },
-          },
-          bio: { type: "STRING" },
-          flemish_connection: { type: "STRING" },
-          sectors: { type: "ARRAY", items: { type: "STRING" } },
-        },
-        required: [
-          "name",
-          "current_position",
-          "occupation",
-          "location_city",
-          "location_state",
-          "suggested_us_network_status",
-          "suggested_us_network_confidence",
-          "current_location_city",
-          "current_location_country",
-          "suggested_us_connections",
-          "bio",
-          "flemish_connection",
-          "sectors",
-        ],
-      },
-    },
-  },
-  required: ["message", "contacts"],
-};
 
 export const SMART_SEARCH_SCHEMA: JsonSchema = {
   type: "OBJECT",
@@ -472,25 +224,6 @@ export const SMART_SEARCH_SCHEMA: JsonSchema = {
         "flemish_connection",
         "bio",
       ],
-    },
-  },
-  required: ["message", "keywords"],
-};
-
-const FLEMISH_SEARCH_SCHEMA: JsonSchema = {
-  type: "OBJECT",
-  properties: {
-    message: {
-      type: "STRING",
-      description: "Brief description of the flemish connection search",
-    },
-    keywords: {
-      type: "OBJECT",
-      properties: {
-        flemish_connection: { type: "ARRAY", items: { type: "STRING" } },
-        bio: { type: "ARRAY", items: { type: "STRING" } },
-      },
-      required: ["flemish_connection", "bio"],
     },
   },
   required: ["message", "keywords"],
@@ -535,14 +268,6 @@ export const CHECK_PROFILE_SCHEMA: JsonSchema = {
   required: ["suggestions"],
 };
 
-function buildParseContactsPrompt(context: Record<string, unknown>): string {
-  const sectors = Array.isArray(context.sectors)
-    ? context.sectors.map((sector) => safeString(sector)).filter(Boolean)
-    : [];
-
-  return `User description:\n${safeString(context.description)}\n\nAvailable sectors: ${sectors.join(", ")}`;
-}
-
 export function buildSearchPrompt(query: unknown): string {
   return `Search query: "${safeString(query)}"`;
 }
@@ -581,14 +306,6 @@ function normalizeMergeTextResult(payload: unknown): { merged: string } {
 }
 
 export const AI_AGENT_TASK_DEFINITIONS: Record<AiAgentTask, AiTaskDefinition> = {
-  parse_contacts: {
-    status: "frozen",
-    modelRoute: "contact_extraction",
-    systemPrompt: PARSE_CONTACTS_SYSTEM_PROMPT,
-    schema: PARSE_CONTACTS_SCHEMA,
-    buildUserPrompt: buildParseContactsPrompt,
-    normalizeResult: normalizeParsedContacts,
-  },
   smart_search: {
     status: "active",
     modelRoute: "query_parsing",
@@ -596,14 +313,6 @@ export const AI_AGENT_TASK_DEFINITIONS: Record<AiAgentTask, AiTaskDefinition> = 
     schema: SMART_SEARCH_SCHEMA,
     buildUserPrompt: (context) => buildSearchPrompt(context.query),
     normalizeResult: normalizeSmartSearchResult,
-  },
-  flemish_search: {
-    status: "frozen",
-    modelRoute: "query_parsing",
-    systemPrompt: FLEMISH_SEARCH_SYSTEM_PROMPT,
-    schema: FLEMISH_SEARCH_SCHEMA,
-    buildUserPrompt: (context) => buildSearchPrompt(context.query),
-    normalizeResult: normalizeFlemishSearchResult,
   },
   merge_text: {
     status: "active",
@@ -635,14 +344,6 @@ export function getAiAgentTaskDefinition(task: AiAgentTask): AiTaskDefinition {
   return AI_AGENT_TASK_DEFINITIONS[task];
 }
 
-export function getFrozenAiAgentTasks(): AiAgentTask[] {
-  return (Object.entries(AI_AGENT_TASK_DEFINITIONS) as Array<
-    [AiAgentTask, AiTaskDefinition]
-  >)
-    .filter(([, definition]) => definition.status === "frozen")
-    .map(([task]) => task);
-}
-
 export function getAiAgentTasks(): AiAgentTask[] {
   return Object.keys(AI_AGENT_TASK_DEFINITIONS) as AiAgentTask[];
 }
@@ -656,14 +357,6 @@ export function getEmptySmartSearchKeywords(): SmartSearchKeywords {
     location_city: [],
     location_state: [],
     current_position: [],
-    flemish_connection: [],
-    bio: [],
-  };
-}
-
-export function getEmptyFlemishSearchKeywords(): FlemishSearchKeywords {
-  return {
-    ...EMPTY_FLEMISH_SEARCH_KEYWORDS,
     flemish_connection: [],
     bio: [],
   };

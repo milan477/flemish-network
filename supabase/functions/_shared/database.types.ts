@@ -513,6 +513,12 @@ interface DiscoveredOrganizationRow extends RowRecord {
   name: string;
   website_url: string | null;
   description: string | null;
+  candidate_key: string;
+  source: string;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  last_evidence_at: string | null;
+  evidence_count: number;
   suggested_us_network_status: string | null;
   us_locations: Json;
   sectors: string[] | null;
@@ -524,6 +530,30 @@ interface DiscoveredOrganizationRow extends RowRecord {
   reviewed_at: string | null;
   approved_organization_id: string | null;
   agent_run_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface DiscoveredOrganizationEvidenceRow extends RowRecord {
+  id: string;
+  discovered_organization_id: string;
+  discovery_page_id: string | null;
+  evidence_key: string;
+  page_url: string;
+  page_title: string | null;
+  page_type: string | null;
+  source_type: string | null;
+  source_name: string | null;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  raw_relevance_text: string | null;
+  raw_location_text: string | null;
+  raw_sector_text: string | null;
+  normalized_location_city: string | null;
+  normalized_location_state: string | null;
+  normalized_location_country: string | null;
+  confidence: number | string | null;
+  observed_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -869,6 +899,7 @@ export type Database = {
       connection_suggestions: Table<ConnectionSuggestionRow>;
       discovered_contacts: Table<DiscoveredContactRow>;
       discovered_organizations: Table<DiscoveredOrganizationRow>;
+      discovered_organization_evidence: Table<DiscoveredOrganizationEvidenceRow>;
       discovery_source_packs: Table<DiscoverySourcePackRow>;
       discovery_domains: Table<DiscoveryDomainRow>;
       discovery_frontier: Table<DiscoveryFrontierRow>;

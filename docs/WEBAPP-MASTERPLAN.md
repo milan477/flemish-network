@@ -71,7 +71,7 @@ Known legacy still present:
 
 - `[later]` Old DB migrations still create `connections`, `connection_suggestions`, and `discover_connections()`.
 - `[later]` Generated Supabase types still include connection artifacts until the DB cleanup migration and type regeneration happen.
-- `[later]` Legacy compatibility functions `discover-contacts`, `search-contacts`, and `ai-agent` tasks `parse_contacts` / `flemish_search` still exist until replacement flows are complete.
+- `[done]` Legacy Discovery compatibility functions and retired `ai-agent` Discovery tasks were removed after Phase 5 replacement flows went live.
 - `[done]` Organization search has server-side ranked lexical result parity for Phase 3.
 - `[done]` Collections support mixed people and organization members in schema, suggestions, detail UI, and add-to-collection controls.
 - `[done]` Collection detail suggestions restore from a per-collection browser cache and open profile previews in place instead of navigating away.
@@ -335,6 +335,7 @@ Goal: make `agent-discovery` the only durable discovery workflow for new people 
 Scope:
 
 - Prompted discovery calls `agent-scheduler` with `agent_type = "discovery"`.
+- Manual discovery intake supports people and organizations with form entry and CSV/XLSX import.
 - `agent-discovery` persists pending people to `discovered_contacts`.
 - `agent-discovery` persists pending organizations to `discovered_organizations`.
 - Discovery review UI handles pending people and pending organizations.
@@ -343,14 +344,22 @@ Scope:
 
 Todos:
 
-- `[next]` Find all UI calls to `discover-contacts`, `search-contacts`, `parse_contacts`, and `flemish_search`.
-- `[next]` Replace prompted discovery calls with `agent-scheduler` -> `agent-discovery`.
-- `[next]` Extend `agent-discovery` extraction and persistence for pending organizations.
-- `[next]` Add organization dedupe against approved organizations and pending discovered organizations.
-- `[next]` Add pending organization review UI alongside pending people.
-- `[next]` Store organization source URLs, evidence excerpts, confidence, sectors, locations, and Flemish/Belgian relevance.
-- `[later]` Remove `discover-contacts`, `search-contacts`, and legacy `ai-agent` tasks after no live references remain.
-- `[later]` Update docs and tests to remove compatibility language once deletion is complete.
+- `[done]` Add Phase 5A organization staging schema, evidence table, dedupe indexes, editor-only RLS, types, tests, and schema/AI docs.
+- `[done]` Find and remove active UI calls to `discover-contacts`, `search-contacts`, `parse_contacts`, and `flemish_search`.
+- `[done]` Replace prompted discovery calls with `agent-scheduler` -> `agent-discovery`; `/admin/discovery?prompt=...` remains prefill-only until staff clicks Run.
+- `[done]` Extend `agent-discovery` extraction and persistence for pending organizations.
+- `[done]` Add organization dedupe against approved organizations and pending discovered organizations.
+- `[done]` Extend manual discovery intake so staff can add pending people and pending organizations through forms.
+- `[done]` Extend import so staff can upload people and organizations through CSV/XLSX, with clear validation and no direct writes to approved `people` or `organizations`.
+- `[done]` Add pending organization review UI alongside pending people, including approve, reject, merge, source URL, and evidence excerpt handling.
+- `[done]` Store organization source URLs, evidence excerpts, confidence, sectors, locations, and Flemish/Belgian relevance.
+- `[done]` Add fresh Phase 5 people and organization import fixture files for valid pending-candidate imports.
+- `[done]` Update Discovery dashboard pending summaries and run result summaries for people plus organizations.
+- `[done]` Add source guards that keep active UI free of legacy Discovery callers.
+- `[done]` Update smoke scheduler checks to use the supported `metrics` action and remove the retired `agent-connections` smoke target.
+- `[done]` Expand Phase 5 import fixtures to cover approved-record conflicts, pending-record conflicts, duplicate rows, malformed URLs/emails, multi-value locations, and weak or missing evidence.
+- `[done]` Remove legacy Discovery compatibility functions and retired `ai-agent` Discovery tasks after no live references remain.
+- `[done]` Update docs, edge contracts, config, and smoke checks to remove Discovery compatibility language.
 
 Out of scope:
 
@@ -360,9 +369,11 @@ Out of scope:
 Exit criteria:
 
 - Prompted Discovery creates an `agent_runs` discovery run through scheduler.
+- Manual Discovery can create pending people and pending organizations from a form.
+- Manual Discovery can import pending people and pending organizations from CSV/XLSX files.
 - New organization candidates land in `discovered_organizations` with evidence.
-- Reviewers can approve, reject, or merge pending organizations.
-- Legacy discovery functions have no UI callers.
+- Reviewers can approve, reject, or merge pending organizations; approval writes approved organization records, sectors, US locations, Flemish/Belgian relevance, review metadata, and embedding queue work.
+- Legacy Discovery compatibility functions and retired `ai-agent` Discovery tasks are removed from live edge contracts.
 
 Verification:
 
@@ -371,7 +382,7 @@ npm run typecheck
 npm test
 npm run test:deno
 npm run build
-rg "discover-contacts|search-contacts|parse_contacts|flemish_search" src supabase docs --glob '!docs/archive/**'
+rg "discover-contacts|search-contacts|parse_contacts|flemish_search" src scripts supabase/functions --glob '!supabase/functions/_shared/__tests__/**'
 ```
 
 Focused tests to add:
@@ -379,11 +390,16 @@ Focused tests to add:
 - Scheduler creates discovery runs and rejects unsupported agent types.
 - Discovery org persistence writes all required evidence fields.
 - Organization dedupe handles approved and pending records.
+- Manual people intake still writes pending candidates and does not regress during the Discovery refactor.
+- Manual organization intake writes pending candidates with validation, evidence, source URLs, sectors, locations, and Flemish/Belgian relevance.
+- People and organization CSV/XLSX imports validate edge-case fixture files and report row-level errors without partially approving records.
 - Review approval never promotes an organization without reviewer action.
 
 Manual checks:
 
 - Run prompted discovery for `Flemish-connected organizations in Houston energy`.
+- Add one pending person and one pending organization manually from `/admin/discovery`.
+- Import people and organizations from the new edge-case CSV/XLSX fixtures.
 - Confirm pending organizations show source URLs and evidence excerpts.
 - Reject a weak candidate and approve a strong one.
 
@@ -572,7 +588,7 @@ Todos:
 - `[done]` Initial code splitting removed the current Vite chunk warning.
 - `[next]` Audit frontend full-table loads for `people`, `organizations`, collections, suggestions, and staff metrics.
 - `[next]` Add pagination or server-side querying for large staff panels.
-- `[later]` Delete legacy discovery compatibility functions after Phase 5.
+- `[done]` Delete legacy Discovery compatibility functions after Phase 5.
 - `[later]` Drop connection tables/RPCs/views after Phase 2 cleanup is proven.
 - `[later]` Drop old planner tables after Phase 8 cleanup is proven.
 - `[later]` Regenerate Supabase database types after schema removal.

@@ -15,27 +15,27 @@ import {
   Briefcase,
   Users,
   ChevronDown,
+  Building2,
 } from 'lucide-react';
 import {
   supabase,
-  personNamePartsForInsert,
   OCCUPATION_OPTIONS,
   type Sector,
   type Person,
   type FlemishConnection,
   type PersonUsNetworkStatus,
+  type OrganizationUsNetworkStatus,
 } from '../../lib/supabase';
 import {
   canonicalizeFlemishConnection,
   extractFlemishConnectionsFromText,
   getPersonFlemishConnectionNames,
 } from '../../lib/flemishConnections';
-import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
-import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
 import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
 import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/networkScope';
+import { buildCandidateKeyForMode } from '../../lib/csvParser';
 
 interface AddContactPanelProps {
   sectors: Sector[];
@@ -76,6 +76,21 @@ interface ManualForm {
   sectorIds: string[];
 }
 
+interface ManualOrganizationForm {
+  name: string;
+  website_url: string;
+  description: string;
+  suggested_us_network_status: OrganizationUsNetworkStatus;
+  location_id: string;
+  location_display: string;
+  location_role: string;
+  flemish_belgian_relevance: string;
+  evidence_url: string;
+  evidence_excerpt: string;
+  confidence: string;
+  sectorIds: string[];
+}
+
 interface ManualUsConnection {
   id: string;
   location_id: string;
@@ -111,6 +126,23 @@ function createEmptyForm(): ManualForm {
     linkedin_url: '',
     website_url: '',
     twitter_url: '',
+    sectorIds: [],
+  };
+}
+
+function createEmptyOrganizationForm(): ManualOrganizationForm {
+  return {
+    name: '',
+    website_url: '',
+    description: '',
+    suggested_us_network_status: 'us_organization_connected_to_flanders',
+    location_id: '',
+    location_display: '',
+    location_role: 'other',
+    flemish_belgian_relevance: '',
+    evidence_url: '',
+    evidence_excerpt: '',
+    confidence: '',
     sectorIds: [],
   };
 }
@@ -155,6 +187,7 @@ export default function AddContactPanel({
 }: AddContactPanelProps) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [addedPerson, setAddedPerson] = useState<Person | null>(null);
+  const [manualMode, setManualMode] = useState<'people' | 'organizations'>('people');
 
   useEffect(() => {
     setTab(initialTab);
@@ -197,19 +230,54 @@ export default function AddContactPanel({
 
       <div className="p-6">
         {tab === 'manual' && (
-          <div className="flex gap-6">
-            <div className="flex-1 max-w-2xl">
-              <ManualAddForm
-                sectors={sectors}
-                onContactAdded={onContactAdded}
-                onPersonAdded={setAddedPerson}
-              />
+          <div className="space-y-4">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+              {[
+                { value: 'people' as const, label: 'People', icon: UserPlus },
+                { value: 'organizations' as const, label: 'Organizations', icon: Building2 },
+              ].map((option) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setManualMode(option.value);
+                      setAddedPerson(null);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium ${
+                      manualMode === option.value
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
+            <div className="flex gap-6">
+              <div className="flex-1 max-w-2xl">
+                {manualMode === 'people' ? (
+                  <ManualAddForm
+                    sectors={sectors}
+                    onContactAdded={onContactAdded}
+                    onPersonAdded={setAddedPerson}
+                  />
+                ) : (
+                  <ManualOrganizationFormComponent
+                    sectors={sectors}
+                    onContactAdded={onContactAdded}
+                  />
+                )}
+              </div>
             {addedPerson && (
               <div className="w-72 flex-shrink-0">
                 <PersonPreview person={addedPerson} />
               </div>
             )}
+            </div>
           </div>
         )}
         {tab === 'import' && (
@@ -356,17 +424,32 @@ function ManualAddForm({
 
     if (!first) return null;
 
-    const { data: allPeople } = await supabase
-      .from('people').select('id, name, first_name, last_name, email, location_id, locations(*)');
+    const [{ data: allPeople }, { data: pendingPeople }] = await Promise.all([
+      supabase
+        .from('people')
+        .select('id, name, first_name, last_name, email, location_id, locations(*)'),
+      supabase
+        .from('discovered_contacts')
+        .select('id, name, email, candidate_key')
+        .eq('status', 'pending'),
+    ]);
 
-    if (!allPeople) return null;
+    const fullName = `${first} ${last}`.trim();
+    const candidateKey = buildCandidateKeyForMode(
+      {
+        first_name: form.firstName,
+        last_name: form.lastName,
+        email: form.email,
+        linkedin_url: form.linkedin_url,
+      },
+      'people'
+    );
 
-    for (const person of allPeople) {
+    for (const person of allPeople || []) {
       const pFirst = (person.first_name || '').trim().toLowerCase();
       const pLast = (person.last_name || '').trim().toLowerCase();
       const pEmail = (person.email || '').trim().toLowerCase();
       const pName = (person.name || '').trim().toLowerCase();
-      const fullName = `${first} ${last}`.trim();
 
       if (email && pEmail && email === pEmail) {
         return { id: person.id, name: person.name || `${person.first_name} ${person.last_name}`, email: person.email };
@@ -376,6 +459,18 @@ function ManualAddForm({
       }
       if (fullName && pName === fullName) {
         return { id: person.id, name: person.name, email: person.email };
+      }
+    }
+
+    for (const candidate of pendingPeople || []) {
+      const cEmail = (candidate.email || '').trim().toLowerCase();
+      const cName = (candidate.name || '').trim().toLowerCase();
+      if (
+        candidate.candidate_key === candidateKey ||
+        (email && cEmail && email === cEmail) ||
+        (fullName && cName === fullName)
+      ) {
+        return { id: candidate.id, name: candidate.name, email: candidate.email };
       }
     }
 
@@ -433,19 +528,48 @@ function ManualAddForm({
     const website = ensureProtocol(form.website_url || '');
     const twitter = ensureProtocol(form.twitter_url || '');
 
-    const { data: person, error: insertErr } = await supabase
-      .from('people')
+    const candidateKey = buildCandidateKeyForMode(
+      {
+        first_name: first,
+        last_name: last,
+        email: form.email,
+        linkedin_url: linkedin,
+      },
+      'people'
+    );
+    const sectorNames = sectors
+      .filter((sector) => form.sectorIds.includes(sector.id))
+      .map((sector) => sector.name);
+    const sourceUrls = [linkedin, website, twitter].filter(Boolean);
+    const suggestedConnections = form.usConnections
+      .filter((connection) => connection.location_id || connection.location_display)
+      .map((connection) => {
+        const [city, state] = connection.location_display.split(',').map((part) => part.trim());
+        return {
+          location_city: city || null,
+          location_state: state || null,
+          connection_label: connection.connection_label.trim() || null,
+          source_url: null,
+          evidence_excerpt: null,
+          confidence: null,
+        };
+      });
+
+    const { data: candidate, error: insertErr } = await supabase
+      .from('discovered_contacts')
       .insert({
         name: fullName,
-        ...personNamePartsForInsert({
-          title: form.title,
-          firstName: first,
-          lastName: last,
-        }),
         current_position: form.current_position || null,
         occupation: form.occupation || null,
-        location_id: form.us_network_status === 'us_based' ? form.location_id || null : null,
-        us_network_status: form.us_network_status,
+        location_city:
+          form.us_network_status === 'us_based'
+            ? (form.location_display || '').split(',')[0]?.trim() || null
+            : null,
+        location_state:
+          form.us_network_status === 'us_based'
+            ? (form.location_display || '').split(',')[1]?.trim() || null
+            : null,
+        suggested_us_network_status: form.us_network_status,
         current_location_city:
           form.us_network_status === 'us_connected_abroad'
             ? form.current_location_city.trim() || null
@@ -459,114 +583,47 @@ function ManualAddForm({
         email: form.email || null,
         linkedin_url: linkedin || null,
         website_url: website || null,
-        twitter_url: twitter || null,
-        data_source: 'manual',
-        last_verified_at: new Date().toISOString(),
+        sectors: sectorNames,
+        flemish_connection: flemishStr || null,
+        source: 'manual',
+        source_urls: sourceUrls,
+        candidate_key: candidateKey,
+        suggested_us_connections: suggestedConnections,
+        discovery_confidence: 0.7,
       })
-      .select('*, locations(*), person_us_connections(*, locations(*))')
+      .select('id, name')
       .maybeSingle();
 
-    if (insertErr || !person) {
-      setError(insertErr?.message || 'Failed to add contact');
+    if (insertErr || !candidate) {
+      setError(insertErr?.message || 'Failed to add pending contact');
       setSaving(false);
       return;
     }
-
-    const ensuredConnections: FlemishConnection[] = [];
-    for (const connection of flemishConnections) {
-      const canonical =
-        canonicalizeFlemishConnection(connection.name) || {
-          name: connection.name.trim(),
-          type: connection.type,
-        };
-
-      const existing = allFlemishConnections.find(
-        (option) =>
-          normalizeConnectionName(option.name) === normalizeConnectionName(canonical.name)
-      );
-
-      if (existing) {
-        ensuredConnections.push(existing);
-        continue;
-      }
-
-      const { data: inserted, error: insertConnectionError } = await supabase
-        .from('flemish_connections')
-        .insert({
-          name: canonical.name,
-          type: canonical.type,
-        })
-        .select('id, name, type')
-        .maybeSingle();
-
-      if (insertConnectionError) {
-        setError(insertConnectionError.message);
-        setSaving(false);
-        return;
-      }
-
-      if (inserted) {
-        ensuredConnections.push(inserted as FlemishConnection);
-      }
-    }
-
-    if (form.sectorIds.length > 0) {
-      await supabase.from('person_sectors').insert(
-        form.sectorIds.map((sid) => ({
-          person_id: person.id,
-          sector_id: sid,
-        }))
-      );
-    }
-
-    if (form.us_network_status === 'us_connected_abroad') {
-      const rows = form.usConnections
-        .filter((connection) => connection.location_id)
-        .map((connection) => ({
-          person_id: person.id,
-          location_id: connection.location_id,
-          connection_label: connection.connection_label.trim() || null,
-          source_url: null,
-          evidence_excerpt: null,
-          confidence: null,
-        }));
-
-      if (rows.length > 0) {
-        const { error: usConnectionError } = await supabase
-          .from('person_us_connections')
-          .insert(rows);
-        if (usConnectionError) {
-          setError(usConnectionError.message);
-          setSaving(false);
-          return;
-        }
-      }
-    }
-
-    try {
-      await syncPersonFlemishConnections(person.id, flemishStr);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save Flemish connections');
-      setSaving(false);
-      return;
-    }
-
-    kickEmbeddingWorker();
 
     setSaving(false);
     setSuccess(true);
     setDupeMatch(null);
-    const { data: refreshedPerson } = await supabase
-      .from('people')
-      .select('*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
-      .eq('id', person.id)
-      .maybeSingle();
-    onPersonAdded((refreshedPerson || person) as Person);
+    onPersonAdded({
+      id: candidate.id,
+      name: fullName,
+      title: form.title || null,
+      first_name: first,
+      last_name: last,
+      current_position: form.current_position || undefined,
+      occupation: form.occupation || undefined,
+      email: form.email || undefined,
+      phone: form.phone || undefined,
+      linkedin_url: linkedin || undefined,
+      website_url: website || undefined,
+      bio: form.bio || undefined,
+      us_network_status: form.us_network_status,
+      current_location_city: form.current_location_city || null,
+      current_location_country: form.current_location_country || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Person);
     setForm(createEmptyForm());
     setFlemishConnections([]);
-    setAllFlemishConnections((prev) =>
-      reconcileConnections([...prev, ...ensuredConnections], [...prev, ...ensuredConnections])
-    );
     onContactAdded();
     setTimeout(() => setSuccess(false), 5000);
   };
@@ -1015,7 +1072,7 @@ function ManualAddForm({
             </p>
           </div>
           <p className="text-xs text-amber-600 mb-3">
-            "{form.firstName} {form.lastName}" matches existing contact "{dupeMatch.name}"
+            "{form.firstName} {form.lastName}" matches existing or pending contact "{dupeMatch.name}"
             {dupeMatch.email ? ` (${dupeMatch.email})` : ''}.
           </p>
           <div className="flex items-center gap-2">
@@ -1027,7 +1084,7 @@ function ManualAddForm({
               }}
               className="text-xs font-medium px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-colors"
             >
-              Add Anyway
+              Create Pending Anyway
             </button>
             <button
               type="button"
@@ -1058,12 +1115,385 @@ function ManualAddForm({
           ) : (
             <Plus className="w-4 h-4" />
           )}
-          <span>{dupeChecking ? 'Checking...' : 'Add Contact'}</span>
+          <span>{dupeChecking ? 'Checking...' : 'Create Pending Contact'}</span>
         </button>
         {success && (
           <span className="flex items-center space-x-1 text-sm text-green-600">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Contact added</span>
+            <span>Pending contact created</span>
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function ManualOrganizationFormComponent({
+  sectors,
+  onContactAdded,
+}: {
+  sectors: Sector[];
+  onContactAdded: () => void;
+}) {
+  const [form, setForm] = useState<ManualOrganizationForm>(() => createEmptyOrganizationForm());
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [dupeMatch, setDupeMatch] = useState<DuplicateMatch | null>(null);
+
+  const setField = (field: keyof ManualOrganizationForm, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const toggleSector = (id: string) => {
+    setForm((current) => ({
+      ...current,
+      sectorIds: current.sectorIds.includes(id)
+        ? current.sectorIds.filter((sectorId) => sectorId !== id)
+        : [...current.sectorIds, id],
+    }));
+  };
+
+  const checkDuplicate = async (): Promise<DuplicateMatch | null> => {
+    const name = form.name.trim().toLowerCase();
+    const website = ensureProtocol(form.website_url || '').toLowerCase().replace(/\/$/, '');
+    const candidateKey = buildCandidateKeyForMode(
+      { name: form.name, website_url: form.website_url },
+      'organizations'
+    );
+
+    if (!name) return null;
+
+    const [{ data: approved }, { data: pending }] = await Promise.all([
+      supabase.from('organizations').select('id, name, website_url'),
+      supabase
+        .from('discovered_organizations')
+        .select('id, name, website_url, candidate_key')
+        .eq('status', 'pending'),
+    ]);
+
+    for (const org of approved || []) {
+      const orgWebsite = ensureProtocol(org.website_url || '').toLowerCase().replace(/\/$/, '');
+      if (
+        (website && orgWebsite && website === orgWebsite) ||
+        (org.name || '').trim().toLowerCase() === name
+      ) {
+        return { id: org.id, name: org.name, email: null };
+      }
+    }
+
+    for (const org of pending || []) {
+      const orgWebsite = ensureProtocol(org.website_url || '').toLowerCase().replace(/\/$/, '');
+      if (
+        org.candidate_key === candidateKey ||
+        (website && orgWebsite && website === orgWebsite) ||
+        (org.name || '').trim().toLowerCase() === name
+      ) {
+        return { id: org.id, name: org.name, email: null };
+      }
+    }
+
+    return null;
+  };
+
+  const insertOrganization = async () => {
+    setSaving(true);
+    setError('');
+
+    const candidateKey = buildCandidateKeyForMode(
+      { name: form.name, website_url: form.website_url },
+      'organizations'
+    );
+    const sectorNames = sectors
+      .filter((sector) => form.sectorIds.includes(sector.id))
+      .map((sector) => sector.name);
+    const sourceUrl = ensureProtocol(form.evidence_url || form.website_url || '');
+    const parsedConfidence = Number(form.confidence);
+    const confidence = Number.isFinite(parsedConfidence)
+      ? Math.max(0, Math.min(1, parsedConfidence))
+      : 0.7;
+    const [city, state] = form.location_display.split(',').map((part) => part.trim());
+
+    const { data: candidate, error: insertError } = await supabase
+      .from('discovered_organizations')
+      .insert({
+        name: form.name.trim(),
+        website_url: ensureProtocol(form.website_url),
+        description: form.description || null,
+        candidate_key: candidateKey,
+        source: 'manual',
+        suggested_us_network_status: form.suggested_us_network_status,
+        us_locations: form.location_id
+          ? [
+              {
+                city,
+                state,
+                role: form.location_role || 'other',
+                source_url: sourceUrl,
+                evidence_excerpt: form.evidence_excerpt || null,
+                confidence,
+              },
+            ]
+          : [],
+        sectors: sectorNames,
+        flemish_belgian_relevance: form.flemish_belgian_relevance || null,
+        source_urls: sourceUrl ? [sourceUrl] : [],
+        confidence,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (insertError || !candidate) {
+      setError(insertError?.message || 'Failed to create pending organization');
+      setSaving(false);
+      return;
+    }
+
+    if (sourceUrl || form.evidence_excerpt) {
+      const { error: evidenceError } = await supabase
+        .from('discovered_organization_evidence')
+        .insert({
+          discovered_organization_id: candidate.id,
+          evidence_key: `${candidateKey}:manual:${sourceUrl || form.evidence_excerpt}`,
+          page_url: sourceUrl || ensureProtocol(form.website_url) || 'manual-intake',
+          source_type: 'manual',
+          source_url: sourceUrl,
+          evidence_excerpt: form.evidence_excerpt || null,
+          raw_relevance_text: form.flemish_belgian_relevance || null,
+          raw_location_text: form.location_display || null,
+          raw_sector_text: sectorNames.join('; ') || null,
+          normalized_location_city: city || null,
+          normalized_location_state: state || null,
+          normalized_location_country: form.location_id ? 'United States' : null,
+          confidence,
+          observed_at: new Date().toISOString(),
+        });
+
+      if (evidenceError) {
+        setError(evidenceError.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(false);
+    setSuccess(true);
+    setDupeMatch(null);
+    setForm(createEmptyOrganizationForm());
+    onContactAdded();
+    setTimeout(() => setSuccess(false), 5000);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.name.trim()) {
+      setError('Organization name is required');
+      return;
+    }
+    if (!form.evidence_url.trim() && !form.evidence_excerpt.trim()) {
+      setError('Manual organization intake needs an evidence URL or excerpt.');
+      return;
+    }
+
+    setSaving(true);
+    const duplicate = await checkDuplicate();
+    setSaving(false);
+    if (duplicate) {
+      setDupeMatch(duplicate);
+      return;
+    }
+
+    await insertOrganization();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600">Organization Name *</label>
+        <input
+          value={form.name}
+          onChange={(event) => setField('name', event.target.value)}
+          className={INPUT_CLS}
+          placeholder="Flanders Investment & Trade New York"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Website</label>
+          <input
+            value={form.website_url}
+            onChange={(event) => setField('website_url', event.target.value)}
+            className={INPUT_CLS}
+            placeholder="example.org"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Organization Scope</label>
+          <div className="relative">
+            <select
+              value={form.suggested_us_network_status}
+              onChange={(event) =>
+                setField(
+                  'suggested_us_network_status',
+                  event.target.value as OrganizationUsNetworkStatus
+                )
+              }
+              className={`${INPUT_CLS} appearance-none pr-8`}
+            >
+              <option value="us_based_organization">US-based organization</option>
+              <option value="belgian_organization_with_us_presence">Belgian organization with US presence</option>
+              <option value="us_organization_connected_to_flanders">US organization connected to Flanders</option>
+              <option value="institutional_connector">Institutional connector</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600">US Location</label>
+        <div className="flex items-center space-x-2">
+          <MapPin className="h-4 w-4 flex-shrink-0 text-gray-400" />
+          <CitySearch
+            value={form.location_id}
+            cityStateDisplay={form.location_display}
+            onChange={(id, city, state) =>
+              setForm((current) => ({
+                ...current,
+                location_id: id,
+                location_display: id ? `${city}, ${state}` : '',
+              }))
+            }
+            placeholder="Search US city..."
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Location Role</label>
+          <input
+            value={form.location_role}
+            onChange={(event) => setField('location_role', event.target.value)}
+            className={INPUT_CLS}
+            placeholder="office, partner site, expansion target"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Confidence</label>
+          <input
+            value={form.confidence}
+            onChange={(event) => setField('confidence', event.target.value)}
+            className={INPUT_CLS}
+            placeholder="0.8"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-600">Flemish/Belgian Relevance</label>
+        <textarea
+          value={form.flemish_belgian_relevance}
+          onChange={(event) => setField('flemish_belgian_relevance', event.target.value)}
+          className={`${INPUT_CLS} resize-none`}
+          rows={3}
+          placeholder="Why this organization belongs in Discovery review..."
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Evidence URL *</label>
+          <input
+            value={form.evidence_url}
+            onChange={(event) => setField('evidence_url', event.target.value)}
+            className={INPUT_CLS}
+            placeholder="https://..."
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Evidence Excerpt *</label>
+          <input
+            value={form.evidence_excerpt}
+            onChange={(event) => setField('evidence_excerpt', event.target.value)}
+            className={INPUT_CLS}
+            placeholder="Short source excerpt"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-gray-600">Sectors</label>
+        <div className="flex flex-wrap gap-2">
+          {sectors.map((sector) => (
+            <button
+              key={sector.id}
+              type="button"
+              onClick={() => toggleSector(sector.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                form.sectorIds.includes(sector.id)
+                  ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-300'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {sector.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {dupeMatch && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="mb-2 flex items-center gap-2">
+            <Users className="h-4 w-4 text-amber-600" />
+            <p className="text-sm font-medium text-amber-700">Possible duplicate found</p>
+          </div>
+          <p className="mb-3 text-xs text-amber-600">
+            "{form.name}" matches existing or pending organization "{dupeMatch.name}".
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDupeMatch(null);
+                insertOrganization();
+              }}
+              className="rounded-lg bg-yellow-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-yellow-600"
+            >
+              Create Pending Anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setDupeMatch(null)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center space-x-2 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="flex items-center space-x-3">
+        <button
+          type="submit"
+          disabled={saving}
+          className="flex items-center space-x-2 rounded-lg bg-yellow-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-yellow-600 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <span>Create Pending Organization</span>
+        </button>
+        {success && (
+          <span className="flex items-center space-x-1 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Pending organization created</span>
           </span>
         )}
       </div>

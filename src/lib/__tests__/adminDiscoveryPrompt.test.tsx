@@ -2,8 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AgentDashboard from '../../components/admin/AgentDashboard';
 
-const { invokeMock } = vi.hoisted(() => ({
+const { invokeMock, tableCounts, agentRuns } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
+  tableCounts: {
+    discovered_contacts: 0,
+    discovered_organizations: 0,
+  } as Record<string, number>,
+  agentRuns: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('../supabase', () => ({
@@ -17,7 +22,7 @@ vi.mock('../supabase', () => ({
           select: () => ({
             eq: () => ({
               order: () => ({
-                limit: () => Promise.resolve({ data: [] }),
+                limit: () => Promise.resolve({ data: agentRuns }),
               }),
             }),
           }),
@@ -35,7 +40,15 @@ vi.mock('../supabase', () => ({
       if (table === 'discovered_contacts') {
         return {
           select: () => ({
-            eq: () => Promise.resolve({ count: 0 }),
+            eq: () => Promise.resolve({ count: tableCounts.discovered_contacts }),
+          }),
+        };
+      }
+
+      if (table === 'discovered_organizations') {
+        return {
+          select: () => ({
+            eq: () => Promise.resolve({ count: tableCounts.discovered_organizations }),
           }),
         };
       }
@@ -52,6 +65,9 @@ vi.mock('../toast', () => ({
 afterEach(() => {
   cleanup();
   invokeMock.mockReset();
+  tableCounts.discovered_contacts = 0;
+  tableCounts.discovered_organizations = 0;
+  agentRuns.length = 0;
 });
 
 describe('Admin Discovery prompt handoff', () => {
@@ -84,5 +100,51 @@ describe('Admin Discovery prompt handoff', () => {
         },
       });
     });
+  });
+
+  it('shows pending people and organization counts', async () => {
+    tableCounts.discovered_contacts = 3;
+    tableCounts.discovered_organizations = 2;
+
+    render(<AgentDashboard />);
+
+    expect(await screen.findByText('Pending People')).toBeTruthy();
+    expect(screen.getByText('Pending Organizations')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('summarizes discovery run results for people and organizations', async () => {
+    agentRuns.push({
+      id: 'run-1',
+      agent_type: 'discovery',
+      status: 'completed',
+      params: {},
+      started_at: '2026-05-07T12:00:00.000Z',
+      completed_at: '2026-05-07T12:01:00.000Z',
+      results: {
+        suggestions_created: 4,
+        suggestions_merged: 1,
+        organizations_inserted: 2,
+        organizations_merged: 1,
+        duplicates_skipped: 3,
+        organization_duplicates_skipped: 2,
+      },
+      error_message: null,
+      error_kind: null,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+      created_at: '2026-05-07T12:00:00.000Z',
+    });
+
+    render(<AgentDashboard />);
+
+    expect(
+      await screen.findByText(
+        '4 people created, 1 person merged, 2 organizations created, 1 organization merged, 3 duplicate people, 2 duplicate organizations'
+      )
+    ).toBeTruthy();
   });
 });

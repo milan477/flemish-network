@@ -64,7 +64,10 @@ Quality gates before autonomy:
 - Most approved candidates have evidence that explains both the Flemish/Belgian tie and US relevance.
 - Duplicate rate is low enough that reviewers are not spending most time merging.
 - Frontier/planning actions produce new useful pages, not repeated versions of the same query.
-- Discovery never auto-promotes to `people`; it creates pending review work.
+- Discovery never auto-promotes to `people` or `organizations`; it creates pending review work.
+- Manual intake and imports never auto-promote to `people` or `organizations`; row-level validation blocks malformed contact fields, malformed URLs, organization rows without evidence, and partial US location evidence before pending candidates are created.
+- Organization candidates are promoted only through explicit reviewer approval or merge, with source URLs and evidence excerpts visible in review.
+- Active UI source must not call retired Discovery endpoints or retired `ai-agent` Discovery tasks; prompted Discovery runs only through `agent-scheduler`.
 
 ## Verification Evaluation
 

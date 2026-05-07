@@ -18,14 +18,13 @@
 - `invite-staff-user` is the only frontend-facing staff invitation endpoint. It requires admin staff auth, writes the approved `staff_users` row with `password_reset_required = true`, and delegates email delivery/user invitation to Supabase Auth `inviteUserByEmail`.
 - `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
 - `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
-- `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`, not `discover-contacts`.
+- `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`; retired Discovery compatibility endpoints must not be reintroduced.
 - `/admin/discovery?prompt=<encoded prompt>` is a staff-controlled handoff only: it pre-fills the Discovery query box and must not call `agent-scheduler` until staff explicitly starts Discovery.
 - `agent-verify` owns durable verification suggestions.
 - `update-profile` is preview mode only for inline profile checks and must not write durable suggestion rows.
 - `derived_label_suggestions` remains the review queue for inferred sectors, occupations, Flemish/Belgian entities, locations, and confidence before promotion.
 - `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
-- `ai-agent` active tasks are `smart_search`, `merge_text`, and `check_profile`. `parse_contacts` and `flemish_search` are legacy and should not be used by new UI.
-- `discover-contacts` and `search-contacts` are legacy compatibility functions and are not product routes.
+- `ai-agent` active tasks are `smart_search`, `merge_text`, and `check_profile`.
 
 ## Error Contract
 
@@ -70,7 +69,7 @@ Durable Discovery.
 3. Fetches pages, stores `discovery_pages`, classifies pages, extracts candidates, and stores evidence.
 4. Merges people into `discovered_contacts` and target organizations into `discovered_organizations`.
 5. Writes `derived_label_suggestions`, entity pivots, follow-up searches, and telemetry.
-6. Never auto-promotes candidates into approved `people` or `organizations`.
+6. Returns people metrics plus organization insert, merge, and duplicate metrics for Discovery dashboard history. Never auto-promotes candidates into approved `people` or `organizations`.
 
 Discovery operating principles:
 
@@ -83,12 +82,18 @@ Discovery operating principles:
 
 Organization discovery writes one pending row per candidate to `discovered_organizations`:
 
-- `name`, `website_url`, and a concise evidence-backed `description`.
+- `candidate_key`, `source`, first/last seen timestamps, evidence rollup timestamps/counts, `name`, `website_url`, and a concise evidence-backed `description`.
 - `suggested_us_network_status`: `us_based_organization`, `belgian_organization_with_us_presence`, `us_organization_connected_to_flanders`, or `institutional_connector`.
 - `us_locations`: JSON items with city/state, role, label, description, source URL, evidence excerpt, confidence, and `is_primary`.
 - `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status = pending`, and `agent_run_id`.
 
+Organization page evidence is stored separately in `discovered_organization_evidence` with the pending organization FK, optional `discovery_page_id`, a unique `evidence_key`, page/source metadata, excerpts, raw relevance/location/sector text, normalized location fields, confidence, and timestamps. Repeated evidence updates the pending organization's `evidence_count`, `last_evidence_at`, and `last_seen_at`; it does not promote the organization.
+
 Each organization location requires direct evidence from an organization page, press release, trusted institutional page, or high-quality partner page. Expansion targets require explicit evidence of US expansion intent. People discovery may create organization pivots, but approved organization records require organization-specific evidence and review through `discovered_organizations`.
+
+Manual Discovery intake and CSV/XLSX imports share the pending-candidate contract. People intake/import writes `discovered_contacts` with `source = manual` or `source = import`, candidate keys, source URLs, suggested US scope, optional US connection evidence, sectors, and Flemish/Belgian text. Organization intake/import writes `discovered_organizations` with `source = manual` or `source = import`, candidate keys, source URLs, sectors, US locations, Flemish/Belgian relevance, confidence, and `discovered_organization_evidence` rows when source evidence is supplied. These paths check approved and pending conflicts and never create or update approved `people` or `organizations`.
+
+Discovery review has separate pending people and pending organization queues. People can be approved, rejected, or merged using the existing pending-contact review behavior. Organization approval is reviewer-controlled: it writes the approved `organizations` row, `organization_sectors`, normalized `organization_us_locations`, `organizations.flemish_link`, review metadata on `discovered_organizations`, and then queues organization embeddings. Organization rejection leaves the approved organization tables unchanged. Organization merge updates the selected approved organization, adds sectors/locations, records `approved_merge`, and queues organization embeddings.
 
 ## Edge Function: `agent-verify`
 
@@ -109,6 +114,7 @@ Lifecycle and planning service.
 - `planning` feeds `/admin/growth`.
 - `metrics` feeds `/admin/growth` quality and benchmark panels.
 - `housekeeping` and `cancel` feed `/admin/system`.
+- Prompted Discovery UI triggers only `agent-scheduler` with `{ action: "trigger", agent_type: "discovery", params: { query? } }`; prompt URL handoffs prefill the query but do not start a run.
 
 ## Edge Function: `generate-embeddings`
 
@@ -155,11 +161,10 @@ Removed from the product surface:
 - `connections` / `connection_suggestions` UI usage
 - `discover_connections()` scheduling path
 
-Legacy compatibility still present until follow-up migrations/functions are removed:
+Retired in Phase 5:
 
-- `discover-contacts`
-- `search-contacts`
-- `ai-agent` tasks `parse_contacts` and `flemish_search`
+- Legacy Discovery compatibility edge functions.
+- Legacy `ai-agent` Discovery parsing/search tasks.
 
 ## Known Work
 

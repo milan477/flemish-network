@@ -39,6 +39,19 @@ import {
   type PageClassification,
   type ScoredChildLink,
 } from "../_shared/discovery.ts";
+import {
+  hasUsLocationSignal,
+  likelySameOrganization,
+  mergeOrganizationCandidates,
+  normalizeOrganizationLocation,
+  normalizeOrganizationName,
+  normalizeOrganizationWebsite,
+  organizationCandidateKey,
+  primaryOrganizationDomain,
+  type DiscoveryOrganizationCandidate,
+  type OrganizationLocationEvidence,
+  type OrganizationNetworkStatus,
+} from "../_shared/discoveryOrganizations.ts";
 import { createLogger } from "../_shared/log.ts";
 
 const log = createLogger("agent-discovery");
@@ -85,6 +98,8 @@ const PAGE_CLASSIFICATION_SCHEMA = {
         "article_or_press_release",
         "event_or_speaker_page",
         "directory_or_index_page",
+        "organization_profile",
+        "partner_or_program_page",
         "low_value_boilerplate",
         "irrelevant",
       ],
@@ -182,8 +197,79 @@ const PAGE_EXTRACTION_SCHEMA = {
         ],
       },
     },
+    organizations: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          website_url: { type: "STRING" },
+          description: { type: "STRING" },
+          suggested_us_network_status: {
+            type: "STRING",
+            enum: [
+              "us_based_organization",
+              "belgian_organization_with_us_presence",
+              "us_organization_connected_to_flanders",
+              "institutional_connector",
+            ],
+          },
+          us_locations: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                city: { type: "STRING" },
+                state: { type: "STRING" },
+                country: { type: "STRING" },
+                role: { type: "STRING" },
+                label: { type: "STRING" },
+                description: { type: "STRING" },
+                source_url: { type: "STRING" },
+                evidence_excerpt: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                is_primary: { type: "BOOLEAN" },
+              },
+              required: [
+                "city",
+                "state",
+                "country",
+                "role",
+                "label",
+                "description",
+                "source_url",
+                "evidence_excerpt",
+                "confidence",
+                "is_primary",
+              ],
+            },
+          },
+          sectors: { type: "ARRAY", items: { type: "STRING" } },
+          flemish_belgian_relevance: { type: "STRING" },
+          evidence_excerpt: { type: "STRING" },
+          raw_relevance_text: { type: "STRING" },
+          raw_location_text: { type: "STRING" },
+          raw_sector_text: { type: "STRING" },
+          confidence: { type: "NUMBER" },
+        },
+        required: [
+          "name",
+          "website_url",
+          "description",
+          "suggested_us_network_status",
+          "us_locations",
+          "sectors",
+          "flemish_belgian_relevance",
+          "evidence_excerpt",
+          "raw_relevance_text",
+          "raw_location_text",
+          "raw_sector_text",
+          "confidence",
+        ],
+      },
+    },
   },
-  required: ["contacts"],
+  required: ["contacts", "organizations"],
 };
 
 const PAGE_CLASSIFICATION_PROMPT = `You are triaging web pages for a Flemish-American network discovery crawler.
@@ -195,11 +281,13 @@ Classify the page into one of:
 - article_or_press_release
 - event_or_speaker_page
 - directory_or_index_page
+- organization_profile
+- partner_or_program_page
 - low_value_boilerplate
 - irrelevant
 
 Rules:
-- should_extract is true only when the page likely contains direct, attributable evidence about one or more people.
+- should_extract is true only when the page likely contains direct, attributable evidence about one or more people or organizations.
 - should_expand is true when the page is worth following for child links, including promising directories or rosters.
 - low_value_boilerplate covers privacy, login, cookie, careers, generic navigation, and similar pages.
 - Prefer directory_or_index_page over team_or_roster when the page is mostly a large index/listing with many links and weak direct person evidence.
@@ -208,6 +296,8 @@ Rules:
 const PAGE_EXTRACTION_PROMPT = `You are extracting discovery candidates for a Flemish-American professional network.
 
 Extract people ONLY when the page gives explicit evidence that they have a Belgian/Flemish connection and are either US-based or have a concrete US tie while based abroad. If location is unknown, include them only if the Flemish and US-tie evidence is strong.
+
+Extract organizations ONLY when the page gives explicit evidence that the organization is part of the Flemish-American network: a Belgian/Flemish organization with US presence, a US organization with concrete Flemish/Belgian relevance, a US-based Belgian/Flemish organization, or an institutional connector. Never include an organization only because one extracted person works there.
 
 Rules:
 - Extract from profile pages, team rosters, lab/group pages, event speaker pages, articles, and press releases.
@@ -279,6 +369,13 @@ interface ExtractedPageContact extends ExtractedContact {
   extraction_confidence: number;
 }
 
+interface ExtractedPageOrganization extends DiscoveryOrganizationCandidate {
+  evidence_excerpt: string;
+  raw_relevance_text: string;
+  raw_location_text: string;
+  raw_sector_text: string;
+}
+
 interface DiscoveryEvidenceInput {
   pageUrl: string;
   pageTitle: string;
@@ -297,10 +394,35 @@ interface DiscoveryEvidenceInput {
   discoveryPageId: string | null;
 }
 
+interface OrganizationEvidenceInput {
+  pageUrl: string;
+  pageTitle: string;
+  pageType: string;
+  sourceType: string;
+  sourceName: string;
+  sourceUrl: string;
+  evidenceExcerpt: string;
+  rawRelevanceText: string;
+  rawLocationText: string;
+  rawSectorText: string;
+  normalizedLocationCity: string;
+  normalizedLocationState: string;
+  normalizedLocationCountry: string;
+  confidence: number;
+  observedAt: string;
+  discoveryPageId: string | null;
+}
+
 interface CandidateBundle {
   contact: ExtractedContact;
   evidence: DiscoveryEvidenceInput[];
   candidateKey: string | null;
+}
+
+interface OrganizationCandidateBundle {
+  organization: DiscoveryOrganizationCandidate;
+  evidence: OrganizationEvidenceInput[];
+  candidateKey: string;
 }
 
 interface LinkedInProfile {
@@ -442,11 +564,15 @@ interface PageProcessResult {
   pageId: string | null;
   classification: PageClassification;
   extractedBundles: CandidateBundle[];
+  extractedOrganizationBundles: OrganizationCandidateBundle[];
   childLinksQueued: number;
   duplicatesSkipped: number;
+  organizationDuplicatesSkipped: number;
   derivedLabelsUpserted: number;
   insertedContacts: number;
   mergedContacts: number;
+  insertedOrganizations: number;
+  mergedOrganizations: number;
   linkedinSearches: number;
   sitemapSeeded: number;
   rssSeeded: number;
@@ -1134,6 +1260,38 @@ function consolidateBundles(bundles: CandidateBundle[]): CandidateBundle[] {
   return consolidated;
 }
 
+function mergeOrganizationBundles(
+  existing: OrganizationCandidateBundle,
+  incoming: OrganizationCandidateBundle,
+): OrganizationCandidateBundle {
+  const merged = mergeOrganizationCandidates(existing.organization, incoming.organization);
+  return {
+    organization: merged,
+    evidence: [...existing.evidence, ...incoming.evidence],
+    candidateKey: existing.candidateKey || incoming.candidateKey || organizationCandidateKey(merged),
+  };
+}
+
+function consolidateOrganizationBundles(bundles: OrganizationCandidateBundle[]): OrganizationCandidateBundle[] {
+  const consolidated: OrganizationCandidateBundle[] = [];
+
+  for (const bundle of bundles) {
+    const matchIndex = consolidated.findIndex((candidate) =>
+      candidate.candidateKey === bundle.candidateKey ||
+      likelySameOrganization(candidate.organization, bundle.organization)
+    );
+
+    if (matchIndex === -1) {
+      consolidated.push(bundle);
+      continue;
+    }
+
+    consolidated[matchIndex] = mergeOrganizationBundles(consolidated[matchIndex], bundle);
+  }
+
+  return consolidated;
+}
+
 function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
   const name =
     safeString(profile.fullName) ||
@@ -1505,11 +1663,49 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
   };
 }
 
-async function extractContactsFromPage(
+function normalizeOrganizationNetworkStatus(value: unknown): OrganizationNetworkStatus {
+  if (
+    value === "belgian_organization_with_us_presence" ||
+    value === "us_organization_connected_to_flanders" ||
+    value === "institutional_connector"
+  ) {
+    return value;
+  }
+  return "us_based_organization";
+}
+
+function normalizeExtractedPageOrganization(raw: Record<string, unknown>, pageUrl: string): ExtractedPageOrganization {
+  const locations = Array.isArray(raw.us_locations)
+    ? raw.us_locations
+      .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+      .map((location) => normalizeOrganizationLocation(location, pageUrl))
+      .filter(hasUsLocationSignal)
+    : [];
+
+  return {
+    name: safeString(raw.name),
+    website_url: safeString(raw.website_url),
+    description: safeString(raw.description),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(raw.suggested_us_network_status),
+    us_locations: locations,
+    sectors: Array.isArray(raw.sectors)
+      ? (raw.sectors as unknown[]).filter((value): value is string => typeof value === "string")
+      : [],
+    flemish_belgian_relevance: safeString(raw.flemish_belgian_relevance),
+    source_urls: uniqueStrings([pageUrl, safeString(raw.website_url)]),
+    confidence: clampConfidence(raw.confidence),
+    evidence_excerpt: safeString(raw.evidence_excerpt),
+    raw_relevance_text: safeString(raw.raw_relevance_text),
+    raw_location_text: safeString(raw.raw_location_text),
+    raw_sector_text: safeString(raw.raw_sector_text),
+  };
+}
+
+async function extractCandidatesFromPage(
   page: FetchedPage,
   classification: PageClassification,
   geminiKey: string,
-): Promise<ExtractedPageContact[]> {
+): Promise<{ contacts: ExtractedPageContact[]; organizations: ExtractedPageOrganization[] }> {
   const primaryMaxChars =
     classification.pageType === "team_or_roster"
       ? 5500
@@ -1594,7 +1790,7 @@ ${page.text.slice(0, attempt.maxChars)}
           });
         }
 
-        const parsed = await callGeminiJson<{ contacts: Record<string, unknown>[] }>(
+        const parsed = await callGeminiJson<{ contacts: Record<string, unknown>[]; organizations: Record<string, unknown>[] }>(
           geminiKey,
           attempt.model,
           PAGE_EXTRACTION_PROMPT,
@@ -1608,13 +1804,23 @@ ${page.text.slice(0, attempt.maxChars)}
           },
         );
 
-        return (Array.isArray(parsed.contacts) ? parsed.contacts : [])
+        const contacts = (Array.isArray(parsed.contacts) ? parsed.contacts : [])
           .map((contact) => normalizeExtractedPageContact(contact, page.canonicalUrl))
           .filter((contact) => normalizeWhitespace(contact.name).length > 0)
           .filter((contact) =>
             contact.suggested_us_network_status === "us_connected_abroad" ||
             isLikelyUS(contact)
           );
+        const organizations = (Array.isArray(parsed.organizations) ? parsed.organizations : [])
+          .map((organization) => normalizeExtractedPageOrganization(organization, page.canonicalUrl))
+          .filter((organization) => normalizeWhitespace(organization.name).length > 0)
+          .filter((organization) =>
+            organization.us_locations.length > 0 ||
+            organization.suggested_us_network_status === "belgian_organization_with_us_presence" ||
+            organization.suggested_us_network_status === "institutional_connector"
+          );
+
+        return { contacts, organizations };
       } catch (error) {
         lastError = error;
       }
@@ -1627,7 +1833,7 @@ ${page.text.slice(0, attempt.maxChars)}
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Failed to extract contacts from page");
+  throw lastError instanceof Error ? lastError : new Error("Failed to extract candidates from page");
 }
 
 async function loadSourcePacks(
@@ -2950,6 +3156,267 @@ async function persistCandidateBundle(
   };
 }
 
+interface ExistingOrganizationLookupRow {
+  id: string;
+  name: string;
+  website_url?: string | null;
+  description?: string | null;
+  us_network_status?: string | null;
+  flemish_link?: string | null;
+  candidate_key?: string | null;
+  suggested_us_network_status?: string | null;
+  us_locations?: unknown;
+  sectors?: string[] | null;
+  flemish_belgian_relevance?: string | null;
+  source_urls?: string[] | null;
+  confidence?: number | string | null;
+  evidence_count?: number | null;
+  last_evidence_at?: string | null;
+}
+
+interface PersistOrganizationResult {
+  status: "inserted" | "merged" | "duplicate_organizations";
+  discoveredOrganizationId: string | null;
+}
+
+function mapExistingDiscoveredOrganizationRow(row: ExistingOrganizationLookupRow): DiscoveryOrganizationCandidate {
+  return {
+    name: safeString(row.name),
+    website_url: safeString(row.website_url),
+    description: safeString(row.description),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(row.suggested_us_network_status),
+    us_locations: Array.isArray(row.us_locations)
+      ? (row.us_locations as unknown[])
+        .filter((value): value is OrganizationLocationEvidence => Boolean(value && typeof value === "object"))
+      : [],
+    sectors: Array.isArray(row.sectors)
+      ? row.sectors.filter((value): value is string => typeof value === "string")
+      : [],
+    flemish_belgian_relevance: safeString(row.flemish_belgian_relevance),
+    source_urls: Array.isArray(row.source_urls)
+      ? row.source_urls.filter((value): value is string => typeof value === "string")
+      : [],
+    confidence: clampConfidence(row.confidence),
+  };
+}
+
+function mapApprovedOrganizationRow(row: ExistingOrganizationLookupRow): DiscoveryOrganizationCandidate {
+  return {
+    name: safeString(row.name),
+    website_url: safeString(row.website_url),
+    description: safeString(row.description),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(row.us_network_status),
+    us_locations: [],
+    sectors: [],
+    flemish_belgian_relevance: safeString(row.flemish_link),
+    source_urls: row.website_url ? [row.website_url] : [],
+    confidence: 1,
+  };
+}
+
+async function queryOrganizationsByField(
+  supabase: SupabaseAdminClient,
+  table: "organizations" | "discovered_organizations",
+  field: "website_url" | "name" | "candidate_key",
+  value: string,
+  pendingOnly = false,
+): Promise<ExistingOrganizationLookupRow[]> {
+  if (!value) return [];
+
+  let query = supabase.from(table).select("*");
+  if (table === "discovered_organizations" && pendingOnly) {
+    query = query.eq("status", "pending");
+  }
+
+  if (field === "name") {
+    query = query.ilike(field, value);
+  } else {
+    query = query.eq(field, value);
+  }
+
+  const { data } = await query.limit(8);
+  return (data || []) as ExistingOrganizationLookupRow[];
+}
+
+async function findExistingApprovedOrganization(
+  supabase: SupabaseAdminClient,
+  organization: DiscoveryOrganizationCandidate,
+): Promise<ExistingOrganizationLookupRow | null> {
+  const queries: Array<Promise<ExistingOrganizationLookupRow[]>> = [];
+  const website = normalizeOrganizationWebsite(organization.website_url);
+  const name = normalizeWhitespace(organization.name);
+
+  if (organization.website_url) queries.push(queryOrganizationsByField(supabase, "organizations", "website_url", organization.website_url));
+  if (website && organization.website_url !== website) queries.push(queryOrganizationsByField(supabase, "organizations", "website_url", website));
+  if (name) queries.push(queryOrganizationsByField(supabase, "organizations", "name", name));
+
+  const rows = (await Promise.all(queries)).flat();
+  return rows.find((row) => likelySameOrganization(mapApprovedOrganizationRow(row), organization)) || null;
+}
+
+async function findPendingDiscoveredOrganization(
+  supabase: SupabaseAdminClient,
+  organization: DiscoveryOrganizationCandidate,
+  candidateKey: string,
+): Promise<ExistingOrganizationLookupRow | null> {
+  const queries: Array<Promise<ExistingOrganizationLookupRow[]>> = [
+    queryOrganizationsByField(supabase, "discovered_organizations", "candidate_key", candidateKey, true),
+  ];
+  const website = normalizeOrganizationWebsite(organization.website_url);
+  const name = normalizeWhitespace(organization.name);
+
+  if (organization.website_url) {
+    queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "website_url", organization.website_url, true));
+  }
+  if (website && organization.website_url !== website) {
+    queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "website_url", website, true));
+  }
+  if (name) queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "name", name, true));
+
+  const rows = (await Promise.all(queries)).flat();
+  return rows.find((row) => safeString(row.candidate_key) === candidateKey) ||
+    rows.find((row) => likelySameOrganization(mapExistingDiscoveredOrganizationRow(row), organization)) ||
+    null;
+}
+
+async function insertOrganizationEvidenceRows(
+  supabase: SupabaseAdminClient,
+  discoveredOrganizationId: string,
+  organizationName: string,
+  evidence: OrganizationEvidenceInput[],
+): Promise<number> {
+  if (evidence.length === 0) return 0;
+
+  const rows = await Promise.all(
+    evidence.map(async (item) => ({
+      discovered_organization_id: discoveredOrganizationId,
+      discovery_page_id: item.discoveryPageId,
+      evidence_key: await hashString(
+        `${normalizeOrganizationName(organizationName)}|${item.pageUrl}|${normalizeWhitespace(item.evidenceExcerpt)}|${normalizeWhitespace(item.rawRelevanceText)}`,
+      ),
+      page_url: item.pageUrl,
+      page_title: item.pageTitle || null,
+      page_type: item.pageType || null,
+      source_type: item.sourceType || null,
+      source_name: item.sourceName || null,
+      source_url: item.sourceUrl || item.pageUrl,
+      evidence_excerpt: item.evidenceExcerpt || null,
+      raw_relevance_text: item.rawRelevanceText || null,
+      raw_location_text: item.rawLocationText || null,
+      raw_sector_text: item.rawSectorText || null,
+      normalized_location_city: item.normalizedLocationCity || null,
+      normalized_location_state: item.normalizedLocationState || null,
+      normalized_location_country: item.normalizedLocationCountry || null,
+      confidence: Number(item.confidence.toFixed(2)),
+      observed_at: item.observedAt,
+    })),
+  );
+
+  const { data, error } = await supabase
+    .from("discovered_organization_evidence")
+    .upsert(rows, { onConflict: "evidence_key", ignoreDuplicates: true })
+    .select("id");
+
+  if (error) {
+    throw new Error(`Failed to write discovered organization evidence: ${error.message}`);
+  }
+
+  return data?.length || 0;
+}
+
+async function persistOrganizationBundle(
+  supabase: SupabaseAdminClient,
+  bundle: OrganizationCandidateBundle,
+  runId: string | undefined,
+): Promise<PersistOrganizationResult> {
+  const approvedMatch = await findExistingApprovedOrganization(supabase, bundle.organization);
+  if (approvedMatch) {
+    return { status: "duplicate_organizations", discoveredOrganizationId: null };
+  }
+
+  const pendingMatch = await findPendingDiscoveredOrganization(
+    supabase,
+    bundle.organization,
+    bundle.candidateKey,
+  );
+
+  if (pendingMatch) {
+    const merged = mergeOrganizationCandidates(
+      mapExistingDiscoveredOrganizationRow(pendingMatch),
+      bundle.organization,
+    );
+    await insertOrganizationEvidenceRows(
+      supabase,
+      String(pendingMatch.id),
+      merged.name,
+      bundle.evidence,
+    );
+
+    const { error } = await supabase
+      .from("discovered_organizations")
+      .update({
+        name: merged.name,
+        website_url: merged.website_url || null,
+        description: merged.description || null,
+        candidate_key: safeString(pendingMatch.candidate_key) || bundle.candidateKey,
+        source: "agent_discovery",
+        suggested_us_network_status: merged.suggested_us_network_status,
+        us_locations: merged.us_locations,
+        sectors: merged.sectors.length > 0 ? merged.sectors : null,
+        flemish_belgian_relevance: merged.flemish_belgian_relevance || null,
+        source_urls: merged.source_urls.length > 0 ? merged.source_urls : null,
+        confidence: Number(merged.confidence.toFixed(2)),
+        agent_run_id: runId || null,
+        last_seen_at: new Date().toISOString(),
+      })
+      .eq("id", pendingMatch.id);
+
+    if (error) {
+      throw new Error(`Failed to update discovered organization: ${error.message}`);
+    }
+
+    return { status: "merged", discoveredOrganizationId: String(pendingMatch.id) };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("discovered_organizations")
+    .insert({
+      name: bundle.organization.name,
+      website_url: bundle.organization.website_url || null,
+      description: bundle.organization.description || null,
+      candidate_key: bundle.candidateKey,
+      source: "agent_discovery",
+      suggested_us_network_status: bundle.organization.suggested_us_network_status,
+      us_locations: bundle.organization.us_locations,
+      sectors: bundle.organization.sectors.length > 0 ? bundle.organization.sectors : null,
+      flemish_belgian_relevance: bundle.organization.flemish_belgian_relevance || null,
+      source_urls: bundle.organization.source_urls.length > 0 ? bundle.organization.source_urls : null,
+      confidence: Number(bundle.organization.confidence.toFixed(2)),
+      status: "pending",
+      agent_run_id: runId || null,
+      first_seen_at: nowIso,
+      last_seen_at: nowIso,
+      last_evidence_at: nowIso,
+      evidence_count: 0,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new Error(error?.message || "Failed to insert discovered organization");
+  }
+
+  await insertOrganizationEvidenceRows(
+    supabase,
+    data.id,
+    bundle.organization.name,
+    bundle.evidence,
+  );
+
+  return { status: "inserted", discoveredOrganizationId: data.id };
+}
+
 async function enqueueChildLinks(
   supabase: SupabaseAdminClient,
   frontier: FrontierRow,
@@ -3134,11 +3601,15 @@ async function processFrontierRow(
         method: "heuristic",
       },
       extractedBundles: [],
+      extractedOrganizationBundles: [],
       childLinksQueued: 0,
       duplicatesSkipped: 0,
+      organizationDuplicatesSkipped: 0,
       derivedLabelsUpserted: 0,
       insertedContacts: 0,
       mergedContacts: 0,
+      insertedOrganizations: 0,
+      mergedOrganizations: 0,
       linkedinSearches: 0,
       sitemapSeeded: 0,
       rssSeeded: 0,
@@ -3242,11 +3713,15 @@ async function processFrontierRow(
       pageId,
       classification,
       extractedBundles: [],
+      extractedOrganizationBundles: [],
       childLinksQueued,
       duplicatesSkipped: 0,
+      organizationDuplicatesSkipped: 0,
       derivedLabelsUpserted: 0,
       insertedContacts: 0,
       mergedContacts: 0,
+      insertedOrganizations: 0,
+      mergedOrganizations: 0,
       linkedinSearches: 0,
       sitemapSeeded: 0,
       rssSeeded: 0,
@@ -3254,14 +3729,15 @@ async function processFrontierRow(
   }
 
   let bundles: CandidateBundle[] = [];
+  let organizationBundles: OrganizationCandidateBundle[] = [];
   let extractionDeferred = false;
   let extractionErrorMessage: string | null = null;
   if (classification.shouldExtract && page.text.length > 250) {
     try {
-      const extractedContacts = await extractContactsFromPage(page, classification, geminiKey);
+      const extraction = await extractCandidatesFromPage(page, classification, geminiKey);
       llmStats.calls += 1;
 
-      bundles = extractedContacts.map((contact) => ({
+      bundles = extraction.contacts.map((contact) => ({
         contact,
         evidence: [
           {
@@ -3302,6 +3778,36 @@ async function processFrontierRow(
           },
         ]),
       }));
+      organizationBundles = extraction.organizations.map((organization) => {
+        const primaryLocation = organization.us_locations.find((location) => location.is_primary) ||
+          organization.us_locations[0];
+        const sourceDomain = primaryOrganizationDomain(organization);
+
+        return {
+          organization,
+          evidence: [
+            {
+              pageUrl: page.canonicalUrl,
+              pageTitle: page.title,
+              pageType: classification.pageType,
+              sourceType: frontier.source_type,
+              sourceName: sourceDomain || frontier.domain,
+              sourceUrl: page.canonicalUrl,
+              evidenceExcerpt: organization.evidence_excerpt,
+              rawRelevanceText: organization.raw_relevance_text,
+              rawLocationText: organization.raw_location_text,
+              rawSectorText: organization.raw_sector_text,
+              normalizedLocationCity: primaryLocation?.city || "",
+              normalizedLocationState: primaryLocation?.state || "",
+              normalizedLocationCountry: primaryLocation?.country || "",
+              confidence: organization.confidence,
+              observedAt: page.fetchedAt,
+              discoveryPageId: pageId,
+            },
+          ],
+          candidateKey: organizationCandidateKey(organization),
+        };
+      });
     } catch (error) {
       if (!isRetryableUpstreamError(error)) {
         throw error;
@@ -3316,6 +3822,10 @@ async function processFrontierRow(
     ...bundle,
     candidateKey: bundle.candidateKey || buildCandidateKey(bundle.contact, bundle.evidence),
   }));
+  organizationBundles = consolidateOrganizationBundles(organizationBundles).map((bundle) => ({
+    ...bundle,
+    candidateKey: bundle.candidateKey || organizationCandidateKey(bundle.organization),
+  }));
   const enrichment = await maybeEnrichViaLinkedIn(bundles, steps, elapsed);
   bundles = enrichment.bundles;
   await heartbeat();
@@ -3323,7 +3833,10 @@ async function processFrontierRow(
   let insertedContacts = 0;
   let mergedContacts = 0;
   let duplicatesSkipped = 0;
+  let organizationDuplicatesSkipped = 0;
   let derivedLabelsUpserted = 0;
+  let insertedOrganizations = 0;
+  let mergedOrganizations = 0;
 
   for (const bundle of bundles) {
     const result = await persistCandidateBundle(supabase, bundle, runId);
@@ -3336,14 +3849,22 @@ async function processFrontierRow(
     }
   }
 
-  if (duplicatesSkipped > 0) {
+  for (const bundle of organizationBundles) {
+    const result = await persistOrganizationBundle(supabase, bundle, runId);
+    if (result.status === "inserted") insertedOrganizations += 1;
+    if (result.status === "merged") mergedOrganizations += 1;
+    if (result.status === "duplicate_organizations") organizationDuplicatesSkipped += 1;
+  }
+
+  if (duplicatesSkipped + organizationDuplicatesSkipped > 0) {
     await bumpDomainStats(supabase, page.domain, {
-      duplicateCandidates: duplicatesSkipped,
+      duplicateCandidates: duplicatesSkipped + organizationDuplicatesSkipped,
     });
   }
 
   const shouldExpandAggressively =
     bundles.length > 0 ||
+    organizationBundles.length > 0 ||
     (
       parentHasStrongSignals &&
       ["team_or_roster", "lab_or_group_page", "directory_or_index_page"].includes(classification.pageType)
@@ -3370,10 +3891,15 @@ async function processFrontierRow(
     detail: {
       frontier_id: frontier.id,
       url: page.canonicalUrl,
-      extracted_candidates: bundles.length,
+      extracted_candidates: bundles.length + organizationBundles.length,
+      extracted_contacts: bundles.length,
+      extracted_organizations: organizationBundles.length,
       inserted_contacts: insertedContacts,
       merged_contacts: mergedContacts,
       duplicates_skipped: duplicatesSkipped,
+      inserted_organizations: insertedOrganizations,
+      merged_organizations: mergedOrganizations,
+      organization_duplicates_skipped: organizationDuplicatesSkipped,
       derived_labels_upserted: derivedLabelsUpserted,
       child_links_queued: childLinksQueued,
       sitemap_seeded: harvestResult.sitemapSeeded,
@@ -3403,7 +3929,7 @@ async function processFrontierRow(
       page_type: classification.pageType,
       last_extraction_outcome: extractionDeferred
         ? "upstream_retry"
-        : bundles.length > 0
+        : bundles.length + organizationBundles.length > 0
         ? "candidate_extracted"
         : classification.shouldExtract
         ? "no_candidate"
@@ -3415,13 +3941,15 @@ async function processFrontierRow(
   const evidenceConfidence =
     bundles.length > 0
       ? bundles.reduce((sum, bundle) => sum + bundle.evidence[0].extractionConfidence, 0) / bundles.length
+      : organizationBundles.length > 0
+      ? organizationBundles.reduce((sum, bundle) => sum + bundle.evidence[0].confidence, 0) / organizationBundles.length
       : null;
 
   await bumpDomainStats(supabase, page.domain, {
     pagesQueued: -1 + childLinksQueued,
     pagesFetched: 1,
     promisingPages: classification.shouldExtract ? 1 : 0,
-    candidatesExtracted: insertedContacts + mergedContacts,
+    candidatesExtracted: insertedContacts + mergedContacts + insertedOrganizations + mergedOrganizations,
     sourcePackId: frontier.source_pack_id,
     lastSeenAt: page.fetchedAt,
     lastFetchedAt: page.fetchedAt,
@@ -3433,11 +3961,15 @@ async function processFrontierRow(
     pageId,
     classification,
     extractedBundles: bundles,
+    extractedOrganizationBundles: organizationBundles,
     childLinksQueued,
     duplicatesSkipped,
+    organizationDuplicatesSkipped,
     derivedLabelsUpserted,
     insertedContacts,
     mergedContacts,
+    insertedOrganizations,
+    mergedOrganizations,
     linkedinSearches: enrichment.searches,
     sitemapSeeded: harvestResult.sitemapSeeded,
     rssSeeded: harvestResult.rssSeeded,
@@ -3494,6 +4026,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
     let insertedContacts = 0;
     let mergedContacts = 0;
     let duplicatesSkipped = 0;
+    let insertedOrganizations = 0;
+    let mergedOrganizations = 0;
+    let organizationDuplicatesSkipped = 0;
     let derivedLabelsUpserted = 0;
     let childLinksQueued = 0;
     let sitemapUrlsSeeded = 0;
@@ -3648,6 +4183,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
         insertedContacts += result.insertedContacts;
         mergedContacts += result.mergedContacts;
         duplicatesSkipped += result.duplicatesSkipped;
+        insertedOrganizations += result.insertedOrganizations;
+        mergedOrganizations += result.mergedOrganizations;
+        organizationDuplicatesSkipped += result.organizationDuplicatesSkipped;
         derivedLabelsUpserted += result.derivedLabelsUpserted;
         childLinksQueued += result.childLinksQueued;
         linkedinSearchesMade += result.linkedinSearches;
@@ -3714,6 +4252,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
       suggestions_created: insertedContacts,
       suggestions_merged: mergedContacts,
       duplicates_skipped: duplicatesSkipped,
+      organizations_inserted: insertedOrganizations,
+      organizations_merged: mergedOrganizations,
+      organization_duplicates_skipped: organizationDuplicatesSkipped,
+      organization_suggestions_created: insertedOrganizations,
+      organization_suggestions_merged: mergedOrganizations,
       derived_labels_upserted: derivedLabelsUpserted,
       child_links_queued: childLinksQueued,
       sitemap_urls_seeded: sitemapUrlsSeeded,

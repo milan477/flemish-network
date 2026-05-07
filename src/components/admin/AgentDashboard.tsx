@@ -59,7 +59,8 @@ interface AgentDashboardProps {
 export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDashboardProps) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [quotas, setQuotas] = useState<ApiQuota[]>([]);
-  const [pendingSuggestions, setPendingSuggestions] = useState(0);
+  const [pendingPeople, setPendingPeople] = useState(0);
+  const [pendingOrganizations, setPendingOrganizations] = useState(0);
   const [loading, setLoading] = useState(true);
   const [triggerLoading, setTriggerLoading] = useState<string | null>(null);
   const [discoveryQuery, setDiscoveryQuery] = useState('');
@@ -68,7 +69,7 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
   const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
-    const [runsRes, quotasRes, suggestionsRes] = await Promise.all([
+    const [runsRes, quotasRes, pendingPeopleRes, pendingOrganizationsRes] = await Promise.all([
       supabase
         .from('agent_runs')
         .select('*')
@@ -83,11 +84,16 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
         .from('discovered_contacts')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'pending'),
+      supabase
+        .from('discovered_organizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending'),
     ]);
 
     setRuns((runsRes.data || []) as AgentRun[]);
     setQuotas((quotasRes.data || []) as ApiQuota[]);
-    setPendingSuggestions(suggestionsRes.count || 0);
+    setPendingPeople(pendingPeopleRes.count || 0);
+    setPendingOrganizations(pendingOrganizationsRes.count || 0);
     setLoading(false);
   }, []);
 
@@ -185,6 +191,9 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
     return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   };
 
+  const formatCount = (count: number, singular: string, plural = `${singular}s`) =>
+    `${count} ${count === 1 ? singular : plural}`;
+
   const summarizeResults = (run: AgentRun): string => {
     if (!run.results) return '—';
     const r = run.results;
@@ -192,15 +201,38 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
     if (typeof r.frontier_claimed === 'number') parts.push(`${r.frontier_claimed} claimed`);
     if (typeof r.pages_fetched === 'number') parts.push(`${r.pages_fetched} pages`);
     if (typeof r.profiles_found === 'number') parts.push(`${r.profiles_found} found`);
-    if (typeof r.suggestions_created === 'number') parts.push(`${r.suggestions_created} suggestions`);
-    if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) parts.push(`${r.suggestions_merged} merged`);
+    if (typeof r.suggestions_created === 'number') parts.push(`${formatCount(r.suggestions_created, 'person', 'people')} created`);
+    if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) {
+      parts.push(`${formatCount(r.suggestions_merged, 'person', 'people')} merged`);
+    }
+    const organizationsCreated =
+      typeof r.organizations_inserted === 'number'
+        ? r.organizations_inserted
+        : typeof r.organization_suggestions_created === 'number'
+        ? r.organization_suggestions_created
+        : null;
+    const organizationsMerged =
+      typeof r.organizations_merged === 'number'
+        ? r.organizations_merged
+        : typeof r.organization_suggestions_merged === 'number'
+        ? r.organization_suggestions_merged
+        : null;
+    if (typeof organizationsCreated === 'number') parts.push(`${formatCount(organizationsCreated, 'organization')} created`);
+    if (typeof organizationsMerged === 'number' && organizationsMerged > 0) {
+      parts.push(`${formatCount(organizationsMerged, 'organization')} merged`);
+    }
     if (typeof r.profiles_checked === 'number') parts.push(`${r.profiles_checked} checked`);
     if (typeof r.profiles_verified === 'number') parts.push(`${r.profiles_verified} verified`);
     if (typeof r.child_links_queued === 'number' && r.child_links_queued > 0) parts.push(`${r.child_links_queued} queued`);
     if (typeof r.sitemap_urls_seeded === 'number' && r.sitemap_urls_seeded > 0) parts.push(`${r.sitemap_urls_seeded} sitemap`);
     if (typeof r.rss_urls_seeded === 'number' && r.rss_urls_seeded > 0) parts.push(`${r.rss_urls_seeded} rss`);
     if (Array.isArray(r.entity_pivots_used) && r.entity_pivots_used.length > 0) parts.push(`${r.entity_pivots_used.length} pivots`);
-    if (typeof r.duplicates_skipped === 'number' && r.duplicates_skipped > 0) parts.push(`${r.duplicates_skipped} dupes`);
+    if (typeof r.duplicates_skipped === 'number' && r.duplicates_skipped > 0) {
+      parts.push(`${r.duplicates_skipped} duplicate ${r.duplicates_skipped === 1 ? 'person' : 'people'}`);
+    }
+    if (typeof r.organization_duplicates_skipped === 'number' && r.organization_duplicates_skipped > 0) {
+      parts.push(`${r.organization_duplicates_skipped} duplicate organization${r.organization_duplicates_skipped === 1 ? '' : 's'}`);
+    }
     return parts.length > 0 ? parts.join(', ') : '—';
   };
 
@@ -303,8 +335,12 @@ export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDas
           <h3 className="text-base font-semibold text-gray-900 mb-4">Summary</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <p className="text-2xl font-bold text-yellow-700">{pendingSuggestions}</p>
+              <p className="text-2xl font-bold text-yellow-700">{pendingPeople}</p>
               <p className="text-xs text-yellow-600 mt-1">Pending People</p>
+            </div>
+            <div className="text-center p-4 bg-teal-50 rounded-lg">
+              <p className="text-2xl font-bold text-teal-700">{pendingOrganizations}</p>
+              <p className="text-xs text-teal-600 mt-1">Pending Organizations</p>
             </div>
             <div className="text-center p-4 bg-blue-50 rounded-lg">
               <p className="text-2xl font-bold text-blue-700">

@@ -90,29 +90,6 @@ const checks: SmokeCheck[] = [
     },
   },
   {
-    name: "discover-contacts",
-    body: { query: "Jan Janssens KU Leuven postdoc Boston" },
-    validate: (body) => {
-      if (!isObject(body)) return "expected object";
-      if (!("contacts" in body) && !("error" in body)) return "missing contacts/error";
-      return null;
-    },
-  },
-  {
-    name: "search-contacts",
-    label: "search-contacts compat",
-    body: { query: "ku leuven" },
-    validate: (body, _status, response) => {
-      if (!isObject(body)) return "expected object";
-      if (!("contacts" in body) && !("error" in body)) return "missing contacts/error";
-      if (response.headers.get("Deprecation") !== "true") return "missing deprecation header";
-      if (response.headers.get("X-Replaced-By") !== "discover-contacts") {
-        return "missing successor endpoint header";
-      }
-      return null;
-    },
-  },
-  {
     name: "generate-embeddings",
     method: "POST",
     body: { kick: true },
@@ -123,12 +100,10 @@ const checks: SmokeCheck[] = [
   },
   {
     name: "agent-scheduler",
-    body: { source: "smoke", action: "status" },
-    allowClientError: true,
+    body: { source: "smoke", action: "metrics" },
     validate: (body) => {
       if (!isObject(body)) return "expected object";
-      // Either a status response or an explicit structured error is acceptable.
-      if (Object.keys(body).length === 0) return "empty body";
+      if (!("metrics" in body) && !("error" in body)) return "missing metrics/error";
       return null;
     },
   },
@@ -143,15 +118,6 @@ const checks: SmokeCheck[] = [
   },
   {
     name: "agent-verify",
-    body: { dryRun: true },
-    allowClientError: true,
-    validate: (body) => {
-      if (!isObject(body)) return "expected object";
-      return null;
-    },
-  },
-  {
-    name: "agent-connections",
     body: { dryRun: true },
     allowClientError: true,
     validate: (body) => {

@@ -8,6 +8,8 @@ export type DiscoveryPageType =
   | "article_or_press_release"
   | "event_or_speaker_page"
   | "directory_or_index_page"
+  | "organization_profile"
+  | "partner_or_program_page"
   | "low_value_boilerplate"
   | "irrelevant";
 

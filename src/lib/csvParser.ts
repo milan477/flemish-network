@@ -301,6 +301,83 @@ export const FULL_NAME_FIELD: ProfileField = {
   ],
 };
 
+export type ImportEntityMode = 'people' | 'organizations';
+
+export const ORGANIZATION_FIELDS: ProfileField[] = [
+  {
+    key: 'name',
+    label: 'Organization Name',
+    required: true,
+    aliases: ['organization name', 'organization', 'org name', 'company', 'company name', 'name'],
+  },
+  {
+    key: 'website_url',
+    label: 'Website',
+    required: false,
+    aliases: ['website', 'website url', 'url', 'homepage', 'site'],
+  },
+  {
+    key: 'description',
+    label: 'Description',
+    required: false,
+    aliases: ['description', 'summary', 'about', 'notes', 'note'],
+  },
+  {
+    key: 'sectors',
+    label: 'Sector(s)',
+    required: false,
+    aliases: ['sector', 'sectors', 'sector(s)', 'industry', 'industries', 'domain', 'focus area'],
+  },
+  {
+    key: 'us_network_status',
+    label: 'Organization Scope',
+    required: false,
+    aliases: ['organization scope', 'org scope', 'scope', 'us network status', 'network status'],
+  },
+  {
+    key: 'location_city',
+    label: 'US Location City',
+    required: false,
+    aliases: ['city', 'location city', 'us city', 'us location city', 'base city'],
+  },
+  {
+    key: 'location_state',
+    label: 'US Location State',
+    required: false,
+    aliases: ['state', 'location state', 'us state', 'us location state', 'base state'],
+  },
+  {
+    key: 'location_role',
+    label: 'US Location Role',
+    required: false,
+    aliases: ['location role', 'role', 'us role', 'office type'],
+  },
+  {
+    key: 'flemish_belgian_relevance',
+    label: 'Flemish/Belgian Relevance',
+    required: false,
+    aliases: ['flemish relevance', 'belgian relevance', 'flemish belgian relevance', 'relevance', 'flemish connection'],
+  },
+  {
+    key: 'source_url',
+    label: 'Evidence URL',
+    required: false,
+    aliases: ['source url', 'evidence url', 'url source', 'reference url'],
+  },
+  {
+    key: 'evidence_excerpt',
+    label: 'Evidence Excerpt',
+    required: false,
+    aliases: ['evidence excerpt', 'evidence', 'quote', 'source excerpt'],
+  },
+  {
+    key: 'confidence',
+    label: 'Confidence',
+    required: false,
+    aliases: ['confidence', 'score', 'relevance score'],
+  },
+];
+
 export interface CsvParseResult {
   headers: string[];
   rows: string[][];
@@ -413,6 +490,25 @@ export interface FieldMapping {
   confidence: number;
 }
 
+function resolveMappingCollisions(mappings: FieldMapping[]): FieldMapping[] {
+  const bestByColumn = new Map<string, FieldMapping>();
+
+  for (const mapping of mappings) {
+    if (!mapping.csvColumn) continue;
+    const existing = bestByColumn.get(mapping.csvColumn);
+    if (!existing || mapping.confidence > existing.confidence) {
+      bestByColumn.set(mapping.csvColumn, mapping);
+    }
+  }
+
+  return mappings.map((mapping) => {
+    if (!mapping.csvColumn) return mapping;
+    return bestByColumn.get(mapping.csvColumn) === mapping
+      ? mapping
+      : { ...mapping, csvColumn: '', confidence: 0 };
+  });
+}
+
 function bestMatch(
   field: { key: string; label: string; aliases: string[] },
   csvHeaders: string[],
@@ -481,7 +577,20 @@ export function suggestMappings(csvHeaders: string[]): FieldMapping[] {
     });
   }
 
-  return mappings;
+  return resolveMappingCollisions(mappings);
+}
+
+export function suggestMappingsForMode(
+  csvHeaders: string[],
+  mode: ImportEntityMode
+): FieldMapping[] {
+  if (mode === 'people') return suggestMappings(csvHeaders);
+
+  return resolveMappingCollisions(ORGANIZATION_FIELDS.map((field) => {
+    const threshold = field.required ? 0.35 : 0.5;
+    const { col, score } = bestMatch(field, csvHeaders, threshold);
+    return { fieldKey: field.key, csvColumn: col, confidence: score };
+  }));
 }
 
 export interface MappedRow {
@@ -532,6 +641,20 @@ export interface ValidationResult {
   invalid: { row: MappedRow; reason: string }[];
 }
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function hasMalformedUrl(raw: string | undefined): boolean {
+  const value = (raw || '').trim();
+  if (!value) return false;
+  if (/\s/.test(value)) return true;
+  return !/^(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(value);
+}
+
+export function hasMalformedEmail(raw: string | undefined): boolean {
+  const value = (raw || '').trim();
+  return Boolean(value && !EMAIL_PATTERN.test(value));
+}
+
 export function validateMappedRows(rows: MappedRow[]): ValidationResult {
   const valid: MappedRow[] = [];
   const invalid: { row: MappedRow; reason: string }[] = [];
@@ -548,6 +671,14 @@ export function validateMappedRows(rows: MappedRow[]): ValidationResult {
       );
     if (!firstName) {
       invalid.push({ row, reason: 'Missing required field: First Name' });
+    } else if (hasMalformedEmail(row.email)) {
+      invalid.push({ row, reason: 'Malformed email address' });
+    } else if (
+      hasMalformedUrl(row.linkedin_url) ||
+      hasMalformedUrl(row.website_url) ||
+      hasMalformedUrl(row.us_connection_source_url)
+    ) {
+      invalid.push({ row, reason: 'Malformed URL' });
     } else if (isConnectedAbroad &&
       (!(row.current_location_city || '').trim() ||
         !(row.current_location_country || '').trim())) {
@@ -568,6 +699,78 @@ export function validateMappedRows(rows: MappedRow[]): ValidationResult {
   }
 
   return { valid, invalid };
+}
+
+export function validateOrganizationRows(rows: MappedRow[]): ValidationResult {
+  const valid: MappedRow[] = [];
+  const invalid: { row: MappedRow; reason: string }[] = [];
+
+  for (const row of rows) {
+    const name = (row.name || '').trim();
+    const hasWeakEvidence =
+      !(row.source_url || '').trim() && !(row.evidence_excerpt || '').trim();
+
+    if (!name) {
+      invalid.push({ row, reason: 'Missing required field: Organization Name' });
+    } else if (hasMalformedUrl(row.website_url) || hasMalformedUrl(row.source_url)) {
+      invalid.push({ row, reason: 'Malformed URL' });
+    } else if (
+      ((row.location_city || '').trim() && !(row.location_state || '').trim()) ||
+      (!(row.location_city || '').trim() && (row.location_state || '').trim())
+    ) {
+      invalid.push({ row, reason: 'US locations need both city and state' });
+    } else if (hasWeakEvidence) {
+      invalid.push({ row, reason: 'Missing evidence URL or excerpt' });
+    } else {
+      valid.push(row);
+    }
+  }
+
+  return { valid, invalid };
+}
+
+export function validateRowsForMode(
+  rows: MappedRow[],
+  mode: ImportEntityMode
+): ValidationResult {
+  return mode === 'people' ? validateMappedRows(rows) : validateOrganizationRows(rows);
+}
+
+export function splitImportMultiValue(raw: string | undefined): string[] {
+  return (raw || '')
+    .split(/[;\n|]+/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function normalizeCandidateText(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function buildPersonCandidateKey(row: MappedRow): string {
+  const email = normalizeCandidateText(row.email || '');
+  if (email) return `person:email:${email}`;
+  const linkedin = normalizeCandidateText(row.linkedin_url || '');
+  if (linkedin) return `person:linkedin:${linkedin}`;
+  return `person:name:${normalizeCandidateText(`${row.first_name || ''} ${row.last_name || ''}`)}`;
+}
+
+export function buildOrganizationCandidateKey(row: MappedRow): string {
+  const website = normalizeCandidateText(row.website_url || '');
+  if (website) return `org:website:${website}`;
+  return `org:name:${normalizeCandidateText(row.name || '')}`;
+}
+
+export function buildCandidateKeyForMode(row: MappedRow, mode: ImportEntityMode): string {
+  return mode === 'people' ? buildPersonCandidateKey(row) : buildOrganizationCandidateKey(row);
 }
 
 export function parseExcel(buffer: ArrayBuffer): CsvParseResult {

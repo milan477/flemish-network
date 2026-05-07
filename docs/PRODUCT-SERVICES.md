@@ -109,6 +109,8 @@ This is the home for both prompted and autonomous discovery.
 Modes:
 
 - **Prompted discovery:** user gives a prompt.
+- **Manual intake:** staff enter one pending person or organization with evidence.
+- **File import:** staff upload people or organizations from CSV/XLSX into pending review queues.
 - **Autonomous discovery:** system chooses work from source packs, coverage gaps, high-yield domains, and evidence-backed pivots.
 
 The AI assistant should not be a separate contact-discovery workflow. It should simply link the user to the discovery prompt box and pass the prompt into this service.
@@ -132,6 +134,8 @@ Scope:
 - Store evidence
 - Put candidates in review queues
 - Generate follow-up searches
+
+Manual intake and imports create pending candidates only. They do not create or update approved `people` or `organizations`; approval, merge, and rejection happen in Discovery review. Discovery review has separate people and organization queues, and organization cards show source URLs and evidence excerpts before a reviewer promotes or merges the candidate.
 
 Output:
 
@@ -355,7 +359,6 @@ Avoid exposing implementation names as product concepts:
 
 - `ai-agent`
 - `agent-discovery`
-- `discover-contacts`
 - `agent-verify`
 - `update-profile`
 - `agent-connections`

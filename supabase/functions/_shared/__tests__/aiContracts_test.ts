@@ -1,12 +1,10 @@
 import { assertEquals, assert } from "jsr:@std/assert@^1.0.0";
 import {
   normalizeSmartSearchResult,
-  normalizeFlemishSearchResult,
   normalizeProfileCheckResult,
   isAiAgentTask,
   getAiAgentTaskDefinition,
   getEmptySmartSearchKeywords,
-  getEmptyFlemishSearchKeywords,
   buildSearchPrompt,
   buildCheckProfilePrompt,
 } from "../aiContracts.ts";
@@ -31,19 +29,6 @@ Deno.test("normalizeSmartSearchResult: malformed payload yields empty keywords",
   const r = normalizeSmartSearchResult(null);
   assertEquals(r.keywords, getEmptySmartSearchKeywords());
   assertEquals(r.message, "");
-});
-
-Deno.test("normalizeFlemishSearchResult: only flemish_connection + bio", () => {
-  const r = normalizeFlemishSearchResult({
-    keywords: { flemish_connection: ["KU Leuven"], bio: ["alumni"] },
-  });
-  assertEquals(r.keywords.flemish_connection, ["ku leuven"]);
-  assertEquals(r.keywords.bio, ["alumni"]);
-});
-
-Deno.test("normalizeFlemishSearchResult: malformed payload yields empty", () => {
-  const r = normalizeFlemishSearchResult("not an object");
-  assertEquals(r.keywords, getEmptyFlemishSearchKeywords());
 });
 
 Deno.test("normalizeProfileCheckResult: drops invalid field_name and missing suggested_value", () => {
@@ -110,6 +95,9 @@ Deno.test("normalizeProfileCheckResult: clamps confidence to 0..1, defaults sour
 Deno.test("isAiAgentTask: only known tasks accepted", () => {
   assert(isAiAgentTask("smart_search"));
   assert(isAiAgentTask("merge_text"));
+  assert(isAiAgentTask("check_profile"));
+  assertEquals(isAiAgentTask("parse_contacts"), false);
+  assertEquals(isAiAgentTask("flemish_search"), false);
   assertEquals(isAiAgentTask("nonexistent"), false);
 });
 
@@ -119,86 +107,6 @@ Deno.test("getAiAgentTaskDefinition: surfaces system prompt + schema", () => {
   assert(def.systemPrompt.length > 0);
   assertEquals(typeof def.buildUserPrompt, "function");
   assertEquals(typeof def.normalizeResult, "function");
-});
-
-Deno.test("parse_contacts contract: normalizes US scope and structured connections", () => {
-  const def = getAiAgentTaskDefinition("parse_contacts");
-  const normalized = def.normalizeResult({
-    message: "ok",
-    contacts: [
-      {
-        name: "Jan Peeters",
-        current_position: "Researcher",
-        occupation: "Academic/Researcher",
-        location_city: "",
-        location_state: "",
-        suggested_us_network_status: "us_connected_abroad",
-        suggested_us_network_confidence: 0.91,
-        current_location_city: "Leuven",
-        current_location_country: "Belgium",
-        suggested_us_connections: [
-          {
-            location_city: "New Haven",
-            location_state: "CT",
-            connection_label: "Yale alumnus",
-            source_url: "https://example.com",
-            evidence_excerpt: "Yale alumnus",
-            confidence: 0.88,
-          },
-        ],
-        bio: "Belgian researcher",
-        flemish_connection: "KU Leuven",
-        sectors: ["Research"],
-      },
-    ],
-  }) as {
-    contacts: Array<{
-      suggested_us_network_status: string;
-      suggested_us_network_confidence: number;
-      current_location_city: string;
-      current_location_country: string;
-      suggested_us_connections: Array<{ connection_label: string }>;
-    }>;
-  };
-
-  assertEquals(normalized.contacts[0].suggested_us_network_status, "us_connected_abroad");
-  assertEquals(normalized.contacts[0].suggested_us_network_confidence, 0.91);
-  assertEquals(normalized.contacts[0].current_location_city, "Leuven");
-  assertEquals(normalized.contacts[0].current_location_country, "Belgium");
-  assertEquals(normalized.contacts[0].suggested_us_connections[0].connection_label, "Yale alumnus");
-});
-
-Deno.test("parse_contacts contract: defaults ambiguous scope safely", () => {
-  const def = getAiAgentTaskDefinition("parse_contacts");
-  const normalized = def.normalizeResult({
-    contacts: [
-      {
-        name: "Marie Janssens",
-        current_position: "",
-        occupation: "",
-        location_city: "Boston",
-        location_state: "MA",
-        suggested_us_network_status: "invalid",
-        suggested_us_network_confidence: 5,
-        suggested_us_connections: [
-          { location_city: "", location_state: "CA", connection_label: "bad" },
-        ],
-        bio: "",
-        flemish_connection: "",
-        sectors: [],
-      },
-    ],
-  }) as {
-    contacts: Array<{
-      suggested_us_network_status: string;
-      suggested_us_network_confidence: number;
-      suggested_us_connections: unknown[];
-    }>;
-  };
-
-  assertEquals(normalized.contacts[0].suggested_us_network_status, "us_based");
-  assertEquals(normalized.contacts[0].suggested_us_network_confidence, 1);
-  assertEquals(normalized.contacts[0].suggested_us_connections.length, 0);
 });
 
 Deno.test("buildSearchPrompt + buildCheckProfilePrompt: stable formatting", () => {
