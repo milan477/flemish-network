@@ -52,7 +52,11 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; icon: typeof Clo
   failed: { bg: 'bg-red-100', text: 'text-red-700', icon: XCircle },
 };
 
-export default function AgentDashboard() {
+interface AgentDashboardProps {
+  initialDiscoveryPrompt?: string;
+}
+
+export default function AgentDashboard({ initialDiscoveryPrompt = '' }: AgentDashboardProps) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [quotas, setQuotas] = useState<ApiQuota[]>([]);
   const [pendingSuggestions, setPendingSuggestions] = useState(0);
@@ -64,16 +68,6 @@ export default function AgentDashboard() {
   const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
-    await supabase.functions
-      .invoke('agent-scheduler', {
-        body: { action: 'housekeeping' },
-      })
-      .catch((err) => {
-        // Housekeeping is best-effort; still show current run data if it fails,
-        // but surface a console warning so a permanently-down scheduler is visible.
-        console.warn('[AgentDashboard] housekeeping kick failed (non-fatal)', err);
-      });
-
     const [runsRes, quotasRes, suggestionsRes] = await Promise.all([
       supabase
         .from('agent_runs')
@@ -100,6 +94,12 @@ export default function AgentDashboard() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!initialDiscoveryPrompt) return;
+    setDiscoveryQuery(initialDiscoveryPrompt);
+    setShowQueryInput(true);
+  }, [initialDiscoveryPrompt]);
 
   // Poll every 5s while any run is still "running" or "pending", and tick `now` every 1s for live timer
   useEffect(() => {

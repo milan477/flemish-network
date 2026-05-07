@@ -26,7 +26,12 @@ import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '.
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
-import { isCanonicalAdminTab, normalizeAdminTab, type AdminTab } from '../lib/appRouting';
+import {
+  isCanonicalAdminTab,
+  normalizeAdminTab,
+  parseAdminDiscoveryPrompt,
+  type AdminTab,
+} from '../lib/appRouting';
 const VERIFY_BATCH_SIZE = 5;
 
 interface AdminProps {
@@ -39,6 +44,7 @@ export default function Admin({ onNavigate }: AdminProps) {
   const { tab } = useParams<{ tab?: string }>();
   const [searchParams] = useSearchParams();
   const activeTab = normalizeAdminTab(tab, isAdmin);
+  const discoveryPrompt = parseAdminDiscoveryPrompt(searchParams);
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -411,7 +417,7 @@ export default function Admin({ onNavigate }: AdminProps) {
             onContactAdded={loadData}
             initialTab={searchParams.get('mode') === 'import' ? 'import' : 'manual'}
           />
-          <AgentDashboard />
+          <AgentDashboard initialDiscoveryPrompt={discoveryPrompt} />
           <DiscoveredContactsPanel />
         </div>
       )}

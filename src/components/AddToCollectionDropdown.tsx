@@ -4,14 +4,18 @@ import { supabase, type Collection } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
 
+const EMPTY_IDS: string[] = [];
+
 interface AddToCollectionDropdownProps {
-  personIds: string[];
+  personIds?: string[];
+  organizationIds?: string[];
   onClose?: () => void;
   onSuccess?: () => void;
 }
 
 export default function AddToCollectionDropdown({
-  personIds,
+  personIds = EMPTY_IDS,
+  organizationIds = EMPTY_IDS,
   onClose,
   onSuccess,
 }: AddToCollectionDropdownProps) {
@@ -24,10 +28,26 @@ export default function AddToCollectionDropdown({
   const [newCollectionName, setNewCollectionName] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const isBulk = personIds.length > 1;
-  const personIdsKey = useMemo(() => JSON.stringify(personIds), [personIds]);
+  const hasPeople = personIds.length > 0;
+  const hasOrganizations = organizationIds.length > 0;
+  const entityType = hasOrganizations ? 'organization' : 'person';
+  const entityColumn = entityType === 'person' ? 'person_id' : 'organization_id';
+  const entityIds = entityType === 'person' ? personIds : organizationIds;
+  const validEntitySelection = entityIds.length > 0 && hasPeople !== hasOrganizations;
+  const isBulk = entityIds.length > 1;
+  const entityLabel = entityType === 'person' ? 'person' : 'organization';
+  const entityLabelPlural = entityType === 'person' ? 'people' : 'organizations';
+  const entityIdsKey = useMemo(
+    () => JSON.stringify({ personIds, organizationIds }),
+    [personIds, organizationIds]
+  );
 
   const fetchData = useCallback(async () => {
+    if (!validEntitySelection) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       // Fetch all collections
@@ -39,11 +59,11 @@ export default function AddToCollectionDropdown({
       if (collsError) throw collsError;
       setCollections(colls || []);
 
-      // Fetch which collections these people belong to
+      // Fetch which collections these entities belong to.
       const { data: memberships, error: memError } = await supabase
         .from('collection_members')
-        .select('collection_id, person_id')
-        .in('person_id', personIds);
+        .select(`collection_id, ${entityColumn}`)
+        .in(entityColumn, entityIds);
       
       if (memError) throw memError;
       
@@ -57,7 +77,7 @@ export default function AddToCollectionDropdown({
     } finally {
       setLoading(false);
     }
-  }, [personIds]);
+  }, [entityColumn, entityIds, validEntitySelection]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -70,46 +90,59 @@ export default function AddToCollectionDropdown({
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [canEdit, fetchData, onClose, personIdsKey]);
+  }, [canEdit, fetchData, onClose, entityIdsKey]);
 
   const toggleCollection = async (collectionId: string) => {
+    if (!validEntitySelection) {
+      notifyError(new Error('Select either people or organizations before updating a collection.'), {
+        hint: 'Could not update collection membership.',
+      });
+      return;
+    }
+
     setProcessingId(collectionId);
     const count = membershipCount[collectionId] || 0;
-    const allAreMembers = count === personIds.length;
+    const allAreMembers = count === entityIds.length;
 
     try {
       if (allAreMembers) {
-        // Remove all
+        // Remove all selected entities of this type.
         const { error } = await supabase
           .from('collection_members')
           .delete()
           .eq('collection_id', collectionId)
-          .in('person_id', personIds);
+          .in(entityColumn, entityIds);
         
         if (error) throw error;
         setMembershipCount(prev => ({ ...prev, [collectionId]: 0 }));
       } else {
-        // Add those who aren't members
+        // Add selected entities that are not already members.
         const { data: existing } = await supabase
           .from('collection_members')
-          .select('person_id')
+          .select(entityColumn)
           .eq('collection_id', collectionId)
-          .in('person_id', personIds);
+          .in(entityColumn, entityIds);
         
-        const existingIds = new Set(existing?.map(e => e.person_id) || []);
-        const toAdd = personIds.filter(id => !existingIds.has(id));
+        const existingRows = (existing || []) as Array<Record<string, string | null>>;
+        const existingIds = new Set(
+          existingRows
+            .map((row) => row[entityColumn])
+            .filter((id): id is string => typeof id === 'string') || []
+        );
+        const toAdd = entityIds.filter(id => !existingIds.has(id));
 
         if (toAdd.length > 0) {
           const { error } = await supabase
             .from('collection_members')
-            .insert(toAdd.map(pid => ({
+            .insert(toAdd.map(entityId => ({
               collection_id: collectionId,
-              person_id: pid
+              person_id: entityType === 'person' ? entityId : null,
+              organization_id: entityType === 'organization' ? entityId : null,
             })));
           
           if (error) throw error;
         }
-        setMembershipCount(prev => ({ ...prev, [collectionId]: personIds.length }));
+        setMembershipCount(prev => ({ ...prev, [collectionId]: entityIds.length }));
       }
       onSuccess?.();
     } catch (err) {
@@ -121,7 +154,7 @@ export default function AddToCollectionDropdown({
 
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCollectionName.trim()) return;
+    if (!newCollectionName.trim() || !validEntitySelection) return;
 
     setLoading(true);
     try {
@@ -133,18 +166,19 @@ export default function AddToCollectionDropdown({
       
       if (insertError) throw insertError;
 
-      // Add people to the new collection
+      // Add selected entities to the new collection.
       const { error: memError } = await supabase
         .from('collection_members')
-        .insert(personIds.map(pid => ({
+        .insert(entityIds.map(entityId => ({
           collection_id: newColl.id,
-          person_id: pid
+          person_id: entityType === 'person' ? entityId : null,
+          organization_id: entityType === 'organization' ? entityId : null,
         })));
       
       if (memError) throw memError;
 
       setCollections(prev => [...prev, newColl].sort((a, b) => a.name.localeCompare(b.name)));
-      setMembershipCount(prev => ({ ...prev, [newColl.id]: personIds.length }));
+      setMembershipCount(prev => ({ ...prev, [newColl.id]: entityIds.length }));
       setNewCollectionName('');
       setShowCreateInline(false);
       onSuccess?.();
@@ -155,7 +189,7 @@ export default function AddToCollectionDropdown({
     }
   };
 
-  if (!canEdit) {
+  if (!canEdit || !validEntitySelection) {
     return null;
   }
 
@@ -168,7 +202,7 @@ export default function AddToCollectionDropdown({
       <div className="px-4 py-3 border-b border-gray-50 bg-gray-50/50">
         <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
           <Library className="w-3 h-3" />
-          {isBulk ? `Add ${personIds.length} to Collection` : 'Add to Collection'}
+          {isBulk ? `Add ${entityIds.length} ${entityLabelPlural} to Collection` : 'Add to Collection'}
         </h4>
       </div>
 
@@ -185,8 +219,8 @@ export default function AddToCollectionDropdown({
         ) : (
           collections.map(collection => {
             const count = membershipCount[collection.id] || 0;
-            const allIn = count === personIds.length;
-            const someIn = count > 0 && count < personIds.length;
+            const allIn = count === entityIds.length;
+            const someIn = count > 0 && count < entityIds.length;
 
             return (
               <button
@@ -199,7 +233,7 @@ export default function AddToCollectionDropdown({
                   <span className="text-sm text-gray-700 truncate">{collection.name}</span>
                   {isBulk && count > 0 && (
                     <span className="text-[10px] text-gray-400">
-                      {count} of {personIds.length} added
+                      {count} of {entityIds.length} {entityLabelPlural} added
                     </span>
                   )}
                 </div>
@@ -226,6 +260,7 @@ export default function AddToCollectionDropdown({
               value={newCollectionName}
               onChange={(e) => setNewCollectionName(e.target.value)}
               placeholder="Collection name..."
+              aria-label={`New collection name for ${entityLabel}`}
               className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none"
               autoFocus
             />

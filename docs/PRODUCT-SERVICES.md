@@ -39,13 +39,13 @@ Output:
 - Ranked people and organization results
 - Clear match rationale/snippets
 - Facets/filters
-- Ability to add selected people to a collection; organization collection membership is a Phase 4 target
+- Ability to add selected people and organizations to a collection
 
 Important distinction:
 
 - Flemish/Belgian connections are profile facts and search fields.
 - They are not person-to-person edges.
-- Phase 3 organization search uses approved organization records and existing `flemish_link` facts only. Canonical organization Flemish/Belgian facts and organization add-to-collection controls are later phases.
+- Organization search uses approved organization records and existing `flemish_link` facts only. Canonical organization Flemish/Belgian facts are a later normalization phase.
 
 ## 2. Build A Collection
 
@@ -77,15 +77,21 @@ Scope:
 Output:
 
 - Collection draft
-- Suggested people and, where relevant, organizations
+- Collection suggestions for people and, where relevant, organizations
 - Rationale per candidate
 - Approval/rejection workflow
+- Optional handoff to Discovery when the existing database appears thin
+- Collection detail views show mixed people and organization members; people-only exports and briefings remain available for member people only.
 
 Out of scope:
 
-- Gap analysis
-- Suggested discovery actions
 - Automatic database expansion
+- Starting Discovery automatically
+- Hidden database expansion inside collection building
+- Organization embeddings
+- Canonical organization Flemish/Belgian facts
+- Persistent gap analytics
+- Persistent draft tables
 
 If the user wants to expand the database from a collection prompt, that should be an explicit handoff to **Expand The Database**, not hidden inside collection building.
 

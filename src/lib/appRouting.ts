@@ -31,6 +31,10 @@ export function isCanonicalAdminTab(tab?: string | null): tab is AdminTab {
   );
 }
 
+export function parseAdminDiscoveryPrompt(searchParams: URLSearchParams): string {
+  return searchParams.get('prompt') || '';
+}
+
 export type DashboardViewMode = 'map' | 'list';
 
 export interface DashboardRouteState {

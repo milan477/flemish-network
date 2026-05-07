@@ -26,7 +26,7 @@ The app should feel like five services, not a pile of agents.
 | Product service | Route | Primary UI | Backend owner |
 |---|---|---|---|
 | Search The Network | `/` | Search map/list, filters, ranked people and organizations | `search-people` |
-| Build A Collection | `/collections`, `/collections/:id` | Collection list/detail, draft workflow, candidate approval | `suggest-people`; target adds organizations |
+| Build A Collection | `/collections`, `/collections/:id` | Collection list/detail, draft workflow, candidate approval | `suggest-people` collection suggestions over approved people and organizations |
 | Expand The Database | `/admin/discovery` | Manual intake, import, prompted discovery, pending candidate review | `agent-scheduler` -> `agent-discovery` |
 | Verify And Enrich Records | `/admin/verification` | Stale records, suggestions, derived labels, inline verification | `agent-verify`; `update-profile` remains preview mode until consolidated |
 | Understand And Grow The Network | `/admin/growth` | Coverage, source yield, pivots, gaps, recommended discovery actions | `agent-scheduler` planning and metrics |
@@ -71,8 +71,8 @@ Known legacy still present:
 - `[later]` Old DB migrations still create `connections`, `connection_suggestions`, and `discover_connections()`.
 - `[later]` Generated Supabase types still include connection artifacts until the DB cleanup migration and type regeneration happen.
 - `[later]` Legacy compatibility functions `discover-contacts`, `search-contacts`, and `ai-agent` tasks `parse_contacts` / `flemish_search` still exist until replacement flows are complete.
-- `[later]` Collections are still people-first in live UI and schema.
 - `[done]` Organization search has server-side ranked lexical result parity for Phase 3.
+- `[done]` Collections support mixed people and organization members in schema, suggestions, detail UI, and add-to-collection controls.
 
 ## Phase 0 - Documentation And Service Map
 
@@ -223,7 +223,7 @@ Todos:
 - `[done]` Update Search UI/cache to consume server-side organization results.
 - `[done]` Add capped organization browse loads so Search does not fetch whole organization tables.
 - `[later]` Include canonical organization Flemish/Belgian facts once Phase 6 lands.
-- `[later]` Add organization add-to-collection controls after Phase 4 adds organization collection membership.
+- `[done]` Add organization add-to-collection controls after Phase 4 adds organization collection membership.
 
 Out of scope:
 
@@ -276,18 +276,22 @@ Scope:
 
 Todos:
 
-- `[next]` Extend `collection_members` to support `organization_id` with correct uniqueness and constraints.
-- `[next]` Update Supabase types after schema migration.
-- `[next]` Extend `suggest-people` or rename behind a collection suggestion service contract that returns people and organizations.
-- `[next]` Add draft state for suggested candidates, approval/rejection, and reasons.
-- `[next]` Update collection detail UI to render people and organization members.
-- `[next]` Update add-to-collection controls for organizations. This is explicitly deferred from Phase 3 because live collection membership is still people-only.
-- `[next]` Add explicit "send gap to Discovery" action without auto-running discovery.
+- `[done]` Extend `collection_members` to support `organization_id` with correct uniqueness and constraints.
+- `[done]` Update Supabase types after schema migration.
+- `[done]` Keep deployed `suggest-people` behind a collection suggestion service contract that returns people and organizations.
+- `[done]` Add draft state for suggested candidates, approval/rejection, and reasons.
+- `[done]` Update collection creation and detail UI to use draft approval/rejection before saving suggestions.
+- `[done]` Update collection detail UI to render people and organization members.
+- `[done]` Add explicit "send gap to Discovery" action without auto-running discovery.
+- `[done]` Update add-to-collection controls for organizations on search result cards and organization profiles.
 
 Out of scope:
 
 - Autonomous discovery.
 - Gap analytics beyond a simple handoff.
+- Organization embeddings.
+- Canonical organization Flemish/Belgian facts.
+- Persistent draft tables.
 
 Exit criteria:
 
@@ -301,7 +305,9 @@ Verification:
 ```sh
 npm run typecheck
 npm test
+npm run test:deno
 npm run build
+graphify update .
 ```
 
 Focused tests to add:
@@ -310,12 +316,14 @@ Focused tests to add:
 - Duplicate people and duplicate organizations are prevented per collection.
 - Collection suggestion response can include organization candidates.
 - Approve/reject state persists correctly.
+- Discovery handoff pre-fills `/admin/discovery?prompt=...` without starting a run.
 
 Manual checks:
 
 - Build a collection for `senior biotech leaders in Boston and New York with Belgian ties`.
 - Accept one person and one organization.
 - Reject a candidate and confirm it is not saved.
+- Add an organization to a collection from search results and from an organization profile.
 
 ## Phase 5 - Discovery
 

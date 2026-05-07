@@ -447,7 +447,7 @@ export async function suggestPeopleEmbedding(
     if (error) throw await extractEdgeError(error, 'People suggestion request failed');
     if (!data?.suggestions && !data?.candidates) throw new Error('No suggestions returned');
 
-    const candidates = Array.isArray(data.candidates)
+    const candidates: CollectionSuggestionCandidate[] = Array.isArray(data.candidates)
       ? (data.candidates as CollectionSuggestionCandidate[])
       : (data.suggestions || []).map((suggestion: SuggestPeopleResult) => ({
           entity_type: 'person' as const,

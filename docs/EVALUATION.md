@@ -87,6 +87,33 @@ Severe mistakes:
 - Suggestion invents or overstates a Flemish/Belgian tie.
 - Durable suggestion has no source URL, evidence, method, or clear provenance.
 
+## Collection Suggestion Evaluation
+
+Question: does Build A Collection produce useful draft candidates from existing approved records without changing the database until staff approve them?
+
+Human scoring rubric:
+
+- **Accept:** existing person or organization clearly fits the collection goal, with a useful reason and enough snippet/source context for staff review.
+- **Reject:** candidate is off-topic, weakly related, duplicate, already in the collection, or based on a missing-database assumption rather than an approved record.
+- **Needs Discovery:** the prompt points to a plausible coverage gap that should be expanded through Discovery, not hidden collection generation.
+- **Needs tuning:** parser searches are too broad, reranking favors generic matches, rejected candidates reappear before reset, or organization candidates crowd out stronger people matches without rationale.
+
+Quality gates:
+
+- Suggestions are draft-only until staff approve them.
+- Mixed people and organization suggestions use `entity_type` and save through exactly one `person_id` or `organization_id`.
+- Rejected candidates stay suppressed in the current draft until reset or undo.
+- Existing collection members and draft exclusions are not re-suggested.
+- Reranking never introduces IDs outside the retrieved candidate set.
+- Discovery handoff only pre-fills `/admin/discovery?prompt=...`; it does not start `agent-scheduler`.
+
+Phase 4 acceptance criteria:
+
+- `suggest-people` is described to users and docs as collection suggestions, while the deployed function name remains unchanged.
+- Organization candidates come from approved organization lexical search only; Phase 4 does not add organization embeddings.
+- Collection prompts may produce a Discovery handoff, but Phase 4 does not add autonomous Discovery, persistent gap analytics, or persistent draft tables.
+- Canonical organization Flemish/Belgian facts remain a later normalization phase.
+
 ## Planning / Next Searches Evaluation
 
 Question: are recommended next searches specific, evidence-based, and likely to improve coverage?

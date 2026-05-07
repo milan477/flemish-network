@@ -144,6 +144,79 @@ function BulkAddButton({ people }: { people: Person[] }) {
   );
 }
 
+function OrganizationCard({
+  organization,
+  onNavigate,
+  snippet,
+}: {
+  organization: Organization;
+  onNavigate: (page: string, id?: string) => void;
+  snippet?: string;
+}) {
+  const [showCollections, setShowCollections] = useState(false);
+  const { canEdit } = useAuth();
+
+  const primaryLocation = organization.organization_us_locations?.[0]?.locations || organization.locations;
+
+  return (
+    <div className={`relative group/card bg-white rounded-xl shadow-sm hover:shadow-md border border-gray-100 transition-all duration-200 hover:-translate-y-0.5 ${showCollections ? 'z-30' : 'z-0'}`}>
+      <button
+        onClick={() => onNavigate('organization', organization.id)}
+        className="w-full p-5 text-left h-full"
+      >
+        <div className="flex items-start space-x-4">
+          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-6 h-6 text-green-700" />
+          </div>
+          <div className="flex-1 min-w-0 pr-6">
+            <h3 className="font-semibold text-gray-900 text-sm line-clamp-2">{organization.name}</h3>
+            <p className="text-xs text-gray-600 mt-0.5">{organization.type}</p>
+            {primaryLocation?.city && (
+              <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
+                <MapPin className="w-3 h-3" />
+                <span>
+                  {primaryLocation.city}, {primaryLocation.state}
+                </span>
+              </div>
+            )}
+            {snippet && (
+              <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
+                {snippet}
+              </p>
+            )}
+          </div>
+        </div>
+      </button>
+
+      {canEdit && (
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowCollections(!showCollections);
+            }}
+            className={`p-1.5 rounded-lg transition-all ${
+              showCollections
+                ? 'bg-yellow-100 text-yellow-600'
+                : 'text-gray-300 hover:text-yellow-600 hover:bg-yellow-50 group-hover/card:text-gray-400'
+            }`}
+            title="Add to collection"
+          >
+            <Library className="w-4 h-4" />
+          </button>
+
+          {showCollections && (
+            <AddToCollectionDropdown
+              organizationIds={[organization.id]}
+              onClose={() => setShowCollections(false)}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DirectoryGrid({
   nameMatches,
   aiResults,
@@ -318,35 +391,12 @@ export default function DirectoryGrid({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {organizations.map((org) => (
-              <button
+              <OrganizationCard
                 key={org.id}
-                onClick={() => onNavigate('organization', org.id)}
-                className="bg-white rounded-xl p-5 shadow-sm hover:shadow-md border border-gray-100 text-left transition-all duration-200 hover:-translate-y-0.5"
-              >
-                <div className="flex items-start space-x-4">
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-6 h-6 text-green-700" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm">{org.name}</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">{org.type}</p>
-                    {(org.organization_us_locations?.[0]?.locations?.city || org.locations?.city) && (
-                      <div className="flex items-center space-x-1 text-xs text-gray-400 mt-2">
-                        <MapPin className="w-3 h-3" />
-                        <span>
-                          {org.organization_us_locations?.[0]?.locations?.city || org.locations?.city},{' '}
-                          {org.organization_us_locations?.[0]?.locations?.state || org.locations?.state}
-                        </span>
-                      </div>
-                    )}
-                    {snippets?.get(org.id) && (
-                      <p className="text-xs text-gray-500 italic mt-2 line-clamp-2 leading-relaxed">
-                        {snippets.get(org.id)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </button>
+                organization={org}
+                onNavigate={onNavigate}
+                snippet={snippets?.get(org.id)}
+              />
             ))}
           </div>
         </div>

@@ -9,6 +9,7 @@ import {
   normalizePage,
   getCurrentPageFromPathname,
   normalizeAdminTab,
+  parseAdminDiscoveryPrompt,
   type DashboardRouteState,
 } from '../appRouting';
 import { DEFAULT_MAP_FILTERS } from '../supabase';
@@ -215,6 +216,22 @@ describe('appRouting - admin tabs', () => {
     expect(isCanonicalAdminTab('agents')).toBe(false);
     expect(isCanonicalAdminTab('overview')).toBe(false);
     expect(isCanonicalAdminTab(undefined)).toBe(false);
+  });
+});
+
+describe('appRouting - admin discovery prompt', () => {
+  it('decodes prompt route state for discovery prefill', () => {
+    const params = new URLSearchParams(
+      'prompt=Find%20KU%20Leuven%20alumni%20in%20Boston%20biotech'
+    );
+
+    expect(parseAdminDiscoveryPrompt(params)).toBe(
+      'Find KU Leuven alumni in Boston biotech'
+    );
+  });
+
+  it('defaults to an empty prompt when no handoff prompt is present', () => {
+    expect(parseAdminDiscoveryPrompt(new URLSearchParams())).toBe('');
   });
 });
 

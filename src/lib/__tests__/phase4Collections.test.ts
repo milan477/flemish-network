@@ -22,6 +22,31 @@ const suggestPeopleFunction = readFileSync(
 
 const frontendTypes = readFileSync(resolve(process.cwd(), 'src/lib/supabase.ts'), 'utf8');
 
+const collectionModalSource = readFileSync(
+  resolve(process.cwd(), 'src/components/CollectionModal.tsx'),
+  'utf8'
+);
+
+const collectionDetailSource = readFileSync(
+  resolve(process.cwd(), 'src/components/CollectionDetail.tsx'),
+  'utf8'
+);
+
+const addToCollectionDropdownSource = readFileSync(
+  resolve(process.cwd(), 'src/components/AddToCollectionDropdown.tsx'),
+  'utf8'
+);
+
+const directoryGridSource = readFileSync(
+  resolve(process.cwd(), 'src/components/DirectoryGrid.tsx'),
+  'utf8'
+);
+
+const organizationProfileSource = readFileSync(
+  resolve(process.cwd(), 'src/pages/OrganizationProfile.tsx'),
+  'utf8'
+);
+
 const edgeDatabaseTypes = readFileSync(
   resolve(process.cwd(), 'supabase/functions/_shared/database.types.ts'),
   'utf8'
@@ -116,15 +141,20 @@ describe('collection suggestion draft reducer', () => {
       type: 'load',
       candidates: [personCandidate, organizationCandidate],
     });
-    const approved = collectionSuggestionDraftReducer(loaded, {
+    const approvedPerson = collectionSuggestionDraftReducer(loaded, {
+      type: 'approve',
+      entity_type: 'person',
+      id: 'person-1',
+    });
+    const approved = collectionSuggestionDraftReducer(approvedPerson, {
       type: 'approve',
       entity_type: 'organization',
       id: 'org-1',
     });
 
-    expect(getAcceptedDraftCandidates(approved)).toEqual([organizationCandidate]);
+    expect(getAcceptedDraftCandidates(approved)).toEqual([personCandidate, organizationCandidate]);
     expect(getCollectionSuggestionExclusionPayload(approved)).toEqual({
-      exclude_ids: [],
+      exclude_ids: ['person-1'],
       exclude_organization_ids: ['org-1'],
     });
   });
@@ -166,5 +196,115 @@ describe('collection suggestion draft reducer', () => {
       candidates: [personCandidate, organizationCandidate],
     });
     expect(loadedAfterReset.items).toHaveLength(2);
+  });
+
+  it('does not let approve bypass rejected suppression without undo or reset', () => {
+    const loaded = collectionSuggestionDraftReducer(EMPTY_COLLECTION_SUGGESTION_DRAFT, {
+      type: 'load',
+      candidates: [personCandidate],
+    });
+    const rejected = collectionSuggestionDraftReducer(loaded, {
+      type: 'reject',
+      entity_type: 'person',
+      id: 'person-1',
+    });
+    const approvedAfterReject = collectionSuggestionDraftReducer(rejected, {
+      type: 'approve',
+      entity_type: 'person',
+      id: 'person-1',
+    });
+
+    expect(getVisibleDraftCandidates(approvedAfterReject)).toEqual([]);
+    expect(getAcceptedDraftCandidates(approvedAfterReject)).toEqual([]);
+    expect(getCollectionSuggestionExclusionPayload(approvedAfterReject)).toEqual({
+      exclude_ids: ['person-1'],
+      exclude_organization_ids: [],
+    });
+
+    const undone = collectionSuggestionDraftReducer(approvedAfterReject, { type: 'undo' });
+    const approvedAfterUndo = collectionSuggestionDraftReducer(undone, {
+      type: 'approve',
+      entity_type: 'person',
+      id: 'person-1',
+    });
+
+    expect(getAcceptedDraftCandidates(approvedAfterUndo)).toEqual([personCandidate]);
+    expect(getCollectionSuggestionExclusionPayload(approvedAfterUndo)).toEqual({
+      exclude_ids: ['person-1'],
+      exclude_organization_ids: [],
+    });
+  });
+});
+
+describe('collection creation suggestion UI contract', () => {
+  it('uses draft approval controls and saves only approved mixed candidates', () => {
+    expect(collectionModalSource).toContain('collectionSuggestionDraftReducer');
+    expect(collectionModalSource).toContain('getAcceptedDraftCandidates');
+    expect(collectionModalSource).toContain('getCollectionSuggestionExclusionPayload');
+    expect(collectionModalSource).toContain("type: 'approve'");
+    expect(collectionModalSource).toContain("type: 'reject'");
+    expect(collectionModalSource).toContain("type: 'undo'");
+    expect(collectionModalSource).toContain("type: 'reset'");
+    expect(collectionModalSource).toContain('person_id: candidate.id');
+    expect(collectionModalSource).toContain('organization_id: candidate.id');
+  });
+
+  it('keeps collection suggestion and Discovery vocabulary in the creation flow', () => {
+    expect(collectionModalSource).toContain('Collection Suggestions');
+    expect(collectionModalSource).toContain('Review collection suggestions before they are saved.');
+    expect(collectionModalSource).toContain('/admin/discovery?prompt=');
+    expect(collectionModalSource).toContain('Open Discovery');
+    expect(collectionModalSource).not.toContain('Suggested People');
+    expect(collectionModalSource).not.toContain('agent-');
+  });
+});
+
+describe('collection detail mixed member UI contract', () => {
+  it('queries and renders mixed collection members with shared notes behavior', () => {
+    expect(collectionDetailSource).toContain('organization:organizations(*, locations(*))');
+    expect(collectionDetailSource).toContain('member.organization');
+    expect(collectionDetailSource).toContain("onNavigate(isPerson ? 'person' : 'organization'");
+    expect(collectionDetailSource).toContain('Add notes about this member in this collection');
+    expect(collectionDetailSource).toContain('Remove this member from the collection');
+    expect(collectionDetailSource).toContain('Export People Briefing');
+  });
+
+  it('uses the shared draft workflow for detail collection suggestions and saves mixed accepted candidates', () => {
+    expect(collectionDetailSource).toContain('collectionSuggestionDraftReducer');
+    expect(collectionDetailSource).toContain('getAcceptedDraftCandidates');
+    expect(collectionDetailSource).toContain('getCollectionSuggestionExclusionPayload');
+    expect(collectionDetailSource).toContain('currentMemberIds');
+    expect(collectionDetailSource).toContain('exclude_organization_ids');
+    expect(collectionDetailSource).toContain("type: 'approve'");
+    expect(collectionDetailSource).toContain("type: 'reject'");
+    expect(collectionDetailSource).toContain("type: 'reset'");
+    expect(collectionDetailSource).toContain('person_id: candidate.id');
+    expect(collectionDetailSource).toContain('organization_id: candidate.id');
+    expect(collectionDetailSource).toContain('Open Discovery');
+    expect(collectionDetailSource).toContain('Find Collection Suggestions');
+    expect(collectionDetailSource).not.toContain('Suggested People');
+    expect(collectionDetailSource).not.toContain('Find Similar People');
+    expect(collectionDetailSource).not.toContain('agent-');
+  });
+});
+
+describe('add-to-collection mixed entity control', () => {
+  it('supports people and organizations while preventing invalid mixed member inserts', () => {
+    expect(addToCollectionDropdownSource).toContain('personIds?: string[]');
+    expect(addToCollectionDropdownSource).toContain('organizationIds?: string[]');
+    expect(addToCollectionDropdownSource).toContain("entityColumn = entityType === 'person' ? 'person_id' : 'organization_id'");
+    expect(addToCollectionDropdownSource).toContain('validEntitySelection = entityIds.length > 0 && hasPeople !== hasOrganizations');
+    expect(addToCollectionDropdownSource).toContain("person_id: entityType === 'person' ? entityId : null");
+    expect(addToCollectionDropdownSource).toContain("organization_id: entityType === 'organization' ? entityId : null");
+    expect(addToCollectionDropdownSource).toContain('.in(entityColumn, entityIds)');
+  });
+
+  it('places organization add controls on search result cards and profiles', () => {
+    expect(directoryGridSource).toContain('function OrganizationCard');
+    expect(directoryGridSource).toContain('organizationIds={[organization.id]}');
+    expect(directoryGridSource).toContain('title="Add to collection"');
+    expect(organizationProfileSource).toContain('AddToCollectionDropdown');
+    expect(organizationProfileSource).toContain('organizationIds={[organization.id]}');
+    expect(organizationProfileSource).toContain('Add to Collection');
   });
 });

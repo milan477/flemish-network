@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Globe,
   Plus,
+  Library,
 } from 'lucide-react';
 import {
   supabase,
@@ -23,6 +24,7 @@ import {
   type FilterPreset,
 } from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
+import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
@@ -74,6 +76,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   const [customFlemish, setCustomFlemish] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showCollections, setShowCollections] = useState(false);
 
   const loadOrganization = useCallback(async () => {
     const [orgRes, sectorsRes, allSectorsRes] = await Promise.all([
@@ -144,6 +147,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       ? organization.flemish_link.split(',').map((s: string) => s.trim()).filter(Boolean)
       : [];
     setEditFlemishConnections(flemish);
+    setShowCollections(false);
     setEditing(true);
   };
 
@@ -456,13 +460,34 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                       </div>
                     )}
                     {canEdit && (
-                      <button
-                        onClick={startEditing}
-                        className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
-                      >
-                        <Pencil className="w-4 h-4" />
-                        <span>Edit Organization</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={startEditing}
+                          className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          <span>Edit Organization</span>
+                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowCollections(!showCollections)}
+                            className={`px-6 py-2 font-medium rounded-lg transition-colors flex items-center space-x-2 ${
+                              showCollections
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+                            }`}
+                          >
+                            <Library className="w-4 h-4" />
+                            <span>Add to Collection</span>
+                          </button>
+                          {showCollections && (
+                            <AddToCollectionDropdown
+                              organizationIds={[organization.id]}
+                              onClose={() => setShowCollections(false)}
+                            />
+                          )}
+                        </div>
+                      </>
                     )}
                     {organization.website_url && (
                       <a

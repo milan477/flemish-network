@@ -29,6 +29,8 @@
 | `collections` | `id`, `name`, `description`, `created_at`, `updated_at` |
 | `collection_members` | `id`, `collection_id` (FK), nullable `person_id` (FK), nullable `organization_id` (FK), `notes`, `added_at`. Exactly one of `person_id` or `organization_id` is required. Partial unique indexes prevent duplicate people and duplicate organizations independently per collection. |
 
+Collection suggestion drafts are not persisted in Phase 4. Rejected and accepted draft candidate IDs stay in client state and request payloads until staff reset the draft or save accepted members.
+
 ## AI & Suggestions
 
 | Table | Key Columns |

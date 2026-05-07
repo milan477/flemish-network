@@ -153,8 +153,12 @@ export function collectionSuggestionDraftReducer(
       return { ...state, items: nextItems };
     }
 
-    case 'approve':
+    case 'approve': {
+      const key = collectionSuggestionCandidateKey(action.entity_type, action.id);
+      const item = state.items.find((entry) => keyForCandidate(entry.candidate) === key);
+      if (item?.status === 'rejected') return state;
       return updateStatus(state, action.entity_type, action.id, 'accepted');
+    }
 
     case 'reject':
       return updateStatus(state, action.entity_type, action.id, 'rejected');

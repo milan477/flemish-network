@@ -5,7 +5,7 @@
 | Product service | Route/UI | Edge/API owner | Notes |
 |---|---|---|---|
 | Search The Network | `/` | `search-people` | Server-side routed hybrid people search plus Phase 3 lexical organization search. |
-| Build A Collection | `/collections`, `/collections/:id` | `suggest-people` | Uses existing records only. Target workflow adds draft approval and organization candidates. |
+| Build A Collection | `/collections`, `/collections/:id` | `suggest-people` | Collection suggestion service over existing approved people and organizations. Suggestions remain draft-only until staff approval. |
 | Expand The Database | `/admin/discovery` | `agent-scheduler` -> `agent-discovery` | Prompted and autonomous discovery. Evidence-first review queues; no auto-promotion. |
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
 | Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics | Coverage gaps, source yield, entity pivots, and recommended next discovery actions. |
@@ -16,6 +16,7 @@
 - `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
 - `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
 - `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`, not `discover-contacts`.
+- `/admin/discovery?prompt=<encoded prompt>` is a staff-controlled handoff only: it pre-fills the Discovery query box and must not call `agent-scheduler` until staff explicitly starts Discovery.
 - `agent-verify` owns durable verification suggestions.
 - `update-profile` is preview mode only for inline profile checks and must not write durable suggestion rows.
 - `derived_label_suggestions` remains the review queue for inferred sectors, occupations, Flemish/Belgian entities, locations, and confidence before promotion.
@@ -55,7 +56,7 @@ Server-side Search The Network endpoint for approved people and organizations.
 6. Applies structured criteria coverage for sector, location, occupation/type, and Flemish/Belgian relevance.
 7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
 
-Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link`, US network status, and US locations. Organization-to-Collection membership is intentionally deferred to Phase 4.
+Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link`, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
 
 ## Edge Function: `agent-discovery`
 
@@ -122,7 +123,21 @@ Use Gemini context caching only when repeatedly sending large shared prefixes or
 
 ## Edge Function: `suggest-people`
 
-Collection suggestion via embeddings and Gemini reranking. Current output is people-only; target output includes organizations and an approval/rejection draft workflow.
+Collection suggestion service. The deployed function name remains `suggest-people` for compatibility, but product copy should describe it as collection suggestions.
+
+1. Takes `{ query, collection_id?, exclude_ids?, exclude_organization_ids?, max_results? }`.
+2. Parses the collection goal with Gemini route `query_parsing`, which defaults to `gemini-2.5-flash-lite`.
+3. Produces up to four focused searches, each targeting people, organizations, or both. Parser failure falls back to one search equal to the original prompt, targeting both people and organizations, with `gap.should_offer = false`.
+4. Retrieves people through lexical search plus `gemini-embedding-001` query embeddings against `match_people` and `match_person_text_chunks`; degraded embedding coverage keeps lexical people search active.
+5. Retrieves organizations through `search_organizations_lexical` only. Phase 4 does not add organization embeddings.
+6. Excludes current collection members when `collection_id` is supplied, plus rejected or already accepted draft IDs supplied as `exclude_ids` and `exclude_organization_ids`.
+7. Reranks with Gemini route `offline_evaluation`, which defaults to `gemini-2.5-pro`. Reranked IDs are validated against retrieved candidates; unknown IDs are ignored.
+8. Backfills by deterministic retrieved score order when reranking fails or returns too few valid candidates.
+9. Returns `{ message, searches, candidates, gap }`, plus legacy `suggestions` for people-only callers.
+
+Each `candidates` item includes `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`. `gap.should_offer` may include `reason` and `suggested_prompt` for a staff-controlled handoff to `/admin/discovery?prompt=<encoded prompt>`; the function never starts Discovery.
+
+Phase 4 Collections does not add autonomous Discovery, organization embeddings, canonical organization Flemish/Belgian facts, persistent gap analytics, or persistent draft tables. Draft approval/rejection state is client-side until staff save accepted candidates into `collection_members`.
 
 ## Legacy Removal
 
@@ -142,7 +157,6 @@ Legacy compatibility still present until follow-up migrations/functions are remo
 
 ## Known Work
 
-- Add organization collection membership and collection draft approval.
 - Add organization discovery review and organization verification.
 - Normalize Flemish/Belgian facts into canonical, filterable entities with evidence.
-- Code-split Admin, map, XLSX export, and heavy staff panels to remove the Vite chunk warning.
+- Keep Admin, map, XLSX export, and heavy staff panels under the build chunk warning budget as new features land.
