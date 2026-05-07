@@ -35,6 +35,7 @@ export interface CollectionSuggestionDraftState {
 
 export type CollectionSuggestionDraftAction =
   | { type: 'load'; candidates: CollectionSuggestionCandidate[] }
+  | { type: 'restore'; state: CollectionSuggestionDraftState }
   | { type: 'approve'; entity_type: CollectionSuggestionEntityType; id: string }
   | { type: 'reject'; entity_type: CollectionSuggestionEntityType; id: string }
   | { type: 'undo'; entity_type?: CollectionSuggestionEntityType; id?: string }
@@ -137,6 +138,9 @@ export function collectionSuggestionDraftReducer(
   action: CollectionSuggestionDraftAction
 ): CollectionSuggestionDraftState {
   switch (action.type) {
+    case 'restore':
+      return action.state;
+
     case 'load': {
       const existingKeys = new Set(state.items.map((item) => keyForCandidate(item.candidate)));
       const nextItems = [...state.items];

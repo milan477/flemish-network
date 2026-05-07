@@ -9,7 +9,7 @@
 | Expand The Database | `/admin/discovery` | `agent-scheduler` -> `agent-discovery` | Prompted and autonomous discovery. Evidence-first review queues; no auto-promotion. |
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
 | Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics | Coverage gaps, source yield, entity pivots, and recommended next discovery actions. |
-| System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, queues, cancellation, housekeeping, API usage. |
+| System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, record-index queues, cancellation, housekeeping, API usage. |
 
 ## Behavioral Contracts
 
@@ -50,9 +50,9 @@ Server-side Search The Network endpoint for approved people and organizations.
 
 1. Takes `{ query, max_results, match_mode?, filters? }`.
 2. Supported filters include `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and `flemish_connections`.
-3. Runs Gemini keyword extraction and people-query embedding in parallel, degrading to lexical-only when needed.
-4. Classifies query through `_shared/searchRouting.ts`.
-5. Calls people lexical, people-vector, and people text-chunk retrieval; organizations use `search_organizations_lexical` only in Phase 3.
+3. Runs Gemini keyword extraction and original-query embedding in parallel, degrading to lexical-only when needed.
+4. Parses shared search intent, preserving `original_query` for semantic retrieval while using canonical structured terms for lexical retrieval.
+5. Calls people and organization lexical, record-vector, and text-chunk retrieval, then fuses those ranking signals.
 6. Applies structured criteria coverage for sector, location, occupation/type, and Flemish/Belgian relevance.
 7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
 
@@ -109,14 +109,17 @@ Lifecycle and planning service.
 
 ## Edge Function: `generate-embeddings`
 
-Backend-owned embedding refresh through `embedding_jobs`.
+Backend-owned embedding refresh for approved people and organizations. Person jobs still use `embedding_jobs`; organization jobs use the organization embedding queue when that schema is present. Manifests are record-level and include `entity_type`, `entity_id`, optional `person_id` / `organization_id`, document text, and chunk plans.
 
 | Action/Flag | Behavior |
 |---|---|
 | `status_only` | Return outstanding queue count without processing |
-| `backfill: true` | Reconcile dirty `people` rows into queue, then claim a batch |
-| `kick: true` | Claim a small batch immediately |
-| `action: 'start_batch'` | Offline Gemini Batch API lane |
+| `entity_type: 'person' \| 'organization' \| 'all'` | Select person jobs, organization jobs, or a mixed queue; default is `person` for backwards compatibility |
+| `person_ids` / `personIds` | Queue and target specific people |
+| `organization_ids` / `organizationIds` | Queue and target specific organizations |
+| `backfill: true` | Reconcile dirty rows for the selected entity type into queue, then claim a batch |
+| `kick: true` | Claim a small batch immediately for the selected entity type |
+| `action: 'start_batch'` | Offline Gemini Batch API lane with mixed person/organization manifests |
 | `action: 'list_batches' \| 'poll_batch' \| 'cancel_batch'` | Manage offline batch runs |
 
 Use Gemini context caching only when repeatedly sending large shared prefixes or reusable evidence sets. Use the offline batch path for large embedding refreshes that do not need interactive latency.
@@ -128,8 +131,8 @@ Collection suggestion service. The deployed function name remains `suggest-peopl
 1. Takes `{ query, collection_id?, exclude_ids?, exclude_organization_ids?, max_results? }`.
 2. Parses the collection goal with Gemini route `query_parsing`, which defaults to `gemini-2.5-flash-lite`.
 3. Produces up to four focused searches, each targeting people, organizations, or both. Parser failure falls back to one search equal to the original prompt, targeting both people and organizations, with `gap.should_offer = false`.
-4. Retrieves people through lexical search plus `gemini-embedding-001` query embeddings against `match_people` and `match_person_text_chunks`; degraded embedding coverage keeps lexical people search active.
-5. Retrieves organizations through `search_organizations_lexical` only. Phase 4 does not add organization embeddings.
+4. Retrieves people through lexical search plus `gemini-embedding-001` original-query embeddings against `match_people` and `match_person_text_chunks`; degraded embedding coverage keeps lexical people search active.
+5. Retrieves organizations through lexical search plus `match_organizations` and `match_organization_text_chunks` when organization embeddings are available.
 6. Excludes current collection members when `collection_id` is supplied, plus rejected or already accepted draft IDs supplied as `exclude_ids` and `exclude_organization_ids`.
 7. Reranks with Gemini route `offline_evaluation`, which defaults to `gemini-2.5-pro`. Reranked IDs are validated against retrieved candidates; unknown IDs are ignored.
 8. Backfills by deterministic retrieved score order when reranking fails or returns too few valid candidates.
@@ -137,7 +140,7 @@ Collection suggestion service. The deployed function name remains `suggest-peopl
 
 Each `candidates` item includes `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`. `gap.should_offer` may include `reason` and `suggested_prompt` for a staff-controlled handoff to `/admin/discovery?prompt=<encoded prompt>`; the function never starts Discovery.
 
-Phase 4 Collections does not add autonomous Discovery, organization embeddings, canonical organization Flemish/Belgian facts, persistent gap analytics, or persistent draft tables. Draft approval/rejection state is client-side until staff save accepted candidates into `collection_members`.
+Phase 4 Collections does not add autonomous Discovery, canonical organization Flemish/Belgian facts, persistent gap analytics, or persistent draft tables. Draft approval/rejection state is client-side until staff save accepted candidates into `collection_members`; `/collections/:id` may cache that client draft in browser storage so suggestions survive route revisits without becoming durable database rows.
 
 ## Legacy Removal
 

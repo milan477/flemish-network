@@ -1,15 +1,14 @@
+import { assert, assertEquals } from "jsr:@std/assert@^1.0.0";
 import {
-  assert,
-  assertEquals,
-} from "jsr:@std/assert@^1.0.0";
-import {
+  addCriterionCoverage,
+  buildLexicalQueryForIntent,
   buildManualFilterKeywords,
   calculateStructuredCriteriaCoverage,
   criteriaCoveragePasses,
   mergeSearchKeywords,
-  addCriterionCoverage,
   normalizePersonScope,
   normalizeSearchMatchMode,
+  parseSearchIntent,
 } from "../searchCriteria.ts";
 import type { SmartSearchKeywords } from "../aiContracts.ts";
 
@@ -65,6 +64,56 @@ Deno.test("structured criteria coverage: organization sector location and Flemis
   assert(criteriaCoveragePasses(coverage, "all"));
 });
 
+Deno.test("search intent: biotech in California preserves original semantic query", () => {
+  const intent = parseSearchIntent("biotech in California");
+
+  assertEquals(intent.original_query, "biotech in California");
+  assertEquals(intent.semantic_query, "biotech in California");
+  assertEquals(intent.structured_constraints, [
+    { field: "sector", value: "Biotechnology", matched_text: "biotech" },
+    { field: "state", value: "CA", matched_text: "California" },
+  ]);
+  assertEquals(intent.keywords.sector, ["Biotechnology"]);
+  assert(intent.keywords.location_state.includes("CA"));
+  assert(intent.keywords.location_state.includes("California"));
+  assertEquals(intent.semantic_remainder, "");
+  assert(buildLexicalQueryForIntent(intent).includes("biotech in California"));
+});
+
+Deno.test("state code matching is token-aware and does not match Cambridge", () => {
+  const keywords = emptyKeywords();
+  keywords.location_state = ["CA"];
+
+  const cambridgeCoverage = calculateStructuredCriteriaCoverage(keywords, {
+    current_position: null,
+    occupation: null,
+    flemish_connection_names: null,
+    sector_names: null,
+    location_text: "Cambridge, MA",
+  });
+  const californiaCoverage = calculateStructuredCriteriaCoverage(keywords, {
+    current_position: null,
+    occupation: null,
+    flemish_connection_names: null,
+    sector_names: null,
+    location_text: "San Francisco, CA",
+  });
+
+  assertEquals(cambridgeCoverage.matched, 0);
+  assertEquals(californiaCoverage.matched, 1);
+});
+
+Deno.test("search intent: state parser does not treat preposition in as Indiana", () => {
+  const intent = parseSearchIntent("biotech in California");
+
+  assertEquals(
+    intent.structured_constraints.some((constraint) =>
+      constraint.field === "state" && constraint.value === "IN"
+    ),
+    false,
+  );
+});
+
 Deno.test("structured criteria coverage: all rejects partial overlap and any accepts it", () => {
   const keywords = emptyKeywords();
   keywords.flemish_connection = ["KU Leuven"];
@@ -109,7 +158,7 @@ Deno.test("normalizeSearchMatchMode defaults to all", () => {
 Deno.test("person scope can be added as a structured criterion", () => {
   const coverage = addCriterionCoverage(
     { total: 1, matched: 1, score: 1 },
-    false
+    false,
   );
 
   assertEquals(coverage.total, 2);

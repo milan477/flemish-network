@@ -1,13 +1,12 @@
+import { assert, assertEquals } from "jsr:@std/assert@^1.0.0";
 import {
-  assertEquals,
-  assert,
-} from "jsr:@std/assert@^1.0.0";
-import {
-  classifySearchRoute,
   buildSearchTerms,
-  pickSearchSnippet,
+  buildSemanticRetrievalQuery,
+  classifySearchRoute,
   getSearchRouteConfig,
+  pickSearchSnippet,
 } from "../searchRouting.ts";
+import { parseSearchIntent } from "../searchCriteria.ts";
 import type { SmartSearchKeywords } from "../aiContracts.ts";
 
 function emptyKeywords(): SmartSearchKeywords {
@@ -24,7 +23,10 @@ function emptyKeywords(): SmartSearchKeywords {
 }
 
 Deno.test("classifySearchRoute: literal short name → direct_lookup", () => {
-  assertEquals(classifySearchRoute("Jan Janssens", emptyKeywords()), "direct_lookup");
+  assertEquals(
+    classifySearchRoute("Jan Janssens", emptyKeywords()),
+    "direct_lookup",
+  );
 });
 
 Deno.test("classifySearchRoute: name keyword + few tokens → direct_lookup", () => {
@@ -47,9 +49,9 @@ Deno.test("classifySearchRoute: long semantic intent → exploratory", () => {
   assertEquals(
     classifySearchRoute(
       "people who are working on machine learning research in startups",
-      k
+      k,
     ),
-    "exploratory"
+    "exploratory",
   );
 });
 
@@ -59,7 +61,7 @@ Deno.test("classifySearchRoute: location + sector + many tokens → exploratory"
   k.sector = ["finance"];
   assertEquals(
     classifySearchRoute("finance executives based around Boston area", k),
-    "exploratory"
+    "exploratory",
   );
 });
 
@@ -85,6 +87,12 @@ Deno.test("buildSearchTerms: dedupes, normalizes, caps at 16", () => {
   assert(terms.includes("boston"));
 });
 
+Deno.test("buildSemanticRetrievalQuery: uses original query from parsed intent", () => {
+  const intent = parseSearchIntent("biotech in California");
+
+  assertEquals(buildSemanticRetrievalQuery(intent), "biotech in California");
+});
+
 Deno.test("pickSearchSnippet: prefers hint when match_field is non-name", () => {
   const snippet = pickSearchSnippet(
     {
@@ -97,7 +105,7 @@ Deno.test("pickSearchSnippet: prefers hint when match_field is non-name", () => 
     },
     ["leuven"],
     "leuven",
-    { match_field: "bio", match_text: "Loves KU Leuven research." }
+    { match_field: "bio", match_text: "Loves KU Leuven research." },
   );
   assertEquals(snippet, "Loves KU Leuven research.");
 });
@@ -114,7 +122,7 @@ Deno.test("pickSearchSnippet: ignores hint when match_field is name", () => {
     },
     ["leuven"],
     "leuven",
-    { match_field: "name", match_text: "ignored" }
+    { match_field: "name", match_text: "ignored" },
   );
   assert(snippet.includes("KU Leuven"));
 });
@@ -132,7 +140,7 @@ Deno.test("pickSearchSnippet: truncates very long snippets", () => {
     },
     [],
     "",
-    undefined
+    undefined,
   );
   assert(snippet.length <= 230);
   assert(snippet.endsWith("..."));

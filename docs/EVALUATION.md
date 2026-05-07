@@ -103,6 +103,8 @@ Quality gates:
 - Suggestions are draft-only until staff approve them.
 - Mixed people and organization suggestions use `entity_type` and save through exactly one `person_id` or `organization_id`.
 - Rejected candidates stay suppressed in the current draft until reset or undo.
+- Collection detail drafts survive route revisits in browser storage and can be refreshed or reset explicitly.
+- Suggestion clicks on collection detail open an in-place profile preview before any full-profile navigation.
 - Existing collection members and draft exclusions are not re-suggested.
 - Reranking never introduces IDs outside the retrieved candidate set.
 - Discovery handoff only pre-fills `/admin/discovery?prompt=...`; it does not start `agent-scheduler`.
@@ -110,7 +112,7 @@ Quality gates:
 Phase 4 acceptance criteria:
 
 - `suggest-people` is described to users and docs as collection suggestions, while the deployed function name remains unchanged.
-- Organization candidates come from approved organization lexical search only; Phase 4 does not add organization embeddings.
+- Organization candidates come from approved organization lexical, vector, and text-chunk retrieval when embeddings are available.
 - Collection prompts may produce a Discovery handoff, but Phase 4 does not add autonomous Discovery, persistent gap analytics, or persistent draft tables.
 - Canonical organization Flemish/Belgian facts remain a later normalization phase.
 

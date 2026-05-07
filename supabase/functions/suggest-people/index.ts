@@ -20,6 +20,10 @@ import {
   classifySearchRoute,
   getSearchRouteConfig,
 } from "../_shared/searchRouting.ts";
+import {
+  buildLexicalQueryForIntent,
+  parseSearchIntent,
+} from "../_shared/searchCriteria.ts";
 import type { SmartSearchKeywords } from "../_shared/aiContracts.ts";
 
 const corsHeaders = {
@@ -73,6 +77,19 @@ interface OrganizationLexicalMatch {
   match_text: string | null;
 }
 
+interface OrganizationVectorMatch {
+  id?: string;
+  organization_id?: string;
+  similarity: number;
+}
+
+interface OrganizationChunkMatch {
+  id: string;
+  organization_id: string;
+  chunk_text: string;
+  similarity: number;
+}
+
 interface PersonRow {
   id: string;
   name: string;
@@ -124,6 +141,15 @@ interface CollectionMemberRow {
   organization_id: string | null;
 }
 
+interface SearchIntent {
+  originalQuery: string;
+  lexicalQuery: string;
+  semanticQuery: string;
+  search: CollectionSuggestionSearch;
+  route: ReturnType<typeof classifySearchRoute>;
+  config: ReturnType<typeof getSearchRouteConfig>;
+}
+
 function clampScore(value: number | null | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   if (value <= 0) return 0;
@@ -133,6 +159,66 @@ function clampScore(value: number | null | undefined): number {
 
 function reciprocalRank(rank: number): number {
   return 1 / (RRF_K + rank);
+}
+
+function optionalReciprocalRank(rank: number | undefined): number {
+  return rank ? reciprocalRank(rank) : 0;
+}
+
+function getFieldBoost(route: SearchIntent["route"], field: string | null): number {
+  if (!field) return 0;
+
+  if (route === "direct_lookup") {
+    return field === "flemish_connection" || field === "occupation" ? 0.015 : 0;
+  }
+
+  if (route === "faceted") {
+    return ["flemish_connection", "sector", "location", "occupation"].includes(field)
+      ? 0.02
+      : 0.008;
+  }
+
+  return field === "bio" || field === "description" ? 0.015 : 0.01;
+}
+
+function buildSearchIntents(
+  originalQuery: string,
+  searches: CollectionSuggestionSearch[],
+): SearchIntent[] {
+  return searches.map((search) => {
+    const parsedIntent = parseSearchIntent(search.query, EMPTY_KEYWORDS);
+    const lexicalQuery = buildLexicalQueryForIntent(parsedIntent);
+    const route = classifySearchRoute(parsedIntent.original_query, parsedIntent.keywords);
+    return {
+      originalQuery,
+      lexicalQuery,
+      semanticQuery: originalQuery,
+      search,
+      route,
+      config: getSearchRouteConfig(route),
+    };
+  });
+}
+
+async function callUntypedRpc<T>(
+  supabase: ReturnType<typeof createAdminClient>,
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<{ data: T[] | null; error: unknown }> {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: T[] | null; error: unknown }>;
+  return await rpc(fn, args);
+}
+
+function getOrganizationMatchId(
+  candidate: OrganizationVectorMatch | OrganizationChunkMatch,
+): string | null {
+  if ("organization_id" in candidate && candidate.organization_id) {
+    return candidate.organization_id;
+  }
+  return "id" in candidate && candidate.id ? candidate.id : null;
 }
 
 function normalizeLimit(value: unknown): number {
@@ -308,46 +394,52 @@ Return the best mixed candidates. Include only relevant IDs from the list.`,
 
 async function getSearchEmbeddings(
   apiKey: string,
-  searches: CollectionSuggestionSearch[],
+  intents: SearchIntent[],
 ): Promise<Array<number[] | null>> {
   try {
     const embeddings = await embedTexts(
       apiKey,
-      searches.map((search) => ({
-        text: search.query,
+      intents.map((intent) => ({
+        text: intent.semanticQuery,
         taskType: "RETRIEVAL_QUERY",
       })),
     );
     return embeddings;
   } catch (err) {
     console.warn("[suggest-people] collection suggestion embeddings degraded", err);
-    return searches.map(() => null);
+    return intents.map(() => null);
   }
 }
 
 async function retrieveCandidates(
   supabase: ReturnType<typeof createAdminClient>,
-  searches: CollectionSuggestionSearch[],
+  intents: SearchIntent[],
   embeddings: Array<number[] | null>,
 ): Promise<CollectionSuggestionCandidate[]> {
   const accumulators = new Map<string, CandidateAccumulator>();
   const candidatePersonIds = new Set<string>();
   const candidateOrganizationIds = new Set<string>();
 
-  for (let searchIndex = 0; searchIndex < searches.length; searchIndex += 1) {
-    const search = searches[searchIndex];
-    const route = classifySearchRoute(search.query, EMPTY_KEYWORDS);
-    const config = getSearchRouteConfig(route);
+  for (let searchIndex = 0; searchIndex < intents.length; searchIndex += 1) {
+    const intent = intents[searchIndex];
+    const { search, route, config } = intent;
     const embedding = embeddings[searchIndex];
     const wantsPeople = search.targets.includes("person");
     const wantsOrganizations = search.targets.includes("organization");
 
     const vectorStr = embedding ? `[${embedding.join(",")}]` : null;
-    const [peopleLexicalResponse, vectorResponse, chunkResponse, organizationResponse] =
+    const [
+      peopleLexicalResponse,
+      vectorResponse,
+      chunkResponse,
+      organizationResponse,
+      organizationVectorResponse,
+      organizationChunkResponse,
+    ] =
       await Promise.all([
         wantsPeople
           ? supabase.rpc("search_people_lexical", {
-            search_query: search.query,
+            search_query: intent.lexicalQuery,
             search_route: route,
             match_count: config.lexicalTopK,
           })
@@ -368,74 +460,170 @@ async function retrieveCandidates(
           : { data: [] as ChunkPersonMatch[], error: null },
         wantsOrganizations
           ? supabase.rpc("search_organizations_lexical", {
-            search_query: search.query,
+            search_query: intent.lexicalQuery,
             search_route: route,
             match_count: config.lexicalTopK,
           })
           : { data: [] as OrganizationLexicalMatch[], error: null },
+        wantsOrganizations && vectorStr
+          ? callUntypedRpc<OrganizationVectorMatch>(
+            supabase,
+            "match_organizations",
+            {
+              query_embedding: vectorStr,
+              match_count: config.vectorTopK,
+              similarity_threshold: config.vectorSimilarityThreshold,
+            },
+          )
+          : { data: [] as OrganizationVectorMatch[], error: null },
+        wantsOrganizations && vectorStr
+          ? callUntypedRpc<OrganizationChunkMatch>(
+            supabase,
+            "match_organization_text_chunks",
+            {
+              query_embedding: vectorStr,
+              match_count: config.vectorTopK * 2,
+              similarity_threshold: Math.max(0.35, config.vectorSimilarityThreshold - 0.08),
+            },
+          )
+          : { data: [] as OrganizationChunkMatch[], error: null },
       ]);
 
     if (peopleLexicalResponse.error) throw peopleLexicalResponse.error;
     if (vectorResponse.error) throw vectorResponse.error;
     if (chunkResponse.error) throw chunkResponse.error;
     if (organizationResponse.error) throw organizationResponse.error;
+    if (organizationVectorResponse.error) throw organizationVectorResponse.error;
+    if (organizationChunkResponse.error) throw organizationChunkResponse.error;
 
-    ((peopleLexicalResponse.data || []) as LexicalPersonMatch[]).forEach((match, rank) => {
-      candidatePersonIds.add(match.person_id);
+    const peopleLexicalMatches = (peopleLexicalResponse.data || []) as LexicalPersonMatch[];
+    const vectorMatches = (vectorResponse.data || []) as VectorPersonMatch[];
+    const chunkMatches = (chunkResponse.data || []) as ChunkPersonMatch[];
+    const organizationMatches = (organizationResponse.data || []) as OrganizationLexicalMatch[];
+    const organizationVectorMatches =
+      (organizationVectorResponse.data || []) as OrganizationVectorMatch[];
+    const organizationChunkMatches =
+      (organizationChunkResponse.data || []) as OrganizationChunkMatch[];
+
+    const lexicalByPerson = new Map<string, LexicalPersonMatch>();
+    const lexicalRanks = new Map<string, number>();
+    peopleLexicalMatches.forEach((match, index) => {
+      lexicalByPerson.set(match.person_id, match);
+      lexicalRanks.set(match.person_id, index + 1);
+    });
+
+    const vectorByPerson = new Map<string, VectorPersonMatch>();
+    const vectorRanks = new Map<string, number>();
+    vectorMatches.forEach((match, index) => {
+      vectorByPerson.set(match.id, match);
+      vectorRanks.set(match.id, index + 1);
+    });
+
+    const chunkByPerson = new Map<string, ChunkPersonMatch>();
+    const chunkRanks = new Map<string, number>();
+    chunkMatches.forEach((match, index) => {
+      const existing = chunkByPerson.get(match.person_id);
+      if (!existing || match.similarity > existing.similarity) {
+        chunkByPerson.set(match.person_id, match);
+      }
+      if (!chunkRanks.has(match.person_id)) {
+        chunkRanks.set(match.person_id, index + 1);
+      }
+    });
+
+    const personIds = new Set([
+      ...lexicalByPerson.keys(),
+      ...vectorByPerson.keys(),
+      ...chunkByPerson.keys(),
+    ]);
+
+    for (const personId of personIds) {
+      candidatePersonIds.add(personId);
+      const lexical = lexicalByPerson.get(personId);
+      const vector = vectorByPerson.get(personId);
+      const bestChunk = chunkByPerson.get(personId);
       const score =
-        0.36 * clampScore(match.lexical_score) +
-        0.18 * clampScore(match.name_score / 1.2) +
-        0.46 * reciprocalRank(rank + 1) +
-        (match.exact_name_match ? 0.08 : 0);
+        config.lexicalWeight * optionalReciprocalRank(lexicalRanks.get(personId)) +
+        config.vectorWeight * optionalReciprocalRank(vectorRanks.get(personId)) +
+        0.5 * config.vectorWeight * optionalReciprocalRank(chunkRanks.get(personId)) +
+        config.lexicalSignalWeight * clampScore(lexical?.lexical_score) +
+        config.vectorSignalWeight * clampScore(vector?.similarity) +
+        0.08 * clampScore(bestChunk?.similarity) +
+        (lexical?.exact_name_match ? config.exactBoost : 0) +
+        (lexical ? config.nameBoost * clampScore(lexical.name_score / 1.2) : 0) +
+        getFieldBoost(route, lexical?.match_field || null);
+
       upsertAccumulator(accumulators, {
         entity_type: "person",
-        id: match.person_id,
-        source_search: search.query,
+        id: personId,
+        source_search: intent.lexicalQuery,
         score,
-        reason: `Matched approved people records for "${search.query}".`,
-        snippet: truncateSnippet(match.match_text),
+        reason: `Matched approved people records for "${intent.lexicalQuery}".`,
+        snippet: truncateSnippet(bestChunk?.chunk_text || lexical?.match_text),
       });
+    }
+
+    const organizationLexicalById = new Map<string, OrganizationLexicalMatch>();
+    const organizationLexicalRanks = new Map<string, number>();
+    organizationMatches.forEach((match, index) => {
+      organizationLexicalById.set(match.organization_id, match);
+      organizationLexicalRanks.set(match.organization_id, index + 1);
     });
 
-    ((vectorResponse.data || []) as VectorPersonMatch[]).forEach((match, rank) => {
-      candidatePersonIds.add(match.id);
-      upsertAccumulator(accumulators, {
-        entity_type: "person",
-        id: match.id,
-        source_search: search.query,
-        score: 0.5 * clampScore(match.similarity) + 0.5 * reciprocalRank(rank + 1),
-        reason: `Matched profile embedding signals for "${search.query}".`,
-      });
+    const organizationVectorById = new Map<string, OrganizationVectorMatch>();
+    const organizationVectorRanks = new Map<string, number>();
+    organizationVectorMatches.forEach((match, index) => {
+      const organizationId = getOrganizationMatchId(match);
+      if (!organizationId) return;
+      organizationVectorById.set(organizationId, match);
+      organizationVectorRanks.set(organizationId, index + 1);
     });
 
-    ((chunkResponse.data || []) as ChunkPersonMatch[]).forEach((match, rank) => {
-      candidatePersonIds.add(match.person_id);
-      upsertAccumulator(accumulators, {
-        entity_type: "person",
-        id: match.person_id,
-        source_search: search.query,
-        score: 0.45 * clampScore(match.similarity) + 0.55 * reciprocalRank(rank + 1),
-        reason: `Matched profile text for "${search.query}".`,
-        snippet: truncateSnippet(match.chunk_text),
-      });
+    const organizationChunkById = new Map<string, OrganizationChunkMatch>();
+    const organizationChunkRanks = new Map<string, number>();
+    organizationChunkMatches.forEach((match, index) => {
+      const organizationId = getOrganizationMatchId(match);
+      if (!organizationId) return;
+      const existing = organizationChunkById.get(organizationId);
+      if (!existing || match.similarity > existing.similarity) {
+        organizationChunkById.set(organizationId, match);
+      }
+      if (!organizationChunkRanks.has(organizationId)) {
+        organizationChunkRanks.set(organizationId, index + 1);
+      }
     });
 
-    ((organizationResponse.data || []) as OrganizationLexicalMatch[]).forEach((match, rank) => {
-      candidateOrganizationIds.add(match.organization_id);
+    const organizationIds = new Set([
+      ...organizationLexicalById.keys(),
+      ...organizationVectorById.keys(),
+      ...organizationChunkById.keys(),
+    ]);
+
+    for (const organizationId of organizationIds) {
+      candidateOrganizationIds.add(organizationId);
+      const lexical = organizationLexicalById.get(organizationId);
+      const vector = organizationVectorById.get(organizationId);
+      const bestChunk = organizationChunkById.get(organizationId);
       const score =
-        0.5 * clampScore(match.lexical_score) +
-        0.18 * clampScore(match.name_score / 1.2) +
-        0.32 * reciprocalRank(rank + 1) +
-        (match.exact_name_match ? 0.08 : 0);
+        config.lexicalWeight * optionalReciprocalRank(organizationLexicalRanks.get(organizationId)) +
+        config.vectorWeight * optionalReciprocalRank(organizationVectorRanks.get(organizationId)) +
+        0.5 * config.vectorWeight * optionalReciprocalRank(organizationChunkRanks.get(organizationId)) +
+        config.lexicalSignalWeight * clampScore(lexical?.lexical_score) +
+        config.vectorSignalWeight * clampScore(vector?.similarity) +
+        0.08 * clampScore(bestChunk?.similarity) +
+        (lexical?.exact_name_match ? 0.6 * config.exactBoost : 0) +
+        (lexical ? 0.8 * config.nameBoost * clampScore(lexical.name_score / 1.2) : 0) +
+        getFieldBoost(route, lexical?.match_field || null);
+
       upsertAccumulator(accumulators, {
         entity_type: "organization",
-        id: match.organization_id,
-        source_search: search.query,
+        id: organizationId,
+        source_search: intent.lexicalQuery,
         score,
-        reason: `Matched approved organization records for "${search.query}".`,
-        snippet: truncateSnippet(match.match_text),
+        reason: `Matched approved organization records for "${intent.lexicalQuery}".`,
+        snippet: truncateSnippet(bestChunk?.chunk_text || lexical?.match_text),
       });
-    });
+    }
   }
 
   const [peopleResponse, peopleDocumentsResponse, organizationsResponse, organizationDocumentsResponse] =
@@ -498,7 +686,7 @@ async function retrieveCandidates(
   );
 
   return Array.from(accumulators.values())
-    .map((candidate) => {
+    .map((candidate): CollectionSuggestionCandidate | null => {
       if (candidate.entity_type === "person") {
         const person = peopleById.get(candidate.id);
         if (!person) return null;
@@ -591,8 +779,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
       plan = fallbackCollectionSuggestionPlan(query);
     }
 
-    const embeddings = await getSearchEmbeddings(geminiKey, plan.searches);
-    const retrieved = (await retrieveCandidates(supabase, plan.searches, embeddings))
+    const intents = buildSearchIntents(query, plan.searches);
+    const embeddings = await getSearchEmbeddings(geminiKey, intents);
+    const retrieved = (await retrieveCandidates(supabase, intents, embeddings))
       .filter((candidate) =>
         candidate.entity_type === "person"
           ? !excludedPeople.has(candidate.id)

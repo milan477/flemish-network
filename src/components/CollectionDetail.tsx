@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
+import { useState, useEffect, useCallback, useMemo, useReducer, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -23,6 +23,8 @@ import {
   supabase,
   type Collection,
   type CollectionMember,
+  type Organization,
+  type Person,
   displayName,
 } from '../lib/supabase';
 import { getPersonFlemishConnectionText } from '../lib/flemishConnections';
@@ -31,6 +33,7 @@ import { suggestPeopleEmbedding, type CollectionSuggestionGap } from '../lib/aiS
 import { printCollectionBriefing } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
 import PeopleExportMenu from './PeopleExportMenu';
+import CollectionSuggestionPreviewModal from './CollectionSuggestionPreviewModal';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
 import {
@@ -40,6 +43,7 @@ import {
   getCollectionSuggestionExclusionPayload,
   getVisibleDraftCandidates,
   type CollectionSuggestionCandidate,
+  type CollectionSuggestionDraftItem,
   type CollectionSuggestionDraftState,
 } from '../lib/collectionSuggestionDraft';
 
@@ -47,6 +51,68 @@ interface CollectionDetailProps {
   collectionId: string;
   onNavigate: (page: string, id?: string) => void;
   onBack: () => void;
+}
+
+interface CachedCollectionSuggestions {
+  draft: CollectionSuggestionDraftState;
+  message: string;
+  gap: CollectionSuggestionGap;
+  showSuggestions: boolean;
+  updatedAt: string;
+}
+
+const COLLECTION_SUGGESTION_CACHE_VERSION = 1;
+
+function collectionSuggestionCacheKey(collectionId: string): string {
+  return `collection-suggestions:v${COLLECTION_SUGGESTION_CACHE_VERSION}:${collectionId}`;
+}
+
+function isDraftItem(value: unknown): value is CollectionSuggestionDraftItem {
+  const item = value as CollectionSuggestionDraftItem;
+  const candidate = item?.candidate;
+  return (
+    Boolean(candidate) &&
+    (candidate.entity_type === 'person' || candidate.entity_type === 'organization') &&
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.reason === 'string' &&
+    typeof candidate.score === 'number' &&
+    typeof candidate.source_search === 'string' &&
+    (item.status === 'pending' || item.status === 'accepted' || item.status === 'rejected')
+  );
+}
+
+function isDraftState(value: unknown): value is CollectionSuggestionDraftState {
+  const state = value as CollectionSuggestionDraftState;
+  return (
+    Array.isArray(state?.items) &&
+    state.items.every(isDraftItem) &&
+    Array.isArray(state.rejectedPeopleIds) &&
+    state.rejectedPeopleIds.every((id) => typeof id === 'string') &&
+    Array.isArray(state.rejectedOrganizationIds) &&
+    state.rejectedOrganizationIds.every((id) => typeof id === 'string') &&
+    Array.isArray(state.history)
+  );
+}
+
+function readCachedCollectionSuggestions(key: string): CachedCollectionSuggestions | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedCollectionSuggestions>;
+    if (!isDraftState(parsed.draft)) return null;
+    return {
+      draft: parsed.draft,
+      message: typeof parsed.message === 'string' ? parsed.message : '',
+      gap: parsed.gap?.should_offer
+        ? parsed.gap as CollectionSuggestionGap
+        : { should_offer: false },
+      showSuggestions: Boolean(parsed.showSuggestions),
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default function CollectionDetail({
@@ -72,6 +138,8 @@ export default function CollectionDetail({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [previewCandidate, setPreviewCandidate] = useState<CollectionSuggestionCandidate | null>(null);
+  const restoredSuggestionCacheRef = useRef(false);
 
   const personMembers = useMemo(
     () => members.filter((member) => member.person).map((member) => member.person!),
@@ -85,6 +153,10 @@ export default function CollectionDetail({
   const acceptedCandidates = useMemo(() => getAcceptedDraftCandidates(draft), [draft]);
   const acceptedCount = acceptedCandidates.length;
   const [suggestionGap, setSuggestionGap] = useState<CollectionSuggestionGap>({ should_offer: false });
+  const suggestionCacheKey = useMemo(
+    () => collectionSuggestionCacheKey(collectionId),
+    [collectionId]
+  );
 
   const fetchCollectionData = useCallback(async () => {
     setLoading(true);
@@ -99,15 +171,53 @@ export default function CollectionDetail({
       if (collError) throw collError;
       setCollection(collData);
 
-      // Fetch members with person and organization data
+      // Fetch collection members first, then load related records explicitly.
+      // Supabase cannot always infer both nullable member relationships from the schema cache.
       const { data: memData, error: memError } = await supabase
         .from('collection_members')
-        .select('*, person:people(*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))), organization:organizations(*, locations(*))')
+        .select('*')
         .eq('collection_id', collectionId)
         .order('added_at', { ascending: false });
 
       if (memError) throw memError;
-      setMembers(memData || []);
+
+      const baseMembers = (memData || []) as CollectionMember[];
+      const personIds = Array.from(new Set(baseMembers.map((member) => member.person_id).filter(Boolean) as string[]));
+      const organizationIds = Array.from(new Set(baseMembers.map((member) => member.organization_id).filter(Boolean) as string[]));
+      const [peopleRes, organizationsRes] = await Promise.all([
+        personIds.length > 0
+          ? supabase
+              .from('people')
+              .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))')
+              .in('id', personIds)
+          : Promise.resolve({ data: [], error: null }),
+        organizationIds.length > 0
+          ? supabase
+              .from('organizations')
+              .select('*, locations(*)')
+              .in('id', organizationIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (peopleRes.error) throw peopleRes.error;
+      if (organizationsRes.error) throw organizationsRes.error;
+
+      const peopleById = new Map(
+        ((peopleRes.data || []) as Person[]).map((person) => [person.id, person])
+      );
+      const organizationsById = new Map(
+        ((organizationsRes.data || []) as Organization[]).map((organization) => [organization.id, organization])
+      );
+
+      setMembers(
+        baseMembers.map((member) => ({
+          ...member,
+          person: member.person_id ? peopleById.get(member.person_id) : undefined,
+          organization: member.organization_id
+            ? organizationsById.get(member.organization_id)
+            : undefined,
+        }))
+      );
     } catch (err) {
       console.warn('[CollectionDetail] failed to load collection', err);
       notifyError(err, { hint: 'Could not load this collection.' });
@@ -119,6 +229,38 @@ export default function CollectionDetail({
   useEffect(() => {
     void fetchCollectionData();
   }, [fetchCollectionData]);
+
+  useEffect(() => {
+    const cached = readCachedCollectionSuggestions(suggestionCacheKey);
+    if (cached) {
+      dispatchDraft({ type: 'restore', state: cached.draft });
+      setSuggestMessage(cached.message);
+      setSuggestionGap(cached.gap);
+      setShowSuggestions(cached.showSuggestions || getVisibleDraftCandidates(cached.draft).length > 0);
+    }
+    restoredSuggestionCacheRef.current = true;
+  }, [suggestionCacheKey]);
+
+  useEffect(() => {
+    if (!restoredSuggestionCacheRef.current) return;
+    const hasDraft = draft.items.length > 0;
+    const hasMessage = Boolean(suggestMessage.trim());
+    const hasGap = Boolean(suggestionGap.should_offer);
+
+    if (!showSuggestions && !hasDraft && !hasMessage && !hasGap) {
+      window.localStorage.removeItem(suggestionCacheKey);
+      return;
+    }
+
+    const cachePayload: CachedCollectionSuggestions = {
+      draft,
+      message: suggestMessage,
+      gap: suggestionGap,
+      showSuggestions,
+      updatedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(suggestionCacheKey, JSON.stringify(cachePayload));
+  }, [draft, showSuggestions, suggestMessage, suggestionCacheKey, suggestionGap]);
 
   const handleRemoveMember = async (memberId: string) => {
     if (!window.confirm('Remove this member from the collection?')) return;
@@ -204,12 +346,19 @@ export default function CollectionDetail({
       ? currentMemberIds.people.has(candidate.id)
       : currentMemberIds.organizations.has(candidate.id);
 
-  const handleFindSimilar = async (draftForExclusions = draft) => {
+  const handleFindSimilar = async (
+    draftForExclusions = draft,
+    options: { replace?: boolean } = {}
+  ) => {
     if (!collection) return;
     setSuggestLoading(true);
     setShowSuggestions(true);
     setSuggestError(null);
     setSuggestMessage('');
+    if (options.replace) {
+      dispatchDraft({ type: 'reset' });
+      setSuggestionGap({ should_offer: false });
+    }
 
     // Build query from collection description + top member bios
     const queryParts: string[] = [];
@@ -248,10 +397,19 @@ export default function CollectionDetail({
     setSuggestLoading(false);
   };
 
-  const handleResetDraft = async () => {
+  const handleRefreshSuggestions = async () => {
     dispatchDraft({ type: 'reset' });
     setSuggestionGap({ should_offer: false });
-    await handleFindSimilar(EMPTY_COLLECTION_SUGGESTION_DRAFT);
+    await handleFindSimilar(EMPTY_COLLECTION_SUGGESTION_DRAFT, { replace: true });
+  };
+
+  const handleResetDraft = () => {
+    dispatchDraft({ type: 'reset' });
+    setSuggestMessage('');
+    setSuggestError(null);
+    setSuggestionGap({ should_offer: false });
+    setShowSuggestions(false);
+    window.localStorage.removeItem(suggestionCacheKey);
   };
 
   const handleDiscoveryHandoff = () => {
@@ -286,7 +444,9 @@ export default function CollectionDetail({
       if (error) throw error;
       dispatchDraft({ type: 'reset' });
       setSuggestionGap({ should_offer: false });
+      setSuggestMessage('');
       setShowSuggestions(false);
+      window.localStorage.removeItem(suggestionCacheKey);
       await fetchCollectionData();
     } catch (err) {
       notifyError(err, { hint: 'Could not add approved suggestions to the collection.' });
@@ -425,16 +585,16 @@ export default function CollectionDetail({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => void handleFindSimilar()}
+                  onClick={() => void handleRefreshSuggestions()}
                   disabled={suggestLoading}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-yellow-50 disabled:opacity-50"
                 >
                   {suggestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  More
+                  Refresh
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleResetDraft()}
+                  onClick={handleResetDraft}
                   disabled={suggestLoading}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-yellow-50 disabled:opacity-50"
                 >
@@ -488,7 +648,8 @@ export default function CollectionDetail({
                         </div>
                         <div className="min-w-0 flex-1">
                           <button
-                            onClick={() => onNavigate(candidate.entity_type, candidate.id)}
+                            type="button"
+                            onClick={() => setPreviewCandidate(candidate)}
                             className="block truncate text-sm font-semibold text-gray-900 hover:text-yellow-700"
                           >
                             {candidate.name}
@@ -755,6 +916,18 @@ export default function CollectionDetail({
           onSave={(updated) => {
             setCollection(updated);
             setShowEditModal(false);
+          }}
+        />
+      )}
+
+      {previewCandidate && (
+        <CollectionSuggestionPreviewModal
+          entityType={previewCandidate.entity_type}
+          entityId={previewCandidate.id}
+          onClose={() => setPreviewCandidate(null)}
+          onOpenProfile={(entityType, entityId) => {
+            setPreviewCandidate(null);
+            onNavigate(entityType, entityId);
           }}
         />
       )}

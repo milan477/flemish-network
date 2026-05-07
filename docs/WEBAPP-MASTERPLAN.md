@@ -73,6 +73,8 @@ Known legacy still present:
 - `[later]` Legacy compatibility functions `discover-contacts`, `search-contacts`, and `ai-agent` tasks `parse_contacts` / `flemish_search` still exist until replacement flows are complete.
 - `[done]` Organization search has server-side ranked lexical result parity for Phase 3.
 - `[done]` Collections support mixed people and organization members in schema, suggestions, detail UI, and add-to-collection controls.
+- `[done]` Collection detail suggestions restore from a per-collection browser cache and open profile previews in place instead of navigating away.
+- `[done]` Admin embedding health and metrics copy uses record/entity vocabulary while preserving current person-keyed backend contracts.
 
 ## Phase 0 - Documentation And Service Map
 
@@ -281,6 +283,7 @@ Todos:
 - `[done]` Keep deployed `suggest-people` behind a collection suggestion service contract that returns people and organizations.
 - `[done]` Add draft state for suggested candidates, approval/rejection, and reasons.
 - `[done]` Update collection creation and detail UI to use draft approval/rejection before saving suggestions.
+- `[done]` Cache collection detail suggestion drafts client-side and make suggestion clicks open a profile preview modal.
 - `[done]` Update collection detail UI to render people and organization members.
 - `[done]` Add explicit "send gap to Discovery" action without auto-running discovery.
 - `[done]` Update add-to-collection controls for organizations on search result cards and organization profiles.
@@ -289,7 +292,6 @@ Out of scope:
 
 - Autonomous discovery.
 - Gap analytics beyond a simple handoff.
-- Organization embeddings.
 - Canonical organization Flemish/Belgian facts.
 - Persistent draft tables.
 

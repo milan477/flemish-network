@@ -1,4 +1,5 @@
 import type { SmartSearchKeywords } from "./aiContracts.ts";
+import type { SearchIntent } from "./searchCriteria.ts";
 
 export type SearchRoute = "direct_lookup" | "faceted" | "exploratory";
 
@@ -105,16 +106,17 @@ function splitTerms(value: string): string[] {
 
 function hasInstitutionAnchor(values: string[]): boolean {
   return values.some((value) =>
-    /\b(baef|fayat|imec|ku|leuven|ugent|ghent|vub|uantwerp|uhasselt|university|college|institute|lab|fellowship|foundation)\b/i.test(
-      value
-    )
+    /\b(baef|fayat|imec|ku|leuven|ugent|ghent|vub|uantwerp|uhasselt|university|college|institute|lab|fellowship|foundation)\b/i
+      .test(
+        value,
+      )
   );
 }
 
 function scoreTextMatch(
   text: string | null | undefined,
   terms: string[],
-  normalizedQuery: string
+  normalizedQuery: string,
 ): number {
   const normalizedText = normalizeText(text || "");
   if (!normalizedText) return 0;
@@ -146,7 +148,7 @@ function scoreTextMatch(
 function bestBioSentence(
   bio: string | null | undefined,
   terms: string[],
-  normalizedQuery: string
+  normalizedQuery: string,
 ): string {
   const sentences = (bio || "")
     .split(/[.!?]+/)
@@ -175,27 +177,25 @@ function truncate(text: string, maxLength = 220): string {
 
 export function classifySearchRoute(
   query: string,
-  keywords: SmartSearchKeywords
+  keywords: SmartSearchKeywords,
 ): SearchRoute {
   const trimmedQuery = query.trim();
   const tokens = splitTerms(trimmedQuery);
   const tokenCount = tokens.length;
-  const hasLocation =
-    keywords.location_city.length > 0 || keywords.location_state.length > 0;
-  const hasStructuredFacet =
-    keywords.sector.length > 0 ||
+  const hasLocation = keywords.location_city.length > 0 ||
+    keywords.location_state.length > 0;
+  const hasStructuredFacet = keywords.sector.length > 0 ||
     keywords.occupation.length > 0 ||
     keywords.flemish_connection.length > 0;
-  const hasNamedAnchor =
-    keywords.name.length > 0 || hasInstitutionAnchor(keywords.flemish_connection);
-  const hasSemanticIntent =
-    keywords.bio.length > 1 ||
-    /\b(looking for|people who|someone who|working on|focused on|interested in)\b/i.test(
-      trimmedQuery
-    ) ||
+  const hasNamedAnchor = keywords.name.length > 0 ||
+    hasInstitutionAnchor(keywords.flemish_connection);
+  const hasSemanticIntent = keywords.bio.length > 1 ||
+    /\b(looking for|people who|someone who|working on|focused on|interested in)\b/i
+      .test(
+        trimmedQuery,
+      ) ||
     tokenCount >= 7;
-  const looksLiteralName =
-    tokenCount >= 1 &&
+  const looksLiteralName = tokenCount >= 1 &&
     tokenCount <= 4 &&
     !hasLocation &&
     !hasStructuredFacet &&
@@ -228,7 +228,9 @@ export function classifySearchRoute(
     return "direct_lookup";
   }
 
-  if (hasLocation || hasStructuredFacet || keywords.current_position.length > 0) {
+  if (
+    hasLocation || hasStructuredFacet || keywords.current_position.length > 0
+  ) {
     return "faceted";
   }
 
@@ -239,9 +241,16 @@ export function getSearchRouteConfig(route: SearchRoute): SearchRouteConfig {
   return SEARCH_ROUTE_CONFIG[route];
 }
 
+export function buildSemanticRetrievalQuery(
+  query: string | Pick<SearchIntent, "original_query" | "semantic_remainder">,
+): string {
+  if (typeof query === "string") return query.trim();
+  return query.original_query.trim() || query.semantic_remainder.trim();
+}
+
 export function buildSearchTerms(
   query: string,
-  keywords: SmartSearchKeywords
+  keywords: SmartSearchKeywords,
 ): string[] {
   const orderedTerms = [
     normalizeText(query),
@@ -257,7 +266,7 @@ export function buildSearchTerms(
   ];
 
   return Array.from(
-    new Set(orderedTerms.map((term) => normalizeText(term)).filter(Boolean))
+    new Set(orderedTerms.map((term) => normalizeText(term)).filter(Boolean)),
   ).slice(0, 16);
 }
 
@@ -265,7 +274,7 @@ export function pickSearchSnippet(
   doc: SearchDocumentSnippetSource,
   terms: string[],
   query: string,
-  hint?: LexicalMatchHint
+  hint?: LexicalMatchHint,
 ): string {
   const normalizedQuery = normalizeText(query);
 
@@ -282,7 +291,9 @@ export function pickSearchSnippet(
   const candidates = [
     {
       text: doc.flemish_connection_names || "",
-      score: scoreTextMatch(doc.flemish_connection_names, terms, normalizedQuery) + 0.18,
+      score:
+        scoreTextMatch(doc.flemish_connection_names, terms, normalizedQuery) +
+        0.18,
     },
     {
       text: doc.sector_names || "",
@@ -298,11 +309,13 @@ export function pickSearchSnippet(
     },
     {
       text: bioSentence,
-      score: scoreTextMatch(bioSentence, terms, normalizedQuery) + (bioSentence ? 0.08 : 0),
+      score: scoreTextMatch(bioSentence, terms, normalizedQuery) +
+        (bioSentence ? 0.08 : 0),
     },
     {
       text: doc.current_position || "",
-      score: scoreTextMatch(doc.current_position, terms, normalizedQuery) + 0.06,
+      score: scoreTextMatch(doc.current_position, terms, normalizedQuery) +
+        0.06,
     },
   ]
     .filter((candidate) => candidate.text.trim())
@@ -311,8 +324,7 @@ export function pickSearchSnippet(
       return a.text.length - b.text.length;
     });
 
-  const snippet =
-    candidates[0]?.text ||
+  const snippet = candidates[0]?.text ||
     bioSentence ||
     doc.current_position ||
     doc.flemish_connection_names ||

@@ -22,4 +22,22 @@ describe('search-people Phase 3 contract', () => {
     expect(searchFunction).toContain('filters?.show_organizations !== false');
     expect(searchFunction).toContain('search_organizations_lexical');
   });
+
+  it('uses shared intent fields and original-query semantic retrieval', () => {
+    expect(searchFunction).toContain('parseSearchIntent');
+    expect(searchFunction).toContain('buildLexicalQueryForIntent');
+    expect(searchFunction).toContain('parsedIntent.original_query');
+    expect(searchFunction).toContain('search_query: lexicalQuery');
+    expect(searchFunction).toContain('getEmbedding(geminiKey, query)');
+    expect(searchFunction).toContain('taskType: "RETRIEVAL_QUERY"');
+  });
+
+  it('fuses organization lexical, vector, and chunk candidates', () => {
+    expect(searchFunction).toContain('"match_organizations"');
+    expect(searchFunction).toContain('"match_organization_text_chunks"');
+    expect(searchFunction).toContain('organizationVectorById');
+    expect(searchFunction).toContain('organizationChunkById');
+    expect(searchFunction).toContain('organization_vector_candidates');
+    expect(searchFunction).toContain('organization_chunk_candidates');
+  });
 });

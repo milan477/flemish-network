@@ -878,7 +878,7 @@ export default function InteractiveStatsOverview({
 
             <div className="mt-6 pt-6 border-t border-gray-100">
               <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Embedding Search Index
+                Record Search Index
               </h3>
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -888,7 +888,7 @@ export default function InteractiveStatsOverview({
                     disabled={embeddingRunning}
                     className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
                   >
-                    {embeddingRunning ? 'Generating...' : 'Generate Embeddings'}
+                    {embeddingRunning ? 'Generating...' : 'Generate Index'}
                   </button>
                   <button
                     type="button"
@@ -902,12 +902,12 @@ export default function InteractiveStatsOverview({
                         Starting Batch...
                       </>
                     ) : (
-                      'Run Offline Batch'
+                      'Run Offline Index Batch'
                     )}
                   </button>
                 </div>
                 <p className="text-xs text-gray-500">
-                  Use the normal queue for immediate indexing. The offline batch path is optional and
+                  Use the normal queue for immediate record indexing. The offline batch path is optional and
                   intended for larger refreshes that can run asynchronously.
                 </p>
                 {embeddingProgress && (
@@ -938,14 +938,14 @@ export default function InteractiveStatsOverview({
                   !embeddingRunning &&
                   embeddingProgress.processed > 0 && (
                     <span className="text-xs text-green-600 font-medium">
-                      {embeddingProgress.processed} profiles indexed
+                      {embeddingProgress.processed} records indexed
                     </span>
                   )}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-medium text-gray-700">
-                        Recent Offline Batch
+                        Recent Offline Index Batch
                       </p>
                       <p className="text-[11px] text-gray-500 mt-1">
                         {embeddingBatchLoading
@@ -954,7 +954,7 @@ export default function InteractiveStatsOverview({
                           ? `${latestEmbeddingBatch.status} · ${formatBatchDate(
                               latestEmbeddingBatch.started_at
                             )}`
-                          : 'No offline embedding batches yet.'}
+                          : 'No offline index batches yet.'}
                       </p>
                     </div>
                     {latestEmbeddingBatch && (
@@ -975,7 +975,7 @@ export default function InteractiveStatsOverview({
                   {latestEmbeddingBatch && (
                     <div className="mt-3 text-xs text-gray-600 space-y-1">
                       <p>
-                        {formatBatchNumber(latestEmbeddingBatch.people_count)} people ·{' '}
+                        {formatBatchNumber(latestEmbeddingBatch.people_count)} records ·{' '}
                         {formatBatchNumber(latestEmbeddingBatch.request_count)} requests
                       </p>
                       {latestEmbeddingBatch.batch_stats && (

@@ -58,14 +58,3 @@ Before finishing any change, update every affected source-of-truth file in the s
 - Update this `AGENTS.md` only when a rule must be read by every future agent.
 
 If a change does not require docs, say that explicitly in the final response.
-
-## graphify
-
-This project has a graphify knowledge graph at `graphify-out/`.
-
-Rules:
-
-- Before answering architecture or codebase questions, read `graphify-out/GRAPH_REPORT.md` for god nodes and community structure.
-- If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files.
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep.
-- After modifying code files, run `graphify update .` so the graph stays current.

@@ -1,7 +1,7 @@
 import { normalizeWhitespace, safeString } from "./locationPipeline.ts";
 
-export const EMBEDDING_MODEL =
-  Deno.env.get("GEMINI_EMBEDDING_MODEL") || "gemini-embedding-001";
+export const EMBEDDING_MODEL = Deno.env.get("GEMINI_EMBEDDING_MODEL") ||
+  "gemini-embedding-001";
 export const EMBEDDING_DIM = 768;
 
 export type EmbeddingTaskType = "RETRIEVAL_QUERY" | "RETRIEVAL_DOCUMENT";
@@ -11,6 +11,18 @@ export interface EmbeddingRequest {
   title?: string;
   taskType: EmbeddingTaskType;
 }
+
+export type EmbeddingEntityType = "person" | "organization";
+export type EmbeddingTargetType = EmbeddingEntityType | "all";
+export type PersonEmbeddingChunkType = "bio" | "position" | "combined";
+export type OrganizationEmbeddingChunkType =
+  | "profile"
+  | "description"
+  | "flemish_connection"
+  | "combined";
+export type EmbeddingChunkType =
+  | PersonEmbeddingChunkType
+  | OrganizationEmbeddingChunkType;
 
 export interface EmbeddingDocumentInput {
   name: string;
@@ -22,11 +34,31 @@ export interface EmbeddingDocumentInput {
   locationText: string;
 }
 
-export interface PersonTextChunkInput {
-  chunk_type: "bio" | "position" | "combined";
+export interface OrganizationEmbeddingDocumentInput {
+  name: string;
+  type: string;
+  description: string;
+  sectors: string[];
+  flemishLink: string;
+  locationText: string;
+  usNetworkStatus: string;
+  websiteUrl: string;
+}
+
+export interface EmbeddingTextChunkInput<
+  ChunkType extends EmbeddingChunkType = EmbeddingChunkType,
+> {
+  chunk_type: ChunkType;
   chunk_index: number;
   chunk_text: string;
 }
+
+export type PersonTextChunkInput = EmbeddingTextChunkInput<
+  PersonEmbeddingChunkType
+>;
+export type OrganizationTextChunkInput = EmbeddingTextChunkInput<
+  OrganizationEmbeddingChunkType
+>;
 
 function toContent(text: string) {
   return {
@@ -51,7 +83,11 @@ function normalizeSentenceBoundaries(value: string): string[] {
     .filter(Boolean);
 }
 
-function appendLabeledLine(lines: string[], label: string, value: string | string[]) {
+function appendLabeledLine(
+  lines: string[],
+  label: string,
+  value: string | string[],
+) {
   const normalized = Array.isArray(value)
     ? value.map((item) => normalizeWhitespace(item)).filter(Boolean).join(", ")
     : normalizeWhitespace(value);
@@ -61,7 +97,9 @@ function appendLabeledLine(lines: string[], label: string, value: string | strin
   }
 }
 
-export function buildStructuredEmbeddingText(input: EmbeddingDocumentInput): string {
+export function buildStructuredEmbeddingText(
+  input: EmbeddingDocumentInput,
+): string {
   const lines: string[] = [];
   appendLabeledLine(lines, "Name", input.name);
   appendLabeledLine(lines, "Role", input.currentPosition);
@@ -73,9 +111,24 @@ export function buildStructuredEmbeddingText(input: EmbeddingDocumentInput): str
   return lines.join("\n");
 }
 
-function pushChunk(
-  chunks: PersonTextChunkInput[],
-  chunk_type: PersonTextChunkInput["chunk_type"],
+export function buildOrganizationStructuredEmbeddingText(
+  input: OrganizationEmbeddingDocumentInput,
+): string {
+  const lines: string[] = [];
+  appendLabeledLine(lines, "Organization", input.name);
+  appendLabeledLine(lines, "Type", input.type);
+  appendLabeledLine(lines, "Sectors", input.sectors);
+  appendLabeledLine(lines, "Flemish or Belgian relevance", input.flemishLink);
+  appendLabeledLine(lines, "US network status", input.usNetworkStatus);
+  appendLabeledLine(lines, "US locations", input.locationText);
+  appendLabeledLine(lines, "Website", input.websiteUrl);
+  appendLabeledLine(lines, "Description", input.description);
+  return lines.join("\n");
+}
+
+function pushChunk<ChunkType extends EmbeddingChunkType>(
+  chunks: EmbeddingTextChunkInput<ChunkType>[],
+  chunk_type: ChunkType,
   chunk_index: number,
   chunk_text: string,
 ) {
@@ -84,11 +137,15 @@ function pushChunk(
   chunks.push({ chunk_type, chunk_index, chunk_text: normalized });
 }
 
-function buildBioChunks(bio: string): PersonTextChunkInput[] {
-  const sentences = normalizeSentenceBoundaries(bio);
+function buildSentenceChunks<ChunkType extends EmbeddingChunkType>(
+  text: string,
+  chunkType: ChunkType,
+  maxChunks: number,
+): EmbeddingTextChunkInput<ChunkType>[] {
+  const sentences = normalizeSentenceBoundaries(text);
   if (sentences.length === 0) return [];
 
-  const chunks: PersonTextChunkInput[] = [];
+  const chunks: EmbeddingTextChunkInput<ChunkType>[] = [];
   let buffer = "";
   let chunkIndex = 0;
 
@@ -100,7 +157,7 @@ function buildBioChunks(bio: string): PersonTextChunkInput[] {
     }
 
     if (buffer) {
-      pushChunk(chunks, "bio", chunkIndex, buffer);
+      pushChunk(chunks, chunkType, chunkIndex, buffer);
       chunkIndex += 1;
       buffer = sentence;
       continue;
@@ -113,24 +170,30 @@ function buildBioChunks(bio: string): PersonTextChunkInput[] {
       if (next.length <= 340) {
         current = next;
       } else {
-        pushChunk(chunks, "bio", chunkIndex, current);
+        pushChunk(chunks, chunkType, chunkIndex, current);
         chunkIndex += 1;
         current = word;
       }
     }
-    pushChunk(chunks, "bio", chunkIndex, current);
+    pushChunk(chunks, chunkType, chunkIndex, current);
     chunkIndex += 1;
     buffer = "";
   }
 
   if (buffer) {
-    pushChunk(chunks, "bio", chunkIndex, buffer);
+    pushChunk(chunks, chunkType, chunkIndex, buffer);
   }
 
-  return chunks.slice(0, 4);
+  return chunks.slice(0, maxChunks);
 }
 
-export function buildPersonTextChunks(input: EmbeddingDocumentInput): PersonTextChunkInput[] {
+function buildBioChunks(bio: string): PersonTextChunkInput[] {
+  return buildSentenceChunks(bio, "bio", 4);
+}
+
+export function buildPersonTextChunks(
+  input: EmbeddingDocumentInput,
+): PersonTextChunkInput[] {
   const chunks: PersonTextChunkInput[] = [];
   const roleLine = [
     safeString(input.currentPosition),
@@ -164,12 +227,57 @@ export function buildPersonTextChunks(input: EmbeddingDocumentInput): PersonText
   return chunks.slice(0, 6);
 }
 
+export function buildOrganizationTextChunks(
+  input: OrganizationEmbeddingDocumentInput,
+): OrganizationTextChunkInput[] {
+  const chunks: OrganizationTextChunkInput[] = [];
+  const profileLine = [
+    safeString(input.type),
+    input.sectors.length > 0 ? input.sectors.join(", ") : "",
+    safeString(input.usNetworkStatus),
+    safeString(input.locationText),
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+  if (profileLine) {
+    pushChunk(chunks, "profile", 0, profileLine);
+  }
+
+  if (input.flemishLink) {
+    pushChunk(chunks, "flemish_connection", 0, input.flemishLink);
+  }
+
+  buildSentenceChunks(input.description, "description", 4).forEach((chunk) =>
+    chunks.push(chunk)
+  );
+
+  const combined = [
+    safeString(input.type),
+    safeString(input.description),
+    input.flemishLink
+      ? `Flemish or Belgian relevance: ${input.flemishLink}`
+      : "",
+    safeString(input.locationText),
+  ]
+    .filter(Boolean)
+    .join(". ");
+
+  if (combined) {
+    pushChunk(chunks, "combined", 0, combined);
+  }
+
+  return chunks.slice(0, 7);
+}
+
 function extractEmbeddingValues(payload: unknown): number[] {
   if (!payload || typeof payload !== "object") return [];
   const record = payload as Record<string, unknown>;
 
   if (Array.isArray(record.values)) {
-    return record.values.filter((value): value is number => typeof value === "number");
+    return record.values.filter((value): value is number =>
+      typeof value === "number"
+    );
   }
 
   if (record.embedding && typeof record.embedding === "object") {
@@ -181,7 +289,9 @@ function extractEmbeddingValues(payload: unknown): number[] {
 
 function validateEmbedding(values: number[]): number[] {
   if (values.length !== EMBEDDING_DIM) {
-    throw new Error(`Expected ${EMBEDDING_DIM} embedding dimensions, got ${values.length}`);
+    throw new Error(
+      `Expected ${EMBEDDING_DIM} embedding dimensions, got ${values.length}`,
+    );
   }
   return values;
 }
@@ -205,7 +315,9 @@ async function embedSingle(
   });
 
   if (!response.ok) {
-    throw new Error(`Embedding API error ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Embedding API error ${response.status}: ${await response.text()}`,
+    );
   }
 
   const payload = await response.json();
@@ -234,15 +346,17 @@ async function embedBatch(
   });
 
   if (!response.ok) {
-    throw new Error(`Batch embedding API error ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Batch embedding API error ${response.status}: ${await response.text()}`,
+    );
   }
 
   const payload = await response.json();
   const rawEmbeddings = Array.isArray(payload?.embeddings)
     ? payload.embeddings
     : Array.isArray(payload?.responses)
-      ? payload.responses
-      : [];
+    ? payload.responses
+    : [];
 
   if (rawEmbeddings.length !== requests.length) {
     throw new Error(
@@ -297,7 +411,10 @@ export async function createAsyncEmbeddingBatch(
   });
 
   if (!response.ok) {
-    throw new Error(`Async embedding batch API error ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Async embedding batch API error ${response.status}: ${await response
+        .text()}`,
+    );
   }
 
   const payload = await response.json();
@@ -325,7 +442,10 @@ export async function getAsyncEmbeddingBatch(
   );
 
   if (!response.ok) {
-    throw new Error(`Async embedding batch lookup failed ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Async embedding batch lookup failed ${response.status}: ${await response
+        .text()}`,
+    );
   }
 
   return await response.json() as Record<string, unknown>;
@@ -346,7 +466,10 @@ export async function cancelAsyncEmbeddingBatch(
   );
 
   if (!response.ok) {
-    throw new Error(`Async embedding batch cancel failed ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `Async embedding batch cancel failed ${response.status}: ${await response
+        .text()}`,
+    );
   }
 }
 

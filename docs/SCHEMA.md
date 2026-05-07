@@ -5,7 +5,7 @@
 | Table | Key Columns | Notes |
 |---|---|---|
 | `people` | `id`, `name`, `title`, `first_name`, `last_name`, `current_position`, `organization_id` (FK), `location_id` (FK→locations), `us_network_status`, `current_location_city`, `current_location_country`, `occupation`, `bio`, `profile_photo_url`, `available_for_lectures`, `open_to_mentorship`, `welcomes_visits`, `preferred_contact`, `phone`, `email`, `email_verified`, `linkedin_url`, `website_url`, `twitter_url`, `data_source`, `last_verified_at`, `created_at`, `updated_at` | Main entity. `location_id` is the current US base for `us_based` people only. `us_connected_abroad` people use abroad display fields plus `person_us_connections`. No inline location columns; no scalar `flemish_connection`. Flemish ties normalized via `person_flemish_connections`. |
-| `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. |
+| `organizations` | `id`, `name`, `type`, `description`, `logo_url`, `website_url`, `location_id` (FK→locations), `us_network_status`, `flemish_link`, `embedding`, `embedding_dirty_at`, `embedding_generated_at`, `created_at`, `updated_at` | `location_id` is optional primary US location only. Full map placement uses `organization_us_locations`. Organization embeddings support approved organization semantic search. |
 | `locations` | `id`, `city`, `state`, `latitude`, `longitude`, `geocode_source`, `geocoded_at` | UNIQUE(city, state). `latitude`/`longitude` nullable (pending geocode or ambiguous). |
 | `sectors` | `id`, `name` (unique) | Seeded: AI, Biotech, Finance, Culture & Arts, Education, Research |
 | `flemish_connections` | `id`, `name`, `type` (university/government/company/other), `created_at` | Canonical Flemish/Belgian fact catalog. Target expansion adds aliases, parent/group support, `is_filterable`, roles, confidence, source URL, and evidence excerpts. Known aliases are canonicalized on insert (e.g. `University of Ghent` → `UGent`). |
@@ -29,7 +29,7 @@
 | `collections` | `id`, `name`, `description`, `created_at`, `updated_at` |
 | `collection_members` | `id`, `collection_id` (FK), nullable `person_id` (FK), nullable `organization_id` (FK), `notes`, `added_at`. Exactly one of `person_id` or `organization_id` is required. Partial unique indexes prevent duplicate people and duplicate organizations independently per collection. |
 
-Collection suggestion drafts are not persisted in Phase 4. Rejected and accepted draft candidate IDs stay in client state and request payloads until staff reset the draft or save accepted members.
+Collection suggestion drafts are not persisted to database tables in Phase 4. Rejected and accepted draft candidate IDs stay in client state and request payloads until staff reset the draft or save accepted members; the collection detail route may keep a per-collection browser cache of that draft for route revisits.
 
 ## AI & Suggestions
 
@@ -38,10 +38,11 @@ Collection suggestion drafts are not persisted in Phase 4. Rejected and accepted
 | `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key`, `reviewed_at`. Target replacement is a record-level suggestion queue that supports people and organizations. |
 | `derived_label_suggestions` | `id`, `person_id` or `discovered_contact_id`, `label_type`, `label_value`, `normalized_value`, `confidence`, `source`, `method`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
 | `person_text_chunks` | `id`, `person_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
+| `organization_text_chunks` | `id`, `organization_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
 | `saved_flemish_filters` | `id`, `original_query`, `keywords` (JSONB), `target_fields`, `filter_type`, `usage_count` |
 | `search_clicks` | `id`, `query`, `person_id` (FK), `clicked_at` |
 | `people_search_documents` | `person_id` (PK/FK), denormalized name, role, occupation, Flemish connection names, sector names, location text, `search_text`, `search_tsv`, `updated_at` |
-| `organization_search_documents` | `organization_id` (PK/FK), denormalized name, type, description, `flemish_link`, sector names, primary/all US location text, `us_network_status`, `search_text`, `search_tsv`, `updated_at` |
+| `organization_search_documents` | `organization_id` (PK/FK), denormalized name, type, description, `flemish_link`, sector names, primary/all US location text including organization location role/label/description, `us_network_status`, `search_text`, `search_tsv`, `updated_at` |
 
 ## Discovery Pipeline
 
@@ -57,6 +58,7 @@ Collection suggestion drafts are not persisted in Phase 4. Rejected and accepted
 | `discovery_frontier_refills` | `id`, `trigger`, `query`, `urls_added`, `created_at` |
 | `discovery_entity_pivots` | `id`, `entity_name`, `entity_type`, `confidence`, `evidence_count`, `domain` |
 | `embedding_jobs` | `person_id` (PK/FK), `status`, `queued_at`, `claimed_at`, `attempts`, `last_error` |
+| `organization_embedding_jobs` | `organization_id` (PK/FK), `status`, `queued_at`, `claimed_at`, `attempts`, `last_error` |
 | `embedding_batch_runs` | `id`, `status`, `batch_id`, `manifest` (JSONB), `started_at`, `completed_at` |
 | `agent_runs` | `id`, `agent_type`, `status`, `started_at`, `completed_at`, `results` (JSONB), `error_message`, `error_kind` |
 
@@ -82,9 +84,13 @@ Collection suggestion drafts are not persisted in Phase 4. Rejected and accepted
 | RPC | Contract |
 |---|---|
 | `search_people_lexical(search_query, search_route, match_count)` | Returns approved people lexical candidates with score components, `match_field`, and `match_text`; fused with vectors/chunks in `search-people`. |
-| `search_organizations_lexical(search_query, search_route, match_count)` | Returns approved organization lexical candidates with score components, `match_field`, and `match_text`; Phase 3 organization search is lexical-only. |
+| `search_organizations_lexical(search_query, search_route, match_count)` | Returns approved organization lexical candidates with score components, `match_field`, and `match_text`. |
+| `match_people(query_embedding, match_count, similarity_threshold)` | Returns approved people vector candidates from `people.embedding`. |
+| `match_person_text_chunks(query_embedding, match_count, similarity_threshold, exclude_person_id)` | Returns approved people text-chunk vector candidates. |
+| `match_organizations(query_embedding, match_count, similarity_threshold)` | Returns approved organization vector candidates from `organizations.embedding`. |
+| `match_organization_text_chunks(query_embedding, match_count, similarity_threshold, exclude_organization_id)` | Returns approved organization text-chunk vector candidates. |
 
-`organization_search_documents` refreshes from `organizations`, `organization_sectors`, `sectors`, `organization_us_locations`, and `locations`. Organization Flemish/Belgian relevance remains the existing `organizations.flemish_link` text field in Phase 3; canonical `organization_flemish_connections` remains Phase 6 work.
+`organization_search_documents` refreshes from `organizations`, `organization_sectors`, `sectors`, `organization_us_locations`, and `locations`. `organization_us_locations` also keeps `organizations.location_id` aligned to the primary or first approved US location. Organization embedding jobs refresh when organization profile fields, sectors, US locations, or referenced location names change. Organization Flemish/Belgian relevance remains the existing `organizations.flemish_link` text field; canonical `organization_flemish_connections` remains future work.
 
 ## Seed Data
 Seed data is carried by migrations so a clean Supabase project can be reconstructed with `supabase db push --linked`.
@@ -103,7 +109,7 @@ Future seed edits should land in new migrations and use idempotent SQL (`ON CONF
 - Core reads require an authenticated active staff session via `is_active_staff()`.
 - Writes are role-gated via `has_staff_role('editor')` or `has_staff_role('admin')`.
 - `staff_users` supports self read/update for the signed-in row; admins manage all rows.
-- `person_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs` and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System queue/batch health; writes still go through queue RPCs and `generate-embeddings`.
+- `person_text_chunks`, `organization_text_chunks`, `people_search_documents`, `organization_search_documents`, and ops/benchmark views are backend-owned. `embedding_jobs`, `organization_embedding_jobs`, and `embedding_batch_runs` are read-only for editor staff solely for Admin -> System record-index queue/batch health; writes still go through queue RPCs and embedding workers.
 - `profile-photos` storage bucket: staff-read, editor-write (`public = false`).
 - `person_sectors` and `person_flemish_connections` have insert/delete policies but no update — use conflict-ignore inserts.
 

@@ -23,6 +23,7 @@ import {
   type SearchRoute,
 } from "../_shared/searchRouting.ts";
 import {
+  buildLexicalQueryForIntent,
   buildManualFilterKeywords,
   calculateStructuredCriteriaCoverage,
   criteriaCoveragePasses,
@@ -30,6 +31,7 @@ import {
   mergeSearchKeywords,
   normalizePersonScope,
   normalizeSearchMatchMode,
+  parseSearchIntent,
   type ManualSearchFilters,
 } from "../_shared/searchCriteria.ts";
 
@@ -120,6 +122,21 @@ interface OrganizationLexicalCandidateRow {
   ts_score: number;
   match_field: string | null;
   match_text: string | null;
+}
+
+interface OrganizationVectorCandidateRow {
+  id?: string;
+  organization_id?: string;
+  similarity: number;
+}
+
+interface OrganizationChunkCandidateRow {
+  id: string;
+  organization_id: string;
+  chunk_type: string;
+  chunk_index: number;
+  chunk_text: string;
+  similarity: number;
 }
 
 interface VectorCandidateRow {
@@ -239,6 +256,18 @@ async function getEmbedding(apiKey: string, text: string): Promise<number[]> {
   return results[0];
 }
 
+async function callUntypedRpc<T>(
+  supabase: ReturnType<typeof createAdminClient>,
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<{ data: T[] | null; error: unknown }> {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: T[] | null; error: unknown }>;
+  return await rpc(fn, args);
+}
+
 function clampScore(value: number | null | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;
   if (value <= 0) return 0;
@@ -264,6 +293,15 @@ function getFieldBoost(route: SearchRoute, field: string | null): number {
   }
 
   return field === "bio" ? 0.015 : 0.01;
+}
+
+function getOrganizationMatchId(
+  candidate: OrganizationVectorCandidateRow | OrganizationChunkCandidateRow
+): string | null {
+  if ("organization_id" in candidate && candidate.organization_id) {
+    return candidate.organization_id;
+  }
+  return "id" in candidate && candidate.id ? candidate.id : null;
 }
 
 function buildFallbackDocument(person: PersonRow): SearchDocumentRow {
@@ -402,28 +440,38 @@ Deno.serve(wrapHandler(async (req: Request) => {
       : null;
     const showPeople = filters?.show_people !== false;
     const showOrganizations = filters?.show_organizations !== false;
+    const parsedIntent = parseSearchIntent(query, keywords);
+    const lexicalQuery = buildLexicalQueryForIntent(parsedIntent);
     const criteriaKeywords = mergeSearchKeywords(
-      keywords,
+      parsedIntent.keywords,
       buildManualFilterKeywords(filters as ManualSearchFilters | null)
     );
     const personScope = normalizePersonScope(filters?.person_scope);
-    const route = classifySearchRoute(query, criteriaKeywords);
+    const route = classifySearchRoute(parsedIntent.original_query, criteriaKeywords);
     const config = getSearchRouteConfig(route);
+    const searchTerms = buildSearchTerms(lexicalQuery, criteriaKeywords);
+    const vectorStr = queryEmbedding ? `[${queryEmbedding.join(",")}]` : null;
 
-    const [lexicalResponse, vectorResponse, chunkResponse, organizationLexicalResponse] = await Promise.all([
+    const [
+      lexicalResponse,
+      vectorResponse,
+      chunkResponse,
+      organizationLexicalResponse,
+      organizationVectorResponse,
+      organizationChunkResponse,
+    ] = await Promise.all([
       showPeople
         ? supabase.rpc("search_people_lexical", {
-            search_query: query,
+            search_query: lexicalQuery,
             search_route: route,
             match_count: config.lexicalTopK,
           })
         : { data: [] as LexicalCandidateRow[], error: null },
       (async () => {
-        if (!showPeople || !queryEmbedding) {
+        if (!showPeople || !vectorStr) {
           return { data: [] as VectorCandidateRow[], error: null };
         }
 
-        const vectorStr = `[${queryEmbedding.join(",")}]`;
         return await supabase.rpc("match_people", {
           query_embedding: vectorStr,
           match_count: config.vectorTopK,
@@ -431,11 +479,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
         });
       })(),
       (async () => {
-        if (!showPeople || !queryEmbedding) {
+        if (!showPeople || !vectorStr) {
           return { data: [] as ChunkCandidateRow[], error: null };
         }
 
-        const vectorStr = `[${queryEmbedding.join(",")}]`;
         return await supabase.rpc("match_person_text_chunks", {
           query_embedding: vectorStr,
           match_count: config.vectorTopK * 2,
@@ -444,11 +491,41 @@ Deno.serve(wrapHandler(async (req: Request) => {
       })(),
       showOrganizations
         ? supabase.rpc("search_organizations_lexical", {
-            search_query: query,
+            search_query: lexicalQuery,
             search_route: route,
             match_count: config.lexicalTopK,
           })
         : { data: [] as OrganizationLexicalCandidateRow[], error: null },
+      (async () => {
+        if (!showOrganizations || !vectorStr) {
+          return { data: [] as OrganizationVectorCandidateRow[], error: null };
+        }
+
+        return await callUntypedRpc<OrganizationVectorCandidateRow>(
+          supabase,
+          "match_organizations",
+          {
+            query_embedding: vectorStr,
+            match_count: config.vectorTopK,
+            similarity_threshold: config.vectorSimilarityThreshold,
+          },
+        );
+      })(),
+      (async () => {
+        if (!showOrganizations || !vectorStr) {
+          return { data: [] as OrganizationChunkCandidateRow[], error: null };
+        }
+
+        return await callUntypedRpc<OrganizationChunkCandidateRow>(
+          supabase,
+          "match_organization_text_chunks",
+          {
+            query_embedding: vectorStr,
+            match_count: config.vectorTopK * 2,
+            similarity_threshold: Math.max(0.35, config.vectorSimilarityThreshold - 0.08),
+          },
+        );
+      })(),
     ]);
 
     if (lexicalResponse.error) {
@@ -467,11 +544,23 @@ Deno.serve(wrapHandler(async (req: Request) => {
       throw organizationLexicalResponse.error;
     }
 
+    if (organizationVectorResponse.error) {
+      throw organizationVectorResponse.error;
+    }
+
+    if (organizationChunkResponse.error) {
+      throw organizationChunkResponse.error;
+    }
+
     const lexicalMatches = (lexicalResponse.data || []) as LexicalCandidateRow[];
     const vectorMatches = vectorResponse.data || [];
     const chunkMatches = chunkResponse.data || [];
     const organizationLexicalMatches =
       (organizationLexicalResponse.data || []) as OrganizationLexicalCandidateRow[];
+    const organizationVectorMatches =
+      (organizationVectorResponse.data || []) as OrganizationVectorCandidateRow[];
+    const organizationChunkMatches =
+      (organizationChunkResponse.data || []) as OrganizationChunkCandidateRow[];
 
     const lexicalByPerson = new Map<string, LexicalCandidateRow>();
     const lexicalRanks = new Map<string, number>();
@@ -513,7 +602,37 @@ Deno.serve(wrapHandler(async (req: Request) => {
       organizationLexicalById.set(candidate.organization_id, candidate);
       organizationLexicalRanks.set(candidate.organization_id, index + 1);
     });
-    const organizationCandidateIds = Array.from(organizationLexicalById.keys());
+
+    const organizationVectorById = new Map<string, OrganizationVectorCandidateRow>();
+    const organizationVectorRanks = new Map<string, number>();
+    organizationVectorMatches.forEach((candidate, index) => {
+      const organizationId = getOrganizationMatchId(candidate);
+      if (!organizationId) return;
+      organizationVectorById.set(organizationId, candidate);
+      organizationVectorRanks.set(organizationId, index + 1);
+    });
+
+    const organizationChunkById = new Map<string, OrganizationChunkCandidateRow>();
+    const organizationChunkRanks = new Map<string, number>();
+    organizationChunkMatches.forEach((candidate, index) => {
+      const organizationId = getOrganizationMatchId(candidate);
+      if (!organizationId) return;
+      const existing = organizationChunkById.get(organizationId);
+      if (!existing || candidate.similarity > existing.similarity) {
+        organizationChunkById.set(organizationId, candidate);
+      }
+      if (!organizationChunkRanks.has(organizationId)) {
+        organizationChunkRanks.set(organizationId, index + 1);
+      }
+    });
+
+    const organizationCandidateIds = Array.from(
+      new Set([
+        ...organizationLexicalById.keys(),
+        ...organizationVectorById.keys(),
+        ...organizationChunkById.keys(),
+      ])
+    );
 
     if (candidateIds.length === 0 && organizationCandidateIds.length === 0) {
       return new Response(
@@ -530,6 +649,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
             vector_candidates: 0,
             chunk_candidates: 0,
             organization_lexical_candidates: 0,
+            organization_vector_candidates: 0,
+            organization_chunk_candidates: 0,
             fused_candidates: 0,
             structured_criteria: 0,
           },
@@ -594,7 +715,6 @@ Deno.serve(wrapHandler(async (req: Request) => {
       documentsByPerson.set(document.person_id, document);
     }
 
-    const searchTerms = buildSearchTerms(query, criteriaKeywords);
     const scoredPeople = candidateIds
       .map((personId) => {
         const person = peopleById.get(personId);
@@ -649,7 +769,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
               match_text: lexical.match_text,
             }
           : undefined;
-        const lexicalSnippet = pickSearchSnippet(document, searchTerms, query, hint);
+        const lexicalSnippet = pickSearchSnippet(
+          document,
+          searchTerms,
+          lexicalQuery,
+          hint,
+        );
         const snippet = bestChunk?.chunk_text &&
             (!lexical || bestChunk.similarity >= vectorSignal || !lexicalSnippet)
           ? truncateSnippet(bestChunk.chunk_text)
@@ -741,16 +866,28 @@ Deno.serve(wrapHandler(async (req: Request) => {
       .map((organizationId) => {
         const organization = organizationsById.get(organizationId);
         const lexical = organizationLexicalById.get(organizationId);
-        if (!organization || !lexical) return null;
+        if (!organization) return null;
 
         const lexicalRank = organizationLexicalRanks.get(organizationId);
-        const lexicalSignal = clampScore(lexical.lexical_score);
-        const exactBoost = lexical.exact_name_match ? config.exactBoost : 0;
-        const nameBoost = config.nameBoost * clampScore((lexical.name_score || 0) / 1.2);
-        const fieldBoost = getFieldBoost(route, lexical.match_field || null);
+        const vector = organizationVectorById.get(organizationId);
+        const bestChunk = organizationChunkById.get(organizationId);
+        const vectorRank = organizationVectorRanks.get(organizationId);
+        const chunkRank = organizationChunkRanks.get(organizationId);
+        const lexicalSignal = clampScore(lexical?.lexical_score);
+        const vectorSignal = clampScore(vector?.similarity);
+        const chunkSignal = clampScore(bestChunk?.similarity);
+        const exactBoost = lexical?.exact_name_match ? config.exactBoost : 0;
+        const nameBoost = lexical
+          ? config.nameBoost * clampScore((lexical.name_score || 0) / 1.2)
+          : 0;
+        const fieldBoost = getFieldBoost(route, lexical?.match_field || null);
         const fusedScore =
           config.lexicalWeight * reciprocalRank(lexicalRank) +
+          config.vectorWeight * reciprocalRank(vectorRank) +
+          0.5 * config.vectorWeight * reciprocalRank(chunkRank) +
           config.lexicalSignalWeight * lexicalSignal +
+          config.vectorSignalWeight * vectorSignal +
+          0.08 * chunkSignal +
           0.6 * exactBoost +
           0.8 * nameBoost +
           fieldBoost;
@@ -769,16 +906,27 @@ Deno.serve(wrapHandler(async (req: Request) => {
         }
 
         const coverageBoost = coverage.total > 0 ? 0.04 * coverage.score : 0;
-        const snippet = pickSearchSnippet(snippetSource, searchTerms, query, {
-          match_field: lexical.match_field,
-          match_text: lexical.match_text,
-        });
+        const lexicalSnippet = pickSearchSnippet(
+          snippetSource,
+          searchTerms,
+          lexicalQuery,
+          lexical
+            ? {
+                match_field: lexical.match_field,
+                match_text: lexical.match_text,
+              }
+            : undefined,
+        );
+        const snippet = bestChunk?.chunk_text &&
+            (!lexical || bestChunk.similarity >= vectorSignal || !lexicalSnippet)
+          ? truncateSnippet(bestChunk.chunk_text)
+          : lexicalSnippet;
 
         return {
           organization,
           fusedScore: fusedScore + coverageBoost,
           snippet,
-          matchField: lexical.match_field,
+          matchField: lexical?.match_field || (bestChunk ? "description" : null),
         };
       })
       .filter((value): value is NonNullable<typeof value> => Boolean(value))
@@ -837,6 +985,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
           vector_candidates: vectorMatches.length,
           chunk_candidates: chunkMatches.length,
           organization_lexical_candidates: organizationLexicalMatches.length,
+          organization_vector_candidates: organizationVectorMatches.length,
+          organization_chunk_candidates: organizationChunkMatches.length,
           fused_candidates: candidateIds.length + organizationCandidateIds.length,
           structured_criteria: calculateStructuredCriteriaCoverage(
             criteriaKeywords,

@@ -9,9 +9,9 @@
 | `/collections/:id` | Collection detail |
 | `/admin` | Staff workspace default redirect to `/admin/discovery` |
 | `/admin/discovery` | Discovery intake, import, prompted discovery, and pending people review. URL state: optional `prompt` pre-fills the Discovery query box without starting a run. |
-| `/admin/verification` | Stale records, profile suggestions, and derived-label review |
+| `/admin/verification` | Stale records, record suggestions, and derived-label review |
 | `/admin/growth` | Coverage, source yield, entity pivots, geography gaps, and recommended next discovery actions |
-| `/admin/system` | System health, queues, service runs, usage, housekeeping, and cancellation |
+| `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
 | `/admin/access` | Admin-only staff access management |
 | `/login` | Staff magic-link sign-in |
 | `/auth/callback` | Auth redirect landing |
@@ -36,6 +36,8 @@ Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The old 
 - `collection_id` excludes existing collection members server-side.
 - `exclude_ids` and `exclude_organization_ids` carry draft people and organization IDs that should stay suppressed during the current draft, including rejected candidates.
 - `/collections/:id` also includes current visible member IDs in the draft exclusion payload and guards accepted inserts client-side so duplicate people or organizations are not added.
+- `/collections/:id` caches the current suggestion draft in browser storage per collection. Revisiting the route restores pending/approved/rejected draft state until staff refresh, reset, or save approved members.
+- Clicking a suggestion in `/collections/:id` opens an in-place person or organization preview; staff can still open the full profile from that preview.
 - Search result cards and organization profiles use the shared add-to-collection control; it inserts exactly one member entity per row with either `person_id` or `organization_id`.
 - Response: `{ message, searches, candidates, gap }`
 - Each candidate has `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`.

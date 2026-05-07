@@ -77,7 +77,7 @@ interface UsageTotals {
 const AGENTS: Array<{ kind: HealthAgentKind; label: string }> = [
   { kind: 'discovery', label: 'Discovery' },
   { kind: 'verification', label: 'Verification' },
-  { kind: 'embeddings', label: 'Embeddings' },
+  { kind: 'embeddings', label: 'Record Index' },
 ];
 
 const STUCK_AFTER_MS = 2 * 60 * 1000;
@@ -467,7 +467,7 @@ export default function SystemHealthPanel() {
         <div className="rounded-md border border-gray-200 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
             <Activity className="h-5 w-5 text-teal-600" />
-            <h3 className="font-semibold text-gray-900">Embedding Queue</h3>
+            <h3 className="font-semibold text-gray-900">Record Index Queue</h3>
           </div>
           <dl className="grid grid-cols-3 gap-3 text-sm">
             <div>

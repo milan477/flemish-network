@@ -31,6 +31,16 @@ const METRIC_ORDER = [
   'connection_suggestion_acceptance_rate_pct',
 ] as const;
 
+const METRIC_LABELS: Record<string, string> = {
+  profile_suggestion_approval_rate_pct: 'record suggestion approval rate pct',
+  profiles_with_embeddings_pct: 'records with embeddings pct',
+  profiles_with_verified_us_location_pct: 'records with verified US location pct',
+};
+
+function formatMetricLabel(metricKey: string): string {
+  return METRIC_LABELS[metricKey] || metricKey.replace(/_/g, ' ');
+}
+
 function formatMetricValue(metric: PhaseMetric): string {
   const rawValue =
     typeof metric.metric_value === 'string'
@@ -197,7 +207,7 @@ export default function OpsMetricsPanel() {
             className="bg-white rounded-xl p-4 shadow-sm border border-gray-100"
           >
             <p className="text-[11px] uppercase tracking-wide text-gray-500 font-medium">
-              {metric.metric_key.replace(/_/g, ' ')}
+              {formatMetricLabel(metric.metric_key)}
             </p>
             <p className="text-2xl font-semibold text-gray-900 mt-2">
               {formatMetricValue(metric)}

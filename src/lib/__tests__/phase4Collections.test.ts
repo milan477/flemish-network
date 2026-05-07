@@ -123,6 +123,17 @@ describe('suggest-people collection suggestion contract', () => {
     expect(suggestPeopleFunction).toContain('applyRerankAndBackfill');
     expect(suggestPeopleFunction).toContain('Never invent IDs');
   });
+
+  it('retrieves collection candidates through shared intent and fused semantic ranking', () => {
+    expect(suggestPeopleFunction).toContain('interface SearchIntent');
+    expect(suggestPeopleFunction).toContain('semanticQuery: originalQuery');
+    expect(suggestPeopleFunction).toContain('search_query: intent.lexicalQuery');
+    expect(suggestPeopleFunction).toContain('"match_organizations"');
+    expect(suggestPeopleFunction).toContain('"match_organization_text_chunks"');
+    expect(suggestPeopleFunction).toContain('organizationVectorById');
+    expect(suggestPeopleFunction).toContain('organizationChunkById');
+    expect(suggestPeopleFunction).toContain('config.vectorWeight * optionalReciprocalRank');
+  });
 });
 
 describe('collection suggestion draft reducer', () => {
@@ -234,6 +245,26 @@ describe('collection suggestion draft reducer', () => {
       exclude_organization_ids: [],
     });
   });
+
+  it('restores cached collection suggestion drafts without changing statuses', () => {
+    const loaded = collectionSuggestionDraftReducer(EMPTY_COLLECTION_SUGGESTION_DRAFT, {
+      type: 'load',
+      candidates: [personCandidate, organizationCandidate],
+    });
+    const approved = collectionSuggestionDraftReducer(loaded, {
+      type: 'approve',
+      entity_type: 'person',
+      id: 'person-1',
+    });
+
+    const restored = collectionSuggestionDraftReducer(EMPTY_COLLECTION_SUGGESTION_DRAFT, {
+      type: 'restore',
+      state: approved,
+    });
+
+    expect(restored).toEqual(approved);
+    expect(getAcceptedDraftCandidates(restored)).toEqual([personCandidate]);
+  });
 });
 
 describe('collection creation suggestion UI contract', () => {
@@ -261,7 +292,10 @@ describe('collection creation suggestion UI contract', () => {
 
 describe('collection detail mixed member UI contract', () => {
   it('queries and renders mixed collection members with shared notes behavior', () => {
-    expect(collectionDetailSource).toContain('organization:organizations(*, locations(*))');
+    expect(collectionDetailSource).toContain("Supabase cannot always infer both nullable member relationships");
+    expect(collectionDetailSource).toContain(".from('collection_members')");
+    expect(collectionDetailSource).toContain(".from('organizations')");
+    expect(collectionDetailSource).toContain('organizationsById');
     expect(collectionDetailSource).toContain('member.organization');
     expect(collectionDetailSource).toContain("onNavigate(isPerson ? 'person' : 'organization'");
     expect(collectionDetailSource).toContain('Add notes about this member in this collection');
@@ -282,6 +316,11 @@ describe('collection detail mixed member UI contract', () => {
     expect(collectionDetailSource).toContain('organization_id: candidate.id');
     expect(collectionDetailSource).toContain('Open Discovery');
     expect(collectionDetailSource).toContain('Find Collection Suggestions');
+    expect(collectionDetailSource).toContain('collectionSuggestionCacheKey');
+    expect(collectionDetailSource).toContain('readCachedCollectionSuggestions');
+    expect(collectionDetailSource).toContain('CollectionSuggestionPreviewModal');
+    expect(collectionDetailSource).toContain('setPreviewCandidate(candidate)');
+    expect(collectionDetailSource).toContain('Refresh');
     expect(collectionDetailSource).not.toContain('Suggested People');
     expect(collectionDetailSource).not.toContain('Find Similar People');
     expect(collectionDetailSource).not.toContain('agent-');

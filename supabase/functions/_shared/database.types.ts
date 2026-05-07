@@ -135,6 +135,9 @@ interface OrganizationRow extends RowRecord {
   location_id: string | null;
   us_network_status: string | null;
   flemish_link: string | null;
+  embedding: string | null;
+  embedding_dirty_at: string | null;
+  embedding_generated_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -235,6 +238,19 @@ interface SearchClickRow extends RowRecord {
 
 interface EmbeddingJobRow extends RowRecord {
   person_id: string;
+  status: "pending" | "running";
+  queued_at: string;
+  claimed_at: string | null;
+  claimed_dirty_at: string | null;
+  claim_token: string | null;
+  attempts: number;
+  last_error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface OrganizationEmbeddingJobRow extends RowRecord {
+  organization_id: string;
   status: "pending" | "running";
   queued_at: string;
   claimed_at: string | null;
@@ -356,10 +372,27 @@ interface ClaimedEmbeddingJobRow extends RowRecord {
   claimed_dirty_at: string;
 }
 
+interface ClaimedOrganizationEmbeddingJobRow extends RowRecord {
+  organization_id: string;
+  claim_token: string;
+  claimed_dirty_at: string;
+}
+
 interface PersonTextChunkRow extends RowRecord {
   id: string;
   person_id: string;
   chunk_type: "bio" | "position" | "combined";
+  chunk_index: number;
+  chunk_text: string;
+  embedding: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface OrganizationTextChunkRow extends RowRecord {
+  id: string;
+  organization_id: string;
+  chunk_type: "profile" | "description" | "flemish_connection" | "combined";
   chunk_index: number;
   chunk_text: string;
   embedding: string | null;
@@ -419,6 +452,20 @@ interface DiscoverConnectionsRow extends RowRecord {
 interface MatchPersonTextChunksRow extends RowRecord {
   id: string;
   person_id: string;
+  chunk_type: string;
+  chunk_index: number;
+  chunk_text: string;
+  similarity: number;
+}
+
+interface MatchOrganizationsRow extends RowRecord {
+  id: string;
+  similarity: number;
+}
+
+interface MatchOrganizationTextChunksRow extends RowRecord {
+  id: string;
+  organization_id: string;
   chunk_type: string;
   chunk_index: number;
   chunk_text: string;
@@ -810,11 +857,13 @@ export type Database = {
       profile_suggestions: Table<ProfileSuggestionRow>;
       search_clicks: Table<SearchClickRow>;
       embedding_jobs: Table<EmbeddingJobRow>;
+      organization_embedding_jobs: Table<OrganizationEmbeddingJobRow>;
       embedding_batch_runs: Table<EmbeddingBatchRunRow>;
       connections: Table<ConnectionRow>;
       people_search_documents: Table<PeopleSearchDocumentRow>;
       organization_search_documents: Table<OrganizationSearchDocumentRow>;
       person_text_chunks: Table<PersonTextChunkRow>;
+      organization_text_chunks: Table<OrganizationTextChunkRow>;
       derived_label_suggestions: Table<DerivedLabelSuggestionRow>;
       connection_suggestions: Table<ConnectionSuggestionRow>;
       discovered_contacts: Table<DiscoveredContactRow>;
@@ -894,6 +943,27 @@ export type Database = {
         };
         Returns: ClaimedEmbeddingJobRow[];
       };
+      enqueue_dirty_organization_embedding_jobs: {
+        Args: {
+          p_limit?: number | null;
+        };
+        Returns: number;
+      };
+      enqueue_organization_embedding_jobs: {
+        Args: {
+          p_organization_ids: string[];
+        };
+        Returns: number;
+      };
+      claim_organization_embedding_jobs: {
+        Args: {
+          p_batch_size?: number;
+          p_claim_token?: string;
+          p_organization_ids?: string[] | null;
+          p_stale_after_minutes?: number;
+        };
+        Returns: ClaimedOrganizationEmbeddingJobRow[];
+      };
       discover_connections: {
         Args: {
           p_types?: string[];
@@ -924,6 +994,14 @@ export type Database = {
         };
         Returns: MatchPeopleRow[];
       };
+      match_organizations: {
+        Args: {
+          query_embedding: string;
+          match_count?: number;
+          similarity_threshold?: number;
+        };
+        Returns: MatchOrganizationsRow[];
+      };
       match_person_text_chunks: {
         Args: {
           query_embedding: string;
@@ -932,6 +1010,15 @@ export type Database = {
           exclude_person_id?: string | null;
         };
         Returns: MatchPersonTextChunksRow[];
+      };
+      match_organization_text_chunks: {
+        Args: {
+          query_embedding: string;
+          match_count?: number;
+          similarity_threshold?: number;
+          exclude_organization_id?: string | null;
+        };
+        Returns: MatchOrganizationTextChunksRow[];
       };
     };
     Enums: Record<string, never>;

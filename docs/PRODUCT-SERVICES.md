@@ -72,6 +72,7 @@ Scope:
 - Rank candidates against the goal
 - Explain why each candidate belongs
 - Let the user approve/reject
+- Preserve the current detail-page draft across route revisits until refresh, reset, or save
 - Save accepted candidates to the collection
 
 Output:
@@ -80,6 +81,7 @@ Output:
 - Collection suggestions for people and, where relevant, organizations
 - Rationale per candidate
 - Approval/rejection workflow
+- In-place profile previews for detail-page suggestions
 - Optional handoff to Discovery when the existing database appears thin
 - Collection detail views show mixed people and organization members; people-only exports and briefings remain available for member people only.
 
@@ -88,7 +90,6 @@ Out of scope:
 - Automatic database expansion
 - Starting Discovery automatically
 - Hidden database expansion inside collection building
-- Organization embeddings
 - Canonical organization Flemish/Belgian facts
 - Persistent gap analytics
 - Persistent draft tables
@@ -159,12 +160,11 @@ Scope:
 - Classify field risk
 - Create reviewable suggestions
 - Apply approved updates
-- Refresh search documents, labels, and embeddings after approved changes
+- Refresh record search documents, labels, and embeddings after approved changes
 
 Output:
 
-- Profile suggestions
-- Organization suggestions
+- Record suggestions for people and organizations
 - Evidence
 - Confidence/risk
 - Reviewer approval queue

@@ -1,19 +1,27 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createAdminClient, requireStaffRole } from "../_shared/auth.ts";
 import {
-  createAdminClient,
-  requireStaffRole,
-} from "../_shared/auth.ts";
-import { jsonError, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
+  jsonError,
+  statusForError,
+  structuredErrorBody,
+  wrapHandler,
+} from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
-  EMBEDDING_DIM,
+  buildOrganizationStructuredEmbeddingText,
+  buildOrganizationTextChunks,
   buildPersonTextChunks,
   buildStructuredEmbeddingText,
   cancelAsyncEmbeddingBatch,
   createAsyncEmbeddingBatch,
+  EMBEDDING_DIM,
+  type EmbeddingDocumentInput,
+  type EmbeddingEntityType,
+  type EmbeddingTargetType,
+  type EmbeddingTextChunkInput,
   embedTexts,
   getAsyncEmbeddingBatch,
-  type EmbeddingDocumentInput,
+  type OrganizationEmbeddingDocumentInput,
 } from "../_shared/embeddings.ts";
 
 const corsHeaders = {
@@ -55,16 +63,39 @@ interface LocationRow {
   state: string | null;
 }
 
+interface OrganizationRow {
+  id: string;
+  name: string | null;
+  type: string | null;
+  description: string | null;
+  website_url: string | null;
+  location_id: string | null;
+  us_network_status: string | null;
+  flemish_link: string | null;
+  embedding_dirty_at?: string | null;
+}
+
+interface OrganizationSearchDocumentRow {
+  organization_id: string;
+  sector_names: string | null;
+  primary_location_text: string | null;
+  location_text: string | null;
+}
+
 interface ChunkUpsertRow extends Record<string, unknown> {
-  person_id: string;
-  chunk_type: "bio" | "position" | "combined";
+  person_id?: string;
+  organization_id?: string;
+  chunk_type: string;
   chunk_index: number;
   chunk_text: string;
   embedding: string;
 }
 
 interface ClaimedJobRow {
-  person_id: string;
+  entity_type: EmbeddingEntityType;
+  entity_id: string;
+  person_id?: string;
+  organization_id?: string;
   claim_token: string;
   claimed_dirty_at: string;
 }
@@ -79,14 +110,17 @@ interface QueueJobUpdate extends Record<string, unknown> {
 }
 
 interface EmbeddingWorkManifestChunk {
-  chunk_type: "bio" | "position" | "combined";
+  chunk_type: string;
   chunk_index: number;
   chunk_text: string;
 }
 
 interface EmbeddingWorkManifestItem {
-  person_id: string;
-  person_name: string;
+  entity_type: EmbeddingEntityType;
+  entity_id: string;
+  person_id?: string;
+  organization_id?: string;
+  entity_name: string;
   claim_token: string;
   claimed_dirty_at: string;
   document_text: string;
@@ -95,9 +129,11 @@ interface EmbeddingWorkManifestItem {
 
 interface PreparedEmbeddingJob {
   job: ClaimedJobRow;
-  person: PersonRow;
+  entity_type: EmbeddingEntityType;
+  entity_id: string;
+  entity_name: string;
   text: string;
-  chunks: ReturnType<typeof buildPersonTextChunks>;
+  chunks: EmbeddingTextChunkInput[];
 }
 
 interface EmbeddingBatchRunRow {
@@ -118,11 +154,72 @@ interface EmbeddingBatchRunRow {
   updated_at: string;
 }
 
+interface SupabaseErrorLike {
+  message?: string;
+  code?: string;
+}
+
+interface SupabaseResultLike {
+  data?: unknown;
+  error: SupabaseErrorLike | null;
+  count?: number | null;
+}
+
+interface DynamicQuery extends PromiseLike<SupabaseResultLike> {
+  select(columns?: string, options?: Record<string, unknown>): DynamicQuery;
+  update(values: Record<string, unknown>): DynamicQuery;
+  insert(
+    values: Record<string, unknown> | Record<string, unknown>[],
+  ): DynamicQuery;
+  delete(): DynamicQuery;
+  eq(column: string, value: unknown): DynamicQuery;
+  in(column: string, values: unknown[]): DynamicQuery;
+  order(column: string, options?: Record<string, unknown>): DynamicQuery;
+  limit(count: number): DynamicQuery;
+  maybeSingle(): Promise<SupabaseResultLike>;
+  single(): Promise<SupabaseResultLike>;
+}
+
 function firstRelationRow<T>(
-  value: T | T[] | null | undefined
+  value: T | T[] | null | undefined,
 ): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function fromDynamic(supabase: SupabaseAdminClient, table: string) {
+  return (supabase.from as unknown as (tableName: string) => DynamicQuery)(
+    table,
+  );
+}
+
+async function rpcDynamic(
+  supabase: SupabaseAdminClient,
+  functionName: string,
+  args: Record<string, unknown>,
+): Promise<{ data: unknown; error: SupabaseErrorLike | null }> {
+  return await (
+    supabase.rpc as unknown as (
+      fn: string,
+      args?: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: SupabaseErrorLike | null }>
+  )(functionName, args);
+}
+
+function isMissingRpcError(error: SupabaseErrorLike | null): boolean {
+  if (!error) return false;
+  const message = error.message || "";
+  return error.code === "PGRST202" ||
+    /function .* could not be found/i.test(message);
+}
+
+function isMissingRelationError(error: SupabaseErrorLike | null): boolean {
+  if (!error) return false;
+  const message = error.message || "";
+  return error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    /relation .* does not exist/i.test(message) ||
+    /could not find the table/i.test(message);
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -130,6 +227,73 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function normalizeEntityType(value: unknown): EmbeddingTargetType {
+  if (value === "organization" || value === "all") return value;
+  return "person";
+}
+
+function normalizeStringIds(...values: unknown[]): string[] {
+  const ids = new Set<string>();
+
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      ids.add(value.trim());
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === "string" && item.trim()) {
+          ids.add(item.trim());
+        }
+      });
+    }
+  }
+
+  return Array.from(ids);
+}
+
+function normalizeClaimedJobs(value: unknown): ClaimedJobRow[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((item) => {
+    const row = item && typeof item === "object"
+      ? (item as Record<string, unknown>)
+      : {};
+    const personId = typeof row.person_id === "string" ? row.person_id : "";
+    const organizationId = typeof row.organization_id === "string"
+      ? row.organization_id
+      : "";
+    const rawType: EmbeddingEntityType = row.entity_type === "organization" ||
+        (!personId && organizationId)
+      ? "organization"
+      : "person";
+    const entityId = typeof row.entity_id === "string"
+      ? row.entity_id
+      : rawType === "organization"
+      ? organizationId
+      : personId;
+    const claimToken = typeof row.claim_token === "string"
+      ? row.claim_token
+      : "";
+    const claimedDirtyAt = typeof row.claimed_dirty_at === "string"
+      ? row.claimed_dirty_at
+      : "";
+
+    return {
+      entity_type: rawType,
+      entity_id: entityId,
+      person_id: personId || undefined,
+      organization_id: organizationId || undefined,
+      claim_token: claimToken,
+      claimed_dirty_at: claimedDirtyAt,
+    };
+  }).filter((job) => job.entity_id && job.claim_token && job.claimed_dirty_at);
+}
+
+function labelManifestItem(
+  item: Pick<EmbeddingWorkManifestItem, "entity_type" | "entity_id">,
+) {
+  return `${item.entity_type} ${item.entity_id}`;
 }
 
 function buildFlemishConnectionNames(person: PersonRow): string[] {
@@ -155,7 +319,7 @@ function buildLocationText(location: LocationRow | null): string {
 function buildEmbeddingInput(
   person: PersonRow,
   sectorNames: string[],
-  location: LocationRow | null
+  location: LocationRow | null,
 ): EmbeddingDocumentInput {
   return {
     name: person.name || "",
@@ -168,19 +332,61 @@ function buildEmbeddingInput(
   };
 }
 
+function splitSearchDocumentValues(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildOrganizationEmbeddingInput(
+  organization: OrganizationRow,
+  searchDocument: OrganizationSearchDocumentRow | null,
+  location: LocationRow | null,
+): OrganizationEmbeddingDocumentInput {
+  return {
+    name: organization.name || "",
+    type: organization.type || "",
+    description: organization.description || "",
+    sectors: splitSearchDocumentValues(searchDocument?.sector_names),
+    flemishLink: organization.flemish_link || "",
+    locationText: searchDocument?.location_text ||
+      searchDocument?.primary_location_text ||
+      buildLocationText(location),
+    usNetworkStatus: organization.us_network_status || "",
+    websiteUrl: organization.website_url || "",
+  };
+}
+
 async function enqueueDirtyJobs(
-  supabase: SupabaseAdminClient
+  supabase: SupabaseAdminClient,
+  entityType: EmbeddingTargetType,
 ): Promise<number> {
-  const { data, error } = await supabase.rpc("enqueue_dirty_embedding_jobs");
-  if (error) {
-    throw error;
+  let queued = 0;
+
+  if (entityType === "person" || entityType === "all") {
+    const { data, error } = await supabase.rpc("enqueue_dirty_embedding_jobs");
+    if (error) throw error;
+    queued += typeof data === "number" ? data : 0;
   }
-  return typeof data === "number" ? data : 0;
+
+  if (entityType === "organization" || entityType === "all") {
+    const { data, error } = await rpcDynamic(
+      supabase,
+      "enqueue_dirty_organization_embedding_jobs",
+      {},
+    );
+    if (error) throw error;
+    queued += typeof data === "number" ? data : 0;
+  }
+
+  return queued;
 }
 
 async function enqueueSpecificPeople(
   supabase: SupabaseAdminClient,
-  personIds: string[]
+  personIds: string[],
 ): Promise<number> {
   if (personIds.length === 0) return 0;
 
@@ -195,26 +401,71 @@ async function enqueueSpecificPeople(
   return typeof data === "number" ? data : 0;
 }
 
-async function getOutstandingJobCount(
-  supabase: SupabaseAdminClient
+async function enqueueSpecificOrganizations(
+  supabase: SupabaseAdminClient,
+  organizationIds: string[],
 ): Promise<number> {
-  const { count, error } = await supabase
-    .from("embedding_jobs")
-    .select("person_id", { count: "exact", head: true });
+  if (organizationIds.length === 0) return 0;
 
-  if (error) {
-    throw error;
+  const primary = await rpcDynamic(
+    supabase,
+    "enqueue_organization_embedding_jobs",
+    {
+      p_organization_ids: organizationIds,
+    },
+  );
+
+  if (!primary.error) {
+    return typeof primary.data === "number" ? primary.data : 0;
   }
 
-  return count || 0;
+  if (!isMissingRpcError(primary.error)) {
+    throw primary.error;
+  }
+
+  const fallback = await rpcDynamic(supabase, "enqueue_embedding_jobs", {
+    p_entity_type: "organization",
+    p_entity_ids: organizationIds,
+  });
+
+  if (fallback.error) {
+    throw fallback.error;
+  }
+
+  return typeof fallback.data === "number" ? fallback.data : 0;
+}
+
+async function getOutstandingJobCount(
+  supabase: SupabaseAdminClient,
+): Promise<number> {
+  const [peopleJobs, organizationJobs] = await Promise.all([
+    supabase
+      .from("embedding_jobs")
+      .select("status", { count: "exact", head: true }),
+    fromDynamic(supabase, "organization_embedding_jobs")
+      .select("status", { count: "exact", head: true }),
+  ]);
+
+  if (peopleJobs.error) throw peopleJobs.error;
+  if (
+    organizationJobs.error && !isMissingRelationError(organizationJobs.error)
+  ) {
+    throw organizationJobs.error;
+  }
+
+  return (peopleJobs.count || 0) +
+    (organizationJobs.error ? 0 : organizationJobs.count || 0);
 }
 
 async function releaseJobAsPending(
   supabase: SupabaseAdminClient,
-  personId: string,
+  job: Pick<
+    ClaimedJobRow,
+    "entity_type" | "entity_id" | "person_id" | "organization_id"
+  >,
   claimToken: string,
   queuedAt: string | null,
-  lastError: string | null
+  lastError: string | null,
 ): Promise<void> {
   const update: QueueJobUpdate = {
     status: "pending",
@@ -225,11 +476,16 @@ async function releaseJobAsPending(
     last_error: lastError,
   };
 
-  const { error } = await supabase
-    .from("embedding_jobs")
-    .update(update)
-    .eq("person_id", personId)
-    .eq("claim_token", claimToken);
+  const { error } = job.entity_type === "organization"
+    ? await fromDynamic(supabase, "organization_embedding_jobs")
+      .update(update)
+      .eq("organization_id", job.organization_id || job.entity_id)
+      .eq("claim_token", claimToken)
+    : await supabase
+      .from("embedding_jobs")
+      .update(update)
+      .eq("person_id", job.person_id || job.entity_id)
+      .eq("claim_token", claimToken);
 
   if (error) {
     throw error;
@@ -238,14 +494,22 @@ async function releaseJobAsPending(
 
 async function deleteJob(
   supabase: SupabaseAdminClient,
-  personId: string,
-  claimToken: string
+  job: Pick<
+    ClaimedJobRow,
+    "entity_type" | "entity_id" | "person_id" | "organization_id"
+  >,
+  claimToken: string,
 ): Promise<void> {
-  const { error } = await supabase
-    .from("embedding_jobs")
-    .delete()
-    .eq("person_id", personId)
-    .eq("claim_token", claimToken);
+  const { error } = job.entity_type === "organization"
+    ? await fromDynamic(supabase, "organization_embedding_jobs")
+      .delete()
+      .eq("organization_id", job.organization_id || job.entity_id)
+      .eq("claim_token", claimToken)
+    : await supabase
+      .from("embedding_jobs")
+      .delete()
+      .eq("person_id", job.person_id || job.entity_id)
+      .eq("claim_token", claimToken);
 
   if (error) {
     throw error;
@@ -255,20 +519,48 @@ async function deleteJob(
 async function claimJobs(
   supabase: SupabaseAdminClient,
   batchSize: number,
-  personIds: string[] | null
+  entityType: EmbeddingTargetType,
+  personIds: string[] | null,
+  organizationIds: string[] | null,
 ): Promise<ClaimedJobRow[]> {
   const claimToken = crypto.randomUUID();
-  const { data, error } = await supabase.rpc("claim_embedding_jobs", {
-    p_batch_size: batchSize,
-    p_claim_token: claimToken,
-    p_person_ids: personIds && personIds.length > 0 ? personIds : null,
-  });
+  const jobs: ClaimedJobRow[] = [];
+  const personBatchSize = entityType === "all"
+    ? Math.max(1, Math.ceil(batchSize / 2))
+    : batchSize;
+  const organizationBatchSize = entityType === "all"
+    ? Math.max(1, Math.floor(batchSize / 2))
+    : batchSize;
 
-  if (error) {
-    throw error;
+  if (entityType === "person" || entityType === "all") {
+    const { data, error } = await supabase.rpc("claim_embedding_jobs", {
+      p_batch_size: personBatchSize,
+      p_claim_token: claimToken,
+      p_person_ids: personIds && personIds.length > 0 ? personIds : null,
+    });
+
+    if (error) throw error;
+    jobs.push(...normalizeClaimedJobs(data));
   }
 
-  return (data || []) as ClaimedJobRow[];
+  if (entityType === "organization" || entityType === "all") {
+    const { data, error } = await rpcDynamic(
+      supabase,
+      "claim_organization_embedding_jobs",
+      {
+        p_batch_size: organizationBatchSize,
+        p_claim_token: claimToken,
+        p_organization_ids: organizationIds && organizationIds.length > 0
+          ? organizationIds
+          : null,
+      },
+    );
+
+    if (error) throw error;
+    jobs.push(...normalizeClaimedJobs(data));
+  }
+
+  return jobs.slice(0, batchSize);
 }
 
 function normalizeManifest(
@@ -277,44 +569,47 @@ function normalizeManifest(
   if (!Array.isArray(value)) return [];
 
   return value.map((item) => {
-    const row =
-      item && typeof item === "object"
-        ? (item as Record<string, unknown>)
-        : {};
+    const row = item && typeof item === "object"
+      ? (item as Record<string, unknown>)
+      : {};
 
     const chunkPlans = Array.isArray(row.chunk_plans)
       ? row.chunk_plans
         .map((chunk) => {
-          const chunkRow =
-            chunk && typeof chunk === "object"
-              ? (chunk as Record<string, unknown>)
-              : {};
-          const chunkType =
-            chunkRow.chunk_type === "bio" ||
-              chunkRow.chunk_type === "position" ||
-              chunkRow.chunk_type === "combined"
-              ? chunkRow.chunk_type
-              : "combined";
-
+          const chunkRow = chunk && typeof chunk === "object"
+            ? (chunk as Record<string, unknown>)
+            : {};
           return {
-            chunk_type: chunkType as EmbeddingWorkManifestChunk["chunk_type"],
+            chunk_type: String(chunkRow.chunk_type || "combined"),
             chunk_index: Number(chunkRow.chunk_index || 0),
             chunk_text: String(chunkRow.chunk_text || ""),
           };
         })
         .filter((chunk) => chunk.chunk_text.trim().length > 0)
       : [];
+    const entityType: EmbeddingEntityType = row.entity_type === "organization"
+      ? "organization"
+      : "person";
+    const personId = String(row.person_id || "");
+    const organizationId = String(row.organization_id || "");
+    const entityId = String(
+      row.entity_id ||
+        (entityType === "organization" ? organizationId : personId),
+    );
 
     return {
-      person_id: String(row.person_id || ""),
-      person_name: String(row.person_name || ""),
+      entity_type: entityType,
+      entity_id: entityId,
+      person_id: personId || undefined,
+      organization_id: organizationId || undefined,
+      entity_name: String(row.entity_name || row.person_name || ""),
       claim_token: String(row.claim_token || ""),
       claimed_dirty_at: String(row.claimed_dirty_at || ""),
       document_text: String(row.document_text || ""),
       chunk_plans: chunkPlans,
     };
   }).filter((item) =>
-    item.person_id &&
+    item.entity_id &&
     item.claim_token &&
     item.claimed_dirty_at
   );
@@ -331,19 +626,46 @@ async function prepareEmbeddingJobs(
   let failed = 0;
   const errors: string[] = [];
 
-  const personIds = jobs.map((job) => job.person_id);
-  const [peopleRes, sectorRes] = await Promise.all([
-    supabase
-      .from("people")
-      .select(
-        "id, name, current_position, bio, occupation, location_id, embedding_dirty_at, person_flemish_connections(flemish_connections(name))"
-      )
-      .in("id", personIds),
-    supabase
-      .from("person_sectors")
-      .select("person_id, sectors(name)")
-      .in("person_id", personIds),
-  ]);
+  const personIds = jobs
+    .filter((job) => job.entity_type === "person")
+    .map((job) => job.person_id || job.entity_id);
+  const organizationIds = jobs
+    .filter((job) => job.entity_type === "organization")
+    .map((job) => job.organization_id || job.entity_id);
+
+  const [peopleRes, sectorRes, organizationRes, organizationSearchRes] =
+    await Promise.all([
+      personIds.length > 0
+        ? supabase
+          .from("people")
+          .select(
+            "id, name, current_position, bio, occupation, location_id, embedding_dirty_at, person_flemish_connections(flemish_connections(name))",
+          )
+          .in("id", personIds)
+        : { data: [], error: null },
+      personIds.length > 0
+        ? supabase
+          .from("person_sectors")
+          .select("person_id, sectors(name)")
+          .in("person_id", personIds)
+        : { data: [], error: null },
+      organizationIds.length > 0
+        ? supabase
+          .from("organizations")
+          .select(
+            "id, name, type, description, website_url, location_id, us_network_status, flemish_link, embedding_dirty_at",
+          )
+          .in("id", organizationIds)
+        : { data: [], error: null },
+      organizationIds.length > 0
+        ? supabase
+          .from("organization_search_documents")
+          .select(
+            "organization_id, sector_names, primary_location_text, location_text",
+          )
+          .in("organization_id", organizationIds)
+        : { data: [], error: null },
+    ]);
 
   if (peopleRes.error) {
     throw peopleRes.error;
@@ -353,11 +675,38 @@ async function prepareEmbeddingJobs(
     throw sectorRes.error;
   }
 
+  if (organizationRes.error) {
+    throw organizationRes.error;
+  }
+
+  if (organizationSearchRes.error) {
+    throw organizationSearchRes.error;
+  }
+
   const peopleById = new Map<string, PersonRow>();
   const locationIds = new Set<string>();
   for (const row of (peopleRes.data || []) as unknown as PersonRow[]) {
     peopleById.set(row.id, row);
     if (row.location_id) locationIds.add(row.location_id);
+  }
+
+  const organizationsById = new Map<string, OrganizationRow>();
+  for (
+    const row of (organizationRes.data || []) as unknown as OrganizationRow[]
+  ) {
+    organizationsById.set(row.id, row);
+    if (row.location_id) locationIds.add(row.location_id);
+  }
+
+  const organizationSearchById = new Map<
+    string,
+    OrganizationSearchDocumentRow
+  >();
+  for (
+    const row of (organizationSearchRes.data ||
+      []) as unknown as OrganizationSearchDocumentRow[]
+  ) {
+    organizationSearchById.set(row.organization_id, row);
   }
 
   const { data: locationRows, error: locationError } = locationIds.size > 0
@@ -372,15 +721,19 @@ async function prepareEmbeddingJobs(
   }
 
   const locationById = new Map<string, LocationRow>();
-  for (const row of (locationRows || []) as Array<LocationRow & { id: string }>) {
+  for (
+    const row of (locationRows || []) as Array<LocationRow & { id: string }>
+  ) {
     locationById.set(row.id, row);
   }
 
   const sectorNamesByPerson = new Map<string, string[]>();
-  for (const row of ((sectorRes.data || []) as unknown as Array<{
-    person_id: string;
-    sectors: SectorRow["sectors"];
-  }>)) {
+  for (
+    const row of ((sectorRes.data || []) as unknown as Array<{
+      person_id: string;
+      sectors: SectorRow["sectors"];
+    }>)
+  ) {
     const next = sectorNamesByPerson.get(row.person_id) || [];
     const name = firstRelationRow(row.sectors)?.name;
     if (name && !next.includes(name)) {
@@ -392,15 +745,57 @@ async function prepareEmbeddingJobs(
   const preparedJobs: PreparedEmbeddingJob[] = [];
 
   for (const job of jobs) {
-    const person = peopleById.get(job.person_id);
+    if (job.entity_type === "organization") {
+      const organizationId = job.organization_id || job.entity_id;
+      const organization = organizationsById.get(organizationId);
+      if (!organization) {
+        await deleteJob(supabase, job, job.claim_token);
+        continue;
+      }
+
+      const input = buildOrganizationEmbeddingInput(
+        organization,
+        organizationSearchById.get(organizationId) || null,
+        organization.location_id
+          ? locationById.get(organization.location_id) || null
+          : null,
+      );
+      const text = buildOrganizationStructuredEmbeddingText(input);
+
+      if (!text.trim()) {
+        await releaseJobAsPending(
+          supabase,
+          job,
+          job.claim_token,
+          organization.embedding_dirty_at || job.claimed_dirty_at,
+          "Empty embedding text",
+        );
+        errors.push(`Organization ${organizationId}: empty embedding text`);
+        failed += 1;
+        continue;
+      }
+
+      preparedJobs.push({
+        job,
+        entity_type: "organization",
+        entity_id: organizationId,
+        entity_name: organization.name || "",
+        text,
+        chunks: buildOrganizationTextChunks(input),
+      });
+      continue;
+    }
+
+    const personId = job.person_id || job.entity_id;
+    const person = peopleById.get(personId);
     if (!person) {
-      await deleteJob(supabase, job.person_id, job.claim_token);
+      await deleteJob(supabase, job, job.claim_token);
       continue;
     }
 
     const input = buildEmbeddingInput(
       person,
-      sectorNamesByPerson.get(job.person_id) || [],
+      sectorNamesByPerson.get(personId) || [],
       person.location_id ? locationById.get(person.location_id) || null : null,
     );
     const text = buildStructuredEmbeddingText(input);
@@ -408,19 +803,21 @@ async function prepareEmbeddingJobs(
     if (!text.trim()) {
       await releaseJobAsPending(
         supabase,
-        job.person_id,
+        job,
         job.claim_token,
         person.embedding_dirty_at,
         "Empty embedding text",
       );
-      errors.push(`Person ${job.person_id}: empty embedding text`);
+      errors.push(`Person ${personId}: empty embedding text`);
       failed += 1;
       continue;
     }
 
     preparedJobs.push({
       job,
-      person,
+      entity_type: "person",
+      entity_id: personId,
+      entity_name: person.name || "",
       text,
       chunks: buildPersonTextChunks(input),
     });
@@ -432,9 +829,14 @@ async function prepareEmbeddingJobs(
 function buildManifestFromPreparedJobs(
   preparedJobs: PreparedEmbeddingJob[],
 ): EmbeddingWorkManifestItem[] {
-  return preparedJobs.map(({ job, person, text, chunks }) => ({
-    person_id: job.person_id,
-    person_name: person.name || "",
+  return preparedJobs.map((
+    { job, entity_type, entity_id, entity_name, text, chunks },
+  ) => ({
+    entity_type,
+    entity_id,
+    person_id: entity_type === "person" ? entity_id : undefined,
+    organization_id: entity_type === "organization" ? entity_id : undefined,
+    entity_name,
     claim_token: job.claim_token,
     claimed_dirty_at: job.claimed_dirty_at,
     document_text: text,
@@ -457,14 +859,14 @@ async function releaseManifestJobsAsPending(
     try {
       await releaseJobAsPending(
         supabase,
-        item.person_id,
+        item,
         item.claim_token,
         item.claimed_dirty_at,
         message,
       );
     } catch (error) {
       errors.push(
-        `Person ${item.person_id}: failed to release job - ${
+        `${labelManifestItem(item)}: failed to release job - ${
           (error as Error).message || "unknown error"
         }`,
       );
@@ -497,13 +899,24 @@ async function applyEmbeddingOutputs(
 
       const vectorStr = `[${documentEmbedding.join(",")}]`;
 
-      const { data: updatedPerson, error: updateError } = await supabase
-        .from("people")
+      const entityId = item.entity_id;
+      const entityTable = item.entity_type === "organization"
+        ? "organizations"
+        : "people";
+      const chunkTable = item.entity_type === "organization"
+        ? "organization_text_chunks"
+        : "person_text_chunks";
+      const chunkForeignKey = item.entity_type === "organization"
+        ? "organization_id"
+        : "person_id";
+
+      const { data: updatedEntity, error: updateError } = await supabase
+        .from(entityTable)
         .update({
           embedding: vectorStr,
           embedding_generated_at: item.claimed_dirty_at,
         })
-        .eq("id", item.person_id)
+        .eq("id", entityId)
         .select("embedding_dirty_at")
         .maybeSingle();
 
@@ -511,35 +924,43 @@ async function applyEmbeddingOutputs(
         throw updateError;
       }
 
-      const { error: deleteChunkError } = await supabase
-        .from("person_text_chunks")
+      const { error: deleteChunkError } = await fromDynamic(
+        supabase,
+        chunkTable,
+      )
         .delete()
-        .eq("person_id", item.person_id);
+        .eq(chunkForeignKey, entityId);
 
       if (deleteChunkError) {
         throw deleteChunkError;
       }
 
-      const chunkRows: ChunkUpsertRow[] = item.chunk_plans.map((chunk, chunkIndex) => {
-        const embedding = chunkEmbeddings[chunkOffset + chunkIndex];
-        if (!embedding) {
-          throw new Error(`Missing chunk embedding for ${chunk.chunk_type}:${chunk.chunk_index}`);
-        }
+      const chunkRows: ChunkUpsertRow[] = item.chunk_plans.map(
+        (chunk, chunkIndex) => {
+          const embedding = chunkEmbeddings[chunkOffset + chunkIndex];
+          if (!embedding) {
+            throw new Error(
+              `Missing chunk embedding for ${chunk.chunk_type}:${chunk.chunk_index}`,
+            );
+          }
 
-        return {
-          person_id: item.person_id,
-          chunk_type: chunk.chunk_type,
-          chunk_index: chunk.chunk_index,
-          chunk_text: chunk.chunk_text,
-          embedding: `[${embedding.join(",")}]`,
-        };
-      });
+          return {
+            [chunkForeignKey]: entityId,
+            chunk_type: chunk.chunk_type,
+            chunk_index: chunk.chunk_index,
+            chunk_text: chunk.chunk_text,
+            embedding: `[${embedding.join(",")}]`,
+          };
+        },
+      );
 
       chunkOffset += item.chunk_plans.length;
 
       if (chunkRows.length > 0) {
-        const { error: insertChunkError } = await supabase
-          .from("person_text_chunks")
+        const { error: insertChunkError } = await fromDynamic(
+          supabase,
+          chunkTable,
+        )
           .insert(chunkRows);
 
         if (insertChunkError) {
@@ -547,39 +968,42 @@ async function applyEmbeddingOutputs(
         }
       }
 
-      const dirtyAt = updatedPerson?.embedding_dirty_at;
+      const dirtyAt = updatedEntity?.embedding_dirty_at as
+        | string
+        | null
+        | undefined;
       if (
         dirtyAt &&
         new Date(dirtyAt).getTime() > new Date(item.claimed_dirty_at).getTime()
       ) {
         await releaseJobAsPending(
           supabase,
-          item.person_id,
+          item,
           item.claim_token,
           dirtyAt,
           null,
         );
       } else {
-        await deleteJob(supabase, item.person_id, item.claim_token);
+        await deleteJob(supabase, item, item.claim_token);
       }
 
       processed += 1;
     } catch (error) {
       const message = (error as Error).message || "Embedding refresh failed";
-      errors.push(`Person ${item.person_id}: ${message}`);
+      errors.push(`${labelManifestItem(item)}: ${message}`);
       failed += 1;
 
       try {
         await releaseJobAsPending(
           supabase,
-          item.person_id,
+          item,
           item.claim_token,
           item.claimed_dirty_at,
           message,
         );
       } catch (releaseError) {
         errors.push(
-          `Person ${item.person_id}: failed to release job - ${
+          `${labelManifestItem(item)}: failed to release job - ${
             (releaseError as Error).message || "unknown error"
           }`,
         );
@@ -592,7 +1016,9 @@ async function applyEmbeddingOutputs(
   return { processed, failed, errors };
 }
 
-function extractBatchResource(operation: Record<string, unknown>): Record<string, unknown> | null {
+function extractBatchResource(
+  operation: Record<string, unknown>,
+): Record<string, unknown> | null {
   const direct = operation.batch;
   if (direct && typeof direct === "object") {
     return direct as Record<string, unknown>;
@@ -635,7 +1061,10 @@ function batchStatusFromState(state: string): string {
   const normalized = state.toUpperCase();
   if (normalized.includes("CANCEL")) return "cancelled";
   if (normalized.includes("FAIL")) return "failed";
-  if (normalized.includes("SUCCEED") || normalized.includes("DONE") || normalized.includes("COMPLETE")) {
+  if (
+    normalized.includes("SUCCEED") || normalized.includes("DONE") ||
+    normalized.includes("COMPLETE")
+  ) {
     return "succeeded";
   }
   return "running";
@@ -646,7 +1075,9 @@ function extractEmbeddingValues(payload: unknown): number[] {
   const record = payload as Record<string, unknown>;
 
   if (Array.isArray(record.values)) {
-    return record.values.filter((value): value is number => typeof value === "number");
+    return record.values.filter((value): value is number =>
+      typeof value === "number"
+    );
   }
 
   if (record.embedding && typeof record.embedding === "object") {
@@ -689,29 +1120,34 @@ async function syncBatchRun(
   apiKey: string,
   batchRun: EmbeddingBatchRunRow,
 ): Promise<EmbeddingBatchRunRow> {
-  const operation = await getAsyncEmbeddingBatch(apiKey, batchRun.gemini_batch_name);
+  const operation = await getAsyncEmbeddingBatch(
+    apiKey,
+    batchRun.gemini_batch_name,
+  );
   const batch = extractBatchResource(operation);
   const batchState = extractBatchState(operation, batch);
   const status = batchStatusFromState(batchState);
   const manifest = normalizeManifest(batchRun.manifest);
-  const batchStats =
-    batch?.batchStats && typeof batch.batchStats === "object"
-      ? batch.batchStats as Record<string, unknown>
-      : batchRun.batch_stats;
+  const batchStats = batch?.batchStats && typeof batch.batchStats === "object"
+    ? batch.batchStats as Record<string, unknown>
+    : batchRun.batch_stats;
 
   let completedAt = batchRun.completed_at;
   let lastError = batchRun.last_error;
   let nextStatus = status;
 
   if (status === "succeeded") {
-    const inlinedResponses =
-      batch?.output &&
+    const inlinedResponses = batch?.output &&
         typeof batch.output === "object" &&
         (batch.output as Record<string, unknown>).inlinedResponses &&
-        typeof (batch.output as Record<string, unknown>).inlinedResponses === "object"
-        ? ((batch.output as Record<string, unknown>).inlinedResponses as Record<string, unknown>)
-          .inlinedResponses
-        : null;
+        typeof (batch.output as Record<string, unknown>).inlinedResponses ===
+          "object"
+      ? ((batch.output as Record<string, unknown>).inlinedResponses as Record<
+        string,
+        unknown
+      >)
+        .inlinedResponses
+      : null;
 
     if (!Array.isArray(inlinedResponses)) {
       nextStatus = "failed";
@@ -746,18 +1182,19 @@ async function syncBatchRun(
         const documentEmbeddings: number[][] = [];
         const chunkEmbeddings: number[][] = [];
         let responseIndex = 0;
-        const personErrors = new Map<string, string>();
+        const itemErrors = new Map<string, string>();
 
         for (const item of manifest) {
-          const documentResponse =
-            inlinedResponses[responseIndex] && typeof inlinedResponses[responseIndex] === "object"
-              ? (inlinedResponses[responseIndex] as Record<string, unknown>)
-              : {};
+          const itemKey = `${item.entity_type}:${item.entity_id}`;
+          const documentResponse = inlinedResponses[responseIndex] &&
+              typeof inlinedResponses[responseIndex] === "object"
+            ? (inlinedResponses[responseIndex] as Record<string, unknown>)
+            : {};
           responseIndex += 1;
 
           if (documentResponse.error) {
-            personErrors.set(
-              item.person_id,
+            itemErrors.set(
+              itemKey,
               `Document embedding failed: ${
                 JSON.stringify(documentResponse.error)
               }`,
@@ -765,29 +1202,37 @@ async function syncBatchRun(
           } else {
             const embedding = extractEmbeddingValues(documentResponse.response);
             if (embedding.length === 0) {
-              personErrors.set(item.person_id, "Document embedding missing values");
+              itemErrors.set(itemKey, "Document embedding missing values");
             } else {
               documentEmbeddings.push(embedding);
             }
           }
 
-          for (let chunkIdx = 0; chunkIdx < item.chunk_plans.length; chunkIdx += 1) {
-            const chunkResponse =
-              inlinedResponses[responseIndex] && typeof inlinedResponses[responseIndex] === "object"
-                ? (inlinedResponses[responseIndex] as Record<string, unknown>)
-                : {};
+          for (
+            let chunkIdx = 0;
+            chunkIdx < item.chunk_plans.length;
+            chunkIdx += 1
+          ) {
+            const chunkResponse = inlinedResponses[responseIndex] &&
+                typeof inlinedResponses[responseIndex] === "object"
+              ? (inlinedResponses[responseIndex] as Record<string, unknown>)
+              : {};
             responseIndex += 1;
 
-            if (!personErrors.has(item.person_id)) {
+            if (!itemErrors.has(itemKey)) {
               if (chunkResponse.error) {
-                personErrors.set(
-                  item.person_id,
-                  `Chunk embedding failed: ${JSON.stringify(chunkResponse.error)}`,
+                itemErrors.set(
+                  itemKey,
+                  `Chunk embedding failed: ${
+                    JSON.stringify(chunkResponse.error)
+                  }`,
                 );
               } else {
-                const embedding = extractEmbeddingValues(chunkResponse.response);
+                const embedding = extractEmbeddingValues(
+                  chunkResponse.response,
+                );
                 if (embedding.length === 0) {
-                  personErrors.set(item.person_id, "Chunk embedding missing values");
+                  itemErrors.set(itemKey, "Chunk embedding missing values");
                 } else {
                   chunkEmbeddings.push(embedding);
                 }
@@ -796,10 +1241,10 @@ async function syncBatchRun(
           }
         }
 
-        if (personErrors.size > 0) {
+        if (itemErrors.size > 0) {
           nextStatus = "failed";
-          lastError = Array.from(personErrors.entries())
-            .map(([personId, message]) => `${personId}: ${message}`)
+          lastError = Array.from(itemErrors.entries())
+            .map(([itemKey, message]) => `${itemKey}: ${message}`)
             .join("; ");
           const releaseErrors = await releaseManifestJobsAsPending(
             supabase,
@@ -870,7 +1315,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
-      return jsonError(500, "agent_failure", "GEMINI_API_KEY not configured", "Set GEMINI_API_KEY in edge function secrets.");
+      return jsonError(
+        500,
+        "agent_failure",
+        "GEMINI_API_KEY not configured",
+        "Set GEMINI_API_KEY in edge function secrets.",
+      );
     }
 
     const supabase = createAdminClient();
@@ -879,12 +1329,25 @@ Deno.serve(wrapHandler(async (req: Request) => {
       ? await req.json() as Record<string, unknown>
       : {};
     const action = typeof body.action === "string" ? body.action : "process";
-    const personId = typeof body.personId === "string" ? body.personId : null;
-    const personIds = Array.isArray(body.personIds)
-      ? body.personIds.filter((value: unknown): value is string =>
-          typeof value === "string" && value.trim().length > 0
-        )
-      : [];
+    const requestedEntityType = normalizeEntityType(body.entity_type);
+    const personIds = normalizeStringIds(
+      body.personId,
+      body.person_id,
+      body.personIds,
+      body.person_ids,
+    );
+    const organizationIds = normalizeStringIds(
+      body.organizationId,
+      body.organization_id,
+      body.organizationIds,
+      body.organization_ids,
+    );
+    const claimEntityType: EmbeddingTargetType = organizationIds.length > 0 &&
+        personIds.length > 0
+      ? "all"
+      : organizationIds.length > 0
+      ? "organization"
+      : requestedEntityType;
     const batchSizeInput =
       typeof body.batch_size === "number" && body.batch_size > 0
         ? Math.floor(body.batch_size)
@@ -902,17 +1365,18 @@ Deno.serve(wrapHandler(async (req: Request) => {
       ? body.batch_name.trim()
       : "";
 
-    const targetSeedIds: string[] = personId ? [personId, ...personIds] : personIds;
-    const targetedPersonIds: string[] = Array.from(new Set(targetSeedIds));
-
     let enqueued = 0;
 
-    if (targetedPersonIds.length > 0) {
-      enqueued += await enqueueSpecificPeople(supabase, targetedPersonIds);
+    if (personIds.length > 0) {
+      enqueued += await enqueueSpecificPeople(supabase, personIds);
+    }
+
+    if (organizationIds.length > 0) {
+      enqueued += await enqueueSpecificOrganizations(supabase, organizationIds);
     }
 
     if (backfill) {
-      enqueued += await enqueueDirtyJobs(supabase);
+      enqueued += await enqueueDirtyJobs(supabase, requestedEntityType);
     }
 
     if (action === "list_batches") {
@@ -957,7 +1421,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
           batch_state: "CANCELLED",
           completed_at: new Date().toISOString(),
           last_polled_at: new Date().toISOString(),
-          last_error: releaseErrors.length > 0 ? releaseErrors.join("; ") : null,
+          last_error: releaseErrors.length > 0
+            ? releaseErrors.join("; ")
+            : null,
         })
         .eq("id", existingRun.id)
         .select("*")
@@ -1006,7 +1472,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
       const claimedJobs = await claimJobs(
         supabase,
         asyncBatchSize,
-        targetedPersonIds.length > 0 && !backfill ? targetedPersonIds : null,
+        backfill ? requestedEntityType : claimEntityType,
+        personIds.length > 0 && !backfill ? personIds : null,
+        organizationIds.length > 0 && !backfill ? organizationIds : null,
       );
 
       if (claimedJobs.length === 0) {
@@ -1038,11 +1506,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
           request: {
             content: { parts: [{ text: item.document_text }] },
             taskType: "RETRIEVAL_DOCUMENT" as const,
-            title: item.person_name || undefined,
+            title: item.entity_name || undefined,
             outputDimensionality: EMBEDDING_DIM,
           },
           metadata: {
+            entity_type: item.entity_type,
+            entity_id: item.entity_id,
             person_id: item.person_id,
+            organization_id: item.organization_id,
             request_type: "document",
           },
         },
@@ -1050,11 +1521,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
           request: {
             content: { parts: [{ text: chunk.chunk_text }] },
             taskType: "RETRIEVAL_DOCUMENT" as const,
-            title: item.person_name || undefined,
+            title: item.entity_name || undefined,
             outputDimensionality: EMBEDDING_DIM,
           },
           metadata: {
+            entity_type: item.entity_type,
+            entity_id: item.entity_id,
             person_id: item.person_id,
+            organization_id: item.organization_id,
             request_type: "chunk",
             chunk_type: chunk.chunk_type,
             chunk_index: chunk.chunk_index,
@@ -1062,8 +1536,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
         })),
       ]);
 
-      const displayName =
-        `flemish-network-embeddings-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      const displayName = `flemish-network-embeddings-${
+        new Date().toISOString().replace(/[:.]/g, "-")
+      }`;
 
       try {
         const geminiBatchName = await createAsyncEmbeddingBatch(
@@ -1079,11 +1554,19 @@ Deno.serve(wrapHandler(async (req: Request) => {
             display_name: displayName,
             status: "running",
             request_count: batchRequests.length,
-            people_count: manifest.length,
+            people_count: manifest.filter((item) =>
+              item.entity_type === "person"
+            ).length,
             manifest,
             batch_state: "RUNNING",
             batch_stats: {
               requestCount: batchRequests.length,
+              peopleCount: manifest.filter((item) =>
+                item.entity_type === "person"
+              ).length,
+              organizationCount: manifest.filter((item) =>
+                item.entity_type === "organization"
+              ).length,
               successfulRequestCount: 0,
               failedRequestCount: 0,
               pendingRequestCount: batchRequests.length,
@@ -1106,7 +1589,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
           remaining: await getOutstandingJobCount(supabase),
         });
       } catch (error) {
-        const message = (error as Error).message || "Async embedding batch failed";
+        const message = (error as Error).message ||
+          "Async embedding batch failed";
         const releaseErrors = await releaseManifestJobsAsPending(
           supabase,
           manifest,
@@ -1124,7 +1608,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
       }
     }
 
-    const shouldProcess = backfill || kick || targetedPersonIds.length > 0;
+    const shouldProcess = backfill || kick || personIds.length > 0 ||
+      organizationIds.length > 0;
     if (!shouldProcess) {
       return jsonResponse({
         processed: 0,
@@ -1139,7 +1624,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
     const claimedJobs = await claimJobs(
       supabase,
       batchSize,
-      targetedPersonIds.length > 0 && !backfill && !kick ? targetedPersonIds : null
+      backfill ? requestedEntityType : claimEntityType,
+      personIds.length > 0 && !backfill && !kick ? personIds : null,
+      organizationIds.length > 0 && !backfill && !kick ? organizationIds : null,
     );
 
     if (claimedJobs.length === 0) {
@@ -1169,7 +1656,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
 async function processClaimedJobs(
   supabase: SupabaseAdminClient,
   apiKey: string,
-  jobs: ClaimedJobRow[]
+  jobs: ClaimedJobRow[],
 ): Promise<{ processed: number; failed: number; errors: string[] }> {
   const prepared = await prepareEmbeddingJobs(supabase, jobs);
   const manifest = buildManifestFromPreparedJobs(prepared.preparedJobs);
@@ -1186,7 +1673,7 @@ async function processClaimedJobs(
       apiKey,
       manifest.map((item) => ({
         text: item.document_text,
-        title: item.person_name || undefined,
+        title: item.entity_name || undefined,
         taskType: "RETRIEVAL_DOCUMENT",
       })),
     );
@@ -1194,7 +1681,7 @@ async function processClaimedJobs(
     const chunkRequests = manifest.flatMap((item) =>
       item.chunk_plans.map((chunk) => ({
         text: chunk.chunk_text,
-        title: item.person_name || undefined,
+        title: item.entity_name || undefined,
         taskType: "RETRIEVAL_DOCUMENT" as const,
       }))
     );
