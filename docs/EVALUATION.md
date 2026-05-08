@@ -92,6 +92,18 @@ Optional `reject_reason_note` captures freeform context. Reject reasons drive th
 
 `agent-discovery` writes one `discovery_query_attempts` row per `searchWeb` call, capturing `query_text`, `source_type`, `pivot_entity_key`, `provider`, `surface`, `lens`, `composition_keys`, and `urls_returned`. After the run completes, `resolve_discovery_query_attempts(run_id)` joins frontier → pages → evidence → contacts to populate `pages_fetched`, `candidates_extracted`, `new_pending_contacts`, `contacts_later_approved`, `contacts_later_rejected`, and `rejected_reason_breakdown`.
 
+### Reflection loop quality gates (Phase 4)
+
+The reflection loop (`agent-discovery-reflect`) must satisfy these invariants:
+
+- **Daily cadence:** `agent-scheduler` housekeeping must trigger `agent-discovery-reflect` at most once per 24 hours. The check is: no `discovery_reflection_suggestions` row with `generated_at >= now() - 24h` exists.
+- **Minimum suggestions:** each successful reflection run must write ≥ 3 rows to `discovery_reflection_suggestions`. Runs that write 0 are acceptable when Gemini fails, but zero-write runs should appear in logs and not prevent the next day's run.
+- **Bandit integration:** exploration slots must consume reflection suggestions before falling back to untried arms. After a slot uses a suggestion, `consumed_attempt_count` on that row must be incremented within the same allocation call.
+- **Source tagging:** query attempts generated from reflection-driven exploration slots must carry `source_type = 'reflection'` in `discovery_query_attempts`. At least 1 in 5 discovery runs should surface a candidate whose first-touching query had `source_type = 'reflection'` (whole-system acceptance criterion).
+- **TTL enforcement:** expired suggestions (`expires_at <= now()`) must never appear in bandit exploration slots.
+- **Coverage broadening signal:** the reflection function should propose surfaces/lenses that differ from the current arm with the highest `contacts_approved`. If all suggestions are `faculty_page × alumni_network`, the prompt or population data is too shallow — this is a tuning issue.
+- **Admin visibility:** staff can see the latest population summary (sector/state/career-stage counts) and all active suggestions in the Reflection section of `/admin/growth → Discovery Planning`.
+
 ### Bandit allocator quality gates (Phase 3)
 
 The Thompson-sampling bandit allocator (`supabase/functions/_shared/banditAllocator.ts`) is subject to the following invariants. Violations are regressions:

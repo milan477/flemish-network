@@ -9,6 +9,8 @@ import {
   Sparkles,
   Target,
   BarChart3,
+  Brain,
+  Play,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -95,6 +97,28 @@ interface ArmStatRow {
   last_attempt_at: string | null;
   cooldown_until: string | null;
   arm_status: 'untried' | 'active' | 'no_yield' | 'cooling_down';
+}
+
+interface ReflectionSuggestion {
+  id: string;
+  surface: string | null;
+  lens: string | null;
+  context_key: string;
+  rationale: string;
+  population_summary: PopulationSummary | null;
+  generated_at: string;
+  consumed_attempt_count: number;
+  expires_at: string;
+}
+
+interface PopulationSummary {
+  total_approved: number;
+  by_sector: Array<{ sector: string; count: number }>;
+  by_state: Array<{ state: string; count: number }>;
+  by_employer: Array<{ employer: string; count: number }>;
+  career_stage_distribution: Array<{ stage: string; count: number }>;
+  recent_rejections_by_reason: Array<{ reason: string; count: number }>;
+  generated_at: string;
 }
 
 interface DiscoveryPlanningPanelProps {
@@ -188,6 +212,52 @@ export default function DiscoveryPlanningPanel({
   const [armStats, setArmStats] = useState<ArmStatRow[]>([]);
   const [armStatsLoading, setArmStatsLoading] = useState(false);
 
+  // Reflection state
+  const [reflectionSuggestions, setReflectionSuggestions] = useState<ReflectionSuggestion[]>([]);
+  const [reflectionLoading, setReflectionLoading] = useState(false);
+  const [reflectionRunning, setReflectionRunning] = useState(false);
+  const [reflectionError, setReflectionError] = useState<string | null>(null);
+  const [latestPopulationSummary, setLatestPopulationSummary] = useState<PopulationSummary | null>(null);
+
+  const loadReflection = useCallback(async () => {
+    setReflectionLoading(true);
+    setReflectionError(null);
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('discovery_reflection_suggestions')
+      .select('id,surface,lens,context_key,rationale,population_summary,generated_at,consumed_attempt_count,expires_at')
+      .gt('expires_at', now)
+      .order('generated_at', { ascending: false })
+      .limit(20);
+    if (error) {
+      setReflectionError(error.message);
+    } else {
+      const rows = (data || []) as ReflectionSuggestion[];
+      setReflectionSuggestions(rows);
+      // Use population_summary from the most recent row as the latest summary.
+      const latest = rows[0]?.population_summary ?? null;
+      setLatestPopulationSummary(latest);
+    }
+    setReflectionLoading(false);
+  }, []);
+
+  const runReflectionNow = useCallback(async () => {
+    setReflectionRunning(true);
+    setReflectionError(null);
+    const { data, error } = await supabase.functions.invoke('agent-discovery-reflect', {
+      body: {},
+    });
+    if (error) {
+      setReflectionError(error.message);
+    } else if (data?.status === 'ok') {
+      // Reload suggestions after a successful run.
+      await loadReflection();
+    } else {
+      setReflectionError(data?.message || 'Reflection run returned an unexpected response');
+    }
+    setReflectionRunning(false);
+  }, [loadReflection]);
+
   const loadArmStats = useCallback(async () => {
     setArmStatsLoading(true);
     const { data } = await supabase
@@ -223,7 +293,8 @@ export default function DiscoveryPlanningPanel({
   useEffect(() => {
     loadPlanning();
     loadArmStats();
-  }, [loadPlanning, loadArmStats]);
+    loadReflection();
+  }, [loadPlanning, loadArmStats, loadReflection]);
 
   if (loading) {
     return (
@@ -556,7 +627,152 @@ export default function DiscoveryPlanningPanel({
         </ScrollablePlanningCard>
       </div>
 
-      {/* Section 4: Bandit arm heatmap */}
+      {/* Section 4: Reflection loop */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-900">Reflection</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadReflection}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${reflectionLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              onClick={runReflectionNow}
+              disabled={reflectionRunning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors disabled:opacity-50"
+            >
+              {reflectionRunning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Play className="w-3.5 h-3.5" />
+              )}
+              Run Reflection Now
+            </button>
+          </div>
+        </div>
+
+        {reflectionError && (
+          <p className="text-xs text-red-500 mb-3">{reflectionError}</p>
+        )}
+
+        {/* Population summary */}
+        {latestPopulationSummary && (
+          <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Brain className="w-4 h-4 text-violet-600" />
+              <p className="text-sm font-medium text-gray-800">
+                Population snapshot
+                <span className="ml-2 text-xs text-gray-400 font-normal">
+                  {formatDate(latestPopulationSummary.generated_at)} · {latestPopulationSummary.total_approved} approved people
+                </span>
+              </p>
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">Top sectors</p>
+                <div className="space-y-1">
+                  {latestPopulationSummary.by_sector.slice(0, 5).map(({ sector, count }) => (
+                    <div key={sector} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-700 truncate">{sector}</span>
+                      <span className="text-gray-400 ml-2 tabular-nums">{count}</span>
+                    </div>
+                  ))}
+                  {latestPopulationSummary.by_sector.length === 0 && (
+                    <p className="text-xs text-gray-400">No sector data</p>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">Top states</p>
+                <div className="space-y-1">
+                  {latestPopulationSummary.by_state.slice(0, 5).map(({ state, count }) => (
+                    <div key={state} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-700 truncate">{state}</span>
+                      <span className="text-gray-400 ml-2 tabular-nums">{count}</span>
+                    </div>
+                  ))}
+                  {latestPopulationSummary.by_state.length === 0 && (
+                    <p className="text-xs text-gray-400">No state data</p>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2">Career stages</p>
+                <div className="space-y-1">
+                  {latestPopulationSummary.career_stage_distribution.slice(0, 5).map(({ stage, count }) => (
+                    <div key={stage} className="flex items-center justify-between text-xs">
+                      <span className="text-gray-700 capitalize">{stage}</span>
+                      <span className="text-gray-400 ml-2 tabular-nums">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Active reflection suggestions */}
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-4 h-4 text-violet-600" />
+            <p className="text-sm font-medium text-gray-800">Active exploration suggestions</p>
+            <span className="text-xs text-gray-400 ml-auto">
+              {reflectionSuggestions.length > 0
+                ? `${reflectionSuggestions.length} active`
+                : 'None yet'}
+            </span>
+          </div>
+          {reflectionLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+            </div>
+          ) : reflectionSuggestions.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">
+              No active suggestions — click "Run Reflection Now" to generate.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {reflectionSuggestions.map((s) => (
+                <div key={s.id} className="rounded-lg border border-gray-100 px-3.5 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap gap-1.5 mb-1.5">
+                        {s.surface && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100">
+                            {s.surface}
+                          </span>
+                        )}
+                        {s.lens && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                            {s.lens}
+                          </span>
+                        )}
+                        {s.context_key && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-50 text-gray-600 border border-gray-200">
+                            {s.context_key}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-700">{s.rationale}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-[10px] text-gray-400">{formatDate(s.generated_at)}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        used {s.consumed_attempt_count}×
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Section 5: Bandit arm heatmap */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-gray-900">

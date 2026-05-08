@@ -14,18 +14,26 @@ const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
 }));
 
+// Build a chainable query builder that resolves to empty data at the end
+// of any method chain (select → gt → order → limit, or select → order → limit, etc.).
+function makeChainable(): Record<string, unknown> {
+  const terminalPromise = Promise.resolve({ data: [], error: null });
+  const chain: Record<string, unknown> = {};
+  const methods = ['select', 'gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'in', 'not', 'order', 'limit', 'maybeSingle', 'single'];
+  for (const method of methods) {
+    chain[method] = () => ({ ...chain, then: terminalPromise.then.bind(terminalPromise) });
+  }
+  // Allow the chain itself to be awaited.
+  Object.assign(chain, { then: terminalPromise.then.bind(terminalPromise) });
+  return chain;
+}
+
 vi.mock('../../../lib/supabase', () => ({
   supabase: {
     functions: {
       invoke: invokeMock,
     },
-    from: () => ({
-      select: () => ({
-        order: () => ({
-          limit: () => Promise.resolve({ data: [], error: null }),
-        }),
-      }),
-    }),
+    from: () => makeChainable(),
   },
 }));
 
@@ -255,8 +263,11 @@ describe('DiscoveryPlanningPanel – Run button handoff payload', () => {
     const onRunDiscovery = vi.fn();
     renderPanel(onRunDiscovery);
 
-    // Wait for the Run button to appear after loading
-    const runButton = await screen.findByRole('button', { name: /run/i });
+    // Wait for the action Run button to appear after loading.
+    // Use findAllByRole and pick the first enabled action Run button
+    // (not the "Run Reflection Now" button which has a different label).
+    const runButtons = await screen.findAllByRole('button', { name: /^run$/i });
+    const runButton = runButtons[0];
     fireEvent.click(runButton);
 
     await waitFor(() => {
@@ -289,7 +300,8 @@ describe('DiscoveryPlanningPanel – Run button handoff payload', () => {
     const onRunDiscovery = vi.fn();
     renderPanel(onRunDiscovery);
 
-    const runButton = await screen.findByRole('button', { name: /run/i });
+    const runButtons = await screen.findAllByRole('button', { name: /^run$/i });
+    const runButton = runButtons[0];
     fireEvent.click(runButton);
 
     await waitFor(() => {
@@ -324,7 +336,8 @@ describe('DiscoveryPlanningPanel – Run button handoff payload', () => {
     const onRunDiscovery = vi.fn();
     renderPanel(onRunDiscovery);
 
-    const runButton = await screen.findByRole('button', { name: /run/i });
+    const runButtons = await screen.findAllByRole('button', { name: /^run$/i });
+    const runButton = runButtons[0];
     fireEvent.click(runButton);
 
     await waitFor(() => {

@@ -11,7 +11,7 @@
 | `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and the held-out Discovery Eval panel. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
 | `/admin/verification` | Two top-level collapsible sections — **Pending Discovered People** and **Pending Discovered Organizations** (each with count badge, chevron toggle, both open by default) — followed by Records Freshness, Profile Update Suggestions, and Organization Update Suggestions. Discovered rows display greyed-out while `verification_status IN ('queued', 'verifying')` and gain Approve/Reject only when `verified`; verification contradictions are hard-deleted by `agent-verify` and disappear from the list. UI subscribes to `discovered_contacts` and `discovered_organizations` via Supabase realtime so cards flip from greyed → normal without manual refresh. No user-facing scope picker — Approve uses the scope inferred by `agent-verify`. |
 | `/admin/coverage` | Descriptive coverage overview: people/org/city stat cards, occupation breakdown, data quality, sector distribution, Flemish connection chart, and location explorer. URL state: `?tab=coverage` |
-| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, and recommended next discovery actions |
+| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, reflection loop status, and recommended next discovery actions |
 | `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
 | `/admin/access` | Admin-only staff access management |
 | `/login` | Staff email/password sign-in and password reset request |
@@ -55,6 +55,19 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 - Each candidate has `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`.
 - `gap.should_offer` may include a `reason` and `suggested_prompt` for navigating to `/admin/discovery?prompt=<encoded prompt>`. The collection suggestion endpoint and route handoff must not start Discovery; staff must explicitly run the prefilled prompt.
 - Legacy people-only callers may still read `suggestions`, which mirrors person candidates as `{ id, name, reason, similarity }`.
+
+## Reflection API Contract
+
+The Reflection section in `DiscoveryPlanningPanel` (shown within `/admin/growth`) uses two data sources:
+
+1. Direct Supabase query on `discovery_reflection_suggestions` for active suggestions (`expires_at > now()`, ordered `generated_at DESC`).
+2. `supabase.functions.invoke('agent-discovery-reflect', { body: {} })` for the "Run Reflection Now" button.
+
+The `agent-discovery-reflect` endpoint:
+- Auth: staff editor bearer token.
+- Request: `{}` (no parameters).
+- Response: `{ status: "ok", suggestions_written, population_summary, suggestions }` or `{ status: "ok", suggestions_written: 0, message }` when Gemini returned nothing.
+- Side effect: inserts rows into `discovery_reflection_suggestions`; `agent-scheduler` housekeeping calls it daily when no suggestions were generated in the last 24 hours.
 
 ## Discovery Eval Endpoint
 

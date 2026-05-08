@@ -157,6 +157,7 @@ async function runHousekeeping(
   pending_contacts_enqueued: number;
   pending_organizations_enqueued: number;
   arm_stats_refreshed: number;
+  reflection_triggered: boolean;
 }> {
   const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult] =
     await Promise.all([
@@ -170,6 +171,14 @@ async function runHousekeeping(
       }),
     ]);
 
+  // Daily reflection: trigger agent-discovery-reflect once per day.
+  // We check if there are any active suggestions generated in the last 24 hours;
+  // if not, fire the reflection function in the background.
+  let reflectionTriggered = false;
+  if (supabaseUrl && req) {
+    reflectionTriggered = await triggerDailyReflection(supabase, supabaseUrl, req);
+  }
+
   return {
     zombies_marked_failed: zombiesMarked,
     cache_entries_purged: cacheEntriesPurged,
@@ -179,7 +188,68 @@ async function runHousekeeping(
     pending_contacts_enqueued: verifyEnqueue.contacts_enqueued,
     pending_organizations_enqueued: verifyEnqueue.organizations_enqueued,
     arm_stats_refreshed: armStatsResult.arms_refreshed,
+    reflection_triggered: reflectionTriggered,
   };
+}
+
+/**
+ * Trigger the daily reflection function if no fresh suggestions exist from the last 24 hours.
+ * Fires agent-discovery-reflect in the background (fire-and-forget) to avoid blocking housekeeping.
+ */
+async function triggerDailyReflection(
+  supabase: SupabaseAdminClient,
+  supabaseUrl: string,
+  req: Request,
+): Promise<boolean> {
+  try {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // Check if a reflection already ran today.
+    const { data: recentSuggestions } = await supabase
+      .from("discovery_reflection_suggestions")
+      .select("id")
+      .gte("generated_at", oneDayAgo)
+      .limit(1);
+
+    if (recentSuggestions && recentSuggestions.length > 0) {
+      // Already ran today.
+      return false;
+    }
+
+    const forwardedAuth = req.headers.get("Authorization") || req.headers.get("authorization");
+    const forwardedApiKey = req.headers.get("apikey") || req.headers.get("Apikey");
+
+    if (!forwardedAuth && !forwardedApiKey) {
+      log.warn("reflection_trigger_skipped", "No auth headers available");
+      return false;
+    }
+
+    const dispatchHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (forwardedAuth) {
+      dispatchHeaders.Authorization = forwardedAuth;
+    } else if (forwardedApiKey) {
+      dispatchHeaders.Authorization = `Bearer ${forwardedApiKey}`;
+    }
+    if (forwardedApiKey) {
+      dispatchHeaders.apikey = forwardedApiKey;
+    }
+
+    // Fire-and-forget: do not await so housekeeping stays fast.
+    fetch(`${supabaseUrl}/functions/v1/agent-discovery-reflect`, {
+      method: "POST",
+      headers: dispatchHeaders,
+      body: JSON.stringify({}),
+    }).catch((err) => {
+      log.warn("reflection_dispatch_failed", err instanceof Error ? err.message : String(err));
+    });
+
+    return true;
+  } catch (err) {
+    log.warn("reflection_trigger_error", err instanceof Error ? err.message : String(err));
+    return false;
+  }
 }
 
 const AUTO_VERIFY_BATCH_SIZE = 5;

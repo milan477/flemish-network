@@ -18,6 +18,8 @@ export interface AllocationSlot {
   lens: string;
   contextKey: string;
   isExploration: boolean;
+  /** Set when this slot was seeded from a reflection suggestion. */
+  reflectionSuggestionId?: string;
 }
 
 interface ArmStats {
@@ -95,8 +97,9 @@ function armKey(surface: string, lens: string, contextKey = ""): string {
  * Allocate `budget` query slots across active (surface, lens) arms.
  *
  * - 25% of slots (at least 1) are reserved for exploration:
- *     prefer arms where last_attempt_at IS NULL (untried),
- *     fall back to arm with oldest last_attempt_at.
+ *     first checks discovery_reflection_suggestions for unconsumed suggestions,
+ *     then falls back to arms where last_attempt_at IS NULL (untried),
+ *     then falls back to arm with oldest last_attempt_at.
  * - Remaining slots go to Thompson-sampled exploitation.
  * - Arms with cooldown_until > now() are excluded entirely.
  * - Arms with no data are treated as neutral Beta(1,1) priors.
@@ -205,10 +208,70 @@ export async function allocateBudget(
   runEntropy = (runEntropy % 1e6) / 1e6;
 
   // 7. Pick exploration slots.
+  //    Priority: (a) reflection suggestions, (b) untried arms, (c) oldest-attempted.
   const explorationSlots: AllocationSlot[] = [];
   const usedKeys = new Set<string>();
 
-  if (untriedArms.length > 0) {
+  // 7a. First: check discovery_reflection_suggestions for unconsumed suggestions.
+  const nowIsoForReflection = new Date().toISOString();
+  const { data: reflectionRows } = await supabase
+    .from("discovery_reflection_suggestions")
+    .select("id,surface,lens,context_key")
+    .gt("expires_at", nowIsoForReflection)
+    .order("generated_at", { ascending: true })
+    .limit(explorationCount * 2); // fetch a few extras to allow dedup
+
+  const consumedReflectionIds: string[] = [];
+
+  for (const row of reflectionRows || []) {
+    if (explorationSlots.length >= explorationCount) break;
+    // Require at least a surface or lens to be useful; pure context-only suggestions still work.
+    const surface = (row.surface as string | null) || "";
+    const lens = (row.lens as string | null) || "";
+    const contextKey = (row.context_key as string) || "";
+    // Pick a valid surface/lens — fall back to first eligible arm's surface/lens if Gemini
+    // returned a key that's not in the active taxonomy.
+    const resolvedSurface = surface && surfaces.includes(surface)
+      ? surface
+      : (eligibleArms[0]?.surface || surfaces[0] || "");
+    const resolvedLens = lens && lenses.includes(lens)
+      ? lens
+      : (eligibleArms[0]?.lens || lenses[0] || "");
+    if (!resolvedSurface || !resolvedLens) continue;
+
+    const key = armKey(resolvedSurface, resolvedLens, contextKey);
+    if (usedKeys.has(key)) continue;
+    usedKeys.add(key);
+    consumedReflectionIds.push(row.id as string);
+    explorationSlots.push({
+      surface: resolvedSurface,
+      lens: resolvedLens,
+      contextKey,
+      isExploration: true,
+      reflectionSuggestionId: row.id as string,
+    });
+  }
+
+  // Increment consumed_attempt_count for all used reflection suggestions.
+  if (consumedReflectionIds.length > 0) {
+    // Non-fatal: fetch current counts then increment.
+    const { data: existingRows } = await supabase
+      .from("discovery_reflection_suggestions")
+      .select("id,consumed_attempt_count")
+      .in("id", consumedReflectionIds);
+
+    await Promise.all(
+      (existingRows || []).map((row) =>
+        supabase
+          .from("discovery_reflection_suggestions")
+          .update({ consumed_attempt_count: ((row.consumed_attempt_count as number) || 0) + 1 })
+          .eq("id", row.id)
+      ),
+    );
+  }
+
+  // 7b. Fallback: untried arms.
+  if (explorationSlots.length < explorationCount && untriedArms.length > 0) {
     // Shuffle untried arms deterministically using runEntropy.
     const shuffled = [...untriedArms].sort((a, b) => {
       const ka = armKey(a.surface, a.lens, a.context_key);

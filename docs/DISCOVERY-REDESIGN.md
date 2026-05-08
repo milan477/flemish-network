@@ -70,7 +70,7 @@ Subagents are encouraged for parallel work (schema + edge function + UI) and for
 - [x] **Phase 1** — Universal Gemini-Flash query generator.
 - [ ] **Phase 2** — Surfaces × Lenses taxonomy and seed-domain refactor.
 - [x] **Phase 3** — Bandit allocator with exploration reserve.
-- [ ] **Phase 4** — Reflection loop and missing-bucket detection.
+- [x] **Phase 4** — Reflection loop and missing-bucket detection.
 - [ ] **Phase 5** — Pivot upgrades: validation, saturation, multi-hop, composition.
 - [ ] **Phase 6** — Domain reputation feedback into query generation.
 - [ ] **Phase 7** — Cleanup and deprecation sweep.
@@ -459,7 +459,11 @@ A view or function `discovery_arm_stats_recent` returns rolling 30-day windows.
 
 ---
 
-## Phase 4 — Reflection Loop
+## Phase 4 — Reflection Loop [x] Done 2026-05-08
+
+Migration `20260508000014_phase4_reflection_loop.sql` applied to project `ofzuhajxwxggybkuzefq`. `agent-discovery-reflect`, `agent-scheduler`, and `agent-discovery` redeployed. `discovery_reflection_suggestions` table with staff-only RLS lives. Bandit allocator updated to prefer reflection suggestions over untried arms in exploration slots. `agent-scheduler` housekeeping fires the reflection function daily (skipped when a suggestion was already generated in the last 24 hours). Query attempts from reflection-driven slots carry `source_type='reflection'`. Admin Reflection section added to `DiscoveryPlanningPanel` showing population summary (sector/state/career-stage counts) and active suggestions with "Run Reflection Now" button.
+
+## Phase 4 — Reflection Loop (original plan)
 
 **Goal.** Periodically inspect the approved network, identify systematically missing buckets, and inject new exploration arms / wild-card queries.
 

@@ -529,7 +529,7 @@ interface DiscoverySeedDomain {
 
 interface SearchSeedPlan {
   query: string;
-  sourceType: "custom_query" | "surface_lens" | "entity_pivot";
+  sourceType: "custom_query" | "surface_lens" | "entity_pivot" | "reflection";
   priorityBoost: number;
   maxSeedUrls: number;
   coverageTargetKey: string | null;
@@ -2200,6 +2200,8 @@ async function buildQueryPlans(
   // 2. Exploration slots: at least one basin-exploration tuple so the agent
   //    doesn't only chase gaps it already knows about. The bandit guarantees
   //    ≥ 25% of slots are marked isExploration.
+  //    Reflection-driven slots (from discovery_reflection_suggestions) use
+  //    sourceType='reflection'; other exploration slots use 'surface_lens'.
   const explorationSlotsForPlan = allocationSlots.filter((s) => s.isExploration);
   const exploSlot = explorationSlotsForPlan[0];
   if (exploSlot) {
@@ -2210,28 +2212,40 @@ async function buildQueryPlans(
       const compositionKeys = [
         `surface:${exploSlot.surface}`,
         `lens:${exploSlot.lens}`,
+        ...(exploSlot.contextKey ? [`context:${exploSlot.contextKey}`] : []),
       ];
-      const intent = `Surface ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()} — broad exploration`;
+      const isReflection = Boolean(exploSlot.reflectionSuggestionId);
+      const intent = isReflection
+        ? `Reflection-driven exploration: ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()}${exploSlot.contextKey ? ` — context: ${exploSlot.contextKey}` : ""}`
+        : `Surface ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()} — broad exploration`;
       const generated = await runQueryGeneration(intent, {
         runId,
         geminiKey,
         llmStats,
         steps,
         elapsed,
-        stepLabel: `query_generation:surface_lens:${exploSlot.surface}:${exploSlot.lens}:explore`,
+        stepLabel: `query_generation:surface_lens:${exploSlot.surface}:${exploSlot.lens}:${isReflection ? "reflection" : "explore"}`,
         surfaces: [exploSlot.surface],
         lenses: [exploSlot.lens],
         maxQueries: 2,
         context: {
           rotationSeed:
-            `${runId || "anon"}:explore:${exploSlot.surface}:${exploSlot.lens}`,
+            `${runId || "anon"}:${isReflection ? "reflection" : "explore"}:${exploSlot.surface}:${exploSlot.lens}`,
+          ...(exploSlot.contextKey
+            ? {
+              coverageGapLabel: exploSlot.contextKey,
+              coverageGapSector: exploSlot.contextKey.startsWith("sector:")
+                ? exploSlot.contextKey.replace("sector:", "")
+                : null,
+            }
+            : {}),
         },
       });
 
       for (const entry of generated) {
         plans.push({
           query: entry.query,
-          sourceType: "surface_lens",
+          sourceType: isReflection ? "reflection" : "surface_lens",
           priorityBoost: 3,
           maxSeedUrls: 8,
           coverageTargetKey: null,
@@ -2750,12 +2764,16 @@ async function seedFrontier(
           discovery_reason:
             plan.sourceType === "surface_lens"
               ? `surface_lens:${plan.surface || "unknown"}:${plan.lens || "unknown"}`
+              : plan.sourceType === "reflection"
+              ? `reflection:${plan.surface || "unknown"}:${plan.lens || "unknown"}`
               : plan.sourceType === "entity_pivot"
               ? `entity_pivot:${plan.entityKey || plan.entityName || "unknown"}`
               : "custom_query",
           source_type:
             plan.sourceType === "entity_pivot"
               ? "entity_pivot"
+              : plan.sourceType === "reflection"
+              ? "reflection"
               : "search_seed",
           pivot_entity_key: plan.entityKey,
           pivot_entity_name: plan.entityName,
