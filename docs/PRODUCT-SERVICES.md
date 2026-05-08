@@ -314,6 +314,10 @@ Examples:
 
 Default search/filter chips should come only from broad `is_filterable` canonical facts. Specific phrases, raw relevance, and model/import-discovered variants should be preserved as aliases, roles, or evidence without automatically becoming default chips.
 
+Approved profile editing and Discovery review should attach normalized facts to people and organizations with role, confidence, source URL, and evidence excerpt when available. Manual intake and file import remain pending-only; their raw relevance text is preserved for review and only becomes approved fact relationships after explicit reviewer approval or merge.
+
+Discovery extraction and verification proposals preserve raw evidence while attaching normalized facts only through reviewer-controlled approval, merge, or derived-label promotion. Unreviewed model aliases stay pending and are not default filter chips.
+
 ## Service Interaction Schema
 
 ```text

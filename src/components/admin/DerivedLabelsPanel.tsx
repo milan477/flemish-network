@@ -83,48 +83,78 @@ export default function DerivedLabelsPanel({
         }
 
         if (label.label_type === 'flemish_entity') {
-          const canonical = canonicalizeFlemishConnection(label.label_value) || {
-            name: label.label_value,
-            type: 'other' as const,
-          };
+          const metadata = getDerivedLabelMetadata(label);
+          const rawValue =
+            (typeof metadata.raw_value === 'string' && metadata.raw_value) ||
+            label.raw_value ||
+            label.label_value;
+          const canonical = canonicalizeFlemishConnection(rawValue) ||
+            canonicalizeFlemishConnection(label.label_value) || {
+              name: label.label_value,
+              type: 'other' as const,
+            };
 
-          const { data: existingConnection, error: existingConnectionError } = await supabase
-            .from('flemish_connections')
-            .select('id')
-            .ilike('name', canonical.name)
-            .limit(1)
-            .maybeSingle();
+          const { data: lookupRows, error: lookupError } = await supabase.rpc(
+            'lookup_flemish_connection',
+            { raw_name: rawValue }
+          );
+          if (lookupError) throw new Error(lookupError.message);
 
-          if (existingConnectionError) {
-            throw new Error(existingConnectionError.message);
-          }
+          let connectionId = Array.isArray(lookupRows) && lookupRows[0]?.id
+            ? String(lookupRows[0].id)
+            : null;
 
-          let connectionId = existingConnection?.id || null;
           if (!connectionId) {
-            const { data: insertedConnection, error: insertConnectionError } = await supabase
-              .from('flemish_connections')
-              .insert([{ name: canonical.name, type: canonical.type }])
-              .select('id')
-              .limit(1)
-              .maybeSingle();
-
-            if (insertConnectionError || !insertedConnection?.id) {
-              throw new Error(insertConnectionError?.message || 'Failed to create Flemish entity');
+            const { data: ensuredId, error: ensureError } = await supabase.rpc(
+              'ensure_flemish_connection',
+              {
+                p_name: canonical.name,
+                p_type: canonical.type,
+                p_is_filterable: false,
+                p_connection_group: 'derived_label',
+              }
+            );
+            if (ensureError || !ensuredId) {
+              throw new Error(ensureError?.message || 'Failed to create Flemish entity');
             }
-
-            connectionId = insertedConnection.id;
+            connectionId = String(ensuredId);
           }
 
           const { error } = await supabase
             .from('person_flemish_connections')
             .upsert(
-              [{ person_id: label.person_id, flemish_connection_id: connectionId }],
+              [{
+                person_id: label.person_id,
+                flemish_connection_id: connectionId,
+                role: typeof metadata.role === 'string' && metadata.role
+                  ? metadata.role
+                  : 'derived_label',
+                confidence: label.confidence ?? null,
+                source_url: label.evidence_url || null,
+                evidence_excerpt: label.evidence_excerpt || rawValue,
+              }],
               {
                 onConflict: 'person_id,flemish_connection_id',
-                ignoreDuplicates: true,
+                ignoreDuplicates: false,
               }
             );
           if (error) throw new Error(error.message);
+
+          const alias = typeof metadata.candidate_alias === 'string'
+            ? metadata.candidate_alias.trim()
+            : '';
+          if (alias && alias.toLowerCase() !== canonical.name.toLowerCase()) {
+            await supabase.rpc('add_flemish_connection_alias', {
+              p_connection_name: canonical.name,
+              p_alias: alias,
+              p_source: 'model',
+              p_status: 'pending',
+              p_confidence: label.confidence ?? null,
+              p_source_url: label.evidence_url || null,
+              p_evidence_excerpt: label.evidence_excerpt || rawValue,
+            });
+          }
+
           promotedAt = now;
           shouldKickEmbeddings = true;
         }

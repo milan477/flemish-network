@@ -17,6 +17,7 @@ function candidate(partial: Partial<DiscoveryOrganizationCandidate>): DiscoveryO
     us_locations: [],
     sectors: [],
     flemish_belgian_relevance: "",
+    flemish_fact_candidates: [],
     source_urls: [],
     confidence: 0.5,
     ...partial,

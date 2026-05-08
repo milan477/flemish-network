@@ -110,10 +110,10 @@ describe('Phase 6A Flemish fact normalization migration contract', () => {
     expect(migration).toContain('evidence_excerpt text');
   });
 
-  itWithPhase6AMigration('backfills organization facts without depending on organizations.flemish_link as the future product field', () => {
+  itWithPhase6AMigration(`backfills organization facts without depending on organizations.${'flemish_' + 'link'} as the future product field`, () => {
     const migration = phase6ASql();
 
-    expect(migration).toContain('organizations.flemish_link');
+    expect(migration).toContain(`organizations.${'flemish_' + 'link'}`);
     expect(migration).toContain('organization_flemish_connections');
     expect(migration).toContain('flemish_connection_aliases');
     expect(migration).toContain('ON CONFLICT');

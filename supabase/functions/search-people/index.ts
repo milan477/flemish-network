@@ -93,7 +93,7 @@ interface OrganizationSearchResultItem {
   location_id: string | null;
   locations: { city: string | null; state: string | null } | null;
   us_network_status: string | null;
-  flemish_link: string | null;
+  flemish_connection: string | null;
   organization_us_locations?: unknown[];
   score: number;
   snippet: string;
@@ -161,7 +161,7 @@ interface OrganizationSearchDocumentRow {
   organization_id: string;
   type: string | null;
   description: string | null;
-  flemish_link: string | null;
+  flemish_fact_text: string | null;
   sector_names: string | null;
   primary_location_text: string | null;
   location_text: string | null;
@@ -328,7 +328,7 @@ function buildFallbackOrganizationDocument(
     organization_id: organization.id,
     type: organization.type,
     description: organization.description,
-    flemish_link: "",
+    flemish_fact_text: "",
     sector_names: null,
     primary_location_text: locationText,
     location_text: locationText,
@@ -343,7 +343,7 @@ function organizationSnippetSource(
     current_position: document.type,
     occupation: document.type,
     bio: document.description,
-    flemish_connection_names: document.flemish_link,
+    flemish_connection_names: document.flemish_fact_text,
     sector_names: document.sector_names,
     location_text: document.location_text || document.primary_location_text,
   };
@@ -831,7 +831,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           ? supabase
               .from("organization_search_documents")
               .select(
-                "organization_id, type, description, flemish_link, sector_names, primary_location_text, location_text, us_network_status"
+                "organization_id, type, description, flemish_fact_text, sector_names, primary_location_text, location_text, us_network_status"
               )
               .in("organization_id", organizationCandidateIds)
           : { data: [] as OrganizationSearchDocumentRow[], error: null },
@@ -948,7 +948,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       location_id: organization.location_id,
       locations: organization.locations,
       us_network_status: organization.us_network_status,
-      flemish_link: organizationDocumentsById.get(organization.id)?.flemish_link || null,
+      flemish_connection: organizationDocumentsById.get(organization.id)?.flemish_fact_text || null,
       organization_us_locations: organization.organization_us_locations || [],
       score: Math.round(fusedScore * 1000) / 1000,
       snippet,

@@ -119,7 +119,7 @@ interface OrganizationSearchDocumentRow {
   organization_id: string;
   type: string | null;
   description: string | null;
-  flemish_link: string | null;
+  flemish_fact_text: string | null;
   sector_names: string | null;
   primary_location_text: string | null;
   location_text: string | null;
@@ -280,7 +280,7 @@ function textFromOrganizationDocument(
       document?.type || organization.type,
       document?.sector_names,
       document?.location_text || document?.primary_location_text,
-      document?.flemish_link,
+      document?.flemish_fact_text,
       document?.description || organization.description,
       document?.us_network_status,
     ].filter(Boolean).join(" | "),
@@ -651,7 +651,7 @@ async function retrieveCandidates(
         ? supabase
           .from("organization_search_documents")
           .select(
-            "organization_id, type, description, flemish_link, sector_names, primary_location_text, location_text, us_network_status",
+            "organization_id, type, description, flemish_fact_text, sector_names, primary_location_text, location_text, us_network_status",
           )
           .in("organization_id", Array.from(candidateOrganizationIds))
         : { data: [] as OrganizationSearchDocumentRow[], error: null },

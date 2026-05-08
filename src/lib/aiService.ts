@@ -482,7 +482,7 @@ export interface HybridOrganizationSearchResultItem {
   location_id: string | null;
   locations: { city: string; state: string } | null;
   us_network_status: string | null;
-  flemish_link: string | null;
+  flemish_connection: string | null;
   organization_us_locations?: Organization['organization_us_locations'];
   score: number;
   snippet: string;

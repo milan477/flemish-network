@@ -426,9 +426,12 @@ Todos:
 - `[done]` Phase 6A migration was pushed to linked Supabase project `ofzuhajxwxggybkuzefq`, generated types were regenerated, and the remote schema/data contract was verified.
 - `[done]` Phase 6B moves shared TypeScript canonicalization, search documents, Dashboard filter chips, collection suggestions, match criteria, and embedding text onto canonical facts plus approved aliases and relationship evidence.
 - `[done]` Phase 6B migration was pushed to linked Supabase project `ofzuhajxwxggybkuzefq`; `search-people`, `suggest-people`, and `generate-embeddings` were deployed and verified active.
-- `[next]` Update derived label suggestion approval to canonicalize before insert.
-- `[next]` Update discovery extraction to produce canonical entity plus raw evidence.
-- `[next]` Update verification to propose normalized people and organization facts.
+- `[done]` Phase 6C moves person profiles, organization profiles, Discovery approval/merge, and collection profile previews onto evidence-backed `person_flemish_connections` / `organization_flemish_connections` instead of approved-record raw relevance writes.
+- `[done]` Profile edits can create canonical non-filterable facts and staff-approved aliases without promoting every raw phrase into a default filter chip.
+- `[done]` Phase 6D updates derived label suggestion approval to canonicalize through approved names/aliases before inserting evidence-backed person fact rows.
+- `[done]` Phase 6D updates Discovery extraction to emit canonical fact candidates, candidate aliases, role, source URL, evidence excerpt, confidence, and raw evidence without auto-promoting model aliases to filter chips.
+- `[done]` Phase 6D removes the deprecated approved-organization raw relevance column from active schema, generated types, edge functions, frontend source, and source-of-truth docs.
+- `[done]` Phase 6D keeps durable organization verification suggestions deferred to Phase 7 while allowing normalized organization facts from approved Discovery/manual/import/profile workflows.
 - `[done]` Search filters and chips query `is_filterable = true`; non-filterable facts stay searchable through evidence/snippets but are not default chips.
 - `[done]` Search documents and embeddings are refreshed from approved canonical fact changes and alias changes.
 

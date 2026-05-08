@@ -429,6 +429,15 @@ async function approveContact(
   try {
     if (flemishConnectionText) {
       await syncPersonFlemishConnections(person.id, flemishConnectionText);
+      await supabase
+        .from('person_flemish_connections')
+        .update({
+          role: 'discovery_review',
+          confidence: contact.discovery_confidence ?? null,
+          source_url: contact.source_urls?.[0] || null,
+          evidence_excerpt: flemishConnectionText,
+        })
+        .eq('person_id', person.id);
     }
   } catch (err) {
     notifyError(err, { hint: 'Could not save Flemish connections for this discovered contact.' });
@@ -545,12 +554,32 @@ async function approveOrganization(
       website_url: organization.website_url || null,
       location_id: primaryLocationId,
       us_network_status: networkStatus,
-      flemish_link: organization.flemish_belgian_relevance || null,
     })
     .select('id')
     .maybeSingle();
 
   if (error || !approvedOrganization) return false;
+
+  if (organization.flemish_belgian_relevance) {
+    const { error: flemishError } = await supabase.rpc(
+      'upsert_organization_flemish_connections_from_text',
+      {
+        p_organization_id: approvedOrganization.id,
+        p_raw_text: organization.flemish_belgian_relevance,
+      }
+    );
+    if (flemishError) return false;
+
+    await supabase
+      .from('organization_flemish_connections')
+      .update({
+        role: 'discovery_review',
+        confidence: organization.confidence ?? null,
+        source_url: organization.source_urls?.[0] || null,
+        evidence_excerpt: organization.flemish_belgian_relevance,
+      })
+      .eq('organization_id', approvedOrganization.id);
+  }
 
   await writeOrganizationSectors(approvedOrganization.id, organization.sectors, sectors);
   await writeOrganizationLocations(approvedOrganization.id, organization.us_locations);
@@ -649,6 +678,17 @@ async function mergeIntoExisting(
         existingPerson.id,
         mergedFlemishConnection
       );
+      if (mergedFlemishConnection) {
+        await supabase
+          .from('person_flemish_connections')
+          .update({
+            role: 'discovery_review',
+            confidence: contact.discovery_confidence ?? null,
+            source_url: contact.source_urls?.[0] || null,
+            evidence_excerpt: mergedFlemishConnection,
+          })
+          .eq('person_id', existingPerson.id);
+      }
     }
   } catch (err) {
     notifyError(err, { hint: 'Could not merge Flemish connections into the existing contact.' });
@@ -704,18 +744,33 @@ async function mergeOrganizationIntoExisting(
   if (organization.suggested_us_network_status) {
     updates.us_network_status = organization.suggested_us_network_status;
   }
-  if (organization.flemish_belgian_relevance) {
-    updates.flemish_link = existingOrganization.flemish_link
-      ? `${existingOrganization.flemish_link}\n\n${organization.flemish_belgian_relevance}`
-      : organization.flemish_belgian_relevance;
-  }
-
   if (Object.keys(updates).length > 0) {
     const { error } = await supabase
       .from('organizations')
       .update(updates)
       .eq('id', existingOrganization.id);
     if (error) return false;
+  }
+
+  if (organization.flemish_belgian_relevance) {
+    const { error: flemishError } = await supabase.rpc(
+      'upsert_organization_flemish_connections_from_text',
+      {
+        p_organization_id: existingOrganization.id,
+        p_raw_text: organization.flemish_belgian_relevance,
+      }
+    );
+    if (flemishError) return false;
+
+    await supabase
+      .from('organization_flemish_connections')
+      .update({
+        role: 'discovery_review',
+        confidence: organization.confidence ?? null,
+        source_url: organization.source_urls?.[0] || null,
+        evidence_excerpt: organization.flemish_belgian_relevance,
+      })
+      .eq('organization_id', existingOrganization.id);
   }
 
   await writeOrganizationSectors(existingOrganization.id, organization.sectors, sectors);

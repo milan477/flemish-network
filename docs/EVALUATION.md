@@ -91,6 +91,8 @@ Severe mistakes:
 - Suggestion invents or overstates a Flemish/Belgian tie.
 - Durable suggestion has no source URL, evidence, method, or clear provenance.
 
+Flemish/Belgian fact quality gate: accepted Discovery or verification facts must resolve to a canonical entity or reviewed alias. Uncertain raw phrases should stay as evidence or pending aliases instead of becoming default filter chips.
+
 ## Collection Suggestion Evaluation
 
 Question: does Build A Collection produce useful draft candidates from existing approved records without changing the database until staff approve them?

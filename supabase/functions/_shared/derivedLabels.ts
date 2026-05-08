@@ -41,6 +41,16 @@ interface DiscoveryEvidenceLabelInput {
   extractionConfidence: number;
 }
 
+export interface FlemishFactCandidateInput {
+  canonical_name: string;
+  candidate_alias?: string | null;
+  role?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  confidence?: number | null;
+  raw_evidence?: string | null;
+}
+
 interface DiscoveryLabelContext {
   discoveredContactId: string;
   agentRunId?: string | null;
@@ -52,6 +62,7 @@ interface DiscoveryLabelContext {
   locationState: string;
   rawLocationText: string;
   flemishConnection: string;
+  flemishFactCandidates?: FlemishFactCandidateInput[];
   sectors: string[];
   evidence: DiscoveryEvidenceLabelInput[];
 }
@@ -481,6 +492,33 @@ export async function buildDiscoveryDerivedLabels(
       evidence_excerpt: bestEvidence?.rawFlemishText || context.flemishConnection,
       metadata: {
         entity_type: entity.entityType,
+      },
+      agent_run_id: subject.agent_run_id || null,
+    });
+  }
+
+  for (const candidate of context.flemishFactCandidates || []) {
+    const canonicalName = safeString(candidate.canonical_name);
+    if (!canonicalName) continue;
+    const rawEvidence = safeString(candidate.raw_evidence) ||
+      safeString(candidate.evidence_excerpt) ||
+      safeString(candidate.candidate_alias) ||
+      canonicalName;
+
+    pushSeed(seeds, {
+      ...subject,
+      label_type: "flemish_entity",
+      label_value: canonicalName,
+      normalized_value: canonicalName,
+      raw_value: rawEvidence,
+      confidence: clampConfidence(candidate.confidence ?? averageConfidence),
+      source: context.source,
+      evidence_url: safeString(candidate.source_url) || bestEvidence?.pageUrl || null,
+      evidence_excerpt: safeString(candidate.evidence_excerpt) || rawEvidence,
+      metadata: {
+        candidate_alias: safeString(candidate.candidate_alias) || null,
+        role: safeString(candidate.role) || "discovery",
+        raw_value: rawEvidence,
       },
       agent_run_id: subject.agent_run_id || null,
     });

@@ -39,7 +39,7 @@ export interface OrganizationEmbeddingDocumentInput {
   type: string;
   description: string;
   sectors: string[];
-  flemishLink: string;
+  flemishFacts: string;
   locationText: string;
   usNetworkStatus: string;
   websiteUrl: string;
@@ -118,7 +118,7 @@ export function buildOrganizationStructuredEmbeddingText(
   appendLabeledLine(lines, "Organization", input.name);
   appendLabeledLine(lines, "Type", input.type);
   appendLabeledLine(lines, "Sectors", input.sectors);
-  appendLabeledLine(lines, "Flemish or Belgian relevance", input.flemishLink);
+  appendLabeledLine(lines, "Flemish or Belgian relevance", input.flemishFacts);
   appendLabeledLine(lines, "US network status", input.usNetworkStatus);
   appendLabeledLine(lines, "US locations", input.locationText);
   appendLabeledLine(lines, "Website", input.websiteUrl);
@@ -244,8 +244,8 @@ export function buildOrganizationTextChunks(
     pushChunk(chunks, "profile", 0, profileLine);
   }
 
-  if (input.flemishLink) {
-    pushChunk(chunks, "flemish_connection", 0, input.flemishLink);
+  if (input.flemishFacts) {
+    pushChunk(chunks, "flemish_connection", 0, input.flemishFacts);
   }
 
   buildSentenceChunks(input.description, "description", 4).forEach((chunk) =>
@@ -255,8 +255,8 @@ export function buildOrganizationTextChunks(
   const combined = [
     safeString(input.type),
     safeString(input.description),
-    input.flemishLink
-      ? `Flemish or Belgian relevance: ${input.flemishLink}`
+    input.flemishFacts
+      ? `Flemish or Belgian relevance: ${input.flemishFacts}`
       : "",
     safeString(input.locationText),
   ]

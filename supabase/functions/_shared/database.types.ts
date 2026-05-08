@@ -1823,8 +1823,8 @@ export type Database = {
         Row: {
           description: string
           description_normalized: string
-          flemish_link: string
-          flemish_link_normalized: string
+          flemish_fact_text: string
+          flemish_fact_text_normalized: string
           location_text: string
           location_text_normalized: string
           name: string
@@ -1845,8 +1845,8 @@ export type Database = {
         Insert: {
           description?: string
           description_normalized?: string
-          flemish_link?: string
-          flemish_link_normalized?: string
+          flemish_fact_text?: string
+          flemish_fact_text_normalized?: string
           location_text?: string
           location_text_normalized?: string
           name?: string
@@ -1867,8 +1867,8 @@ export type Database = {
         Update: {
           description?: string
           description_normalized?: string
-          flemish_link?: string
-          flemish_link_normalized?: string
+          flemish_fact_text?: string
+          flemish_fact_text_normalized?: string
           location_text?: string
           location_text_normalized?: string
           name?: string
@@ -2034,7 +2034,6 @@ export type Database = {
           embedding: string | null
           embedding_dirty_at: string | null
           embedding_generated_at: string | null
-          flemish_link: string | null
           id: string
           location_id: string | null
           logo_url: string | null
@@ -2050,7 +2049,6 @@ export type Database = {
           embedding?: string | null
           embedding_dirty_at?: string | null
           embedding_generated_at?: string | null
-          flemish_link?: string | null
           id?: string
           location_id?: string | null
           logo_url?: string | null
@@ -2066,7 +2064,6 @@ export type Database = {
           embedding?: string | null
           embedding_dirty_at?: string | null
           embedding_generated_at?: string | null
-          flemish_link?: string | null
           id?: string
           location_id?: string | null
           logo_url?: string | null
@@ -2901,8 +2898,8 @@ export type Database = {
         Returns: {
           description: string
           description_normalized: string
-          flemish_link: string
-          flemish_link_normalized: string
+          flemish_fact_text: string
+          flemish_fact_text_normalized: string
           location_text: string
           location_text_normalized: string
           name: string
@@ -2924,7 +2921,7 @@ export type Database = {
       build_organization_search_tsv: {
         Args: {
           p_description: string
-          p_flemish_link: string
+          p_flemish_fact_text: string
           p_location_text: string
           p_name: string
           p_primary_location_text: string

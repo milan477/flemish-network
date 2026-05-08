@@ -48,7 +48,7 @@ Status: done.
 - Review worker owns review helpers/actions. UI worker owns pending people/org panels.
 - Split Discovery review into pending people and pending organizations, with counts and tabs/sections.
 - Preserve people approve/reject/merge behavior, adjusted for pending-only manual/import sources.
-- Add organization approve/reject/merge: approval writes `organizations`, `organization_sectors`, normalized `organization_us_locations`, `flemish_link`, review metadata, and queues organization embeddings after reviewer action.
+- Add organization approve/reject/merge: approval writes `organizations`, `organization_sectors`, normalized `organization_us_locations`, Flemish/Belgian relevance, review metadata, and queues organization embeddings after reviewer action.
 - Show organization source URLs and evidence excerpts in review cards.
 - Add tests proving organizations are not promoted before explicit reviewer approval.
 
@@ -79,7 +79,7 @@ Status: done.
 - `agent-discovery` request stays: `{ run_id, query?, batch_size? }`; response gains organization result metrics.
 - Discovery intake/import writes only pending candidates.
 - Organization review approval is the only path from `discovered_organizations` to approved `organizations`.
-- Phase 6 canonical organization Flemish facts stay out of scope; Phase 5 uses `flemish_belgian_relevance` and approved `organizations.flemish_link`.
+- Phase 6 canonical organization Flemish facts stay out of scope; Phase 5 uses pending `flemish_belgian_relevance` and approved organization relevance text.
 
 ## Test Plan
 

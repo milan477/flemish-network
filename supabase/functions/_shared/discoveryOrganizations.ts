@@ -19,6 +19,16 @@ export interface OrganizationLocationEvidence {
   is_primary: boolean;
 }
 
+export interface FlemishFactCandidate {
+  canonical_name: string;
+  candidate_alias: string;
+  role: string;
+  source_url: string;
+  evidence_excerpt: string;
+  confidence: number;
+  raw_evidence: string;
+}
+
 export interface DiscoveryOrganizationCandidate {
   name: string;
   website_url: string;
@@ -27,6 +37,7 @@ export interface DiscoveryOrganizationCandidate {
   us_locations: OrganizationLocationEvidence[];
   sectors: string[];
   flemish_belgian_relevance: string;
+  flemish_fact_candidates: FlemishFactCandidate[];
   source_urls: string[];
   confidence: number;
 }
@@ -118,6 +129,10 @@ export function mergeOrganizationCandidates(
       base.flemish_belgian_relevance,
       other.flemish_belgian_relevance,
     ).slice(0, 800),
+    flemish_fact_candidates: uniqueFlemishFactCandidates([
+      ...base.flemish_fact_candidates,
+      ...other.flemish_fact_candidates,
+    ]),
     source_urls: uniqueStrings([...base.source_urls, ...other.source_urls]),
     confidence: Math.max(base.confidence || 0, other.confidence || 0),
   };
@@ -174,6 +189,21 @@ function uniqueLocations(locations: OrganizationLocationEvidence[]): Organizatio
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(location);
+  }
+  return result;
+}
+
+function uniqueFlemishFactCandidates(candidates: FlemishFactCandidate[]): FlemishFactCandidate[] {
+  const seen = new Set<string>();
+  const result: FlemishFactCandidate[] = [];
+  for (const candidate of candidates) {
+    const canonical = normalizeWhitespace(candidate.canonical_name);
+    if (!canonical) continue;
+    const alias = normalizeWhitespace(candidate.candidate_alias);
+    const key = `${canonical.toLowerCase()}|${alias.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...candidate, canonical_name: canonical, candidate_alias: alias });
   }
   return result;
 }

@@ -79,7 +79,7 @@ interface OrganizationRow {
 interface OrganizationSearchDocumentRow {
   organization_id: string;
   sector_names: string | null;
-  flemish_link: string | null;
+  flemish_fact_text: string | null;
   primary_location_text: string | null;
   location_text: string | null;
 }
@@ -357,7 +357,7 @@ function buildOrganizationEmbeddingInput(
     type: organization.type || "",
     description: organization.description || "",
     sectors: splitSearchDocumentValues(searchDocument?.sector_names),
-    flemishLink: searchDocument?.flemish_link || "",
+    flemishFacts: searchDocument?.flemish_fact_text || "",
     locationText: searchDocument?.location_text ||
       searchDocument?.primary_location_text ||
       buildLocationText(location),
@@ -668,7 +668,7 @@ async function prepareEmbeddingJobs(
         ? supabase
           .from("organization_search_documents")
           .select(
-            "organization_id, sector_names, flemish_link, primary_location_text, location_text",
+            "organization_id, sector_names, flemish_fact_text, primary_location_text, location_text",
           )
           .in("organization_id", organizationIds)
         : { data: [], error: null },

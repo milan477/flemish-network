@@ -49,6 +49,7 @@ import {
   organizationCandidateKey,
   primaryOrganizationDomain,
   type DiscoveryOrganizationCandidate,
+  type FlemishFactCandidate,
   type OrganizationLocationEvidence,
   type OrganizationNetworkStatus,
 } from "../_shared/discoveryOrganizations.ts";
@@ -164,6 +165,30 @@ const PAGE_EXTRACTION_SCHEMA = {
           raw_location_text: { type: "STRING" },
           flemish_connection: { type: "STRING" },
           raw_flemish_text: { type: "STRING" },
+          flemish_fact_candidates: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                canonical_name: { type: "STRING" },
+                candidate_alias: { type: "STRING" },
+                role: { type: "STRING" },
+                source_url: { type: "STRING" },
+                evidence_excerpt: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                raw_evidence: { type: "STRING" },
+              },
+              required: [
+                "canonical_name",
+                "candidate_alias",
+                "role",
+                "source_url",
+                "evidence_excerpt",
+                "confidence",
+                "raw_evidence",
+              ],
+            },
+          },
           website_url: { type: "STRING" },
           email: { type: "STRING" },
           linkedin_url: { type: "STRING" },
@@ -187,6 +212,7 @@ const PAGE_EXTRACTION_SCHEMA = {
           "raw_location_text",
           "flemish_connection",
           "raw_flemish_text",
+          "flemish_fact_candidates",
           "website_url",
           "email",
           "linkedin_url",
@@ -246,6 +272,30 @@ const PAGE_EXTRACTION_SCHEMA = {
           },
           sectors: { type: "ARRAY", items: { type: "STRING" } },
           flemish_belgian_relevance: { type: "STRING" },
+          flemish_fact_candidates: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                canonical_name: { type: "STRING" },
+                candidate_alias: { type: "STRING" },
+                role: { type: "STRING" },
+                source_url: { type: "STRING" },
+                evidence_excerpt: { type: "STRING" },
+                confidence: { type: "NUMBER" },
+                raw_evidence: { type: "STRING" },
+              },
+              required: [
+                "canonical_name",
+                "candidate_alias",
+                "role",
+                "source_url",
+                "evidence_excerpt",
+                "confidence",
+                "raw_evidence",
+              ],
+            },
+          },
           evidence_excerpt: { type: "STRING" },
           raw_relevance_text: { type: "STRING" },
           raw_location_text: { type: "STRING" },
@@ -260,6 +310,7 @@ const PAGE_EXTRACTION_SCHEMA = {
           "us_locations",
           "sectors",
           "flemish_belgian_relevance",
+          "flemish_fact_candidates",
           "evidence_excerpt",
           "raw_relevance_text",
           "raw_location_text",
@@ -308,6 +359,8 @@ Rules:
 - suggested_us_connections must include a US city/state, short connection label, evidence excerpt, source URL, and confidence.
 - raw_location_text is the exact phrase from the page that suggests location.
 - raw_flemish_text is the exact phrase from the page that suggests the Belgian/Flemish tie.
+- flemish_fact_candidates must list canonical Flemish/Belgian entity candidates when identifiable. Use canonical_name for the broad entity (for example KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, VIB), candidate_alias for the page phrase when different, role for the relationship, source_url, evidence_excerpt, confidence, and raw_evidence. Do not invent canonical names when the page only has vague Belgian/Flemish relevance; keep that in raw evidence instead.
+- Model-discovered aliases are review candidates only; do not mark every raw phrase as a default filter entity.
 - raw_role_text is the exact role/title phrase from the page.
 - evidence_excerpt must be a short verbatim or near-verbatim excerpt from the page supporting this person.
 - confidence is 0 to 1.
@@ -349,6 +402,7 @@ interface ExtractedContact {
   location_city: string;
   location_state: string;
   flemish_connection: string;
+  flemish_fact_candidates: FlemishFactCandidate[];
   suggested_us_network_status: "us_based" | "us_connected_abroad" | "needs_review";
   suggested_us_network_confidence: number;
   current_location_city: string;
@@ -1148,6 +1202,10 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
     location_city: useOtherLocation ? otherCity : baseCity,
     location_state: useOtherLocation ? otherState : baseState,
     flemish_connection: pickBetterValue(base.flemish_connection, other.flemish_connection),
+    flemish_fact_candidates: [
+      ...base.flemish_fact_candidates,
+      ...other.flemish_fact_candidates,
+    ],
     suggested_us_network_status:
       base.suggested_us_network_status === "us_connected_abroad" ||
       other.suggested_us_network_status === "us_connected_abroad"
@@ -1326,6 +1384,7 @@ function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
     email: "",
     linkedin_url: linkedinUrl,
     sectors: [],
+    flemish_fact_candidates: [],
     source_urls: linkedinUrl ? [linkedinUrl] : [],
   };
 }
@@ -1362,6 +1421,22 @@ function clampConfidence(value: unknown): number {
   return Number.isFinite(Number(value))
     ? Math.max(0, Math.min(1, Number(value)))
     : 0;
+}
+
+function normalizeFlemishFactCandidate(
+  raw: Record<string, unknown>,
+  fallbackUrl: string,
+  fallbackEvidence: string,
+): FlemishFactCandidate {
+  return {
+    canonical_name: normalizeWhitespace(safeString(raw.canonical_name)),
+    candidate_alias: normalizeWhitespace(safeString(raw.candidate_alias)),
+    role: normalizeWhitespace(safeString(raw.role)),
+    source_url: normalizeWhitespace(safeString(raw.source_url)) || fallbackUrl,
+    evidence_excerpt: normalizeWhitespace(safeString(raw.evidence_excerpt)) || fallbackEvidence,
+    confidence: clampConfidence(raw.confidence),
+    raw_evidence: normalizeWhitespace(safeString(raw.raw_evidence)) || fallbackEvidence,
+  };
 }
 
 function hashSeed(seed: string): number {
@@ -1626,6 +1701,9 @@ ${page.text.slice(0, 4000)}
 }
 
 function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: string): ExtractedPageContact {
+  const rawFlemishText = safeString(raw.raw_flemish_text);
+  const evidenceExcerpt = safeString(raw.evidence_excerpt);
+
   return {
     name: safeString(raw.name),
     bio: safeString(raw.bio),
@@ -1634,6 +1712,16 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
     location_city: safeString(raw.location_city),
     location_state: safeString(raw.location_state).toUpperCase(),
     flemish_connection: safeString(raw.flemish_connection),
+    flemish_fact_candidates: Array.isArray(raw.flemish_fact_candidates)
+      ? raw.flemish_fact_candidates
+        .filter((value): value is Record<string, unknown> =>
+          Boolean(value && typeof value === "object")
+        )
+        .map((candidate) =>
+          normalizeFlemishFactCandidate(candidate, pageUrl, rawFlemishText || evidenceExcerpt)
+        )
+        .filter((candidate) => candidate.canonical_name.length > 0)
+      : [],
     suggested_us_network_status: normalizePersonUsNetworkStatus(
       raw.suggested_us_network_status,
     ),
@@ -1656,8 +1744,8 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
       : [],
     source_urls: [pageUrl],
     raw_location_text: safeString(raw.raw_location_text),
-    raw_flemish_text: safeString(raw.raw_flemish_text),
-    evidence_excerpt: safeString(raw.evidence_excerpt),
+    raw_flemish_text: rawFlemishText,
+    evidence_excerpt: evidenceExcerpt,
     raw_role_text: safeString(raw.raw_role_text),
     extraction_confidence: typeof raw.confidence === "number" ? raw.confidence : 0,
   };
@@ -1681,6 +1769,8 @@ function normalizeExtractedPageOrganization(raw: Record<string, unknown>, pageUr
       .map((location) => normalizeOrganizationLocation(location, pageUrl))
       .filter(hasUsLocationSignal)
     : [];
+  const rawRelevanceText = safeString(raw.raw_relevance_text);
+  const evidenceExcerpt = safeString(raw.evidence_excerpt);
 
   return {
     name: safeString(raw.name),
@@ -1692,10 +1782,18 @@ function normalizeExtractedPageOrganization(raw: Record<string, unknown>, pageUr
       ? (raw.sectors as unknown[]).filter((value): value is string => typeof value === "string")
       : [],
     flemish_belgian_relevance: safeString(raw.flemish_belgian_relevance),
+    flemish_fact_candidates: Array.isArray(raw.flemish_fact_candidates)
+      ? raw.flemish_fact_candidates
+        .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+        .map((candidate) =>
+          normalizeFlemishFactCandidate(candidate, pageUrl, rawRelevanceText || evidenceExcerpt)
+        )
+        .filter((candidate) => candidate.canonical_name.length > 0)
+      : [],
     source_urls: uniqueStrings([pageUrl, safeString(raw.website_url)]),
     confidence: clampConfidence(raw.confidence),
-    evidence_excerpt: safeString(raw.evidence_excerpt),
-    raw_relevance_text: safeString(raw.raw_relevance_text),
+    evidence_excerpt: evidenceExcerpt,
+    raw_relevance_text: rawRelevanceText,
     raw_location_text: safeString(raw.raw_location_text),
     raw_sector_text: safeString(raw.raw_sector_text),
   };
@@ -2697,6 +2795,7 @@ function mapExistingContactRow(row: ExistingContactLookupRow): ExtractedContact 
     location_city: safeString(row.location_city),
     location_state: safeString(row.location_state),
     flemish_connection: safeString(row.flemish_connection),
+    flemish_fact_candidates: [],
     suggested_us_network_status: normalizePersonUsNetworkStatus(
       row.suggested_us_network_status,
     ),
@@ -2998,6 +3097,7 @@ async function persistCandidateBundle(
     const nextEvidenceCount =
       Number(pendingMatch.evidence_count || 0) + Number(insertedEvidenceCount || 0);
     const nowIso = new Date().toISOString();
+    await storeModelDiscoveredFlemishAliases(supabase, mergedContact.flemish_fact_candidates);
 
     const { error } = await supabase
       .from("discovered_contacts")
@@ -3050,7 +3150,8 @@ async function persistCandidateBundle(
         locationCity: mergedContact.location_city,
         locationState: mergedContact.location_state,
         rawLocationText: bundle.evidence.find((item) => item.rawLocationText)?.rawLocationText || "",
-        flemishConnection: mergedContact.flemish_connection,
+      flemishConnection: mergedContact.flemish_connection,
+      flemishFactCandidates: mergedContact.flemish_fact_candidates,
         sectors: mergedContact.sectors,
         evidence: bundle.evidence.map((item) => ({
           pageUrl: item.pageUrl,
@@ -3116,6 +3217,7 @@ async function persistCandidateBundle(
     bundle.contact.name,
     bundle.evidence,
   );
+  await storeModelDiscoveredFlemishAliases(supabase, bundle.contact.flemish_fact_candidates);
 
   await supabase
     .from("discovered_contacts")
@@ -3137,6 +3239,7 @@ async function persistCandidateBundle(
       locationState: bundle.contact.location_state,
       rawLocationText: bundle.evidence.find((item) => item.rawLocationText)?.rawLocationText || "",
       flemishConnection: bundle.contact.flemish_connection,
+      flemishFactCandidates: bundle.contact.flemish_fact_candidates,
       sectors: bundle.contact.sectors,
       evidence: bundle.evidence.map((item) => ({
         pageUrl: item.pageUrl,
@@ -3162,7 +3265,6 @@ interface ExistingOrganizationLookupRow {
   website_url?: string | null;
   description?: string | null;
   us_network_status?: string | null;
-  flemish_link?: string | null;
   candidate_key?: string | null;
   suggested_us_network_status?: string | null;
   us_locations?: unknown;
@@ -3193,6 +3295,7 @@ function mapExistingDiscoveredOrganizationRow(row: ExistingOrganizationLookupRow
       ? row.sectors.filter((value): value is string => typeof value === "string")
       : [],
     flemish_belgian_relevance: safeString(row.flemish_belgian_relevance),
+    flemish_fact_candidates: [],
     source_urls: Array.isArray(row.source_urls)
       ? row.source_urls.filter((value): value is string => typeof value === "string")
       : [],
@@ -3208,7 +3311,8 @@ function mapApprovedOrganizationRow(row: ExistingOrganizationLookupRow): Discove
     suggested_us_network_status: normalizeOrganizationNetworkStatus(row.us_network_status),
     us_locations: [],
     sectors: [],
-    flemish_belgian_relevance: safeString(row.flemish_link),
+    flemish_belgian_relevance: "",
+    flemish_fact_candidates: [],
     source_urls: row.website_url ? [row.website_url] : [],
     confidence: 1,
   };
@@ -3324,6 +3428,34 @@ async function insertOrganizationEvidenceRows(
   return data?.length || 0;
 }
 
+async function storeModelDiscoveredFlemishAliases(
+  supabase: SupabaseAdminClient,
+  candidates: FlemishFactCandidate[],
+): Promise<void> {
+  const aliasCandidates = candidates.filter((candidate) =>
+    candidate.canonical_name &&
+    candidate.candidate_alias &&
+    candidate.canonical_name.toLowerCase() !== candidate.candidate_alias.toLowerCase()
+  );
+  if (aliasCandidates.length === 0) return;
+
+  for (const candidate of aliasCandidates) {
+    const { error } = await supabase.rpc("add_flemish_connection_alias", {
+      p_connection_name: candidate.canonical_name,
+      p_alias: candidate.candidate_alias,
+      p_source: "model",
+      p_status: "pending",
+      p_confidence: candidate.confidence || null,
+      p_source_url: candidate.source_url || null,
+      p_evidence_excerpt: candidate.evidence_excerpt || candidate.raw_evidence || null,
+    });
+
+    if (error) {
+      throw new Error(`Failed to store Flemish alias candidate: ${error.message}`);
+    }
+  }
+}
+
 async function persistOrganizationBundle(
   supabase: SupabaseAdminClient,
   bundle: OrganizationCandidateBundle,
@@ -3351,6 +3483,7 @@ async function persistOrganizationBundle(
       merged.name,
       bundle.evidence,
     );
+    await storeModelDiscoveredFlemishAliases(supabase, merged.flemish_fact_candidates);
 
     const { error } = await supabase
       .from("discovered_organizations")
@@ -3412,6 +3545,10 @@ async function persistOrganizationBundle(
     data.id,
     bundle.organization.name,
     bundle.evidence,
+  );
+  await storeModelDiscoveredFlemishAliases(
+    supabase,
+    bundle.organization.flemish_fact_candidates,
   );
 
   return { status: "inserted", discoveredOrganizationId: data.id };

@@ -19,7 +19,10 @@ import {
   type Person,
 } from '../lib/supabase';
 import type { CollectionSuggestionEntityType } from '../lib/collectionSuggestionDraft';
-import { getPersonFlemishConnectionText } from '../lib/flemishConnections';
+import {
+  getOrganizationFlemishConnectionText,
+  getPersonFlemishConnectionText,
+} from '../lib/flemishConnections';
 import { ProfileAvatar } from './ProfileAvatar';
 import { organizationUsLocationLabel } from '../lib/networkScope';
 
@@ -86,7 +89,7 @@ export default function CollectionSuggestionPreviewModal({
         const [organizationRes, sectorsRes] = await Promise.all([
           supabase
             .from('organizations')
-            .select('*, locations(*), organization_us_locations(*, locations(*))')
+            .select('*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt, flemish_connections(id, name, type, entity_type, is_filterable))')
             .eq('id', entityId)
             .maybeSingle(),
           supabase
@@ -122,7 +125,9 @@ export default function CollectionSuggestionPreviewModal({
   const locationText = person
     ? [person.locations?.city, person.locations?.state].filter(Boolean).join(', ')
     : [organization?.locations?.city, organization?.locations?.state].filter(Boolean).join(', ');
-  const flemishText = person ? getPersonFlemishConnectionText(person) : organization?.flemish_link || '';
+  const flemishText = person
+    ? getPersonFlemishConnectionText(person)
+    : getOrganizationFlemishConnectionText(organization);
   const websiteUrl = person?.website_url || organization?.website_url || '';
   const linkedinUrl = person?.linkedin_url || '';
 

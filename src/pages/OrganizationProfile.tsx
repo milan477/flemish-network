@@ -11,21 +11,27 @@ import {
   Loader2,
   ChevronDown,
   Globe,
-  Plus,
   Library,
 } from 'lucide-react';
 import {
   supabase,
   displayName,
-  FLEMISH_OPTIONS,
   type Organization,
   type Person,
   type Sector,
   type FilterPreset,
+  type FlemishConnection,
 } from '../lib/supabase';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
+import {
+  canonicalizeFlemishConnection,
+  flattenOrganizationFlemishConnections,
+  type OrganizationFlemishConnectionLink,
+} from '../lib/flemishConnections';
+import { kickEmbeddingWorker } from '../lib/embeddingRefresh';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
 import { useAuth } from '../lib/auth';
@@ -50,6 +56,41 @@ function ensureProtocol(url: string): string {
   return trimmed;
 }
 
+function normalizeConnectionName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function reconcileConnections(
+  selected: FlemishConnection[],
+  options: FlemishConnection[]
+): FlemishConnection[] {
+  const byName = new Map(
+    options.map((connection) => [normalizeConnectionName(connection.name), connection])
+  );
+  const deduped = new Map<string, FlemishConnection>();
+
+  selected.forEach((connection) => {
+    const key = normalizeConnectionName(connection.name);
+    const resolved = byName.get(key) || connection;
+    if (!deduped.has(key)) {
+      deduped.set(key, resolved);
+    }
+  });
+
+  return Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function organizationFlemishLinks(
+  organization: Organization | null
+): OrganizationFlemishConnectionLink[] {
+  return organization?.organization_flemish_connections || [];
+}
+
+function formatConfidence(confidence: number | null | undefined): string | null {
+  if (confidence === null || confidence === undefined) return null;
+  return `${Math.round(confidence * 100)}% confidence`;
+}
+
 const SECTOR_COLORS: Record<string, { bg: string; text: string; ring: string }> = {
   'Artificial Intelligence': { bg: 'bg-blue-50', text: 'text-blue-700', ring: 'hover:ring-blue-300' },
   Biotechnology: { bg: 'bg-green-50', text: 'text-green-700', ring: 'hover:ring-green-300' },
@@ -68,26 +109,32 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   const [showAllPeople, setShowAllPeople] = useState(false);
   const [orgSectors, setOrgSectors] = useState<{ id: string; name: string }[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
+  const [allFlemishConnections, setAllFlemishConnections] = useState<FlemishConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Organization>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
-  const [editFlemishConnections, setEditFlemishConnections] = useState<string[]>([]);
-  const [customFlemish, setCustomFlemish] = useState('');
+  const [editFlemishConnections, setEditFlemishConnections] = useState<FlemishConnection[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCollections, setShowCollections] = useState(false);
 
   const loadOrganization = useCallback(async () => {
-    const [orgRes, sectorsRes, allSectorsRes] = await Promise.all([
-      supabase.from('organizations').select('*, locations(*), organization_us_locations(*, locations(*))').eq('id', organizationId).maybeSingle(),
+    const [orgRes, sectorsRes, allSectorsRes, flemishRes] = await Promise.all([
+      supabase
+        .from('organizations')
+        .select('*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt, flemish_connections(id, name, type, entity_type, is_filterable))')
+        .eq('id', organizationId)
+        .maybeSingle(),
       supabase.from('organization_sectors').select('sector_id, sectors(name)').eq('organization_id', organizationId),
       supabase.from('sectors').select('*'),
+      supabase.from('flemish_connections').select('id, name, type, entity_type, is_filterable').order('name'),
     ]);
 
     const orgData = orgRes.data;
     setOrganization(orgData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
+    setAllFlemishConnections((flemishRes.data || []) as FlemishConnection[]);
 
     const os = ((sectorsRes.data || []) as unknown as OrganizationSector[])
       .filter((r) => r.sectors?.name)
@@ -95,10 +142,14 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     setOrgSectors(os);
 
     if (orgData) {
-      const flemish = orgData.flemish_link
-        ? orgData.flemish_link.split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
-      setEditFlemishConnections(flemish);
+      setEditFlemishConnections(
+        reconcileConnections(
+          flattenOrganizationFlemishConnections(
+            (orgData as Organization).organization_flemish_connections
+          ),
+          (flemishRes.data || []) as FlemishConnection[]
+        )
+      );
     }
 
     setLoading(false);
@@ -139,14 +190,15 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       type: organization.type,
       description: organization.description || '',
       website_url: organization.website_url || '',
-      flemish_link: organization.flemish_link || '',
       location_id: organization.location_id || '',
     });
     setEditSectorIds(orgSectors.map((s) => s.id));
-    const flemish = organization.flemish_link
-      ? organization.flemish_link.split(',').map((s: string) => s.trim()).filter(Boolean)
-      : [];
-    setEditFlemishConnections(flemish);
+    setEditFlemishConnections(
+      reconcileConnections(
+        flattenOrganizationFlemishConnections(organization.organization_flemish_connections),
+        allFlemishConnections
+      )
+    );
     setShowCollections(false);
     setEditing(true);
   };
@@ -156,14 +208,12 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     setEditForm({});
     setEditSectorIds([]);
     setEditFlemishConnections([]);
-    setCustomFlemish('');
   };
 
   const saveEdits = async () => {
     if (!organization) return;
     setSaving(true);
 
-    const flemishStr = editFlemishConnections.join(', ');
     const website = ensureProtocol(editForm.website_url || '');
 
     const updatePayload = {
@@ -171,7 +221,6 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       type: editForm.type,
       description: editForm.description || null,
       website_url: website || null,
-      flemish_link: flemishStr || null,
       location_id: editForm.location_id || null,
       updated_at: new Date().toISOString(),
     };
@@ -180,7 +229,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
       .from('organizations')
       .update(updatePayload)
                       .eq('id', organization.id)
-      .select('*, locations(*), organization_us_locations(*, locations(*))')
+      .select('*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt, flemish_connections(id, name, type, entity_type, is_filterable))')
       .maybeSingle();
 
     if (updateErr) {
@@ -203,6 +252,100 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     const toAdd = editSectorIds.filter((id) => !currentIds.includes(id));
 
     try {
+      const ensuredConnections: FlemishConnection[] = [];
+      for (const connection of editFlemishConnections) {
+        const canonical =
+          canonicalizeFlemishConnection(connection.name) || {
+            name: connection.name.trim(),
+            type: connection.type,
+          };
+        const existing = allFlemishConnections.find(
+          (option) => normalizeConnectionName(option.name) === normalizeConnectionName(canonical.name)
+        );
+
+        if (existing) {
+          if (normalizeConnectionName(connection.name) !== normalizeConnectionName(existing.name)) {
+            await supabase.rpc('add_flemish_connection_alias', {
+              p_connection_name: existing.name,
+              p_alias: connection.name,
+              p_source: 'staff',
+              p_status: 'approved',
+              p_confidence: 1,
+              p_source_url: null,
+              p_evidence_excerpt: null,
+            });
+          }
+          ensuredConnections.push(existing);
+          continue;
+        }
+
+        const { data: inserted, error: insertConnectionError } = await supabase
+          .from('flemish_connections')
+          .insert({
+            name: canonical.name,
+            type: canonical.type,
+            entity_type: canonical.type,
+            is_filterable: canonical.is_filterable ?? false,
+            connection_group: canonical.connection_group ?? null,
+          })
+          .select('id, name, type, entity_type, is_filterable')
+          .maybeSingle();
+
+        if (insertConnectionError) throw insertConnectionError;
+        if (inserted) {
+          if (normalizeConnectionName(connection.name) !== normalizeConnectionName((inserted as FlemishConnection).name)) {
+            await supabase.rpc('add_flemish_connection_alias', {
+              p_connection_name: (inserted as FlemishConnection).name,
+              p_alias: connection.name,
+              p_source: 'staff',
+              p_status: 'approved',
+              p_confidence: 1,
+              p_source_url: null,
+              p_evidence_excerpt: null,
+            });
+          }
+          ensuredConnections.push(inserted as FlemishConnection);
+        }
+      }
+
+      const nextFlemishIds = ensuredConnections.map((connection) => connection.id);
+      const existingLinks = organization.organization_flemish_connections || [];
+      const existingFlemishIds = existingLinks
+        .map((link) => link.flemish_connection_id)
+        .filter((id): id is string => Boolean(id));
+      const removeFlemishIds = existingFlemishIds.filter((id) => !nextFlemishIds.includes(id));
+
+      if (removeFlemishIds.length > 0) {
+        const { error: deleteFlemishError } = await supabase
+          .from('organization_flemish_connections')
+          .delete()
+          .eq('organization_id', organization.id)
+          .in('flemish_connection_id', removeFlemishIds);
+        if (deleteFlemishError) throw deleteFlemishError;
+      }
+
+      if (ensuredConnections.length > 0) {
+        const { error: upsertFlemishError } = await supabase
+          .from('organization_flemish_connections')
+          .upsert(
+            ensuredConnections.map((connection) => {
+              const existingLink = existingLinks.find(
+                (link) => link.flemish_connection_id === connection.id
+              );
+              return {
+                organization_id: organization.id,
+                flemish_connection_id: connection.id,
+                role: existingLink?.role || 'profile_fact',
+                confidence: existingLink?.confidence ?? 1,
+                source_url: existingLink?.source_url || null,
+                evidence_excerpt: existingLink?.evidence_excerpt || null,
+              };
+            }),
+            { onConflict: 'organization_id,flemish_connection_id' }
+          );
+        if (upsertFlemishError) throw upsertFlemishError;
+      }
+
       if (toRemove.length > 0) {
         for (const sid of toRemove) {
           await supabase
@@ -220,11 +363,18 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
         if (insertErr) throw insertErr;
       }
 
+      setAllFlemishConnections((prev) =>
+        reconcileConnections([...prev, ...ensuredConnections], [...prev, ...ensuredConnections])
+      );
       await loadOrganization();
       setEditing(false);
+      kickEmbeddingWorker({
+        entityType: 'organization',
+        organizationIds: [organization.id],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      setSaveError(`Organization info saved, but error updating sectors: ${message}`);
+      setSaveError(`Organization info saved, but error updating related facts: ${message}`);
       await loadOrganization();
       setEditing(false);
     }
@@ -235,22 +385,6 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     setEditSectorIds((prev) =>
       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     );
-  };
-
-  const toggleEditFlemish = (option: string) => {
-    setEditFlemishConnections((prev) =>
-      prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]
-    );
-  };
-
-  const handleAddCustomFlemish = (e: React.KeyboardEvent | React.MouseEvent) => {
-    if ('key' in e && e.key !== 'Enter') return;
-    e.preventDefault();
-    const val = customFlemish.trim();
-    if (val && !editFlemishConnections.includes(val)) {
-      toggleEditFlemish(val);
-      setCustomFlemish('');
-    }
   };
 
   const setField = (field: string, value: string) => {
@@ -574,75 +708,138 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
             <div className={`pb-8 ${editing ? '' : 'border-b border-gray-200'}`}>
               <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
               {editing ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {FLEMISH_OPTIONS.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => toggleEditFlemish(opt)}
-                        className={`text-sm px-4 py-1.5 rounded-full font-medium transition-colors ${
-                          editFlemishConnections.includes(opt)
-                            ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                    {editFlemishConnections.filter(opt => !FLEMISH_OPTIONS.includes(opt)).map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => toggleEditFlemish(opt)}
-                        className="text-sm px-4 py-1.5 rounded-full font-medium transition-colors bg-amber-100 text-amber-700 ring-1 ring-amber-300 flex items-center space-x-1"
-                      >
-                        <span>{opt}</span>
-                        <X className="w-3 h-3" />
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center space-x-2 max-w-xs">
-                    <input
-                      type="text"
-                      value={customFlemish}
-                      onChange={(e) => setCustomFlemish(e.target.value)}
-                      onKeyDown={handleAddCustomFlemish}
-                      placeholder="Add custom connection..."
-                      className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustomFlemish}
-                      className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+                <FlemishConnectionSelector
+                  options={allFlemishConnections}
+                  value={editFlemishConnections}
+                  onChange={setEditFlemishConnections}
+                  placeholder="Search canonical Flemish facts..."
+                  onCreateOption={async (name, type) => {
+                    const canonical =
+                      canonicalizeFlemishConnection(name) || {
+                        name: name.trim(),
+                        type,
+                      };
+                    const existing = allFlemishConnections.find(
+                      (connection) =>
+                        normalizeConnectionName(connection.name) ===
+                        normalizeConnectionName(canonical.name)
+                    );
+                    if (existing) {
+                      if (normalizeConnectionName(name) !== normalizeConnectionName(existing.name)) {
+                        await supabase.rpc('add_flemish_connection_alias', {
+                          p_connection_name: existing.name,
+                          p_alias: name,
+                          p_source: 'staff',
+                          p_status: 'approved',
+                          p_confidence: 1,
+                          p_source_url: null,
+                          p_evidence_excerpt: null,
+                        });
+                      }
+                      return existing;
+                    }
+
+                    const { data, error } = await supabase
+                      .from('flemish_connections')
+                      .insert({
+                        name: canonical.name,
+                        type: canonical.type,
+                        entity_type: canonical.type,
+                        is_filterable: canonical.is_filterable ?? false,
+                        connection_group: canonical.connection_group ?? null,
+                      })
+                      .select('id, name, type, entity_type, is_filterable')
+                      .maybeSingle();
+
+                    if (error || !data) {
+                      setSaveError(error?.message || 'Failed to create Flemish connection');
+                      return null;
+                    }
+
+                    const created = data as FlemishConnection;
+                    if (normalizeConnectionName(name) !== normalizeConnectionName(created.name)) {
+                      await supabase.rpc('add_flemish_connection_alias', {
+                        p_connection_name: created.name,
+                        p_alias: name,
+                        p_source: 'staff',
+                        p_status: 'approved',
+                        p_confidence: 1,
+                        p_source_url: null,
+                        p_evidence_excerpt: null,
+                      });
+                    }
+                    setAllFlemishConnections((prev) =>
+                      reconcileConnections([...prev, created], [...prev, created])
+                    );
+                    return created;
+                  }}
+                />
               ) : (
-                organization.flemish_link ? (
-                  <div className="flex flex-wrap gap-2">
-                    {organization.flemish_link.split(',').map(s => s.trim()).filter(Boolean).map((m, idx) => {
-                      const isStandard = FLEMISH_OPTIONS.includes(m);
+                organizationFlemishLinks(organization).length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {organizationFlemishLinks(organization).map((link, idx) => {
+                        const connection = Array.isArray(link.flemish_connections)
+                          ? link.flemish_connections[0]
+                          : link.flemish_connections;
+                        if (!connection?.name) return null;
                       return (
                         <button
-                          key={`${m}-${idx}`}
+                          key={`${connection.id || connection.name}-${idx}`}
                           onClick={() =>
                             onNavigate('dashboard', undefined, {
-                              flemishConnections: [m],
+                              flemishConnections: [connection.name],
                             })
                           }
-                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all hover:ring-2 ${
-                            isStandard 
-                              ? 'bg-blue-50 text-blue-700 hover:ring-blue-300' 
-                              : 'bg-amber-50 text-amber-700 border border-amber-100 hover:ring-amber-300'
-                          }`}
+                          className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:ring-2 bg-blue-50 text-blue-700 hover:ring-blue-300"
                         >
-                          {m}
+                          {connection.name}
                         </button>
                       );
-                    })}
+                      })}
+                    </div>
+                    <div className="space-y-2">
+                      {organizationFlemishLinks(organization).map((link, idx) => {
+                        const connection = Array.isArray(link.flemish_connections)
+                          ? link.flemish_connections[0]
+                          : link.flemish_connections;
+                        if (!connection?.name) return null;
+                        return (
+                          <div
+                            key={`${connection.id || connection.name}-evidence-${idx}`}
+                            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-gray-800">{connection.name}</span>
+                              {link.role && (
+                                <span className="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">
+                                  {link.role.replace(/_/g, ' ')}
+                                </span>
+                              )}
+                              {formatConfidence(link.confidence) && (
+                                <span className="text-xs text-gray-500">
+                                  {formatConfidence(link.confidence)}
+                                </span>
+                              )}
+                            </div>
+                            {link.evidence_excerpt && (
+                              <p className="mt-1 text-xs text-gray-500">{link.evidence_excerpt}</p>
+                            )}
+                            {link.source_url && (
+                              <a
+                                href={link.source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Source
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ) : (
                   <p className="text-gray-400 italic">No Flemish connection info provided</p>

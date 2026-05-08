@@ -23,7 +23,7 @@
 - `agent-verify` owns durable verification suggestions.
 - `update-profile` is preview mode only for inline profile checks and must not write durable suggestion rows.
 - `derived_label_suggestions` remains the review queue for inferred sectors, occupations, Flemish/Belgian entities, locations, and confidence before promotion.
-- `person_sectors` / `person_flemish_connections` have insert/delete RLS policies but no update. Use conflict-ignore insert semantics (`ignoreDuplicates`) for idempotent writes.
+- `person_sectors` use idempotent insert/delete maintenance. Flemish/Belgian fact junctions support editor-owned upserts and evidence-field updates for approved profile and Discovery review workflows.
 - `ai-agent` active tasks are `smart_search`, `merge_text`, and `check_profile`.
 
 ## Error Contract
@@ -58,7 +58,7 @@ Server-side Search The Network endpoint for approved people and organizations.
 6. Applies structured criteria coverage for sector, location, occupation/type, and canonical Flemish/Belgian relevance. `filters.flemish_connections` is alias-aware and resolves broad filterable facts such as KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, and VIB.
 7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
 
-Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, `flemish_link` as compatibility output populated from canonical organization Flemish/Belgian facts, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
+Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, canonical Flemish/Belgian fact text, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
 
 ## Edge Function: `agent-discovery`
 
@@ -85,7 +85,9 @@ Organization discovery writes one pending row per candidate to `discovered_organ
 - `candidate_key`, `source`, first/last seen timestamps, evidence rollup timestamps/counts, `name`, `website_url`, and a concise evidence-backed `description`.
 - `suggested_us_network_status`: `us_based_organization`, `belgian_organization_with_us_presence`, `us_organization_connected_to_flanders`, or `institutional_connector`.
 - `us_locations`: JSON items with city/state, role, label, description, source URL, evidence excerpt, confidence, and `is_primary`.
-- `sectors`, `flemish_belgian_relevance`, `source_urls`, `confidence`, `status = pending`, and `agent_run_id`.
+- `sectors`, `flemish_belgian_relevance`, canonical `flemish_fact_candidates` for identifiable entities, `source_urls`, `confidence`, `status = pending`, and `agent_run_id`.
+
+`agent-discovery` extraction emits canonical Flemish/Belgian entity candidates with candidate aliases, role, source URL, evidence excerpt, confidence, and raw evidence when the page supports a specific entity. Vague relevance stays in raw evidence. Model-discovered aliases are stored as pending aliases for review and do not create broad filter chips.
 
 Organization page evidence is stored separately in `discovered_organization_evidence` with the pending organization FK, optional `discovery_page_id`, a unique `evidence_key`, page/source metadata, excerpts, raw relevance/location/sector text, normalized location fields, confidence, and timestamps. Repeated evidence updates the pending organization's `evidence_count`, `last_evidence_at`, and `last_seen_at`; it does not promote the organization.
 
@@ -93,7 +95,9 @@ Each organization location requires direct evidence from an organization page, p
 
 Manual Discovery intake and CSV/XLSX imports share the pending-candidate contract. People intake/import writes `discovered_contacts` with `source = manual` or `source = import`, candidate keys, source URLs, suggested US scope, optional US connection evidence, sectors, and Flemish/Belgian text. Organization intake/import writes `discovered_organizations` with `source = manual` or `source = import`, candidate keys, source URLs, sectors, US locations, Flemish/Belgian relevance, and `discovered_organization_evidence` rows when source evidence is supplied. Manual forms and CSV/XLSX templates do not ask staff to enter confidence scores; confidence is reserved for automated evidence assessment and reviewer judgment. These paths check approved and pending conflicts, refresh the pending review queues after writes, and never create or update approved `people` or `organizations`.
 
-Discovery review has separate pending people and pending organization queues. People can be approved, rejected, or merged using the existing pending-contact review behavior; approval preserves pending provenance by writing `people.data_source = manual` for manual intake, `csv_import` for CSV/XLSX imports, and `ai_agent` for Discovery-created people. Organization approval is reviewer-controlled: it writes the approved `organizations` row, `organization_sectors`, normalized `organization_us_locations`, `organizations.flemish_link`, review metadata on `discovered_organizations`, and then queues organization embeddings. Organization rejection leaves the approved organization tables unchanged. Organization merge updates the selected approved organization, adds sectors/locations, records `approved_merge`, and queues organization embeddings.
+Discovery review has separate pending people and pending organization queues. People can be approved, rejected, or merged using the existing pending-contact review behavior; approval preserves pending provenance by writing `people.data_source = manual` for manual intake, `csv_import` for CSV/XLSX imports, and `ai_agent` for Discovery-created people. Person Flemish/Belgian approval or merge writes evidence-backed `person_flemish_connections` rows. Organization approval is reviewer-controlled: it writes the approved `organizations` row, `organization_sectors`, normalized `organization_us_locations`, normalized `organization_flemish_connections` rows from pending relevance text, review metadata on `discovered_organizations`, and then queues organization embeddings. Organization rejection leaves the approved organization tables unchanged. Organization merge updates the selected approved organization, adds sectors/locations and normalized Flemish/Belgian fact rows, records `approved_merge`, and queues organization embeddings.
+
+Derived-label approval canonicalizes Flemish/Belgian labels through approved names and aliases before writing `person_flemish_connections`; it preserves confidence, evidence URL, evidence excerpt, and relationship role where available.
 
 ## Edge Function: `agent-verify`
 

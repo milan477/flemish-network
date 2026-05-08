@@ -136,7 +136,6 @@ export interface Organization {
   us_network_status?: OrganizationUsNetworkStatus;
   organization_us_locations?: OrganizationUsLocation[];
   organization_flemish_connections?: OrganizationFlemishConnectionLink[];
-  flemish_link?: string;
   created_at: string;
   updated_at: string;
 }
