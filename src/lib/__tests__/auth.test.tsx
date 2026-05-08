@@ -56,7 +56,6 @@ const staffUser = {
   user_id: 'auth-user-1',
   email: 'staff@example.org',
   full_name: 'Staff User',
-  avatar_url: null,
   role: 'editor',
   status: 'active',
   password_reset_required: false,

@@ -11,19 +11,22 @@ interface CollectionsProps {
   showDetail?: boolean;
 }
 
+// Module-level cache — survives navigation/unmounts within the same session.
+let _collectionsCache: Collection[] | null = null;
+
 export default function Collections({
   collectionId,
   onNavigate,
   showDetail = false,
 }: CollectionsProps) {
   const { canEdit } = useAuth();
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [loading, setLoading] = useState(!showDetail);
+  const [collections, setCollections] = useState<Collection[]>(_collectionsCache ?? []);
+  const [loading, setLoading] = useState(_collectionsCache === null && !showDetail);
   const [showModal, setShowModal] = useState(false);
   const [editingCollection, setEditingCollection] = useState<Collection | undefined>();
 
-  const fetchCollections = useCallback(async () => {
-    setLoading(true);
+  const fetchCollections = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('collections')
@@ -34,22 +37,27 @@ export default function Collections({
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      
+
       const formattedData = data.map(item => ({
         ...item,
         member_count: item.member_count[0]?.count || 0
       }));
 
+      _collectionsCache = formattedData;
       setCollections(formattedData);
     } catch (err) {
       console.warn('[Collections] failed to load collections', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!showDetail) {
+    if (showDetail) return;
+    if (_collectionsCache !== null) {
+      // Return visit: render cached data instantly, refresh silently in background.
+      void fetchCollections({ silent: true });
+    } else {
       void fetchCollections();
     }
   }, [fetchCollections, showDetail]);
@@ -60,6 +68,7 @@ export default function Collections({
   };
 
   const handleSaveCollection = () => {
+    _collectionsCache = null; // invalidate so next render re-fetches visibly
     void fetchCollections();
   };
 

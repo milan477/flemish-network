@@ -16,9 +16,7 @@ export interface CrossFilterState {
   flemishConnection: string | null;
   state: string | null;
   city: string | null;
-  freshnessTier: FreshnessTier | null;
   availability: AvailabilityFilter[];
-  completenessField: { field: CompletenessField; has: boolean } | null;
 }
 
 export interface PersonSectorRow {
@@ -39,9 +37,7 @@ export const EMPTY_CROSS_FILTERS: CrossFilterState = {
   flemishConnection: null,
   state: null,
   city: null,
-  freshnessTier: null,
   availability: [],
-  completenessField: null,
 };
 
 export const COMPLETENESS_FIELD_LABELS: Record<CompletenessField, string> = {

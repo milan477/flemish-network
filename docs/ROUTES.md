@@ -8,9 +8,10 @@
 | `/collections` | Collection list |
 | `/collections/:id` | Collection detail |
 | `/admin` | Staff workspace default redirect to `/admin/discovery` |
-| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and pending people plus pending organization review. URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
-| `/admin/verification` | Stale records, person profile suggestions, organization suggestions, and derived-label review |
-| `/admin/growth` | Coverage, source yield, entity pivots, geography gaps, and recommended next discovery actions |
+| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and the held-out Discovery Eval panel. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
+| `/admin/verification` | Two top-level collapsible sections — **Pending Discovered People** and **Pending Discovered Organizations** (each with count badge, chevron toggle, both open by default) — followed by Records Freshness, Profile Update Suggestions, and Organization Update Suggestions. Discovered rows display greyed-out while `verification_status IN ('queued', 'verifying')` and gain Approve/Reject only when `verified`; verification contradictions are hard-deleted by `agent-verify` and disappear from the list. UI subscribes to `discovered_contacts` and `discovered_organizations` via Supabase realtime so cards flip from greyed → normal without manual refresh. No user-facing scope picker — Approve uses the scope inferred by `agent-verify`. |
+| `/admin/coverage` | Descriptive coverage overview: people/org/city stat cards, occupation breakdown, data quality, sector distribution, Flemish connection chart, and location explorer. URL state: `?tab=coverage` |
+| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, and recommended next discovery actions |
 | `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
 | `/admin/access` | Admin-only staff access management |
 | `/login` | Staff email/password sign-in and password reset request |
@@ -54,3 +55,12 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 - Each candidate has `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`.
 - `gap.should_offer` may include a `reason` and `suggested_prompt` for navigating to `/admin/discovery?prompt=<encoded prompt>`. The collection suggestion endpoint and route handoff must not start Discovery; staff must explicitly run the prefilled prompt.
 - Legacy people-only callers may still read `suggestions`, which mirrors person candidates as `{ id, name, reason, similarity }`.
+
+## Discovery Eval Endpoint
+
+`/admin/discovery` calls the `eval-holdout-check` edge function from the Discovery Eval panel.
+
+- Request: `{ lookback_days?: number }` (default 30, max 180).
+- Auth: staff editor bearer token, or service-role key (cron path).
+- Response: `{ status: "ok", holdout_count, matched_count, unchanged_count, lookback_days }`.
+- Side effect: updates `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id` on matched `discovery_eval_holdout` rows.

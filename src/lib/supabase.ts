@@ -24,7 +24,6 @@ export interface StaffUser {
   user_id?: string | null;
   email: string;
   full_name?: string | null;
-  avatar_url?: string | null;
   role: AppRole;
   status: 'invited' | 'active' | 'disabled';
   password_reset_required?: boolean | null;
@@ -59,7 +58,6 @@ export interface Person {
   linkedin_url?: string;
   website_url?: string;
   twitter_url?: string;
-  phone?: string;
   email?: string;
   email_verified?: boolean;
   preferred_contact?: string;
@@ -423,6 +421,19 @@ export interface MapCluster {
   lng: number;
   people: Person[];
   organizations: Organization[];
+  personCount?: number;
+  orgCount?: number;
+}
+
+export interface LocationSummaryRow {
+  city: string;
+  state: string;
+  lat: number;
+  lng: number;
+  person_count: number;
+  org_count: number;
+  person_ids: string[];
+  org_ids: string[];
 }
 
 export interface DirectoryFilters {

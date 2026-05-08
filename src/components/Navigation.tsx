@@ -126,17 +126,9 @@ export default function Navigation({
                 onClick={() => setShowMenu((prev) => !prev)}
                 className="flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white pl-1 pr-3 transition-colors hover:border-gray-300"
               >
-                {staffUser?.avatar_url ? (
-                  <img
-                    src={staffUser.avatar_url}
-                    alt={staffUser.full_name || staffUser.email}
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
-                    {initials}
-                  </div>
-                )}
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
+                  {initials}
+                </div>
                 <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-36 truncate">
                   {staffUser?.full_name || staffUser?.email || 'Account'}
                 </span>

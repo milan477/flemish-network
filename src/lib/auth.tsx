@@ -57,27 +57,38 @@ function normalizeAuthError(message: string) {
   return trimmed;
 }
 
-async function loadApprovedStaffUser(session: Session): Promise<StaffUser> {
-  const { error: activateError } = await supabase.rpc('activate_staff_user_session');
-  if (activateError) {
-    throw new Error(normalizeAuthError(activateError.message));
+const STAFF_CACHE_KEY = 'fln_staff_v1';
+
+function readCache(): StaffUser | null {
+  try {
+    const raw = localStorage.getItem(STAFF_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as StaffUser) : null;
+  } catch {
+    return null;
   }
+}
 
-  const { data, error } = await supabase
-    .from('staff_users')
-    .select('id, user_id, email, full_name, avatar_url, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
-    .eq('user_id', session.user.id)
-    .maybeSingle();
+function writeCache(user: StaffUser | null) {
+  if (user) localStorage.setItem(STAFF_CACHE_KEY, JSON.stringify(user));
+  else localStorage.removeItem(STAFF_CACHE_KEY);
+}
 
-  if (error) {
-    throw new Error(normalizeAuthError(error.message));
-  }
+async function loadStaffUser(session: Session): Promise<StaffUser> {
+  // RPC (validates approval/status + updates last_sign_in_at) runs in parallel with profile fetch
+  const [activateResult, profileResult] = await Promise.all([
+    supabase.rpc('activate_staff_user_session'),
+    supabase
+      .from('staff_users')
+      .select('id, user_id, email, full_name, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
+      .eq('user_id', session.user.id)
+      .maybeSingle(),
+  ]);
 
-  if (!data) {
-    throw new Error('Unable to load your staff profile.');
-  }
+  if (activateResult.error) throw new Error(normalizeAuthError(activateResult.error.message));
+  if (profileResult.error) throw new Error(normalizeAuthError(profileResult.error.message));
+  if (!profileResult.data) throw new Error('Unable to load your staff profile.');
 
-  return data as StaffUser;
+  return profileResult.data as StaffUser;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -102,24 +113,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     nextSession: Session | null,
     options: { showLoading?: boolean } = {}
   ) => {
-    const showLoading = options.showLoading ?? true;
-    if (showLoading) {
-      setLoading(true);
-    }
     updateSession(nextSession);
 
     if (!nextSession) {
       updateStaffUser(null);
+      writeCache(null);
       setLoading(false);
       return;
     }
 
+    // Returning user: serve cached staff profile immediately, revalidate in background
+    const cached = readCache();
+    if (cached?.user_id === nextSession.user.id) {
+      updateStaffUser(cached);
+      setLoading(false);
+      void loadStaffUser(nextSession)
+        .then(fresh => {
+          updateStaffUser(fresh);
+          writeCache(fresh);
+        })
+        .catch(async err => {
+          updateStaffUser(null);
+          writeCache(null);
+          setAuthError(err instanceof Error ? err.message : 'Authentication failed.');
+          await supabase.auth.signOut();
+          updateSession(null);
+        });
+      return;
+    }
+
+    // First login or cache miss: block until loaded
+    if (options.showLoading ?? true) setLoading(true);
     try {
-      const approvedStaffUser = await loadApprovedStaffUser(nextSession);
-      updateStaffUser(approvedStaffUser);
+      const fresh = await loadStaffUser(nextSession);
+      updateStaffUser(fresh);
+      writeCache(fresh);
       setAuthError(null);
     } catch (error) {
       updateStaffUser(null);
+      writeCache(null);
       setAuthError(
         error instanceof Error ? error.message : 'Authentication failed.'
       );
@@ -161,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [hydrateSession]);
 
   const refreshStaffUser = useCallback(async () => {
+    writeCache(null); // force fresh load, don't serve stale cache
     const {
       data: { session: currentSession },
     } = await supabase.auth.getSession();

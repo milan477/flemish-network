@@ -6,7 +6,6 @@ import {
   Linkedin,
   Globe,
   Mail,
-  Phone,
   Pencil,
   Save,
   X,
@@ -173,7 +172,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_location_city: person.current_location_city || '',
       current_location_country: person.current_location_country || '',
       bio: person.bio || '',
-      phone: person.phone || '',
       email: person.email || '',
       linkedin_url: person.linkedin_url || '',
       website_url: person.website_url || '',
@@ -218,7 +216,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_location_city: editForm.current_location_city || null,
       current_location_country: editForm.current_location_country || null,
       bio: editForm.bio || null,
-      phone: editForm.phone || null,
       email: editForm.email || null,
       linkedin_url: linkedin || null,
       website_url: website || null,
@@ -523,7 +520,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                             className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
                           >
                             <Pencil className="w-4 h-4" />
-                            <span>Edit Profile</span>
+                            <span>Edit</span>
                           </button>
                           {isAdmin && (
                             <button
@@ -536,7 +533,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                               ) : (
                                 <Trash2 className="w-4 h-4" />
                               )}
-                              <span>Delete Contact</span>
+                              <span>Delete</span>
                             </button>
                           )}
                           <button
@@ -544,7 +541,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                             className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
                           >
                             <RotateCw className="w-4 h-4" />
-                            <span>Verification Preview</span>
+                            <span>Verify</span>
                           </button>
                           <div className="relative">
                             <button
@@ -566,15 +563,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                             )}
                           </div>
                         </>
-                      )}
-                      {person.email && (
-                        <a
-                          href={`mailto:${person.email}`}
-                          className="px-5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-lg transition-colors flex items-center space-x-2"
-                        >
-                          <Mail className="w-4 h-4" />
-                          <span>Email</span>
-                        </a>
                       )}
                       <button
                         onClick={() => window.print()}
@@ -779,17 +767,25 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
           <span>Currently based in {abroadBase}</span>
         </div>
       )}
-      {person.phone && (
-        <div className="flex items-center space-x-2 text-gray-500 mb-1">
-          <Phone className="w-4 h-4" />
-          <span className="text-sm">{person.phone}</span>
-        </div>
-      )}
       {person.email && (
-        <div className="flex items-center space-x-2 text-gray-500">
+        <a
+          href={`mailto:${person.email}`}
+          className="flex items-center space-x-2 text-gray-500 hover:text-blue-600 transition-colors group"
+        >
           <Mail className="w-4 h-4" />
-          <span className="text-sm">{person.email}</span>
-        </div>
+          <span className="text-sm group-hover:underline">{person.email}</span>
+        </a>
+      )}
+      {person.linkedin_url && (
+        <a
+          href={person.linkedin_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center space-x-2 text-gray-500 hover:text-[#0A66C2] transition-colors group"
+        >
+          <Linkedin className="w-4 h-4" />
+          <span className="text-sm group-hover:underline">{person.linkedin_url}</span>
+        </a>
       )}
     </>
   );
@@ -999,15 +995,6 @@ function EditHeader({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex items-center space-x-2">
-          <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <input
-            value={editForm.phone || ''}
-            onChange={(e) => setField('phone', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="Phone"
-          />
-        </div>
-        <div className="flex items-center space-x-2">
           <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <input
             value={editForm.email || ''}
@@ -1057,16 +1044,6 @@ function EditHeader({
 function SocialLinks({ person }: { person: Person }) {
   return (
     <div className="flex flex-wrap items-center gap-2 mt-3">
-      {person.linkedin_url && (
-        <a
-          href={person.linkedin_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-[#0A66C2] hover:border-[#0A66C2] transition-colors"
-        >
-          <Linkedin className="w-5 h-5" />
-        </a>
-      )}
       {person.twitter_url && (
         <a
           href={person.twitter_url}

@@ -9,6 +9,7 @@ import {
 
 interface ClusterPopoverProps {
   cluster: MapCluster;
+  fullDataReady: boolean;
   onClose: () => void;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
@@ -16,11 +17,14 @@ interface ClusterPopoverProps {
 
 export default function ClusterPopover({
   cluster,
+  fullDataReady,
   onClose,
   onViewInDirectory,
   onNavigate,
 }: ClusterPopoverProps) {
-  const totalCount = cluster.people.length + cluster.organizations.length;
+  const totalCount = fullDataReady
+    ? cluster.people.length + cluster.organizations.length
+    : (cluster.personCount ?? cluster.people.length) + (cluster.orgCount ?? cluster.organizations.length);
   const allPersonIds = cluster.people.map((p) => p.id);
   const basedPeople = cluster.people.filter((person) => !isUsConnectedAbroad(person));
   const connectedPeople = cluster.people.filter(isUsConnectedAbroad);
@@ -80,7 +84,13 @@ export default function ClusterPopover({
       </div>
 
       <div className="overflow-y-auto custom-scrollbar">
-        {basedPeople.length > 0 && (
+        {!fullDataReady && (
+          <div className="flex items-center justify-center gap-2 py-6 text-gray-400">
+            <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-medium">Loading…</span>
+          </div>
+        )}
+        {fullDataReady && basedPeople.length > 0 && (
           <div className="pb-0.5">
             <div className="px-2 py-0.5 bg-gray-50/50 border-b border-gray-100/30">
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
@@ -91,7 +101,7 @@ export default function ClusterPopover({
           </div>
         )}
 
-        {connectedPeople.length > 0 && (
+        {fullDataReady && connectedPeople.length > 0 && (
           <div className="pb-0.5 border-t border-gray-100">
             <div className="px-2 py-0.5 bg-gray-50/50 border-b border-gray-100/30">
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">
@@ -102,7 +112,7 @@ export default function ClusterPopover({
           </div>
         )}
 
-        {cluster.organizations.length > 0 && (
+        {fullDataReady && cluster.organizations.length > 0 && (
           <div className="border-t border-gray-100 pb-0.5">
             <div className="px-2 py-0.5 bg-gray-50/50 border-b border-gray-100/30">
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">

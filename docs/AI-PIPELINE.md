@@ -41,7 +41,7 @@ Defined in `supabase/functions/_shared/gemini.ts`.
 
 | Route | Default Model | Env Override |
 |---|---|---|
-| `query_parsing`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
+| `query_parsing`, `query_generation`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_QUERY_GENERATION_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
 | `contact_extraction`, `profile_verification` | `gemini-2.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL`, `GEMINI_PROFILE_MODEL` |
 | `lightweight_text_merge`, `offline_evaluation` | `gemini-2.5-pro` | `GEMINI_PRO_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` |
 | embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |
@@ -76,9 +76,15 @@ Discovery operating principles:
 - Treat web search as a way to seed the frontier, not as the evidence substrate.
 - Crawl as a bounded best-first frontier: `seed -> frontier -> fetch -> classify -> extract -> expand -> review -> revisit`.
 - Extract from individual pages with source URLs and excerpts so reviewers can audit every candidate.
-- Use source packs for head coverage; use high-yield domains, same-domain child links, sitemap/RSS URLs, entity pivots, and coverage gaps for adaptive expansion.
+- Use the surfaces × lenses taxonomy (`discovery_surfaces`, `discovery_lenses`, `discovery_seed_domains`) for head coverage; use high-yield domains, same-domain child links, sitemap/RSS URLs, entity pivots, and coverage gaps for adaptive expansion. Each query plan is composed from a `(surface, lens, optional domain hint)` tuple plus optional sector/geography axes when a coverage gap drives the plan.
 - Use LinkedIn as post-extraction enrichment after a page or candidate is already interesting, not as the main seed lane.
 - Generate entity pivots only from evidence-bearing entities, then feed those pivots into Network Growth planning.
+
+Every `searchWeb` call inside `agent-discovery` writes one row to `discovery_query_attempts`, capturing `run_id`, `query_text`, `surface` (FK→`discovery_surfaces.key`), `lens` (FK→`discovery_lenses.key`), `composition_keys` (e.g. `surface:faculty_page`, `lens:alumni_network`, `geo:metro:boston-ma`, `sector:biotech`, `entity:flemish:imec`), `source_type` (`custom_query` / `surface_lens` / `entity_pivot`), `pivot_entity_key`, `provider`, and `urls_returned`. The `surface` and `lens` values come from the universal query generator (see below). After the run finishes, `agent-discovery` calls the `resolve_discovery_query_attempts(run_id)` RPC to populate downstream attribution counters (`pages_fetched`, `candidates_extracted`, `new_pending_contacts`, `contacts_later_approved`, `contacts_later_rejected`, `rejected_reason_breakdown`) by joining frontier → pages → evidence → contacts. The `composition_keys` column stays empty until later phases wire in compositional queries.
+
+All search queries — Mode A custom intent, surface×lens expansion, and entity pivots — flow through the universal query generator in `supabase/functions/_shared/queryGeneration.ts` (`generateSearchQueries({ intent, surfaces?, lenses?, context, maxQueries }, apiKey)`). The helper calls Gemini route `query_generation` (defaults to `gemini-2.5-flash-lite`, override with `GEMINI_QUERY_GENERATION_MODEL`) with a structured-output schema and produces up to 6 semantically distinct queries per call, each tagged with a `surface`, `lens`, and `rationale`. The system prompt enforces proper boolean operators with parentheses, quoted multi-word entities, surface-specific `site:` operators, surface-form phrasings ("from Ghent", "Belgian-born", "PhD KU Leuven"), and a mix of US-based and US-connected-abroad angles. Callers pass `context.rotationSeed` (derived from `run_id` plus the surface/lens/pivot key) so re-runs of the same intent vary the angle mix. There are no hand-written query templates anywhere in the discovery pipeline: the `discovery_source_packs` table was dropped in Phase 2 of the Discovery Redesign on 2026-05-08 (replaced by `discovery_surfaces` × `discovery_lenses` × `discovery_seed_domains`), and entity pivots no longer carry a `seed_queries` column. On Gemini timeout, transport error, or empty/malformed output the helper logs a fallback reason and returns a single boolean-grouped origin-surface fallback query so seeding still progresses; the fallback is intentionally minimal and does not reintroduce per-shape templates. Each generation logs a `query_generation:<scope>` step in `agent_runs.results.steps` (with intent, rotation seed, model, surface/lens hints, and the resulting queries) and the run-level `llm_calls_made` counter is incremented for non-fallback calls.
+
+Phase 3 bandit allocator. `agent-discovery` picks query plans using Thompson sampling over `(surface, lens)` arms tracked in `discovery_arm_stats`. At run start, `allocateBudget(supabase, budget, runId)` in `supabase/functions/_shared/banditAllocator.ts` loads all arm stats and all active `(surface, lens)` combinations. It reserves ≥ 25% of slots (`Math.ceil(budget * 0.25)`) for exploration — preferring arms where `last_attempt_at IS NULL` (untried), then falling back to the oldest-attempted arm. Remaining slots go to Thompson-sampled exploitation using a Beta prior on `contacts_approved / candidates_extracted`, with a penalty applied when `not_flemish_rejections > 50%` of rejections. Arms with `cooldown_until > now()` are excluded from allocation; an arm enters cooldown when it yields `new_pending_contacts = 0` for ≥ 3 attempts and its `last_yielding_attempt_at` is older than 7 days (or null). At run completion, `updateArmStats` increments `attempts` for each surface_lens plan that ran. The nightly `refreshArmStats` call in `agent-scheduler` housekeeping re-aggregates all `discovery_query_attempts` rows from the last 30 days into `discovery_arm_stats`, providing accurate approved/rejected/not_flemish counters for the next run's sampling. A `bandit_allocation` step is logged in `agent_runs.results.steps` listing all slots with their `is_exploration` flag. Each plan composes up to four axes — surface, lens, optional sector emphasis, and optional metro/state geography — passed to the generator as `surface_hints`, `lens_hints`, `coverageGapLabel`, and `coverageGapSector`. Domain hints (`discovery_seed_domains`) are included when a tuple matches a seeded domain so the generator can emit `site:` operators against high-yield surfaces. Plans always include at least one exploration slot with no coverage-gap context. Entity-pivot plans are kept and propagate surface/lens tags from the generator into `discovery_query_attempts`.
 
 Organization discovery writes one pending row per candidate to `discovered_organizations`:
 
@@ -106,17 +112,19 @@ Unified record verification with preview and durable modes.
 Request shape:
 
 - `mode`: `"preview"` or `"durable"` (default `"durable"`).
-- `record_type`: `"person"` or `"organization"` (default `"person"`).
+- `record_type`: `"person"`, `"organization"`, `"discovered_contact"`, or `"discovered_organization"` (default `"person"`).
 - Preview mode: `record_id` is required. Returns suggestions for one record without persisting anything (no `profile_suggestions`, no `agent_runs`, no `derived_label_suggestions`, no `last_verified_at` bump).
 - Durable mode (people): `person_ids?` or `person_id?` to target a batch, plus `batch_size?`, `max_age_months?`, and `run_id?` for scheduler integration. Writes reviewable suggestions to `profile_suggestions` with `record_type='person'`.
 - Durable mode (organizations): `organization_ids?` or `organization_id?` to target a batch, plus `batch_size?`, `max_age_months?`, and `run_id?`. Writes reviewable suggestions to `profile_suggestions` with `record_type='organization'`.
+- Verify-before-promote (discovered records): `record_type` is `"discovered_contact"` or `"discovered_organization"`, with `record_ids?` (batch) or `record_id?`, plus `run_id?`. The function flips each row to `verification_status='verifying'`, runs web search + Gemini enrichment, then either hard-deletes the row on contradiction or sets `verification_status='verified'` with a `verification_payload` (scope, location, role, employer, ties, evidence, confidence). Auto-enqueued by `agent-scheduler` housekeeping.
 
 Behavior:
 
 1. Person path uses LinkedIn-first evidence when available, falling back to trusted web search + Gemini `check_profile`.
 2. Organization path uses web search + Gemini `check_organization` (fields: `name`, `description`, `website_url`, `type`). No LinkedIn scraping for organizations in this phase.
-3. Suggestions are evidence-backed (source URL, evidence excerpt, confidence, method) and pass risk policy gates before being returned. High-risk fields stay review-first.
-4. Suggestions are deduped per record by `dedupe_key`; the dedupe key is `field_name::normalized_value`. Higher-confidence or better-evidenced suggestions refresh existing rows instead of duplicating them.
+3. Discovered-record path uses web search + Gemini structured output. The prompt requires `network_scope` to be `null` when no clear residence/tie signal is present (no guessing). `contradiction=true` triggers a hard delete; ambiguity does not.
+4. Suggestions are evidence-backed (source URL, evidence excerpt, confidence, method) and pass risk policy gates before being returned. High-risk fields stay review-first.
+5. Suggestions are deduped per record by `dedupe_key`; the dedupe key is `field_name::normalized_value`. Higher-confidence or better-evidenced suggestions refresh existing rows instead of duplicating them.
 
 ## Edge Function: `update-profile`
 
@@ -131,8 +139,48 @@ Lifecycle and planning service.
 - Removed trigger values: `connection`
 - `planning` feeds `/admin/growth`.
 - `metrics` feeds `/admin/growth` quality and benchmark panels.
-- `housekeeping` and `cancel` feed `/admin/system`.
+- `housekeeping` and `cancel` feed `/admin/system`. Housekeeping additionally (a) hard-deletes any `discovered_contacts`/`discovered_organizations` rows with `verification_status='queued'` and confidence below 0.05 and (b) auto-enqueues remaining queued rows for `agent-verify` in batches, marking them `verifying` so subsequent ticks dedupe. Counters: `pending_contacts_pre_filtered`, `pending_organizations_pre_filtered`, `pending_contacts_enqueued`, `pending_organizations_enqueued`.
 - Prompted Discovery UI lives in the Discovery intake card and triggers only `agent-scheduler` with `{ action: "trigger", agent_type: "discovery", params: { query? } }`; prompt URL handoffs prefill the query but do not start a run.
+
+### `planning` action — `recommended_actions` payload
+
+Each item in `recommended_actions` carries rubric fields used by the Growth UI and EVALUATION.md rubric:
+
+| Field | Type | Semantics |
+|---|---|---|
+| `rationale` | `string` | One sentence explaining why this action is valuable. |
+| `basis.kind` | `"coverage_gap" \| "entity_pivot" \| "proven_domain"` | What signal generated this recommendation. The legacy `"source_pack"` basis was removed in Phase 2 of the Discovery Redesign on 2026-05-08. |
+| `basis.key` | `string` | Domain name, gap geography key, or entity name. |
+| `target.metro` | `string?` | Metro name when the recommendation targets a metro gap. |
+| `target.state` | `string?` | State name when the recommendation targets a state gap. |
+| `target.sector` | `string?` | Primary sector from gap `sector_emphasis`. |
+| `target.domain` | `string?` | Domain when basis is `proven_domain` or `entity_pivot` has a domain. |
+| `target.entity` | `string?` | Entity name when basis is `entity_pivot`. |
+| `expected_yield` | `"high" \| "medium" \| "low"` | Derived from `yield_score` (proven domain) or approved contact count (entity pivot): `>0.6` / `>=3` → high, `>0.3` / `>=1` → medium, else low. |
+
+Query templates per basis:
+- `entity_pivot`: `site:${domain} ${entityName} (Belgian OR Flemish OR Vlaams)` — falls back to open-web form when no domain is available.
+- `coverage_gap` / `gap_refresh`: `(Belgian OR Flemish) ${sector} ${metro/state label}`
+- `proven_domain`: `site:${domain} (Belgian OR Flemish OR Vlaams) team OR faculty OR people`
+
+Diversity caps: ≤2 recommendations per domain, ≤2 per metro; actions are sorted by `priority_score` before caps are applied.
+
+Novelty filter: `discovery_domains` with `status = 'exhausted'` are excluded from domain recommendations.
+
+Cooldown filter (Phase 8A): entity pivots and coverage gaps recommended within the last 72 hours are excluded from candidates. On each planning call, recommended pivots write `last_recommended_at = now()` and increment `recommended_count` on `discovery_entity_pivots`; recommended gaps write the same fields on `coverage_targets` (exposed through the `coverage_gaps` view). This ensures successive planning calls rotate to different top pivots and gaps.
+
+### `housekeeping` action — pivot rebuild
+
+Each `housekeeping` call (and on every other action as a side-effect) runs a daily pivot rebuild step that upserts canonical Flemish/Belgian entity pivots from `person_flemish_connections` where 2 or more approved people share the same connection. The step:
+
+1. Queries `person_flemish_connections` joined to `flemish_connections` to find entities with 2+ approved-person associations.
+2. Upserts rows into `discovery_entity_pivots` with `entity_key = flemish:<normalized_name>` on conflict, refreshing `last_seen_at` only — it intentionally does not reset cooldown fields.
+
+This step should be triggered daily by calling `action: 'housekeeping'` from an external cron or operator action. The result is reported as `housekeeping.pivots_upserted`.
+
+## Edge Function: `eval-holdout-check`
+
+Held-out evaluation runner. Self-authenticates: accepts either a staff-editor bearer token (UI trigger) or the service-role key (cron / scheduler trigger). Pulls every `discovery_eval_holdout` row, fuzzy-matches `full_name` and `known_aliases` (lower/diacritic-stripped) against `discovered_contacts.created_at >= now() - lookback_days` (default 30, capped at 180), and on match updates `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id`. Returns `{ holdout_count, matched_count, unchanged_count, lookback_days }`. The Discovery Eval admin panel exposes a manual "Run check" button; later cron wiring will call it nightly.
 
 ## Edge Function: `generate-embeddings`
 

@@ -14,6 +14,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       agent_runs: {
@@ -410,9 +435,11 @@ export type Database = {
           geography_type: string
           id: string
           label: string
+          last_recommended_at: string | null
           metro_area_id: string | null
           notes: string | null
           priority_weight: number
+          recommended_count: number
           sector_emphasis: string[]
           state_code: string | null
           updated_at: string
@@ -425,9 +452,11 @@ export type Database = {
           geography_type: string
           id?: string
           label: string
+          last_recommended_at?: string | null
           metro_area_id?: string | null
           notes?: string | null
           priority_weight?: number
+          recommended_count?: number
           sector_emphasis?: string[]
           state_code?: string | null
           updated_at?: string
@@ -440,9 +469,11 @@ export type Database = {
           geography_type?: string
           id?: string
           label?: string
+          last_recommended_at?: string | null
           metro_area_id?: string | null
           notes?: string | null
           priority_weight?: number
+          recommended_count?: number
           sector_emphasis?: string[]
           state_code?: string | null
           updated_at?: string
@@ -571,6 +602,8 @@ export type Database = {
           location_state: string | null
           name: string
           occupation: string | null
+          reject_reason: string | null
+          reject_reason_note: string | null
           review_outcome: string | null
           reviewed_at: string | null
           sectors: string[] | null
@@ -581,6 +614,10 @@ export type Database = {
           suggested_us_connections: Json
           suggested_us_network_confidence: number | null
           suggested_us_network_status: string | null
+          verification_payload: Json | null
+          verification_run_id: string | null
+          verification_status: string
+          verified_at: string | null
           website_url: string | null
         }
         Insert: {
@@ -605,6 +642,8 @@ export type Database = {
           location_state?: string | null
           name: string
           occupation?: string | null
+          reject_reason?: string | null
+          reject_reason_note?: string | null
           review_outcome?: string | null
           reviewed_at?: string | null
           sectors?: string[] | null
@@ -615,6 +654,10 @@ export type Database = {
           suggested_us_connections?: Json
           suggested_us_network_confidence?: number | null
           suggested_us_network_status?: string | null
+          verification_payload?: Json | null
+          verification_run_id?: string | null
+          verification_status?: string
+          verified_at?: string | null
           website_url?: string | null
         }
         Update: {
@@ -639,6 +682,8 @@ export type Database = {
           location_state?: string | null
           name?: string
           occupation?: string | null
+          reject_reason?: string | null
+          reject_reason_note?: string | null
           review_outcome?: string | null
           reviewed_at?: string | null
           sectors?: string[] | null
@@ -649,6 +694,10 @@ export type Database = {
           suggested_us_connections?: Json
           suggested_us_network_confidence?: number | null
           suggested_us_network_status?: string | null
+          verification_payload?: Json | null
+          verification_run_id?: string | null
+          verification_status?: string
+          verified_at?: string | null
           website_url?: string | null
         }
         Relationships: [
@@ -664,6 +713,13 @@ export type Database = {
             columns: ["approved_person_id"]
             isOneToOne: false
             referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discovered_contacts_verification_run_id_fkey"
+            columns: ["verification_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -770,6 +826,8 @@ export type Database = {
           last_evidence_at: string | null
           last_seen_at: string | null
           name: string
+          reject_reason: string | null
+          reject_reason_note: string | null
           review_outcome: string | null
           reviewed_at: string | null
           sectors: string[] | null
@@ -779,6 +837,10 @@ export type Database = {
           suggested_us_network_status: string | null
           updated_at: string
           us_locations: Json
+          verification_payload: Json | null
+          verification_run_id: string | null
+          verification_status: string
+          verified_at: string | null
           website_url: string | null
         }
         Insert: {
@@ -795,6 +857,8 @@ export type Database = {
           last_evidence_at?: string | null
           last_seen_at?: string | null
           name: string
+          reject_reason?: string | null
+          reject_reason_note?: string | null
           review_outcome?: string | null
           reviewed_at?: string | null
           sectors?: string[] | null
@@ -804,6 +868,10 @@ export type Database = {
           suggested_us_network_status?: string | null
           updated_at?: string
           us_locations?: Json
+          verification_payload?: Json | null
+          verification_run_id?: string | null
+          verification_status?: string
+          verified_at?: string | null
           website_url?: string | null
         }
         Update: {
@@ -820,6 +888,8 @@ export type Database = {
           last_evidence_at?: string | null
           last_seen_at?: string | null
           name?: string
+          reject_reason?: string | null
+          reject_reason_note?: string | null
           review_outcome?: string | null
           reviewed_at?: string | null
           sectors?: string[] | null
@@ -829,6 +899,10 @@ export type Database = {
           suggested_us_network_status?: string | null
           updated_at?: string
           us_locations?: Json
+          verification_payload?: Json | null
+          verification_run_id?: string | null
+          verification_status?: string
+          verified_at?: string | null
           website_url?: string | null
         }
         Relationships: [
@@ -844,6 +918,13 @@ export type Database = {
             columns: ["approved_organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discovered_organizations_verification_run_id_fkey"
+            columns: ["verification_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -870,7 +951,6 @@ export type Database = {
           pages_queued: number
           promising_pages: number
           revisit_interval_hours: number
-          source_pack_id: string | null
           status: string
           updated_at: string
           weekly_fetch_budget: number
@@ -897,7 +977,6 @@ export type Database = {
           pages_queued?: number
           promising_pages?: number
           revisit_interval_hours?: number
-          source_pack_id?: string | null
           status?: string
           updated_at?: string
           weekly_fetch_budget?: number
@@ -924,21 +1003,12 @@ export type Database = {
           pages_queued?: number
           promising_pages?: number
           revisit_interval_hours?: number
-          source_pack_id?: string | null
           status?: string
           updated_at?: string
           weekly_fetch_budget?: number
           yield_score?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "discovery_domains_source_pack_id_fkey"
-            columns: ["source_pack_id"]
-            isOneToOne: false
-            referencedRelation: "discovery_source_packs"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       discovery_entity_pivot_sources: {
         Row: {
@@ -1015,10 +1085,11 @@ export type Database = {
           entity_name: string
           entity_type: string
           id: string
+          last_recommended_at: string | null
           last_seeded_at: string | null
           last_seen_at: string
           normalized_domain: string | null
-          seed_queries: string[]
+          recommended_count: number
           seeded_frontier_count: number
           source_urls: string[]
           updated_at: string
@@ -1030,10 +1101,11 @@ export type Database = {
           entity_name: string
           entity_type?: string
           id?: string
+          last_recommended_at?: string | null
           last_seeded_at?: string | null
           last_seen_at?: string
           normalized_domain?: string | null
-          seed_queries?: string[]
+          recommended_count?: number
           seeded_frontier_count?: number
           source_urls?: string[]
           updated_at?: string
@@ -1045,15 +1117,79 @@ export type Database = {
           entity_name?: string
           entity_type?: string
           id?: string
+          last_recommended_at?: string | null
           last_seeded_at?: string | null
           last_seen_at?: string
           normalized_domain?: string | null
-          seed_queries?: string[]
+          recommended_count?: number
           seeded_frontier_count?: number
           source_urls?: string[]
           updated_at?: string
         }
         Relationships: []
+      }
+      discovery_eval_holdout: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          flemish_signal: string
+          full_name: string
+          id: string
+          known_aliases: string[]
+          known_city: string | null
+          known_employer: string | null
+          known_state: string | null
+          last_seen_as_candidate_at: string | null
+          last_seen_candidate_id: string | null
+          last_seen_run_id: string | null
+          source_note: string | null
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          flemish_signal: string
+          full_name: string
+          id?: string
+          known_aliases?: string[]
+          known_city?: string | null
+          known_employer?: string | null
+          known_state?: string | null
+          last_seen_as_candidate_at?: string | null
+          last_seen_candidate_id?: string | null
+          last_seen_run_id?: string | null
+          source_note?: string | null
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          flemish_signal?: string
+          full_name?: string
+          id?: string
+          known_aliases?: string[]
+          known_city?: string | null
+          known_employer?: string | null
+          known_state?: string | null
+          last_seen_as_candidate_at?: string | null
+          last_seen_candidate_id?: string | null
+          last_seen_run_id?: string | null
+          source_note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discovery_eval_holdout_last_seen_candidate_id_fkey"
+            columns: ["last_seen_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "discovered_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discovery_eval_holdout_last_seen_run_id_fkey"
+            columns: ["last_seen_run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       discovery_evidence: {
         Row: {
@@ -1160,7 +1296,6 @@ export type Database = {
           pivot_entity_type: string | null
           priority_score: number
           search_query: string | null
-          source_pack_id: string | null
           source_type: string
           status: string
           title: string | null
@@ -1190,7 +1325,6 @@ export type Database = {
           pivot_entity_type?: string | null
           priority_score?: number
           search_query?: string | null
-          source_pack_id?: string | null
           source_type?: string
           status?: string
           title?: string | null
@@ -1220,7 +1354,6 @@ export type Database = {
           pivot_entity_type?: string | null
           priority_score?: number
           search_query?: string | null
-          source_pack_id?: string | null
           source_type?: string
           status?: string
           title?: string | null
@@ -1233,13 +1366,6 @@ export type Database = {
             columns: ["claimed_run_id"]
             isOneToOne: false
             referencedRelation: "agent_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "discovery_frontier_source_pack_id_fkey"
-            columns: ["source_pack_id"]
-            isOneToOne: false
-            referencedRelation: "discovery_source_packs"
             referencedColumns: ["id"]
           },
         ]
@@ -1255,7 +1381,6 @@ export type Database = {
           provider: string | null
           refill_reason: string
           seeded_count: number
-          source_pack_ids: string[]
         }
         Insert: {
           agent_run_id?: string | null
@@ -1267,7 +1392,6 @@ export type Database = {
           provider?: string | null
           refill_reason: string
           seeded_count?: number
-          source_pack_ids?: string[]
         }
         Update: {
           agent_run_id?: string | null
@@ -1279,7 +1403,6 @@ export type Database = {
           provider?: string | null
           refill_reason?: string
           seeded_count?: number
-          source_pack_ids?: string[]
         }
         Relationships: [
           {
@@ -1290,6 +1413,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      discovery_lenses: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          key: string
+          name: string
+          prompt_guidance: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          key: string
+          name: string
+          prompt_guidance?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          key?: string
+          name?: string
+          prompt_guidance?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       discovery_pages: {
         Row: {
@@ -1362,65 +1515,156 @@ export type Database = {
           },
         ]
       }
-      discovery_source_packs: {
+      discovery_query_attempts: {
+        Row: {
+          candidates_extracted: number
+          composition_keys: string[]
+          contacts_later_approved: number
+          contacts_later_rejected: number
+          cost_estimate_usd: number
+          created_at: string
+          id: string
+          lens: string | null
+          new_pending_contacts: number
+          pages_fetched: number
+          pivot_entity_key: string | null
+          provider: string | null
+          query_text: string
+          rejected_reason_breakdown: Json
+          resolved_at: string | null
+          run_id: string
+          source_type: string
+          surface: string | null
+          urls_returned: number
+        }
+        Insert: {
+          candidates_extracted?: number
+          composition_keys?: string[]
+          contacts_later_approved?: number
+          contacts_later_rejected?: number
+          cost_estimate_usd?: number
+          created_at?: string
+          id?: string
+          lens?: string | null
+          new_pending_contacts?: number
+          pages_fetched?: number
+          pivot_entity_key?: string | null
+          provider?: string | null
+          query_text: string
+          rejected_reason_breakdown?: Json
+          resolved_at?: string | null
+          run_id: string
+          source_type: string
+          surface?: string | null
+          urls_returned?: number
+        }
+        Update: {
+          candidates_extracted?: number
+          composition_keys?: string[]
+          contacts_later_approved?: number
+          contacts_later_rejected?: number
+          cost_estimate_usd?: number
+          created_at?: string
+          id?: string
+          lens?: string | null
+          new_pending_contacts?: number
+          pages_fetched?: number
+          pivot_entity_key?: string | null
+          provider?: string | null
+          query_text?: string
+          rejected_reason_breakdown?: Json
+          resolved_at?: string | null
+          run_id?: string
+          source_type?: string
+          surface?: string | null
+          urls_returned?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discovery_query_attempts_lens_fkey"
+            columns: ["lens"]
+            isOneToOne: false
+            referencedRelation: "discovery_lenses"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "discovery_query_attempts_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discovery_query_attempts_surface_fkey"
+            columns: ["surface"]
+            isOneToOne: false
+            referencedRelation: "discovery_surfaces"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      discovery_seed_domains: {
         Row: {
           active: boolean
-          coverage_target_keys: string[]
           created_at: string
-          description: string | null
-          domains: string[]
-          expected_evidence_quality: string | null
-          expected_page_types: string[]
-          extraction_expectations: Json
+          domain: string
           id: string
-          key: string
-          lane: string
-          last_seeded_at: string | null
-          max_seed_urls_per_run: number
-          name: string
-          priority_boost: number
-          query_templates: string[]
-          refresh_interval_days: number
+          lenses: string[]
+          notes: string | null
+          surfaces: string[]
           updated_at: string
         }
         Insert: {
           active?: boolean
-          coverage_target_keys?: string[]
           created_at?: string
-          description?: string | null
-          domains?: string[]
-          expected_evidence_quality?: string | null
-          expected_page_types?: string[]
-          extraction_expectations?: Json
+          domain: string
           id?: string
-          key: string
-          lane?: string
-          last_seeded_at?: string | null
-          max_seed_urls_per_run?: number
-          name: string
-          priority_boost?: number
-          query_templates?: string[]
-          refresh_interval_days?: number
+          lenses?: string[]
+          notes?: string | null
+          surfaces?: string[]
           updated_at?: string
         }
         Update: {
           active?: boolean
-          coverage_target_keys?: string[]
+          created_at?: string
+          domain?: string
+          id?: string
+          lenses?: string[]
+          notes?: string | null
+          surfaces?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      discovery_surfaces: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          example_url_patterns: string[]
+          key: string
+          name: string
+          preferred_site_operators: string[]
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
           created_at?: string
           description?: string | null
-          domains?: string[]
-          expected_evidence_quality?: string | null
-          expected_page_types?: string[]
-          extraction_expectations?: Json
-          id?: string
+          example_url_patterns?: string[]
+          key: string
+          name: string
+          preferred_site_operators?: string[]
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          example_url_patterns?: string[]
           key?: string
-          lane?: string
-          last_seeded_at?: string | null
-          max_seed_urls_per_run?: number
           name?: string
-          priority_boost?: number
-          query_templates?: string[]
-          refresh_interval_days?: number
+          preferred_site_operators?: string[]
           updated_at?: string
         }
         Relationships: []
@@ -2107,7 +2351,6 @@ export type Database = {
           occupation: string | null
           open_to_mentorship: boolean | null
           organization_id: string | null
-          phone: string | null
           preferred_contact: string | null
           profile_photo_url: string | null
           title: string | null
@@ -2140,7 +2383,6 @@ export type Database = {
           occupation?: string | null
           open_to_mentorship?: boolean | null
           organization_id?: string | null
-          phone?: string | null
           preferred_contact?: string | null
           profile_photo_url?: string | null
           title?: string | null
@@ -2173,7 +2415,6 @@ export type Database = {
           occupation?: string | null
           open_to_mentorship?: boolean | null
           organization_id?: string | null
-          phone?: string | null
           preferred_contact?: string | null
           profile_photo_url?: string | null
           title?: string | null
@@ -2572,7 +2813,6 @@ export type Database = {
       }
       staff_users: {
         Row: {
-          avatar_url: string | null
           created_at: string
           email: string
           full_name: string | null
@@ -2585,7 +2825,6 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
-          avatar_url?: string | null
           created_at?: string
           email: string
           full_name?: string | null
@@ -2598,7 +2837,6 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
-          avatar_url?: string | null
           created_at?: string
           email?: string
           full_name?: string | null
@@ -2713,11 +2951,13 @@ export type Database = {
           geography_key: string | null
           geography_type: string | null
           label: string | null
+          last_recommended_at: string | null
           metro_key: string | null
           metro_name: string | null
           pending_discovered_count: number | null
           priority_weight: number | null
           recent_activity_30d: number | null
+          recommended_count: number | null
           sector_emphasis: string[] | null
           sector_mix: Json | null
           state_code: string | null
@@ -2809,13 +3049,14 @@ export type Database = {
           entity_key: string | null
           entity_name: string | null
           entity_type: string | null
+          last_recommended_at: string | null
           last_seeded_at: string | null
           last_seen_at: string | null
           max_source_strength: number | null
           normalized_domain: string | null
           pending_contact_count: number | null
           priority_score: number | null
-          seed_queries: string[] | null
+          recommended_count: number | null
           seeded_frontier_count: number | null
           source_count: number | null
           source_urls: string[] | null
@@ -2870,7 +3111,6 @@ export type Database = {
       activate_staff_user_session: {
         Args: never
         Returns: {
-          avatar_url: string | null
           created_at: string
           email: string
           full_name: string | null
@@ -2934,7 +3174,7 @@ export type Database = {
       build_organization_search_tsv: {
         Args: {
           p_description: string
-          p_flemish_fact_text: string
+          p_flemish_link: string
           p_location_text: string
           p_name: string
           p_primary_location_text: string
@@ -3017,7 +3257,6 @@ export type Database = {
           pivot_entity_type: string | null
           priority_score: number
           search_query: string | null
-          source_pack_id: string | null
           source_type: string
           status: string
           title: string | null
@@ -3122,6 +3361,19 @@ export type Database = {
         }
         Returns: string
       }
+      get_network_location_summary: {
+        Args: never
+        Returns: {
+          city: string
+          lat: number
+          lng: number
+          org_count: number
+          org_ids: string[]
+          person_count: number
+          person_ids: string[]
+          state: string
+        }[]
+      }
       has_staff_role: { Args: { p_required_role: string }; Returns: boolean }
       increment_api_quota: {
         Args: { p_month: string; p_provider: string }
@@ -3224,6 +3476,10 @@ export type Database = {
       }
       release_discovery_frontier_claims: {
         Args: { p_run_id: string; p_status?: string }
+        Returns: number
+      }
+      resolve_discovery_query_attempts: {
+        Args: { p_run_id: string }
         Returns: number
       }
       search_field_score: {
@@ -3420,6 +3676,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["viewer", "editor", "admin"],
@@ -3429,4 +3688,4 @@ export const Constants = {
   },
 } as const
 
-export type SupabaseAdminClient = SupabaseClient<Database>
+export type SupabaseAdminClient = SupabaseClient<Database>;

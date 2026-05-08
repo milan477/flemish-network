@@ -1,5 +1,6 @@
 export type GeminiModelRoute =
   | "query_parsing"
+  | "query_generation"
   | "page_classification"
   | "contact_extraction"
   | "profile_verification"
@@ -31,6 +32,13 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
         Deno.env.get("GEMINI_QUERY_MODEL"),
         FLASH_LITE_DEFAULT,
         Deno.env.get("GEMINI_QUERY_FALLBACK_MODEL"),
+        FLASH_DEFAULT,
+      ]);
+    case "query_generation":
+      return unique([
+        Deno.env.get("GEMINI_QUERY_GENERATION_MODEL"),
+        FLASH_LITE_DEFAULT,
+        Deno.env.get("GEMINI_QUERY_GENERATION_FALLBACK_MODEL"),
         FLASH_DEFAULT,
       ]);
     case "page_classification":
@@ -82,6 +90,7 @@ export function getPrimaryGeminiModel(route: GeminiModelRoute): string {
 export function getGeminiModelSummary(): Record<GeminiModelRoute, string[]> {
   return {
     query_parsing: getGeminiModelChain("query_parsing"),
+    query_generation: getGeminiModelChain("query_generation"),
     page_classification: getGeminiModelChain("page_classification"),
     contact_extraction: getGeminiModelChain("contact_extraction"),
     profile_verification: getGeminiModelChain("profile_verification"),

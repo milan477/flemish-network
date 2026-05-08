@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Loader2,
   Search,
-  Phone,
   Mail,
   Linkedin,
   Globe,
@@ -72,7 +71,6 @@ interface ManualForm {
   current_location_country: string;
   usConnections: ManualUsConnection[];
   bio: string;
-  phone: string;
   email: string;
   linkedin_url: string;
   website_url: string;
@@ -124,7 +122,6 @@ function createEmptyForm(): ManualForm {
     current_location_country: '',
     usConnections: [emptyUsConnection()],
     bio: '',
-    phone: '',
     email: '',
     linkedin_url: '',
     website_url: '',
@@ -415,12 +412,6 @@ function PersonPreview({ person }: { person: Person }) {
             <span className="truncate">{person.email}</span>
           </div>
         )}
-        {person.phone && (
-          <div className="flex items-center gap-2 text-gray-600">
-            <Phone className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            <span className="truncate">{person.phone}</span>
-          </div>
-        )}
         {person.linkedin_url && (
           <div className="flex items-center gap-2 text-gray-600">
             <Linkedin className="w-3 h-3 text-gray-400 flex-shrink-0" />
@@ -680,7 +671,6 @@ function ManualAddForm({
       current_position: form.current_position || undefined,
       occupation: form.occupation || undefined,
       email: form.email || undefined,
-      phone: form.phone || undefined,
       linkedin_url: linkedin || undefined,
       website_url: website || undefined,
       bio: form.bio || undefined,
@@ -810,7 +800,7 @@ function ManualAddForm({
             value={form.current_position}
             onChange={(e) => setField('current_position', e.target.value)}
             className={INPUT_CLS}
-            placeholder="AI Researcher at MIT"
+            placeholder="Research Scientist at MIT"
           />
         </div>
         <div>
@@ -982,18 +972,6 @@ function ManualAddForm({
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
-            <Phone className="w-3 h-3 text-gray-400" />
-            <span>Phone</span>
-          </label>
-          <input
-            value={form.phone}
-            onChange={(e) => setField('phone', e.target.value)}
-            className={INPUT_CLS}
-            placeholder="+1 555 123 4567"
-          />
-        </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center space-x-1">
             <Mail className="w-3 h-3 text-gray-400" />

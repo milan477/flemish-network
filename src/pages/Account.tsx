@@ -10,7 +10,6 @@ export default function Account() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [fullName, setFullName] = useState(staffUser?.full_name || '');
-  const [avatarUrl, setAvatarUrl] = useState(staffUser?.avatar_url || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,8 +26,7 @@ export default function Account() {
 
   useEffect(() => {
     setFullName(staffUser?.full_name || '');
-    setAvatarUrl(staffUser?.avatar_url || '');
-  }, [staffUser?.avatar_url, staffUser?.full_name]);
+  }, [staffUser?.full_name]);
 
   if (!staffUser) {
     return null;
@@ -44,7 +42,6 @@ export default function Account() {
       .from('staff_users')
       .update({
         full_name: fullName.trim() || null,
-        avatar_url: avatarUrl.trim() || null,
       })
       .eq('id', staffUser.id);
 
@@ -169,19 +166,6 @@ export default function Account() {
               onChange={(event) => setFullName(event.target.value)}
               className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
               placeholder="Your name"
-            />
-          </label>
-
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-gray-700">
-              Avatar URL
-            </span>
-            <input
-              type="url"
-              value={avatarUrl}
-              onChange={(event) => setAvatarUrl(event.target.value)}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
-              placeholder="https://..."
             />
           </label>
 

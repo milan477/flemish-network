@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, MailPlus, Save, ShieldCheck } from 'lucide-react';
+import { Loader2, MailPlus, Save, ShieldCheck, ShieldOff, ShieldPlus } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from '../../lib/supabase';
 
 type DraftUser = {
   full_name: string;
   role: AppRole;
-  status: StaffUser['status'];
 };
 
 const ROLE_OPTIONS: AppRole[] = ['viewer', 'editor', 'admin'];
-const STATUS_OPTIONS: StaffUser['status'][] = ['invited', 'active', 'disabled'];
+
+const STATUS_BADGE: Record<StaffUser['status'], { label: string; className: string }> = {
+  active: { label: 'Active', className: 'bg-green-50 text-green-700 border-green-200' },
+  invited: { label: 'Invited', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
+  disabled: { label: 'Revoked', className: 'bg-red-50 text-red-600 border-red-200' },
+};
 
 function formatDate(value?: string | null) {
   if (!value) return 'Never';
@@ -34,7 +38,7 @@ export default function AccessManagementPanel() {
 
     const { data, error: loadError } = await supabase
       .from('staff_users')
-      .select('id, user_id, email, full_name, avatar_url, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
+      .select('id, user_id, email, full_name, role, status, password_reset_required, last_sign_in_at, created_at, updated_at')
       .order('email');
 
     if (loadError) {
@@ -52,7 +56,6 @@ export default function AccessManagementPanel() {
           {
             full_name: row.full_name || '',
             role: row.role,
-            status: row.status,
           },
         ])
       )
@@ -127,7 +130,6 @@ export default function AccessManagementPanel() {
       .update({
         full_name: draft.full_name.trim() || null,
         role: draft.role,
-        status: draft.status,
       })
       .eq('id', userId);
 
@@ -138,6 +140,52 @@ export default function AccessManagementPanel() {
     }
 
     setMessage('Access settings updated.');
+    setSavingId(null);
+    await loadStaffUsers();
+  };
+
+  const handleRevokeRow = async (userId: string, email: string) => {
+    if (!window.confirm(`Revoke access for ${email}? They will be signed out on their next request.`)) return;
+
+    setSavingId(userId);
+    setError(null);
+    setMessage(null);
+
+    const { error: updateError } = await supabase
+      .from('staff_users')
+      .update({ status: 'disabled' })
+      .eq('id', userId);
+
+    if (updateError) {
+      setError(updateError.message);
+      setSavingId(null);
+      return;
+    }
+
+    setMessage(`Access revoked for ${email}.`);
+    setSavingId(null);
+    await loadStaffUsers();
+  };
+
+  const handleRestoreRow = async (userId: string, email: string) => {
+    if (!window.confirm(`Restore access for ${email}?`)) return;
+
+    setSavingId(userId);
+    setError(null);
+    setMessage(null);
+
+    const { error: updateError } = await supabase
+      .from('staff_users')
+      .update({ status: 'invited' })
+      .eq('id', userId);
+
+    if (updateError) {
+      setError(updateError.message);
+      setSavingId(null);
+      return;
+    }
+
+    setMessage(`Access restored for ${email}.`);
     setSavingId(null);
     await loadStaffUsers();
   };
@@ -216,13 +264,13 @@ export default function AccessManagementPanel() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="grid grid-cols-[2fr,2fr,1fr,1fr,1.2fr,auto] gap-4 border-b border-gray-100 px-6 py-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 border-b border-gray-100 px-6 py-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Email</span>
           <span>Name</span>
           <span>Role</span>
           <span>Status</span>
           <span>Last Sign-In</span>
-          <span className="text-right">Action</span>
+          <span className="text-right">Actions</span>
         </div>
 
         {loading ? (
@@ -237,10 +285,11 @@ export default function AccessManagementPanel() {
           <div className="divide-y divide-gray-100">
             {staffUsers.map((user) => {
               const draft = drafts[user.id];
+              const badge = STATUS_BADGE[user.status];
               return (
                 <div
                   key={user.id}
-                  className="grid grid-cols-[2fr,2fr,1fr,1fr,1.2fr,auto] gap-4 px-6 py-4 items-center"
+                  className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 px-6 py-4 items-center"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-gray-900">
@@ -277,25 +326,13 @@ export default function AccessManagementPanel() {
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={draft?.status || 'invited'}
-                    onChange={(event) =>
-                      updateDraft(user.id, {
-                        status: event.target.value as StaffUser['status'],
-                      })
-                    }
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
+                  <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge.className}`}>
+                    {badge.label}
+                  </span>
                   <span className="text-sm text-gray-500">
                     {formatDate(user.last_sign_in_at)}
                   </span>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
                     <button
                       onClick={() => handleSaveRow(user.id)}
                       disabled={savingId === user.id}
@@ -308,6 +345,25 @@ export default function AccessManagementPanel() {
                       )}
                       <span>Save</span>
                     </button>
+                    {user.status === 'disabled' ? (
+                      <button
+                        onClick={() => handleRestoreRow(user.id, user.email)}
+                        disabled={savingId === user.id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-green-200 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                      >
+                        <ShieldPlus className="h-4 w-4" />
+                        <span>Restore</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleRevokeRow(user.id, user.email)}
+                        disabled={savingId === user.id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        <ShieldOff className="h-4 w-4" />
+                        <span>Revoke</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );

@@ -2,9 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Loader2,
   Check,
-  X,
   UserPlus,
-  Trash2,
   ExternalLink,
   Mail,
   Linkedin,
@@ -12,6 +10,7 @@ import {
   Tag,
   MapPin,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Users,
   GitMerge,
@@ -19,6 +18,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Building2,
+  X,
 } from 'lucide-react';
 import {
   supabase,
@@ -63,7 +63,7 @@ interface DiscoveredContact {
   last_evidence_at?: string | null;
   evidence_count?: number | null;
   discovery_confidence?: number | null;
-  suggested_us_network_status?: 'us_based' | 'us_connected_abroad' | 'needs_review' | null;
+  suggested_us_network_status?: 'us_based' | 'us_connected_abroad' | null;
   suggested_us_network_confidence?: number | null;
   current_location_city?: string | null;
   current_location_country?: string | null;
@@ -71,6 +71,24 @@ interface DiscoveredContact {
   reviewed_at?: string | null;
   review_outcome?: string | null;
   approved_person_id?: string | null;
+  verification_status?: 'queued' | 'verifying' | 'verified' | null;
+  verification_payload?: VerificationPayload | null;
+  verified_at?: string | null;
+}
+
+export interface VerificationPayload {
+  network_scope: 'us_based' | 'us_connected_abroad' | null;
+  location_city: string | null;
+  location_state: string | null;
+  location_country: string | null;
+  current_role: string | null;
+  current_employer: string | null;
+  flemish_ties: string[];
+  evidence: Array<{ url: string; excerpt: string }>;
+  confidence: number;
+  contradiction: boolean;
+  contradiction_reason: string | null;
+  notes: string | null;
 }
 
 interface SuggestedUsConnection {
@@ -116,6 +134,9 @@ interface DiscoveredOrganization {
   last_seen_at: string | null;
   last_evidence_at: string | null;
   evidence_count: number | null;
+  verification_status?: 'queued' | 'verifying' | 'verified' | null;
+  verification_payload?: VerificationPayload | null;
+  verified_at?: string | null;
 }
 
 interface SuggestedOrganizationLocation {
@@ -1079,7 +1100,8 @@ interface DiscoveredContactsPanelProps {
 }
 
 export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredContactsPanelProps) {
-  const [activeQueue, setActiveQueue] = useState<'people' | 'organizations'>('people');
+  const [peopleOpen, setPeopleOpen] = useState(true);
+  const [orgsOpen, setOrgsOpen] = useState(true);
   const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
   const [organizations, setOrganizations] = useState<DiscoveredOrganization[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -1227,54 +1249,41 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     loadData();
   }, [loadData, refreshKey]);
 
+  // Realtime: refresh on verification_status transitions or hard-deletes by agent-verify.
   useEffect(() => {
-    if (loading) return;
-    if (activeQueue === 'people' && contacts.length === 0 && organizations.length > 0) {
-      setActiveQueue('organizations');
-    }
-    if (activeQueue === 'organizations' && organizations.length === 0 && contacts.length > 0) {
-      setActiveQueue('people');
-    }
-  }, [activeQueue, contacts.length, loading, organizations.length]);
-
-  const handleReject = useCallback(async (contact: DiscoveredContact) => {
-    setActionId(contact.id);
-    await supabase
-      .from('discovered_contacts')
-      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
-      .eq('id', contact.id);
-    setContacts((prev) => prev.filter((c) => c.id !== contact.id));
-    setDuplicates((prev) => {
-      const next = new Map(prev);
-      next.delete(contact.id);
-      return next;
-    });
-    setActionId(null);
-  }, []);
-
-  const handleMarkNeedsReview = useCallback(async (contact: DiscoveredContact) => {
-    setActionId(contact.id);
-    await supabase
-      .from('discovered_contacts')
-      .update({
-        suggested_us_network_status: 'needs_review',
-        review_outcome: 'needs_review',
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', contact.id);
-    setContacts((prev) =>
-      prev.map((item) =>
-        item.id === contact.id
-          ? {
-              ...item,
-              suggested_us_network_status: 'needs_review',
-              review_outcome: 'needs_review',
-            }
-          : item
+    const channel = supabase
+      .channel('discovered-verification')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'discovered_contacts' },
+        () => loadData(),
       )
-    );
-    setActionId(null);
-  }, []);
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'discovered_organizations' },
+        () => loadData(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadData]);
+
+  const handleReject = useCallback(
+    async (contact: DiscoveredContact) => {
+      setActionId(contact.id);
+      await supabase.from('discovered_contacts').delete().eq('id', contact.id);
+      setContacts((prev) => prev.filter((c) => c.id !== contact.id));
+      setDuplicates((prev) => {
+        const next = new Map(prev);
+        next.delete(contact.id);
+        return next;
+      });
+      setActionId(null);
+    },
+    [],
+  );
 
   const handleApproveAs = useCallback(
     async (
@@ -1300,10 +1309,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     // Only approve non-duplicates with high-confidence scope suggestions in bulk.
     const nonDupes = contacts.filter((c) => {
       if (duplicates.has(c.id)) return false;
-      const status = c.suggested_us_network_status || 'us_based';
+      if (c.verification_status && c.verification_status !== 'verified') return false;
       const confidence =
         c.suggested_us_network_confidence ?? c.discovery_confidence ?? 0;
-      return status !== 'needs_review' && confidence >= 0.8;
+      return confidence >= 0.8;
     });
     for (const contact of nonDupes) {
       setActionId(contact.id);
@@ -1322,29 +1331,28 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   const handleRejectAll = useCallback(async () => {
     setActionId('all');
     const ids = contacts.map((c) => c.id);
-    await supabase
-      .from('discovered_contacts')
-      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
-      .in('id', ids);
+    if (ids.length > 0) {
+      await supabase.from('discovered_contacts').delete().in('id', ids);
+    }
     setContacts([]);
     setDuplicates(new Map());
     setActionId(null);
   }, [contacts]);
 
-  const handleRejectOrganization = useCallback(async (organization: DiscoveredOrganization) => {
-    setActionId(organization.id);
-    await supabase
-      .from('discovered_organizations')
-      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
-      .eq('id', organization.id);
-    setOrganizations((prev) => prev.filter((item) => item.id !== organization.id));
-    setOrganizationDuplicates((prev) => {
-      const next = new Map(prev);
-      next.delete(organization.id);
-      return next;
-    });
-    setActionId(null);
-  }, []);
+  const handleRejectOrganization = useCallback(
+    async (organization: DiscoveredOrganization) => {
+      setActionId(organization.id);
+      await supabase.from('discovered_organizations').delete().eq('id', organization.id);
+      setOrganizations((prev) => prev.filter((item) => item.id !== organization.id));
+      setOrganizationDuplicates((prev) => {
+        const next = new Map(prev);
+        next.delete(organization.id);
+        return next;
+      });
+      setActionId(null);
+    },
+    [],
+  );
 
   const handleApproveOrganization = useCallback(
     async (organization: DiscoveredOrganization) => {
@@ -1391,14 +1399,31 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   const handleRejectAllOrganizations = useCallback(async () => {
     setActionId('all-organizations');
     const ids = organizations.map((organization) => organization.id);
-    await supabase
-      .from('discovered_organizations')
-      .update({ status: 'rejected', review_outcome: 'rejected', reviewed_at: new Date().toISOString() })
-      .in('id', ids);
+    if (ids.length > 0) {
+      await supabase.from('discovered_organizations').delete().in('id', ids);
+    }
     setOrganizations([]);
     setOrganizationDuplicates(new Map());
     setActionId(null);
   }, [organizations]);
+
+  const handleApproveAllOrganizations = useCallback(async () => {
+    setActionId('all-organizations');
+    const verifiedOrgs = organizations.filter(
+      (organization) =>
+        (organization.verification_status ?? 'verified') === 'verified' &&
+        !organizationDuplicates.has(organization.id),
+    );
+    for (const organization of verifiedOrgs) {
+      await approveOrganization(
+        organization,
+        sectors,
+        organization.suggested_us_network_status || 'us_organization_connected_to_flanders',
+      );
+    }
+    await loadData();
+    setActionId(null);
+  }, [organizations, organizationDuplicates, sectors, loadData]);
 
   const handleMerged = useCallback(() => {
     const contactId = mergeTarget?.contact.id;
@@ -1451,56 +1476,8 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     );
   }
 
-  const totalPending = contacts.length + organizations.length;
-  const queueTabs = (
-    <div className="bg-white rounded-xl p-1 shadow-sm border border-gray-100 inline-flex">
-      {[
-        { key: 'people' as const, label: 'People', count: contacts.length, icon: Users },
-        { key: 'organizations' as const, label: 'Organizations', count: organizations.length, icon: Building2 },
-      ].map((tab) => {
-        const Icon = tab.icon;
-        return (
-          <button
-            key={tab.key}
-            onClick={() => setActiveQueue(tab.key)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
-              activeQueue === tab.key
-                ? 'bg-yellow-100 text-yellow-800'
-                : 'text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            {tab.label}
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px]">
-              {tab.count}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  if (totalPending === 0) {
-    return (
-      <div className="space-y-4">
-        {queueTabs}
-        <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-            <Users className="w-7 h-7 text-gray-300" />
-          </div>
-          <p className="text-sm font-medium text-gray-500 mb-1">
-            No pending discovered candidates
-          </p>
-          <p className="text-xs text-gray-400">
-            Start a Discovery run or add/import candidates from the Discovery tab.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Show merge compare view
-  if (activeQueue === 'people' && mergeTarget) {
+  if (mergeTarget) {
     return (
       <MergeCompare
         contact={mergeTarget.contact}
@@ -1520,10 +1497,32 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   const organizationNewCount = organizations.length - organizationDupeCount;
 
   return (
-    <div className="space-y-4">
-      {queueTabs}
-      {activeQueue === 'people' ? (
-        <>
+    <div className="space-y-6">
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+        <button
+          onClick={() => setPeopleOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-6 py-4 text-left hover:bg-gray-50"
+        >
+          {peopleOpen
+            ? <ChevronDown className="h-4 w-4 text-gray-400" />
+            : <ChevronRight className="h-4 w-4 text-gray-400" />}
+          <Users className="h-4 w-4 text-gray-400" />
+          <h2 className="text-lg font-semibold text-gray-900">Pending Discovered People</h2>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+            {contacts.length}
+          </span>
+        </button>
+        {peopleOpen && (
+          <div className="space-y-4 px-6 pb-6">
+            {contacts.length === 0 ? (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-center">
+                <p className="text-sm text-gray-500">No pending people</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  Start a Discovery run or add/import people from the Discovery tab.
+                </p>
+              </div>
+            ) : (
+              <>
       {/* Bulk actions */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
         <div className="text-sm text-gray-700">
@@ -1554,11 +1553,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           </button>
           <button
             onClick={handleRejectAll}
-            disabled={actionId !== null}
+            disabled={actionId !== null || contacts.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            Reject All
+            <X className="w-3.5 h-3.5" />
+            Reject All ({contacts.length})
           </button>
         </div>
       </div>
@@ -1575,16 +1574,31 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             ? Math.round(contact.discovery_confidence * 100)
             : null;
 
+        const verificationStatus = contact.verification_status ?? 'verified';
+        const isVerified = verificationStatus === 'verified';
+
         return (
           <div
             key={contact.id}
             className={`bg-white rounded-xl border transition-all px-5 py-4 ${
-              dupeMatch
-                ? 'border-amber-200 bg-amber-50/20'
-                : 'border-gray-200 hover:border-gray-300'
+              !isVerified
+                ? 'border-gray-200 opacity-60'
+                : dupeMatch
+                  ? 'border-amber-200 bg-amber-50/20'
+                  : 'border-gray-200 hover:border-gray-300'
             }`}
           >
-            {dupeMatch && (
+            {!isVerified && (
+              <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-slate-100 rounded-lg">
+                <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                <span className="text-[11px] text-slate-600 font-medium">
+                  {verificationStatus === 'verifying'
+                    ? 'Verifying — checking sources and Flemish ties…'
+                    : 'Queued for verification'}
+                </span>
+              </div>
+            )}
+            {dupeMatch && isVerified && (
               <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-amber-100/60 rounded-lg">
                 <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
                 <span className="text-[11px] text-amber-700 font-medium">
@@ -1631,9 +1645,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded font-medium">
                       {contact.suggested_us_network_status === 'us_connected_abroad'
                         ? 'US-connected abroad'
-                        : contact.suggested_us_network_status === 'needs_review'
-                          ? 'Needs review'
-                          : 'US-based'}
+                        : 'US-based'}
                     </span>
                   )}
                 </div>
@@ -1856,7 +1868,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
 
               {/* Action buttons */}
                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                  {dupeMatch ? (
+                  {!isVerified ? (
+                    <span className="text-[11px] text-slate-500 italic">
+                      Awaiting verification
+                    </span>
+                  ) : dupeMatch ? (
                     <>
                     <button
                       onClick={() =>
@@ -1890,53 +1906,72 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     </button>
                   </>
                 ) : (
-                  <>
-                    <button
-                      onClick={() => handleApproveAs(contact, 'us_based')}
-                      disabled={isActioning}
-                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      {isActioning ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <UserPlus className="w-3 h-3" />
-                      )}
-                      Approve as US-based
-                    </button>
-                    <button
-                      onClick={() => handleApproveAs(contact, 'us_connected_abroad')}
-                      disabled={isActioning}
-                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors disabled:opacity-50"
-                    >
+                  <button
+                    onClick={() =>
+                      handleApproveAs(
+                        contact,
+                        contact.suggested_us_network_status === 'us_connected_abroad'
+                          ? 'us_connected_abroad'
+                          : 'us_based',
+                      )
+                    }
+                    disabled={isActioning}
+                    className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {isActioning ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
                       <UserPlus className="w-3 h-3" />
-                      Approve as connected
-                    </button>
-                    <button
-                      onClick={() => handleMarkNeedsReview(contact)}
-                      disabled={isActioning}
-                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      <AlertTriangle className="w-3 h-3" />
-                      Needs review
-                    </button>
-                  </>
+                    )}
+                    Approve
+                  </button>
                 )}
-                <button
-                  onClick={() => handleReject(contact)}
-                  disabled={isActioning}
-                  className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  <X className="w-3 h-3" />
-                  Reject
-                </button>
+                {isVerified && (
+                  <button
+                    onClick={() => handleReject(contact)}
+                    disabled={isActioning}
+                    className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <X className="w-3 h-3" />
+                    Reject
+                  </button>
+                )}
               </div>
             </div>
           </div>
         );
       })}
-        </>
-      ) : (
-        <>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
+        <button
+          onClick={() => setOrgsOpen((v) => !v)}
+          className="flex w-full items-center gap-2 px-6 py-4 text-left hover:bg-gray-50"
+        >
+          {orgsOpen
+            ? <ChevronDown className="h-4 w-4 text-gray-400" />
+            : <ChevronRight className="h-4 w-4 text-gray-400" />}
+          <Building2 className="h-4 w-4 text-gray-400" />
+          <h2 className="text-lg font-semibold text-gray-900">Pending Discovered Organizations</h2>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+            {organizations.length}
+          </span>
+        </button>
+        {orgsOpen && (
+          <div className="space-y-4 px-6 pb-6">
+            {organizations.length === 0 ? (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-center">
+                <p className="text-sm text-gray-500">No pending organizations</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  Start a Discovery run or add/import organizations from the Discovery tab.
+                </p>
+              </div>
+            ) : (
+              <>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
             <div className="text-sm text-gray-700">
               <span className="font-semibold text-gray-900">{organizations.length}</span>{' '}
@@ -1953,25 +1988,29 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                 </span>
               ) : null}
             </div>
-            <button
-              onClick={handleRejectAllOrganizations}
-              disabled={actionId !== null || organizations.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Reject All
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleApproveAllOrganizations}
+                disabled={actionId !== null || organizations.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Check className="w-3.5 h-3.5" />
+                Approve{organizationDupeCount > 0
+                  ? ` New (${organizationNewCount})`
+                  : ' All'}
+              </button>
+              <button
+                onClick={handleRejectAllOrganizations}
+                disabled={actionId !== null || organizations.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reject All ({organizations.length})
+              </button>
+            </div>
           </div>
 
-          {organizations.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-                <Building2 className="w-7 h-7 text-gray-300" />
-              </div>
-              <p className="text-sm font-medium text-gray-500">No pending organizations</p>
-            </div>
-          ) : (
-            organizations.map((organization) => {
+          {organizations.map((organization) => {
               const isActioning = actionId === organization.id || actionId === 'all-organizations';
               const dupeMatch = organizationDuplicates.get(organization.id);
               const evidenceRows = evidenceByOrganization.get(organization.id) || [];
@@ -1981,17 +2020,31 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                   ? Math.round(organization.confidence * 100)
                   : null;
               const locations = normalizeOrganizationLocations(organization.us_locations);
+              const orgVerificationStatus = organization.verification_status ?? 'verified';
+              const orgIsVerified = orgVerificationStatus === 'verified';
 
               return (
                 <div
                   key={organization.id}
                   className={`bg-white rounded-xl border transition-all px-5 py-4 ${
-                    dupeMatch
-                      ? 'border-amber-200 bg-amber-50/20'
-                      : 'border-gray-200 hover:border-gray-300'
+                    !orgIsVerified
+                      ? 'border-gray-200 opacity-60'
+                      : dupeMatch
+                        ? 'border-amber-200 bg-amber-50/20'
+                        : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  {dupeMatch && (
+                  {!orgIsVerified && (
+                    <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-slate-100 rounded-lg">
+                      <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                      <span className="text-[11px] text-slate-600 font-medium">
+                        {orgVerificationStatus === 'verifying'
+                          ? 'Verifying — checking sources and Flemish ties…'
+                          : 'Queued for verification'}
+                      </span>
+                    </div>
+                  )}
+                  {dupeMatch && orgIsVerified && (
                     <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-amber-100/60 rounded-lg">
                       <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
                       <span className="text-[11px] text-amber-700 font-medium">
@@ -2176,7 +2229,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                      {dupeMatch ? (
+                      {!orgIsVerified ? (
+                        <span className="text-[11px] text-slate-500 italic">
+                          Awaiting verification
+                        </span>
+                      ) : dupeMatch ? (
                         <>
                           <button
                             onClick={() => handleMergeOrganization(organization, dupeMatch)}
@@ -2213,22 +2270,26 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                           Approve
                         </button>
                       )}
-                      <button
-                        onClick={() => handleRejectOrganization(organization)}
-                        disabled={isActioning}
-                        className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        <X className="w-3 h-3" />
-                        Reject
-                      </button>
+                      {orgIsVerified && (
+                        <button
+                          onClick={() => handleRejectOrganization(organization)}
+                          disabled={isActioning}
+                          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          <X className="w-3 h-3" />
+                          Reject
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
               );
-            })
-          )}
-        </>
-      )}
+            })}
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

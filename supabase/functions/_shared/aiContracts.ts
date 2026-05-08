@@ -224,7 +224,7 @@ Rules:
 - Only populate fields that the query implies; leave others as empty arrays
 - For location, expand abbreviations (e.g. "SF" -> "san francisco", "NYC" -> "new york")
 - For sector, use the exact sector names in lowercase
-- Generate synonyms and related terms to improve matching (e.g. "AI" -> ["artificial intelligence", "ai", "machine learning"])
+- Generate synonyms and related terms to improve matching (e.g. "Artificial Intelligence" -> ["machine learning", "neural networks"])
 - Maximum 5 keywords per field
 - Always provide a brief message describing what you're searching for`;
 

@@ -70,6 +70,38 @@ Quality gates before autonomy:
 - Organization candidates are promoted only through explicit reviewer approval or merge, with source URLs and evidence excerpts visible in review.
 - Active UI source must not call retired Discovery endpoints or retired `ai-agent` Discovery tasks; prompted Discovery runs only through `agent-scheduler`.
 
+### Held-out recall
+
+Held-out recall is the primary north-star metric for the Discovery Redesign (see `docs/DISCOVERY-REDESIGN.md`). The held-out set lives in `discovery_eval_holdout` — known Flemish-Americans intentionally excluded from the approved network.
+
+- **Definition:** rolling 30-day recall = (holdout rows whose `last_seen_as_candidate_at` is within the last 30 days) ÷ (total holdout rows).
+- **Update path:** the `eval-holdout-check` edge function fuzzy-matches each holdout row's `full_name` and `known_aliases` against `discovered_contacts.created_at >= now() - 30 days`, updating `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id` on hit. Triggered manually from the Discovery Eval admin panel; should be invoked nightly by an external cron or `agent-scheduler` housekeeping.
+- **Targets:** Phase 0 baseline ≥ 0% (just measure). Phase 1+ ≥ 50% within 6 weeks of deploy. ≥ 30 holdout rows must be seeded before recall numbers are taken seriously.
+- **Source:** seed via `scripts/seed_eval_holdout.ts` from a local JSON file (`HOLDOUT_FILE=`). The list contains contact info and is not committed to the repo.
+
+### Reject-reason taxonomy
+
+Every rejected `discovered_contacts` and `discovered_organizations` row should carry a structured `reject_reason`:
+
+- `discovered_contacts`: `not_flemish`, `walloon_or_francophone`, `not_us_based`, `duplicate`, `insufficient_evidence`, `low_signal`, `other`.
+- `discovered_organizations`: `not_flemish_relevant`, `not_us_present`, `duplicate`, `insufficient_evidence`, `low_signal`, `other`.
+
+Optional `reject_reason_note` captures freeform context. Reject reasons drive the per-query `rejected_reason_breakdown` in `discovery_query_attempts` and are used by later phases to score arms in the bandit allocator. Quality gate: `reject_reason = 'not_flemish'` rate must trend below 15% of pending candidates.
+
+### Per-query yield logging
+
+`agent-discovery` writes one `discovery_query_attempts` row per `searchWeb` call, capturing `query_text`, `source_type`, `pivot_entity_key`, `provider`, `surface`, `lens`, `composition_keys`, and `urls_returned`. After the run completes, `resolve_discovery_query_attempts(run_id)` joins frontier → pages → evidence → contacts to populate `pages_fetched`, `candidates_extracted`, `new_pending_contacts`, `contacts_later_approved`, `contacts_later_rejected`, and `rejected_reason_breakdown`.
+
+### Bandit allocator quality gates (Phase 3)
+
+The Thompson-sampling bandit allocator (`supabase/functions/_shared/banditAllocator.ts`) is subject to the following invariants. Violations are regressions:
+
+- **Exploration reserve:** at least `Math.ceil(budget * 0.25)` slots in every non-custom-query run must have `is_exploration = true` in the `bandit_allocation` step logged to `agent_runs.results.steps`.
+- **Budget diversification:** no single `(surface, lens)` arm may consume > 25% of total query budget over any rolling 7-day window. Monitor via `discovery_arm_stats.attempts` relative to the sum across all arms.
+- **Saturation enforcement:** any arm with `cooldown_until > now()` must not appear in the allocated slots for that run.
+- **Saturation trigger:** arms with `last_yielding_attempt_at` older than 7 days (or null) and `attempts >= 3` must acquire `cooldown_until = now() + 7 days` in `discovery_arm_stats` within one housekeeping cycle.
+- **Nightly refresh:** `agent-scheduler` housekeeping must call `refreshArmStats` and return a non-null `arm_stats_refreshed` count. Zero arms refreshed after ≥ 1 discovery run is a defect.
+
 ## Verification Evaluation
 
 Question: are suggestions correct, evidence-backed, and conservative?

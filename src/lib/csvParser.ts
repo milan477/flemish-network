@@ -811,7 +811,7 @@ const PEOPLE_TEMPLATE_EXAMPLES: Record<string, string>[] = [
     'US Connection Label': '',
     'US Connection Source URL': '',
     'US Connection Evidence': '',
-    Bio: 'Belgian researcher specializing in AI and machine learning.',
+    Bio: 'Belgian researcher specializing in Artificial Intelligence and machine learning.',
     'Flemish Connection': 'KU Leuven',
     Email: 'jan.desmedt@example.com',
     LinkedIn: 'https://linkedin.com/in/jandesmedt',

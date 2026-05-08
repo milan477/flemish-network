@@ -54,6 +54,16 @@ import {
   type OrganizationNetworkStatus,
 } from "../_shared/discoveryOrganizations.ts";
 import { createLogger } from "../_shared/log.ts";
+import {
+  generateSearchQueries,
+  type GeneratedQuery,
+  type QueryGenerationContext,
+} from "../_shared/queryGeneration.ts";
+import {
+  allocateBudget,
+  updateArmStats,
+  type AllocationSlot,
+} from "../_shared/banditAllocator.ts";
 
 const log = createLogger("agent-discovery");
 
@@ -66,7 +76,7 @@ const corsHeaders = {
 
 const DEFAULT_BATCH_SIZE = 10;
 const MAX_BATCH_SIZE = 20;
-const MAX_SEARCH_QUERIES = 6;
+const MAX_SEARCH_QUERIES = 5;
 const MAX_DEPTH = 2;
 const MAX_CHILD_LINKS = 5;
 const DEFAULT_PER_DOMAIN_RUN_LIMIT = 3;
@@ -495,23 +505,31 @@ interface LinkedInProfile {
   description?: string;
 }
 
-interface DiscoverySourcePack {
-  id: string;
+interface DiscoverySurface {
   key: string;
   name: string;
-  query_templates: string[] | null;
-  coverage_target_keys: string[] | null;
-  priority_boost: number | null;
-  max_seed_urls_per_run: number | null;
-  refresh_interval_days: number | null;
-  last_seeded_at: string | null;
+  description: string | null;
+  preferred_site_operators: string[];
+}
+
+interface DiscoveryLens {
+  key: string;
+  name: string;
+  description: string | null;
+  prompt_guidance: string | null;
+}
+
+interface DiscoverySeedDomain {
+  id: string;
+  domain: string;
+  surfaces: string[];
+  lenses: string[];
+  notes: string | null;
 }
 
 interface SearchSeedPlan {
   query: string;
-  sourceType: "custom_query" | "source_pack" | "entity_pivot";
-  sourcePackId: string | null;
-  sourcePackKey: string | null;
+  sourceType: "custom_query" | "surface_lens" | "entity_pivot";
   priorityBoost: number;
   maxSeedUrls: number;
   coverageTargetKey: string | null;
@@ -521,6 +539,11 @@ interface SearchSeedPlan {
   entityKey: string | null;
   entityName: string | null;
   entityType: string | null;
+  surface: string | null;
+  lens: string | null;
+  rationale: string | null;
+  domainHint: string | null;
+  compositionKeys: string[];
 }
 
 interface FrontierRow {
@@ -533,7 +556,6 @@ interface FrontierRow {
   discovered_from_url: string | null;
   discovery_reason: string | null;
   source_type: string;
-  source_pack_id: string | null;
   pivot_entity_key: string | null;
   pivot_entity_name: string | null;
   pivot_entity_type: string | null;
@@ -549,7 +571,6 @@ interface EntityPivotPlanRow {
   entity_name: string;
   entity_type: string;
   coverage_target_keys: string[];
-  seed_queries: string[];
   source_urls: string[];
   source_count: number;
   strong_source_count: number;
@@ -604,7 +625,6 @@ interface FrontierUpsertRow {
   discovered_from_url: string | null;
   discovery_reason: string;
   source_type: string;
-  source_pack_id: string | null;
   pivot_entity_key: string | null;
   pivot_entity_name: string | null;
   pivot_entity_type: string | null;
@@ -638,7 +658,6 @@ interface EntityPivotCandidate {
   entityType: string;
   normalizedDomain: string | null;
   coverageTargetKeys: string[];
-  seedQueries: string[];
   sourceUrl: string;
   sourceTitle: string | null;
   sourcePageType: string | null;
@@ -983,55 +1002,6 @@ function inferEntityType(entityName: string, pageType?: string | null): string {
   return "organization";
 }
 
-function buildPivotSeedQueries(entityName: string, entityType: string): string[] {
-  const quoted = `"${entityName}"`;
-
-  switch (entityType) {
-    case "lab":
-      return [
-        `${quoted} team United States`,
-        `${quoted} members United States`,
-        `${quoted} faculty United States`,
-      ];
-    case "fellowship":
-      return [
-        `${quoted} fellows United States`,
-        `${quoted} alumni United States`,
-        `${quoted} placements United States`,
-      ];
-    case "advisory_board":
-      return [
-        `${quoted} advisory board United States`,
-        `${quoted} leadership United States`,
-        `${quoted} board members United States`,
-      ];
-    case "event":
-      return [
-        `${quoted} speakers United States`,
-        `${quoted} agenda United States`,
-        `${quoted} participants United States`,
-      ];
-    case "association":
-      return [
-        `${quoted} board United States`,
-        `${quoted} members United States`,
-        `${quoted} events United States`,
-      ];
-    case "institution":
-      return [
-        `${quoted} alumni United States`,
-        `${quoted} faculty United States`,
-        `${quoted} team United States`,
-      ];
-    default:
-      return [
-        `${quoted} team United States`,
-        `${quoted} leadership United States`,
-        `${quoted} advisory board United States`,
-      ];
-  }
-}
-
 function buildCoverageTargetKeys(
   contact: ExtractedContact,
   evidence: DiscoveryEvidenceInput[],
@@ -1071,7 +1041,6 @@ function extractPivotCandidates(
       entityType,
       normalizedDomain: extractDomain(source.pageUrl) || null,
       coverageTargetKeys: buildCoverageTargetKeys(contact, evidence),
-      seedQueries: buildPivotSeedQueries(entityName, entityType),
       sourceUrl: source.pageUrl,
       sourceTitle: source.pageTitle || null,
       sourcePageType: source.pageType || null,
@@ -1439,69 +1408,15 @@ function normalizeFlemishFactCandidate(
   };
 }
 
-function hashSeed(seed: string): number {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-  return hash;
-}
-
-function selectRotatingItems<T>(items: T[], count: number, seed: string): T[] {
-  if (items.length <= count) return [...items];
-
-  const start = hashSeed(seed) % items.length;
-  const result: T[] = [];
-  for (let index = 0; index < Math.min(count, items.length); index += 1) {
-    result.push(items[(start + index) % items.length]);
-  }
-  return result;
-}
-
 function hoursSince(timestamp: string | null | undefined): number {
   if (!timestamp) return Number.POSITIVE_INFINITY;
   const delta = Date.now() - new Date(timestamp).getTime();
   return delta / (1000 * 60 * 60);
 }
 
-function queryIncludesToken(query: string, token: string): boolean {
-  const normalizedQuery = query.toLowerCase();
-  const normalizedToken = token.toLowerCase();
-  return normalizedQuery.includes(normalizedToken);
-}
-
-function pickGapForSourcePack(
-  pack: DiscoverySourcePack,
-  gaps: CoverageGapRow[],
-): CoverageGapRow | null {
-  const packTargets = new Set((pack.coverage_target_keys || []).map((value) => value.toLowerCase()));
-  const scoped = packTargets.size > 0
-    ? gaps.filter((gap) => packTargets.has(gap.geography_key.toLowerCase()))
-    : gaps;
-
-  return scoped
-    .filter((gap) => Number(gap.gap_score || 0) > 0)
-    .sort((a, b) => Number(b.gap_score || 0) - Number(a.gap_score || 0))[0] || null;
-}
-
 function pickGapSector(gap: CoverageGapRow | null): string | null {
   const sectors = Array.isArray(gap?.sector_emphasis) ? gap?.sector_emphasis : [];
   return sectors.find((value) => normalizeWhitespace(value).length > 0) || null;
-}
-
-function decorateQueryWithGap(baseQuery: string, gap: CoverageGapRow | null): string {
-  if (!gap) return normalizeWhitespace(baseQuery);
-
-  const sector = pickGapSector(gap);
-  const parts = [normalizeWhitespace(baseQuery)];
-  if (!queryIncludesToken(baseQuery, gap.label)) {
-    parts.push(gap.label);
-  }
-  if (sector && !queryIncludesToken(baseQuery, sector)) {
-    parts.push(sector);
-  }
-
-  return normalizeWhitespace(parts.join(" "));
 }
 
 function computeNextFetchAt(
@@ -1934,20 +1849,46 @@ ${page.text.slice(0, attempt.maxChars)}
   throw lastError instanceof Error ? lastError : new Error("Failed to extract candidates from page");
 }
 
-async function loadSourcePacks(
+async function loadSurfaceLensTaxonomy(
   supabase: SupabaseAdminClient,
-): Promise<DiscoverySourcePack[]> {
-  const { data, error } = await supabase
-    .from("discovery_source_packs")
-    .select("id, key, name, query_templates, coverage_target_keys, priority_boost, max_seed_urls_per_run, refresh_interval_days, last_seeded_at")
-    .eq("active", true)
-    .order("last_seeded_at", { ascending: true, nullsFirst: true });
+): Promise<{
+  surfaces: DiscoverySurface[];
+  lenses: DiscoveryLens[];
+  domains: DiscoverySeedDomain[];
+}> {
+  const [surfacesRes, lensesRes, domainsRes] = await Promise.all([
+    supabase
+      .from("discovery_surfaces")
+      .select("key, name, description, preferred_site_operators")
+      .eq("active", true)
+      .order("key"),
+    supabase
+      .from("discovery_lenses")
+      .select("key, name, description, prompt_guidance")
+      .eq("active", true)
+      .order("key"),
+    supabase
+      .from("discovery_seed_domains")
+      .select("id, domain, surfaces, lenses, notes")
+      .eq("active", true)
+      .order("domain"),
+  ]);
 
-  if (error) {
-    throw new Error(`Failed to load source packs: ${error.message}`);
+  if (surfacesRes.error) {
+    throw new Error(`Failed to load discovery surfaces: ${surfacesRes.error.message}`);
+  }
+  if (lensesRes.error) {
+    throw new Error(`Failed to load discovery lenses: ${lensesRes.error.message}`);
+  }
+  if (domainsRes.error) {
+    throw new Error(`Failed to load discovery seed domains: ${domainsRes.error.message}`);
   }
 
-  return (data || []) as DiscoverySourcePack[];
+  return {
+    surfaces: (surfacesRes.data || []) as DiscoverySurface[],
+    lenses: (lensesRes.data || []) as DiscoveryLens[],
+    domains: (domainsRes.data || []) as DiscoverySeedDomain[],
+  };
 }
 
 async function loadCoverageGaps(
@@ -2039,103 +1980,316 @@ async function getQueuedFrontierCount(
   return count || 0;
 }
 
-function buildSeedPlans(
+function customQueryPlan(generated: GeneratedQuery): SearchSeedPlan {
+  return {
+    query: generated.query,
+    sourceType: "custom_query" as const,
+    priorityBoost: 6,
+    maxSeedUrls: 10,
+    coverageTargetKey: null,
+    gapLabel: null,
+    gapScore: 0,
+    gapSector: null,
+    entityKey: null,
+    entityName: null,
+    entityType: null,
+    surface: generated.surface,
+    lens: generated.lens,
+    rationale: generated.rationale,
+    domainHint: null,
+    compositionKeys: [],
+  };
+}
+
+async function runQueryGeneration(
+  intent: string,
+  options: {
+    runId: string | undefined;
+    geminiKey: string;
+    llmStats: { calls: number };
+    steps: StepLog[];
+    elapsed: () => string;
+    stepLabel: string;
+    surfaces?: string[];
+    lenses?: string[];
+    context?: QueryGenerationContext;
+    maxQueries?: number;
+  },
+): Promise<GeneratedQuery[]> {
+  const trimmed = normalizeWhitespace(intent);
+  if (!trimmed) return [];
+
+  const rotationSeed = options.context?.rotationSeed || options.runId ||
+    new Date().toISOString();
+
+  const result = await generateSearchQueries(
+    {
+      intent: trimmed,
+      surfaces: options.surfaces,
+      lenses: options.lenses,
+      context: { ...(options.context || {}), rotationSeed },
+      maxQueries: options.maxQueries ?? MAX_SEARCH_QUERIES,
+      runId: options.runId ?? null,
+    },
+    options.geminiKey,
+  );
+
+  if (!result.fallbackUsed) {
+    options.llmStats.calls += 1;
+  }
+
+  options.steps.push({
+    step: options.stepLabel,
+    timestamp: new Date().toISOString(),
+    elapsed: options.elapsed(),
+    status: result.fallbackUsed ? "skipped" : "ok",
+    detail: {
+      intent: trimmed,
+      rotation_seed: rotationSeed,
+      surfaces: options.surfaces || [],
+      lenses: options.lenses || [],
+      model: result.modelUsed,
+      fallback: result.fallbackUsed,
+      fallback_reason: result.fallbackReason,
+      queries: result.queries.map((entry) => ({
+        query: entry.query,
+        surface: entry.surface,
+        lens: entry.lens,
+        rationale: entry.rationale,
+      })),
+    },
+  });
+
+  return result.queries;
+}
+
+async function generateCustomQueryPlans(
   query: string,
-  sourcePacks: DiscoverySourcePack[],
+  runId: string | undefined,
+  geminiKey: string,
+  llmStats: { calls: number },
+  steps: StepLog[],
+  elapsed: () => string,
+): Promise<SearchSeedPlan[]> {
+  const queries = await runQueryGeneration(query, {
+    runId,
+    geminiKey,
+    llmStats,
+    steps,
+    elapsed,
+    stepLabel: "query_generation",
+  });
+  return queries.map(customQueryPlan);
+}
+
+
+async function buildQueryPlans(
+  query: string,
+  surfaces: DiscoverySurface[],
+  lenses: DiscoveryLens[],
+  domains: DiscoverySeedDomain[],
   coverageGaps: CoverageGapRow[],
   entityPivots: EntityPivotPlanRow[],
-  runId?: string,
-): SearchSeedPlan[] {
+  allocationSlots: AllocationSlot[],
+  runId: string | undefined,
+  geminiKey: string,
+  llmStats: { calls: number },
+  steps: StepLog[],
+  elapsed: () => string,
+): Promise<SearchSeedPlan[]> {
   const trimmedQuery = normalizeWhitespace(query);
 
   if (trimmedQuery) {
-    return uniqueStrings([
+    return await generateCustomQueryPlans(
       trimmedQuery,
-      `${trimmedQuery} Belgian OR Flemish United States`,
-      `${trimmedQuery} KU Leuven UGent VUB UAntwerp imec BAEF United States`,
-    ])
-      .slice(0, 3)
-      .map((value) => ({
-        query: value,
-        sourceType: "custom_query" as const,
-        sourcePackId: null,
-        sourcePackKey: null,
-        priorityBoost: 6,
-        maxSeedUrls: 10,
-        coverageTargetKey: null,
-        gapLabel: null,
-        gapScore: 0,
-        gapSector: null,
-        entityKey: null,
-        entityName: null,
-        entityType: null,
-      }));
+      runId,
+      geminiKey,
+      llmStats,
+      steps,
+      elapsed,
+    );
   }
 
-  const seed = runId || new Date().toISOString().slice(0, 13);
-  const selectedPacks = [...sourcePacks]
-    .sort((a, b) => {
-      const gapA = pickGapForSourcePack(a, coverageGaps);
-      const gapB = pickGapForSourcePack(b, coverageGaps);
-      const scoreA = Number(gapA?.gap_score || 0) + Number(a.priority_boost || 0);
-      const scoreB = Number(gapB?.gap_score || 0) + Number(b.priority_boost || 0);
-      return scoreB - scoreA;
-    })
-    .slice(0, 2);
   const plans: SearchSeedPlan[] = [];
 
-  for (const pack of selectedPacks) {
-    const queries = Array.isArray(pack.query_templates) ? pack.query_templates : [];
-    const gap = pickGapForSourcePack(pack, coverageGaps);
-    const gapScore = Number(gap?.gap_score || 0);
-    const gapSector = pickGapSector(gap);
-    const selectedQueries = selectRotatingItems(
-      queries,
-      Math.min(2, queries.length),
-      `${seed}:${pack.key}`,
-    );
+  // Build lookup maps for surface/lens objects.
+  const surfaceByKey = new Map(surfaces.map((s) => [s.key, s]));
+  const lensByKey = new Map(lenses.map((l) => [l.key, l]));
 
-    for (const planQuery of selectedQueries) {
-      const decoratedQuery = decorateQueryWithGap(planQuery, gap);
+  // Helper: find a matching seed domain for a (surface, lens) pair.
+  function findDomain(surfaceKey: string, lensKey: string): DiscoverySeedDomain | null {
+    const matches = domains.filter(
+      (d) => d.surfaces.includes(surfaceKey) && d.lenses.includes(lensKey),
+    );
+    return matches.length > 0 ? matches[0] : null;
+  }
+
+  // 1. Coverage-gap-driven plans: pair top gaps with bandit-allocated slots.
+  //    Exploration slots go first (guaranteed by allocateBudget ordering).
+  const topGaps = [...coverageGaps]
+    .filter((gap) => Number(gap.gap_score || 0) > 0)
+    .sort((a, b) => Number(b.gap_score || 0) - Number(a.gap_score || 0))
+    .slice(0, 2);
+
+  // Use the first N exploitation slots for gap plans.
+  const exploitationSlots = allocationSlots.filter((s) => !s.isExploration);
+  const gapSlots = exploitationSlots.slice(0, topGaps.length);
+
+  for (let i = 0; i < topGaps.length && i < gapSlots.length; i += 1) {
+    const gap = topGaps[i];
+    const slot = gapSlots[i];
+    const surface = surfaceByKey.get(slot.surface);
+    const lens = lensByKey.get(slot.lens);
+    if (!surface || !lens) continue;
+
+    const gapSector = pickGapSector(gap);
+    const domain = findDomain(slot.surface, slot.lens);
+    const compositionKeys = [
+      `surface:${slot.surface}`,
+      `lens:${slot.lens}`,
+      gap.geography_key ? `geo:${gap.geography_key}` : null,
+      gapSector ? `sector:${gapSector}` : null,
+    ].filter((value): value is string => Boolean(value));
+
+    const intent = [
+      `Surface ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()}`,
+      gap.label ? `targeting ${gap.label}` : null,
+      gapSector ? `(${gapSector} sector)` : null,
+    ].filter(Boolean).join(" ");
+
+    const generated = await runQueryGeneration(intent, {
+      runId,
+      geminiKey,
+      llmStats,
+      steps,
+      elapsed,
+      stepLabel: `query_generation:surface_lens:${slot.surface}:${slot.lens}`,
+      surfaces: [slot.surface],
+      lenses: [slot.lens],
+      maxQueries: 2,
+      context: {
+        coverageGapLabel: gap.label || null,
+        coverageGapSector: gapSector,
+        rotationSeed:
+          `${runId || "anon"}:${slot.surface}:${slot.lens}:${gap.geography_key}`,
+      },
+    });
+
+    for (const entry of generated) {
       plans.push({
-        query: decoratedQuery,
-        sourceType: "source_pack",
-        sourcePackId: pack.id,
-        sourcePackKey: pack.key,
-        priorityBoost: Number(pack.priority_boost || 0) + Math.min(gapScore, 6),
-        maxSeedUrls: Math.max(1, Math.min(10, Number(pack.max_seed_urls_per_run || 8))),
-        coverageTargetKey: gap?.geography_key || null,
-        gapLabel: gap?.label || null,
-        gapScore,
+        query: entry.query,
+        sourceType: "surface_lens",
+        priorityBoost: 4 + Math.min(Number(gap.gap_score || 0), 6),
+        maxSeedUrls: 8,
+        coverageTargetKey: gap.geography_key,
+        gapLabel: gap.label,
+        gapScore: Number(gap.gap_score || 0),
         gapSector,
         entityKey: null,
         entityName: null,
         entityType: null,
+        surface: entry.surface || slot.surface,
+        lens: entry.lens || slot.lens,
+        rationale: entry.rationale,
+        domainHint: domain?.domain || null,
+        compositionKeys,
       });
     }
   }
 
-  const pivotPlans = entityPivots
-    .filter((pivot) => Array.isArray(pivot.seed_queries) && pivot.seed_queries.length > 0)
+  // 2. Exploration slots: at least one basin-exploration tuple so the agent
+  //    doesn't only chase gaps it already knows about. The bandit guarantees
+  //    ≥ 25% of slots are marked isExploration.
+  const explorationSlotsForPlan = allocationSlots.filter((s) => s.isExploration);
+  const exploSlot = explorationSlotsForPlan[0];
+  if (exploSlot) {
+    const surface = surfaceByKey.get(exploSlot.surface);
+    const lens = lensByKey.get(exploSlot.lens);
+    if (surface && lens) {
+      const domain = findDomain(exploSlot.surface, exploSlot.lens);
+      const compositionKeys = [
+        `surface:${exploSlot.surface}`,
+        `lens:${exploSlot.lens}`,
+      ];
+      const intent = `Surface ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()} — broad exploration`;
+      const generated = await runQueryGeneration(intent, {
+        runId,
+        geminiKey,
+        llmStats,
+        steps,
+        elapsed,
+        stepLabel: `query_generation:surface_lens:${exploSlot.surface}:${exploSlot.lens}:explore`,
+        surfaces: [exploSlot.surface],
+        lenses: [exploSlot.lens],
+        maxQueries: 2,
+        context: {
+          rotationSeed:
+            `${runId || "anon"}:explore:${exploSlot.surface}:${exploSlot.lens}`,
+        },
+      });
+
+      for (const entry of generated) {
+        plans.push({
+          query: entry.query,
+          sourceType: "surface_lens",
+          priorityBoost: 3,
+          maxSeedUrls: 8,
+          coverageTargetKey: null,
+          gapLabel: null,
+          gapScore: 0,
+          gapSector: null,
+          entityKey: null,
+          entityName: null,
+          entityType: null,
+          surface: entry.surface || exploSlot.surface,
+          lens: entry.lens || exploSlot.lens,
+          rationale: entry.rationale,
+          domainHint: domain?.domain || null,
+          compositionKeys,
+        });
+      }
+    }
+  }
+
+  // 3. Entity-pivot plans (kept from prior phase, enriched with surface/lens
+  //    tags from the generator).
+  const eligiblePivots = entityPivots
     .filter((pivot) => {
       if (!pivot.last_seeded_at) return true;
       return hoursSince(pivot.last_seeded_at) >= 24 * 7;
     })
     .sort((a, b) => Number(b.priority_score || 0) - Number(a.priority_score || 0))
-    .slice(0, 2)
-    .map((pivot) => {
-      const gap = (pivot.coverage_target_keys || [])
-        .map((key) => coverageGaps.find((row) => row.geography_key === key))
-        .find((value): value is CoverageGapRow => Boolean(value)) || null;
-      const queryIndex = Math.max(0, Number(pivot.seeded_frontier_count || 0) % Math.max(pivot.seed_queries.length, 1));
-      const baseQuery = pivot.seed_queries[queryIndex] || pivot.seed_queries[0];
-      const decoratedQuery = decorateQueryWithGap(baseQuery, gap);
+    .slice(0, 2);
 
-      return {
-        query: decoratedQuery,
+  for (const pivot of eligiblePivots) {
+    const gap = (pivot.coverage_target_keys || [])
+      .map((key) => coverageGaps.find((row) => row.geography_key === key))
+      .find((value): value is CoverageGapRow => Boolean(value)) || null;
+
+    const intent =
+      `${pivot.entity_name} (${pivot.entity_type}) — surface members, alumni, faculty, leadership, or affiliates with US ties`;
+    const generated = await runQueryGeneration(intent, {
+      runId,
+      geminiKey,
+      llmStats,
+      steps,
+      elapsed,
+      stepLabel: `query_generation:entity_pivot:${pivot.entity_key}`,
+      lenses: ["named_entity", "alumni_network"],
+      maxQueries: 2,
+      context: {
+        knownEntities: [pivot.entity_name],
+        coverageGapLabel: gap?.label || null,
+        coverageGapSector: pickGapSector(gap),
+        rotationSeed:
+          `${runId || "anon"}:${pivot.entity_key}:${pivot.seeded_frontier_count || 0}`,
+      },
+    });
+
+    for (const entry of generated) {
+      plans.push({
+        query: entry.query,
         sourceType: "entity_pivot" as const,
-        sourcePackId: null,
-        sourcePackKey: null,
         priorityBoost: Number(pivot.priority_score || 0),
         maxSeedUrls: 8,
         coverageTargetKey: gap?.geography_key || null,
@@ -2145,10 +2299,17 @@ function buildSeedPlans(
         entityKey: pivot.entity_key,
         entityName: pivot.entity_name,
         entityType: pivot.entity_type,
-      };
-    });
-
-  plans.push(...pivotPlans);
+        surface: entry.surface,
+        lens: entry.lens || "named_entity",
+        rationale: entry.rationale,
+        domainHint: null,
+        compositionKeys: [
+          `entity:${pivot.entity_key}`,
+          gap?.geography_key ? `geo:${gap.geography_key}` : null,
+        ].filter((value): value is string => Boolean(value)),
+      });
+    }
+  }
 
   return plans.slice(0, MAX_SEARCH_QUERIES);
 }
@@ -2161,7 +2322,6 @@ async function bumpDomainStats(
     pagesFetched?: number;
     promisingPages?: number;
     candidatesExtracted?: number;
-    sourcePackId?: string | null;
     lastSeenAt?: string | null;
     lastFetchedAt?: string | null;
     nextFetchAt?: string | null;
@@ -2190,7 +2350,6 @@ async function bumpDomainStats(
   if (!existing) {
     await supabase.from("discovery_domains").insert({
       domain,
-      source_pack_id: delta.sourcePackId || null,
       pages_queued: Math.max(0, delta.pagesQueued || 0),
       pages_fetched: Math.max(0, delta.pagesFetched || 0),
       promising_pages: Math.max(0, delta.promisingPages || 0),
@@ -2209,7 +2368,6 @@ async function bumpDomainStats(
   await supabase
     .from("discovery_domains")
     .update({
-      source_pack_id: existing.source_pack_id || delta.sourcePackId || null,
       pages_queued: Math.max(0, Number(existing.pages_queued || 0) + Number(delta.pagesQueued || 0)),
       pages_fetched: Math.max(0, Number(existing.pages_fetched || 0) + Number(delta.pagesFetched || 0)),
       promising_pages: Math.max(0, Number(existing.promising_pages || 0) + Number(delta.promisingPages || 0)),
@@ -2240,7 +2398,7 @@ async function saveFrontierSeeds(
   const canonicalUrls = uniqueStrings(rows.map((row) => row.canonical_url));
   const { data: existing } = await supabase
     .from("discovery_frontier")
-    .select("id, canonical_url, status, priority_score, next_fetch_at, source_pack_id, pivot_entity_key, pivot_entity_name, pivot_entity_type")
+    .select("id, canonical_url, status, priority_score, next_fetch_at, pivot_entity_key, pivot_entity_name, pivot_entity_type")
     .in("canonical_url", canonicalUrls);
 
   const existingByCanonical = new Map(
@@ -2250,7 +2408,6 @@ async function saveFrontierSeeds(
       status: string;
       priority_score: string | number | null;
       next_fetch_at: string | null;
-      source_pack_id: string | null;
       pivot_entity_key: string | null;
       pivot_entity_name: string | null;
       pivot_entity_type: string | null;
@@ -2283,7 +2440,6 @@ async function saveFrontierSeeds(
       shouldRequeue ||
       nextPriority > Number(existingRow.priority_score || 0) ||
       proposedNextFetchAt < existingNextFetchAt ||
-      (!existingRow.source_pack_id && row.source_pack_id) ||
       (!existingRow.pivot_entity_key && row.pivot_entity_key);
 
     if (!shouldRefresh) {
@@ -2295,7 +2451,6 @@ async function saveFrontierSeeds(
       patch: {
         priority_score: nextPriority,
         next_fetch_at: shouldRequeue ? new Date().toISOString() : nextFetchAt,
-        source_pack_id: existingRow.source_pack_id || row.source_pack_id || null,
         pivot_entity_key: existingRow.pivot_entity_key || row.pivot_entity_key || null,
         pivot_entity_name: existingRow.pivot_entity_name || row.pivot_entity_name || null,
         pivot_entity_type: existingRow.pivot_entity_type || row.pivot_entity_type || null,
@@ -2332,7 +2487,6 @@ async function saveFrontierSeeds(
       [...countsByDomain.entries()].map(([domain, count]) =>
         bumpDomainStats(supabase, domain, {
           pagesQueued: count,
-          sourcePackId: inserts.find((row) => row.domain === domain)?.source_pack_id || null,
           lastSeenAt: new Date().toISOString(),
         })
       ),
@@ -2366,7 +2520,6 @@ async function recordFrontierRefill(
     provider?: string | null;
     frontierBefore?: number;
     seededCount: number;
-    sourcePackIds?: string[];
     plannedQueries?: SearchSeedPlan[];
     metadata?: Record<string, unknown>;
   },
@@ -2379,11 +2532,13 @@ async function recordFrontierRefill(
     provider: input.provider || null,
     frontier_before: input.frontierBefore ?? null,
     seeded_count: input.seededCount,
-    source_pack_ids: input.sourcePackIds || [],
     planned_queries: (input.plannedQueries || []).map((plan) => ({
       query: plan.query,
       source_type: plan.sourceType,
-      source_pack_key: plan.sourcePackKey,
+      surface: plan.surface,
+      lens: plan.lens,
+      domain_hint: plan.domainHint,
+      composition_keys: plan.compositionKeys,
       entity_key: plan.entityKey,
       entity_name: plan.entityName,
       entity_type: plan.entityType,
@@ -2425,7 +2580,6 @@ function buildHarvestFrontierRows(
     discovered_from_url: frontier.canonical_url,
     discovery_reason: `${sourceType}:${frontier.domain}`,
     source_type: sourceType,
-    source_pack_id: frontier.source_pack_id,
     pivot_entity_key: frontier.pivot_entity_key,
     pivot_entity_name: frontier.pivot_entity_name,
     pivot_entity_type: frontier.pivot_entity_type,
@@ -2483,7 +2637,6 @@ async function maybeHarvestProvenDomain(
           runId,
           reason: "proven_domain_sitemap",
           seededCount: sitemapSeeded,
-          sourcePackIds: frontier.source_pack_id ? [frontier.source_pack_id] : [],
           metadata: {
             domain: frontier.domain,
             source_url: harvested.sourceUrl,
@@ -2508,7 +2661,6 @@ async function maybeHarvestProvenDomain(
           runId,
           reason: "proven_domain_rss",
           seededCount: rssSeeded,
-          sourcePackIds: frontier.source_pack_id ? [frontier.source_pack_id] : [],
           metadata: {
             domain: frontier.domain,
             source_url: harvested.sourceUrl,
@@ -2548,10 +2700,9 @@ async function seedFrontier(
   frontierBefore: number,
   steps: StepLog[],
   elapsed: () => string,
-): Promise<{ seeded: number; provider: string; usedSourcePackIds: string[]; usedEntityKeys: string[] }> {
+): Promise<{ seeded: number; provider: string; usedEntityKeys: string[] }> {
   let seeded = 0;
   const providersUsed = new Set<string>();
-  const usedSourcePackIds = new Set<string>();
   const usedEntityKeys = new Set<string>();
 
   for (let index = 0; index < plans.length; index += 1) {
@@ -2559,6 +2710,25 @@ async function seedFrontier(
     const searchResponse = await searchWeb(plan.query, supabase);
     if (searchResponse.provider && searchResponse.provider !== "none") {
       providersUsed.add(searchResponse.provider);
+    }
+
+    if (runId) {
+      const { error: attemptError } = await supabase
+        .from("discovery_query_attempts")
+        .insert({
+          run_id: runId,
+          surface: plan.surface,
+          lens: plan.lens,
+          composition_keys: plan.compositionKeys,
+          query_text: plan.query,
+          source_type: plan.sourceType,
+          pivot_entity_key: plan.entityKey,
+          provider: searchResponse.provider || null,
+          urls_returned: searchResponse.results.length,
+        });
+      if (attemptError) {
+        log.warn("failed to log discovery_query_attempt", { error: attemptError.message });
+      }
     }
 
     const frontierRows: FrontierUpsertRow[] = searchResponse.results
@@ -2578,18 +2748,15 @@ async function seedFrontier(
           depth: 0,
           discovered_from_url: null,
           discovery_reason:
-            plan.sourceType === "source_pack"
-              ? `source_pack:${plan.sourcePackKey || "unknown"}`
+            plan.sourceType === "surface_lens"
+              ? `surface_lens:${plan.surface || "unknown"}:${plan.lens || "unknown"}`
               : plan.sourceType === "entity_pivot"
               ? `entity_pivot:${plan.entityKey || plan.entityName || "unknown"}`
               : "custom_query",
           source_type:
-            plan.sourceType === "source_pack"
-              ? "source_pack"
-              : plan.sourceType === "entity_pivot"
+            plan.sourceType === "entity_pivot"
               ? "entity_pivot"
               : "search_seed",
-          source_pack_id: plan.sourcePackId,
           pivot_entity_key: plan.entityKey,
           pivot_entity_name: plan.entityName,
           pivot_entity_type: plan.entityType,
@@ -2605,17 +2772,12 @@ async function seedFrontier(
       seeded += await saveFrontierSeeds(supabase, frontierRows);
       frontierRows.forEach((row) => {
         void bumpDomainStats(supabase, row.domain, {
-          sourcePackId: row.source_pack_id,
           lastSeenAt: new Date().toISOString(),
         });
       });
       if (plan.entityKey) {
         usedEntityKeys.add(plan.entityKey);
       }
-    }
-
-    if (plan.sourcePackId) {
-      usedSourcePackIds.add(plan.sourcePackId);
     }
 
     steps.push({
@@ -2626,7 +2788,10 @@ async function seedFrontier(
       detail: {
         query: plan.query,
         source_type: plan.sourceType,
-        source_pack_id: plan.sourcePackId,
+        surface: plan.surface,
+        lens: plan.lens,
+        domain_hint: plan.domainHint,
+        composition_keys: plan.compositionKeys,
         entity_key: plan.entityKey,
         entity_name: plan.entityName,
         entity_type: plan.entityType,
@@ -2653,14 +2818,12 @@ async function seedFrontier(
     provider: [...providersUsed][0] || "none",
     frontierBefore,
     seededCount: seeded,
-    sourcePackIds: [...usedSourcePackIds],
     plannedQueries: plans,
   });
 
   return {
     seeded,
     provider: [...providersUsed][0] || "none",
-    usedSourcePackIds: [...usedSourcePackIds],
     usedEntityKeys: [...usedEntityKeys],
   };
 }
@@ -2700,18 +2863,6 @@ async function markEntityPivotsSeeded(
   if (updateError) {
     throw new Error(`Failed to mark entity pivots seeded: ${updateError.message}`);
   }
-}
-
-async function markSourcePacksSeeded(
-  supabase: SupabaseAdminClient,
-  sourcePackIds: string[],
-): Promise<void> {
-  if (sourcePackIds.length === 0) return;
-
-  await supabase
-    .from("discovery_source_packs")
-    .update({ last_seeded_at: new Date().toISOString() })
-    .in("id", sourcePackIds);
 }
 
 async function claimFrontierBatch(
@@ -2966,7 +3117,7 @@ async function upsertEntityPivots(
   for (const pivot of pivotCandidates) {
     const { data: existingPivot, error: loadError } = await supabase
       .from("discovery_entity_pivots")
-      .select("id, source_urls, coverage_target_keys, seed_queries")
+      .select("id, source_urls, coverage_target_keys")
       .eq("entity_key", pivot.entityKey)
       .maybeSingle();
 
@@ -2982,10 +3133,6 @@ async function upsertEntityPivots(
       ...(Array.isArray(existingPivot?.coverage_target_keys) ? existingPivot.coverage_target_keys : []),
       ...pivot.coverageTargetKeys,
     ]);
-    const nextSeedQueries = uniqueStrings([
-      ...(Array.isArray(existingPivot?.seed_queries) ? existingPivot.seed_queries : []),
-      ...pivot.seedQueries,
-    ]);
 
     let pivotId = existingPivot?.id || null;
 
@@ -2998,7 +3145,6 @@ async function upsertEntityPivots(
           entity_type: pivot.entityType,
           normalized_domain: pivot.normalizedDomain,
           coverage_target_keys: nextCoverageTargets,
-          seed_queries: nextSeedQueries,
           source_urls: nextSourceUrls,
           last_seen_at: new Date().toISOString(),
         })
@@ -3018,7 +3164,6 @@ async function upsertEntityPivots(
           entity_type: pivot.entityType,
           normalized_domain: pivot.normalizedDomain,
           coverage_target_keys: nextCoverageTargets,
-          seed_queries: nextSeedQueries,
           source_urls: nextSourceUrls,
           last_seen_at: new Date().toISOString(),
         })
@@ -3586,7 +3731,6 @@ async function enqueueChildLinks(
     discovered_from_url: frontier.canonical_url,
     discovery_reason: link.reason || "child_link",
     source_type: "child_link",
-    source_pack_id: frontier.source_pack_id,
     pivot_entity_key: frontier.pivot_entity_key,
     pivot_entity_name: frontier.pivot_entity_name,
     pivot_entity_type: frontier.pivot_entity_type,
@@ -3843,7 +3987,6 @@ async function processFrontierRow(
       lastSeenAt: page.fetchedAt,
       lastFetchedAt: page.fetchedAt,
       nextFetchAt: computeNextFetchAt(classification.pageType, 0, 0, domainPolicy),
-      sourcePackId: frontier.source_pack_id,
     });
 
     return {
@@ -4087,7 +4230,6 @@ async function processFrontierRow(
     pagesFetched: 1,
     promisingPages: classification.shouldExtract ? 1 : 0,
     candidatesExtracted: insertedContacts + mergedContacts + insertedOrganizations + mergedOrganizations,
-    sourcePackId: frontier.source_pack_id,
     lastSeenAt: page.fetchedAt,
     lastFetchedAt: page.fetchedAt,
     nextFetchAt,
@@ -4148,7 +4290,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     };
 
     const startTime = Date.now();
-    const DEADLINE_MS = 55_000;
+    const DEADLINE_MS = 110_000;
     const timeLeft = () => DEADLINE_MS - (Date.now() - startTime);
     const isTimedOut = () => timeLeft() < 3_000;
     const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
@@ -4170,28 +4312,77 @@ Deno.serve(wrapHandler(async (req: Request) => {
     let childLinksQueued = 0;
     let sitemapUrlsSeeded = 0;
     let rssUrlsSeeded = 0;
-    let sourcePacksUsed: string[] = [];
     let gapTargetsUsed: string[] = [];
     let entityPivotsUsed: string[] = [];
+    let surfacesUsed: string[] = [];
+    let lensesUsed: string[] = [];
 
     const steps: StepLog[] = [];
     const errors: string[] = [];
+    const llmStats = { calls: 0 };
 
     await heartbeat();
 
-    const [queuedFrontierCount, sourcePacks, coverageGaps, entityPivots] = await Promise.all([
+    const [queuedFrontierCount, taxonomy, coverageGaps, entityPivots] = await Promise.all([
       getQueuedFrontierCount(supabase),
-      loadSourcePacks(supabase),
+      loadSurfaceLensTaxonomy(supabase),
       loadCoverageGaps(supabase),
       loadEntityPivots(supabase),
     ]);
 
+    // Bandit allocation: allocate query budget across (surface, lens) arms.
+    // Budget = MAX_SEARCH_QUERIES minus slots reserved for entity pivots (up to 2).
+    // The allocateBudget call falls back gracefully if the table is empty.
+    const pivotBudget = Math.min(2, entityPivots.filter((p) => {
+      if (!p.last_seeded_at) return true;
+      return hoursSince(p.last_seeded_at) >= 24 * 7;
+    }).length);
+    const surfaceLensBudget = Math.max(1, MAX_SEARCH_QUERIES - pivotBudget);
+    let allocationSlots: AllocationSlot[] = [];
+    try {
+      allocationSlots = await allocateBudget(supabase, surfaceLensBudget, runId || "anon");
+    } catch (allocErr) {
+      // Non-fatal: fall back to empty allocation (entity pivots and gaps will still run)
+      log.withRun(runId).warn("bandit_allocation_failed", allocErr instanceof Error ? allocErr.message : String(allocErr));
+    }
+
+    steps.push({
+      step: "bandit_allocation",
+      timestamp: new Date().toISOString(),
+      elapsed: elapsed(),
+      status: "ok",
+      detail: {
+        budget: surfaceLensBudget,
+        slots: allocationSlots.map((s) => ({
+          surface: s.surface,
+          lens: s.lens,
+          context_key: s.contextKey,
+          is_exploration: s.isExploration,
+        })),
+      },
+    });
+
     const shouldSeed = query.length > 0 || queuedFrontierCount < batchSize;
     const seedPlans = shouldSeed
-      ? buildSeedPlans(query, sourcePacks, coverageGaps, entityPivots, runId)
+      ? await buildQueryPlans(
+          query,
+          taxonomy.surfaces,
+          taxonomy.lenses,
+          taxonomy.domains,
+          coverageGaps,
+          entityPivots,
+          allocationSlots,
+          runId,
+          geminiKey,
+          llmStats,
+          steps,
+          elapsed,
+        )
       : [];
     gapTargetsUsed = uniqueStrings(seedPlans.map((plan) => plan.coverageTargetKey || "").filter(Boolean));
     entityPivotsUsed = uniqueStrings(seedPlans.map((plan) => plan.entityKey || "").filter(Boolean));
+    surfacesUsed = uniqueStrings(seedPlans.map((plan) => plan.surface || "").filter(Boolean));
+    lensesUsed = uniqueStrings(seedPlans.map((plan) => plan.lens || "").filter(Boolean));
 
     steps.push({
       step: "discovery_plan",
@@ -4205,7 +4396,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
         seed_queries: seedPlans.map((plan) => ({
           query: plan.query,
           source_type: plan.sourceType,
-          source_pack_id: plan.sourcePackId,
+          surface: plan.surface,
+          lens: plan.lens,
+          domain_hint: plan.domainHint,
+          composition_keys: plan.compositionKeys,
           entity_key: plan.entityKey,
           entity_name: plan.entityName,
           entity_type: plan.entityType,
@@ -4213,6 +4407,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           gap_label: plan.gapLabel,
           gap_score: plan.gapScore,
           gap_sector: plan.gapSector,
+          rationale: plan.rationale,
         })),
         gap_targets: coverageGaps.slice(0, 3).map((gap) => ({
           geography_key: gap.geography_key,
@@ -4235,12 +4430,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
       frontierSeeded = seedResult.seeded;
       webSearchProvider = seedResult.provider;
       webSearchesMade = seedPlans.length;
-      sourcePacksUsed = seedResult.usedSourcePackIds;
       entityPivotsUsed = uniqueStrings([
         ...entityPivotsUsed,
         ...seedResult.usedEntityKeys,
       ]);
-      await markSourcePacksSeeded(supabase, sourcePacksUsed);
       await markEntityPivotsSeeded(supabase, seedResult.usedEntityKeys);
     }
 
@@ -4284,8 +4477,6 @@ Deno.serve(wrapHandler(async (req: Request) => {
       supabase,
       claimed.map((row) => row.domain),
     );
-
-    const llmStats = { calls: 0 };
 
     for (const frontier of claimed) {
       if (isTimedOut()) {
@@ -4398,7 +4589,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
       child_links_queued: childLinksQueued,
       sitemap_urls_seeded: sitemapUrlsSeeded,
       rss_urls_seeded: rssUrlsSeeded,
-      source_packs_used: sourcePacksUsed,
+      surfaces_used: surfacesUsed,
+      lenses_used: lensesUsed,
       gap_targets_used: gapTargetsUsed,
       entity_pivots_used: entityPivotsUsed,
       llm_calls_made: llmCallsMade,
@@ -4428,6 +4620,49 @@ Deno.serve(wrapHandler(async (req: Request) => {
           cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,
         })
         .eq("id", runId);
+
+      try {
+        await supabase.rpc("resolve_discovery_query_attempts", { p_run_id: runId });
+      } catch (resolveError) {
+        log.withRun(runId).warn("resolve_query_attempts_failed", resolveError);
+      }
+
+      // Update arm stats for all surface_lens plans that ran this session.
+      try {
+        // Aggregate new_pending_contacts and candidates_extracted per (surface, lens)
+        // from the seed plans that were actually executed.
+        const armMap = new Map<string, { surface: string; lens: string; contextKey: string; candidatesExtracted: number; newPendingContacts: number; costUsd: number }>();
+        for (const plan of seedPlans) {
+          if (plan.sourceType !== "surface_lens" || !plan.surface || !plan.lens) continue;
+          const key = `${plan.surface}|${plan.lens}|`;
+          if (!armMap.has(key)) {
+            armMap.set(key, {
+              surface: plan.surface,
+              lens: plan.lens,
+              contextKey: "",
+              candidatesExtracted: 0,
+              newPendingContacts: 0,
+              costUsd: 0,
+            });
+          }
+        }
+        // We don't have per-plan new_pending counts here (they resolve async via RPC),
+        // so we record attempts=1 per arm with 0 yield. The nightly refresh will
+        // pull accurate counters from discovery_query_attempts.
+        const armUpdates = Array.from(armMap.values()).map((arm) => ({
+          surface: arm.surface,
+          lens: arm.lens,
+          contextKey: arm.contextKey,
+          candidatesExtracted: 0,
+          newPendingContacts: 0,
+          costUsd: 0,
+        }));
+        if (armUpdates.length > 0) {
+          await updateArmStats(supabase, armUpdates);
+        }
+      } catch (armStatsError) {
+        log.withRun(runId).warn("arm_stats_update_failed", armStatsError instanceof Error ? armStatsError.message : String(armStatsError));
+      }
     }
 
     return new Response(JSON.stringify(result), {

@@ -17,6 +17,9 @@ verify_jwt = false
 [functions.agent-verify]
 verify_jwt = false
 
+[functions.eval-holdout-check]
+verify_jwt = false
+
 [functions.generate-embeddings]
 verify_jwt = false
 

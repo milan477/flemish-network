@@ -1,69 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Clock, Loader2, MapPin, Users } from 'lucide-react';
-import { supabase, type FilterPreset, type Person } from '../../lib/supabase';
-import {
-  getPersonFlemishConnections,
-  personHasFlemishConnection,
-} from '../../lib/flemishConnections';
+import { useCallback, useMemo, useState } from 'react';
+import { Building2, MapPin, Users } from 'lucide-react';
+import { type FilterPreset, type Person } from '../../lib/supabase';
+import { personHasFlemishConnection } from '../../lib/flemishConnections';
 import OccupationOverview from './OccupationOverview';
 import { classifyPerson } from './occupationCategories';
-import StaleContactsBar from './StaleContactsBar';
-import DerivedLabelsPanel from './DerivedLabelsPanel';
-import SuggestedChanges, { type ProfileSuggestion } from './SuggestedChanges';
 import InteractiveBarChart, {
   type InteractiveBarChartItem,
 } from './InteractiveBarChart';
 import CrossFilterBar from './CrossFilterBar';
-import DataQualityChart from './DataQualityChart';
 import FlemishConnectionChart from './FlemishConnectionChart';
 import {
   buildNetworkPreset,
-  COMPLETENESS_FIELD_LABELS,
   EMPTY_CROSS_FILTERS,
-  FRESHNESS_TIER_LABELS,
-  getFreshnessTier,
-  type CompletenessField,
   type CrossFilterState,
-  type FreshnessTier,
   type PersonSectorRow,
 } from './interactiveStatsShared';
-import type { DerivedLabelSuggestion } from '../../lib/derivedLabels';
 
 interface InteractiveStatsOverviewProps {
   people: Person[];
   orgCount: number;
-  suggestions: ProfileSuggestion[];
-  derivedLabels: DerivedLabelSuggestion[];
   personSectors: PersonSectorRow[];
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
-  onReloadData: () => Promise<void>;
-  onAskAI: (personIds: string[]) => Promise<void>;
-  onMarkCurrent: (personId: string) => Promise<void>;
-  aiLoading: boolean;
-  aiLoadingIds: Set<string>;
-  noUpdateIds: Set<string>;
-  onSuggestionsRefresh: () => Promise<void>;
-  onBackfillEmbeddings: () => Promise<void>;
-  embeddingProgress: { processed: number; total: number } | null;
-  embeddingRunning: boolean;
-}
-
-interface EmbeddingBatchRun {
-  gemini_batch_name: string;
-  display_name: string;
-  status: string;
-  request_count: number;
-  people_count: number;
-  batch_state: string | null;
-  batch_stats: {
-    requestCount?: number | string;
-    successfulRequestCount?: number | string;
-    failedRequestCount?: number | string;
-    pendingRequestCount?: number | string;
-  } | null;
-  started_at: string;
-  completed_at: string | null;
-  last_error: string | null;
 }
 
 type ExcludedDimension =
@@ -71,9 +28,7 @@ type ExcludedDimension =
   | 'occupationCategory'
   | 'flemishConnection'
   | 'location'
-  | 'freshnessTier'
   | 'availability'
-  | 'completenessField'
   | null;
 
 const SECTOR_COLORS: Record<string, string> = {
@@ -84,10 +39,6 @@ const SECTOR_COLORS: Record<string, string> = {
   'Culture & Arts': 'bg-pink-500',
   Research: 'bg-cyan-500',
 };
-
-function hasText(value?: string | null): boolean {
-  return Boolean(value && value.trim().length > 0);
-}
 
 function buildCityKey(city: string, state: string) {
   return `${city}|${state}`;
@@ -114,23 +65,6 @@ function countUniqueBy<T>(items: T[], getKey: (item: T) => string | null | undef
       .map((item) => getKey(item))
       .filter((value): value is string => Boolean(value))
   ).size;
-}
-
-function formatBatchNumber(value: number | string | null | undefined): string {
-  if (value === null || value === undefined) return '0';
-  const asNumber = typeof value === 'string' ? Number(value) : value;
-  if (!Number.isFinite(asNumber)) return '0';
-  return asNumber.toLocaleString();
-}
-
-function formatBatchDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  return new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function StatCard({
@@ -262,26 +196,11 @@ function LocationExplorer({
 export default function InteractiveStatsOverview({
   people,
   orgCount,
-  suggestions,
-  derivedLabels,
   personSectors,
   onNavigate,
-  onReloadData,
-  onAskAI,
-  onMarkCurrent,
-  aiLoading,
-  aiLoadingIds,
-  noUpdateIds,
-  onSuggestionsRefresh,
-  onBackfillEmbeddings,
-  embeddingProgress,
-  embeddingRunning,
 }: InteractiveStatsOverviewProps) {
   const [crossFilters, setCrossFilters] =
     useState<CrossFilterState>(EMPTY_CROSS_FILTERS);
-  const [embeddingBatchRuns, setEmbeddingBatchRuns] = useState<EmbeddingBatchRun[]>([]);
-  const [embeddingBatchLoading, setEmbeddingBatchLoading] = useState(true);
-  const [embeddingBatchStarting, setEmbeddingBatchStarting] = useState(false);
 
   const personToSectorsMap = useMemo(() => {
     const next = new Map<string, Set<string>>();
@@ -297,43 +216,6 @@ export default function InteractiveStatsOverview({
     return next;
   }, [personSectors]);
 
-  const loadEmbeddingBatches = useCallback(async () => {
-    setEmbeddingBatchLoading(true);
-    const { data } = await supabase.functions.invoke('generate-embeddings', {
-      body: { action: 'list_batches' },
-    });
-    setEmbeddingBatchRuns((data?.batches || []) as EmbeddingBatchRun[]);
-    setEmbeddingBatchLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadEmbeddingBatches();
-  }, [loadEmbeddingBatches]);
-
-  useEffect(() => {
-    const hasActiveBatch = embeddingBatchRuns.some(
-      (run) => run.status === 'running' || run.status === 'succeeded'
-    );
-
-    if (!hasActiveBatch) return;
-
-    const interval = setInterval(loadEmbeddingBatches, 15000);
-    return () => clearInterval(interval);
-  }, [embeddingBatchRuns, loadEmbeddingBatches]);
-
-  const handleStartEmbeddingBatch = useCallback(async () => {
-    setEmbeddingBatchStarting(true);
-    await supabase.functions.invoke('generate-embeddings', {
-      body: {
-        action: 'start_batch',
-        backfill: true,
-        batch_size: 40,
-      },
-    });
-    setEmbeddingBatchStarting(false);
-    await loadEmbeddingBatches();
-  }, [loadEmbeddingBatches]);
-
   const sectorToPeopleMap = useMemo(() => {
     const next = new Map<string, Set<string>>();
 
@@ -347,26 +229,6 @@ export default function InteractiveStatsOverview({
 
     return next;
   }, [personSectors]);
-
-  const hasCompletenessField = useCallback(
-    (person: Person, field: CompletenessField) => {
-      switch (field) {
-        case 'email':
-          return hasText(person.email);
-        case 'linkedin_url':
-          return hasText(person.linkedin_url);
-        case 'profile_photo_url':
-          return hasText(person.profile_photo_url);
-        case 'bio':
-          return hasText(person.bio);
-        case 'sector':
-          return (personToSectorsMap.get(person.id)?.size || 0) > 0;
-        case 'flemish_connection':
-          return getPersonFlemishConnections(person).length > 0;
-      }
-    },
-    [personToSectorsMap]
-  );
 
   const applyFilters = useCallback(
     (input: Person[], excludeDimension: ExcludedDimension = null) =>
@@ -405,14 +267,6 @@ export default function InteractiveStatsOverview({
         }
 
         if (
-          excludeDimension !== 'freshnessTier' &&
-          crossFilters.freshnessTier &&
-          getFreshnessTier(person) !== crossFilters.freshnessTier
-        ) {
-          return false;
-        }
-
-        if (
           excludeDimension !== 'availability' &&
           crossFilters.availability.length > 0
         ) {
@@ -423,20 +277,9 @@ export default function InteractiveStatsOverview({
           }
         }
 
-        if (
-          excludeDimension !== 'completenessField' &&
-          crossFilters.completenessField
-        ) {
-          const hasField = hasCompletenessField(
-            person,
-            crossFilters.completenessField.field
-          );
-          if (hasField !== crossFilters.completenessField.has) return false;
-        }
-
         return true;
       }),
-    [crossFilters, hasCompletenessField, personToSectorsMap]
+    [crossFilters, personToSectorsMap]
   );
 
   const filteredPeople = useMemo(() => applyFilters(people), [applyFilters, people]);
@@ -456,20 +299,6 @@ export default function InteractiveStatsOverview({
     () => applyFilters(people, 'location'),
     [applyFilters, people]
   );
-  const freshnessPeople = useMemo(
-    () => applyFilters(people, 'freshnessTier'),
-    [applyFilters, people]
-  );
-  const dataQualityPeople = useMemo(
-    () => applyFilters(people, 'completenessField'),
-    [applyFilters, people]
-  );
-
-  const filteredPeopleIds = useMemo(
-    () => new Set(filteredPeople.map((person) => person.id)),
-    [filteredPeople]
-  );
-
   const hasActiveFilters = useMemo(
     () =>
       Boolean(
@@ -478,9 +307,7 @@ export default function InteractiveStatsOverview({
           crossFilters.flemishConnection ||
           crossFilters.state ||
           crossFilters.city ||
-          crossFilters.freshnessTier ||
-          crossFilters.availability.length > 0 ||
-          crossFilters.completenessField
+          crossFilters.availability.length > 0
       ),
     [crossFilters]
   );
@@ -504,14 +331,6 @@ export default function InteractiveStatsOverview({
       .map((person) => person.organization_id)
       .filter((value): value is string => Boolean(value))
   ).size;
-  const pendingSuggestionCount = suggestions.filter(
-    (suggestion) => suggestion.status === 'pending'
-  ).length;
-  const filteredPendingSuggestionCount = suggestions.filter(
-    (suggestion) =>
-      suggestion.status === 'pending' && filteredPeopleIds.has(suggestion.person_id)
-  ).length;
-
   const activePreset = useMemo(
     () => buildNetworkPreset(crossFilters),
     [crossFilters]
@@ -653,24 +472,6 @@ export default function InteractiveStatsOverview({
               setCrossFilters((prev) => ({ ...prev, city: null })),
           }
         : null,
-      crossFilters.freshnessTier
-        ? {
-            key: `freshness:${crossFilters.freshnessTier}`,
-            label: FRESHNESS_TIER_LABELS[crossFilters.freshnessTier],
-            onRemove: () =>
-              setCrossFilters((prev) => ({ ...prev, freshnessTier: null })),
-          }
-        : null,
-      crossFilters.completenessField
-        ? {
-            key: `quality:${crossFilters.completenessField.field}:${crossFilters.completenessField.has ? 'has' : 'missing'}`,
-            label: `${
-              crossFilters.completenessField.has ? 'Has' : 'Missing'
-            } ${COMPLETENESS_FIELD_LABELS[crossFilters.completenessField.field]}`,
-            onRemove: () =>
-              setCrossFilters((prev) => ({ ...prev, completenessField: null })),
-          }
-        : null,
     ].filter(
       (
         chip
@@ -682,15 +483,6 @@ export default function InteractiveStatsOverview({
     ),
     [crossFilters]
   );
-
-  const toggleFreshnessTier = useCallback((tier: FreshnessTier) => {
-    setCrossFilters((prev) => ({
-      ...prev,
-      freshnessTier: prev.freshnessTier === tier ? null : tier,
-    }));
-  }, []);
-
-  const latestEmbeddingBatch = embeddingBatchRuns[0] || null;
 
   return (
     <>
@@ -718,14 +510,6 @@ export default function InteractiveStatsOverview({
           value={filteredCities}
           total={totalCities}
           label="Cities"
-        />
-        <StatCard
-          icon={Clock}
-          iconBg="bg-yellow-100"
-          iconColor="text-yellow-600"
-          value={filteredPendingSuggestionCount}
-          total={pendingSuggestionCount}
-          label="Pending Updates"
         />
       </div>
 
@@ -820,191 +604,6 @@ export default function InteractiveStatsOverview({
           }}
         />
 
-        <DataQualityChart
-          people={dataQualityPeople}
-          activeFilter={crossFilters.completenessField}
-          onFilterChange={(next) =>
-            setCrossFilters((prev) => ({ ...prev, completenessField: next }))
-          }
-          hasField={hasCompletenessField}
-        />
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-[34rem] flex flex-col overflow-hidden">
-          <h2 className="text-lg font-semibold text-gray-900 mb-5">
-            Pending Updates
-          </h2>
-
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Contact Freshness
-              </h3>
-              <StaleContactsBar
-                people={freshnessPeople}
-                onRefresh={onReloadData}
-                onAskAI={onAskAI}
-                onMarkCurrent={onMarkCurrent}
-                aiLoading={aiLoading}
-                aiLoadingIds={aiLoadingIds}
-                noUpdateIds={noUpdateIds}
-                onTierClick={toggleFreshnessTier}
-                activeTier={crossFilters.freshnessTier}
-              />
-            </div>
-
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Suggested Profile Changes
-              </h3>
-              <SuggestedChanges
-                suggestions={suggestions.filter((suggestion) =>
-                  filteredPeopleIds.has(suggestion.person_id)
-                )}
-                onRefresh={onSuggestionsRefresh}
-              />
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Derived Labels
-              </h3>
-              <DerivedLabelsPanel
-                labels={derivedLabels.filter((label) =>
-                  label.person_id ? filteredPeopleIds.has(label.person_id) : false
-                )}
-                onRefresh={onSuggestionsRefresh}
-              />
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Record Search Index
-              </h3>
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={onBackfillEmbeddings}
-                    disabled={embeddingRunning}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
-                  >
-                    {embeddingRunning ? 'Generating...' : 'Generate Index'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleStartEmbeddingBatch}
-                    disabled={embeddingBatchStarting}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors disabled:opacity-50"
-                  >
-                    {embeddingBatchStarting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Starting Batch...
-                      </>
-                    ) : (
-                      'Run Offline Index Batch'
-                    )}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Use the normal queue for immediate record indexing. The offline batch path is optional and
-                  intended for larger refreshes that can run asynchronously.
-                </p>
-                {embeddingProgress && (
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                      <span>Progress</span>
-                      <span>
-                        {embeddingProgress.processed} / {embeddingProgress.total}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-teal-500 h-2 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${
-                            embeddingProgress.total > 0
-                              ? (embeddingProgress.processed /
-                                  embeddingProgress.total) *
-                                100
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {embeddingProgress &&
-                  !embeddingRunning &&
-                  embeddingProgress.processed > 0 && (
-                    <span className="text-xs text-green-600 font-medium">
-                      {embeddingProgress.processed} records indexed
-                    </span>
-                  )}
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-medium text-gray-700">
-                        Recent Offline Index Batch
-                      </p>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        {embeddingBatchLoading
-                          ? 'Loading batch status...'
-                          : latestEmbeddingBatch
-                          ? `${latestEmbeddingBatch.status} · ${formatBatchDate(
-                              latestEmbeddingBatch.started_at
-                            )}`
-                          : 'No offline index batches yet.'}
-                      </p>
-                    </div>
-                    {latestEmbeddingBatch && (
-                      <span
-                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          latestEmbeddingBatch.status === 'ingested'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : latestEmbeddingBatch.status === 'failed' ||
-                              latestEmbeddingBatch.status === 'cancelled'
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
-                      >
-                        {latestEmbeddingBatch.status}
-                      </span>
-                    )}
-                  </div>
-                  {latestEmbeddingBatch && (
-                    <div className="mt-3 text-xs text-gray-600 space-y-1">
-                      <p>
-                        {formatBatchNumber(latestEmbeddingBatch.people_count)} records ·{' '}
-                        {formatBatchNumber(latestEmbeddingBatch.request_count)} requests
-                      </p>
-                      {latestEmbeddingBatch.batch_stats && (
-                        <p>
-                          Success {formatBatchNumber(
-                            latestEmbeddingBatch.batch_stats.successfulRequestCount
-                          )}{' '}
-                          · Failed{' '}
-                          {formatBatchNumber(
-                            latestEmbeddingBatch.batch_stats.failedRequestCount
-                          )}{' '}
-                          · Pending{' '}
-                          {formatBatchNumber(
-                            latestEmbeddingBatch.batch_stats.pendingRequestCount
-                          )}
-                        </p>
-                      )}
-                      {latestEmbeddingBatch.last_error && (
-                        <p className="text-red-600 max-h-10 overflow-hidden">
-                          {latestEmbeddingBatch.last_error}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </>
   );

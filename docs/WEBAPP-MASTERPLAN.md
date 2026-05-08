@@ -9,6 +9,7 @@ Use these docs as the active source set:
 - `docs/SCHEMA.md`: table contract, current legacy tables, and target schema changes.
 - `docs/AI-PIPELINE.md`: edge function ownership and AI behavior contracts.
 - `docs/EVALUATION.md`: quality gates for discovery, verification, and growth recommendations.
+- `docs/DISCOVERY-REDESIGN.md`: phased plan to replace source-pack discovery with surface×lens, bandit allocation, and a reflection loop.
 
 Archived context lives under `docs/archive/` and is not source of truth. Do not reintroduce standalone AI strategy, Dynamics integration, or organization-discovery-agent docs.
 
@@ -543,13 +544,40 @@ Scope:
 Todos:
 
 - `[done]` Route `/admin/growth` exists as the staff Network Growth tab.
-- `[next]` Audit Growth UI for social graph wording.
+- `[done]` Added `/admin/coverage` tab with descriptive metric cards (InteractiveStatsOverview) — Phase 8 Phase 1.
+- `[done]` Stripped Growth tab to planning-only surface: removed OpsMetricsPanel, removed InteractiveStatsOverview from growth tab, removed Coverage summary mini-card row, removed Recent frontier refills sub-list — Phase 8 Phase 2.
+- `[done]` Restructured DiscoveryPlanningPanel into three action-oriented sections: Recommended next searches, Where coverage is thin, Promising pivots — Phase 8 Phase 2.
+- `[done]` Audit Growth UI for social graph wording — 0 hits found.
+- `[done]` Show evidence-backed entity pivots (Promising pivots section).
+- `[done]` Show metro/sector gaps that are specific enough to act on (Where coverage is thin section).
+- `[done]` Add recommended next discovery actions with rationale (Recommended next searches section).
+- `[done]` Allow a recommended action to start or prefill Discovery through `agent-scheduler`.
+- `[done]` Harden recommended actions with rubric fields: `rationale`, `basis` (kind + key), `target` (metro/state/sector/domain/entity), and `expected_yield` — Growth UI displays all fields as chips and badges (Growth page refactor Phase 3).
+- `[done]` Template queries from target context per basis kind; enforce ≤2 per domain and ≤2 per metro diversity caps; exclude exhausted domains (novelty filter).
+- `[done]` Add 72-hour pivot and gap cooldown so successive planning calls rotate to different top pivots/gaps; mark recommended rows on each call (Growth page refactor Phase 4).
+- `[done]` Add daily pivot rebuild housekeeping step that upserts canonical Flemish entity pivots from `person_flemish_connections` where 2+ approved people share the connection (Growth page refactor Phase 4).
+- `[done]` Preserve full RecommendedAction context (query, basis, target, rationale) in `agent_runs.params` when clicking Run; add "Open in Discovery" link that navigates to `/admin/discovery?prompt=…`; disable Run button immediately after click for the session (Growth page refactor Phase 5).
+- `[done]` Add tests covering rubric fields on every recommendation card, exhausted domain exclusion contract, cooled-down pivot exclusion contract, and Run button handoff payload integrity — `src/components/admin/__tests__/DiscoveryPlanningPanel.rubric.test.tsx` and `supabase/functions/_shared/__tests__/planningRecommendations_test.ts` (Growth page refactor Phase 6).
 - `[next]` Show source yield and proven domains.
-- `[next]` Show evidence-backed entity pivots.
-- `[next]` Show metro/sector gaps that are specific enough to act on.
-- `[next]` Add recommended next discovery actions with rationale.
-- `[next]` Allow a recommended action to start or prefill Discovery through `agent-scheduler`.
-- `[later]` Remove old planner tables after confirming no live references remain.
+- `[done]` Remove old planner tables after confirming no live references remain — dropped in migration `20260508000002_phase8b_drop_legacy_planner.sql`.
+
+## Phase 8c - Verify-before-promote
+
+Goal: every newly-discovered candidate is auto-verified by `agent-verify` before staff sees Approve/Reject. No user-facing scope picker. No "Needs review" state.
+
+Todos:
+
+- `[done]` Migration `20260508000006_verify_before_promote.sql`: added `verification_status` (`queued`/`verifying`/`verified`), `verification_run_id`, `verified_at`, `verification_payload` to `discovered_contacts` and `discovered_organizations`; dropped `needs_review` from both tables' check constraints; nullable `suggested_us_network_status`; enabled realtime publication.
+- `[done]` Extended `agent-verify` to accept `record_type: "discovered_contact" | "discovered_organization"` plus `record_ids[]`; runs web-search + Gemini enrichment, writes `verification_payload`, hard-deletes on contradiction, sets `verified_at` on success. Prompt enforces nullable `network_scope` (no guessing).
+- `[done]` Hooked `agent-scheduler` housekeeping to auto-enqueue queued discovered rows (batch 5 per kind) and pre-filter (hard-delete) any with confidence below 0.05. Counters surfaced in housekeeping response.
+- `[done]` Verification page: moved DiscoveredContactsPanel from Discovery tab to Verification tab; greyed-out cards while `verification_status` is `queued`/`verifying`; Approve/Reject only when `verified`; realtime subscription to both pending tables; consolidated dual scope-picker into one Approve button using verifier-suggested scope.
+- `[done]` Removed pending people/organizations queue from Discovery tab.
+
+Acceptance:
+
+- No user-facing scope picker.
+- No "Needs review" label.
+- Discovered rows go: pre-filtered (atrocious) → verified (greyed → normal) → hard-deleted (contradiction); approve promotes with scope/location pre-filled from `verification_payload`.
 
 Out of scope:
 
@@ -570,11 +598,11 @@ npm test
 npm run build
 ```
 
-Focused tests to add:
+Focused tests added (Growth page refactor Phase 6):
 
-- Recommended actions satisfy the evaluation rubric fields.
-- Exhausted domains are not repeatedly recommended.
-- Recommended action handoff preserves source/gap/pivot context.
+- `[done]` Recommended actions satisfy the evaluation rubric fields — `DiscoveryPlanningPanel.rubric.test.tsx` (7 rendering tests across gap_refresh, entity_pivot, domain_revisit action types).
+- `[done]` Exhausted domains are not repeatedly recommended — `planningRecommendations_test.ts` (contract documented; DB-dependent integration test marked `ignore: true` with full outline).
+- `[done]` Recommended action handoff preserves source/gap/pivot context — `DiscoveryPlanningPanel.rubric.test.tsx` (3 handoff tests verifying basis, target, and rationale fields survive the Run click).
 
 Manual checks:
 
@@ -601,7 +629,7 @@ Todos:
 - `[next]` Add pagination or server-side querying for large staff panels.
 - `[done]` Delete legacy Discovery compatibility functions after Phase 5.
 - `[later]` Drop connection tables/RPCs/views after Phase 2 cleanup is proven.
-- `[later]` Drop old planner tables after Phase 8 cleanup is proven.
+- `[done]` Drop old planner tables after Phase 8 cleanup is proven — dropped in migration `20260508000002_phase8b_drop_legacy_planner.sql`.
 - `[later]` Regenerate Supabase database types after schema removal.
 - `[later]` Confirm build chunks stay below target after each feature phase.
 
@@ -627,6 +655,27 @@ npm run build
 rg "from\\('people'\\)|from\\(\"people\"\\)|from\\('organizations'\\)|from\\(\"organizations\"\\)" src
 rg "discover-contacts|search-contacts|agent-connections|connection_suggestions|discover_connections|plans|plan_actions|plan_suggested_people" src supabase docs --glob '!docs/archive/**'
 ```
+
+## Phase 10 - Export And Phone Cleanup
+
+Goal: mixed-entity collection export, organization list export from the directory, and removal of the defunct phone field.
+
+Todos:
+
+- `[done]` Drop `phone` column from `people` (migration `20260508000010_drop_phone_from_people.sql`). Remove from `Person` type, `PersonProfile` display and edit form, `AddContactPanel` form, `verification.ts` field labels, `database.types.ts`, and people CSV/Excel export headers.
+- `[done]` Replace `PeopleExportMenu` + `Export People Briefing` button in `CollectionDetail` with `CollectionExportMenu` (mixed export): Excel produces a workbook with separate "People" and "Organizations" sheets; CSV produces a zip with `people.csv` and `organizations.csv`.
+- `[done]` Add `OrganizationExportMenu` to the "Organizations" section header in `DirectoryGrid`, mirroring `PeopleExportMenu` on the people side.
+- `[done]` Add `exportOrganizationsToCsv` / `exportOrganizationsToExcel` and `exportCollectionToExcel` / `exportCollectionToCsv` to `exportService.ts`.
+- `[done]` Remove `printCollectionBriefing` (print briefing button and all code behind it).
+
+Exit criteria:
+
+- `npm run typecheck` clean.
+- `npm test` passes (all 159 tests).
+- `npm run build` clean.
+- No `phone` references in frontend source.
+- Collection export button handles mixed members.
+- Organization list in directory has an Export button.
 
 ## Cross-Phase Test Policy
 

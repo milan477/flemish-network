@@ -29,7 +29,6 @@ export const VERIFICATION_FIELD_LABELS: Record<string, string> = {
   linkedin_url: 'LinkedIn',
   profile_photo_url: 'Profile Photo',
   bio: 'Bio',
-  phone: 'Phone',
   website_url: 'Website',
   twitter_url: 'Twitter (X)',
   location_city: 'City',
@@ -43,7 +42,6 @@ export function getSuggestionRisk(fieldName: string): VerificationRisk {
     fieldName === 'current_position' ||
     fieldName === 'occupation' ||
     fieldName === 'email' ||
-    fieldName === 'phone' ||
     fieldName === 'title' ||
     fieldName === 'first_name' ||
     fieldName === 'last_name' ||

@@ -11,10 +11,10 @@ export type AppPage =
   | 'add-contact'
   | 'account';
 
-export type AdminTab = 'discovery' | 'verification' | 'growth' | 'system' | 'access';
+export type AdminTab = 'discovery' | 'verification' | 'growth' | 'coverage' | 'system' | 'access';
 
 export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = false): AdminTab {
-  if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'system') {
+  if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'coverage' || tab === 'system') {
     return tab;
   }
   if (tab === 'access' && canAccessAdminOnlyTabs) return 'access';
@@ -26,6 +26,7 @@ export function isCanonicalAdminTab(tab?: string | null): tab is AdminTab {
     tab === 'discovery' ||
     tab === 'verification' ||
     tab === 'growth' ||
+    tab === 'coverage' ||
     tab === 'system' ||
     tab === 'access'
   );

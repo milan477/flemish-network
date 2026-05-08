@@ -67,18 +67,12 @@ const abroadLocations = [
 ];
 
 const sectors = [
-  'AI',
+  'Artificial Intelligence',
   'Biotechnology',
   'Research',
   'Education',
   'Finance',
   'Culture & Arts',
-  'Semiconductor',
-  'Life Sciences',
-  'Public Policy',
-  'Climate Tech',
-  'Health Care',
-  'Logistics',
 ];
 
 const flemishConnections = [

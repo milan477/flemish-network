@@ -30,7 +30,7 @@ Deno.test("buildOrganizationStructuredEmbeddingText includes organization-specif
     type: "Research institute",
     description:
       "Runs applied AI programs with Flemish universities and US labs.",
-    sectors: ["AI", "Research"],
+    sectors: ["Artificial Intelligence", "Research"],
     flemishFacts: "UGent University of Ghent relevance Founded by Flemish university partners.",
     locationText: "New York, NY; Boston, MA",
     usNetworkStatus: "belgian_organization_with_us_presence",
@@ -51,7 +51,7 @@ Deno.test("buildOrganizationTextChunks creates bounded mixed organization chunks
     type: "Research institute",
     description:
       "Runs applied AI programs with Flemish universities and US labs. Supports industry pilots across the Northeast.",
-    sectors: ["AI", "Research"],
+    sectors: ["Artificial Intelligence", "Research"],
     flemishFacts: "UGent relevance Founded by Flemish university partners.",
     locationText: "New York, NY",
     usNetworkStatus: "belgian_organization_with_us_presence",

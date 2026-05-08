@@ -45,12 +45,18 @@ import {
   dashboardSearchCacheScope,
 } from '../lib/matchCriteria';
 import {
+  buildLightClusters,
   buildNetworkClusters,
   organizationMatchesLocation,
   personMatchesLocation,
 } from '../lib/networkScope';
 
 const MapVisualization = lazy(() => import('../components/MapVisualization'));
+
+const PEOPLE_SELECT = '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))';
+const ORG_SELECT = '*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, flemish_connections(id, name, type, entity_type, is_filterable))';
+const INITIAL_PAGE = 12;
+const MORE_PAGE = 24;
 
 interface DashboardProps {
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
@@ -80,6 +86,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [clusters, setClusters] = useState<MapCluster[]>([]);
   const [flemishOptions, setFlemishOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMorePeople, setHasMorePeople] = useState(false);
+  const [hasMoreOrgs, setHasMoreOrgs] = useState(false);
+  const [fullDataReady, setFullDataReady] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [stats, setStats] = useState({
     people: 0,
@@ -96,6 +106,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const loadIdRef = useRef(0);
+  const fullDataReadyRef = useRef(false);
   const searchRequestIdRef = useRef(0);
   const activeMatchCriteriaCount = useMemo(
     () => countActiveMatchCriteria(filters),
@@ -306,142 +317,29 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     [clearSearchResults, filters, handleClearSearchQuery, onNavigate, updateRouteState]
   );
 
-  const loadData = useCallback(
-    async (
-      currentFilters: MapFilters,
-      aiFilters: ActiveAiFilter[],
-      currentMatchMode: SearchMatchMode
-    ) => {
-      const thisId = ++loadIdRef.current;
-      setLoading(true);
-      await ensureLocationsLoaded();
+  const handleLoadMorePeople = useCallback(async () => {
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from('people')
+      .select(PEOPLE_SELECT)
+      .range(people.length, people.length + MORE_PAGE - 1);
+    const next = (data || []) as Person[];
+    setPeople((prev) => [...prev, ...next]);
+    setHasMorePeople(next.length === MORE_PAGE);
+    setLoadingMore(false);
+  }, [people.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-      let peopleData: Person[] = [];
-      let orgsData: Organization[] = [];
-
-      if (currentFilters.showPeople) {
-        let query = supabase
-          .from('people')
-          .select(
-            '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))'
-          );
-
-        if (currentFilters.availableForLectures) {
-          query = query.eq('available_for_lectures', true);
-        }
-
-        const { data } = await query;
-        peopleData = applyPeopleMatchCriteria(
-          (data as Person[]) || [],
-          currentFilters,
-          currentMatchMode
-        );
-      }
-
-      if (currentFilters.showOrganizations) {
-        const { data } = await supabase
-          .from('organizations')
-          .select('*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, flemish_connections(id, name, type, entity_type, is_filterable))')
-          .limit(150);
-        let rawOrganizations = (data || []) as Organization[];
-
-        if (currentFilters.availableForLectures) {
-          rawOrganizations = [];
-        }
-
-        orgsData = applyOrganizationMatchCriteria(
-          rawOrganizations,
-          currentFilters,
-          currentMatchMode
-        );
-      }
-
-      if (thisId !== loadIdRef.current) return;
-
-      if (aiFilters.length > 0) {
-        peopleData = peopleData.filter((person) =>
-          aiFilters.every((filter) =>
-            scorePersonAgainstFilter(
-              person as unknown as Record<string, unknown>,
-              filter.keywords,
-              filter.fields as readonly string[]
-            )
-          )
-        );
-      }
-
-      setPeople(peopleData);
-      setOrganizations(orgsData);
-
-      const builtClusters = buildNetworkClusters(peopleData, orgsData, currentFilters);
-      setClusters(builtClusters);
-
-      const uniqueCities = new Set(builtClusters.map((cluster) => cluster.city));
-      setStats({
-        people: peopleData.length,
-        organizations: orgsData.length,
-        cities: uniqueCities.size,
-      });
-
-      setLoading(false);
-
-      const allEntities = [
-        ...peopleData.map((person) => ({
-          city:
-            person.us_network_status === 'us_connected_abroad'
-              ? person.person_us_connections?.[0]?.locations?.city
-              : person.locations?.city,
-          state:
-            person.us_network_status === 'us_connected_abroad'
-              ? person.person_us_connections?.[0]?.locations?.state
-              : person.locations?.state,
-        })),
-        ...orgsData.map((organization) => ({
-          city:
-            organization.organization_us_locations?.[0]?.locations?.city ||
-            organization.locations?.city,
-          state:
-            organization.organization_us_locations?.[0]?.locations?.state ||
-            organization.locations?.state,
-        })),
-      ];
-
-      const needsGeocoding = allEntities.filter((entity) => {
-        if (!entity.city || !entity.state) return false;
-        return !lookupCity(entity.city, entity.state);
-      });
-
-      if (needsGeocoding.length === 0) return;
-
-      const uniquePairs = new window.Map<string, { city: string; state: string }>();
-      for (const entity of needsGeocoding) {
-        const key = `${entity.city},${entity.state}`;
-        if (!uniquePairs.has(key)) {
-          uniquePairs.set(key, {
-            city: entity.city!,
-            state: entity.state!,
-          });
-        }
-      }
-
-      const geocoded = await geocodeBatch(Array.from(uniquePairs.values()));
-
-      if (geocoded.size > 0 && thisId === loadIdRef.current) {
-        for (const [key, coords] of geocoded) {
-          const [city, state] = key.split(',');
-          addToCache(city, state, coords.lat, coords.lng);
-        }
-
-        const updatedClusters = buildNetworkClusters(peopleData, orgsData, currentFilters);
-        setClusters(updatedClusters);
-        setStats((previous) => ({
-          ...previous,
-          cities: new Set(updatedClusters.map((cluster) => cluster.city)).size,
-        }));
-      }
-    },
-    []
-  );
+  const handleLoadMoreOrgs = useCallback(async () => {
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from('organizations')
+      .select(ORG_SELECT)
+      .range(organizations.length, organizations.length + MORE_PAGE - 1);
+    const next = (data || []) as Organization[];
+    setOrganizations((prev) => [...prev, ...next]);
+    setHasMoreOrgs(next.length === MORE_PAGE);
+    setLoadingMore(false);
+  }, [organizations.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLastDashboardLocation(`${location.pathname}${location.search}`);
@@ -479,8 +377,148 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       return;
     }
 
-    loadData(filters, activeFilters, effectiveMatchMode);
-  }, [activeFilters, activeQuery, effectiveMatchMode, filters, loadData]);
+    const loadId = ++loadIdRef.current;
+    fullDataReadyRef.current = false;
+    setFullDataReady(false);
+    setHasMorePeople(false);
+    setHasMoreOrgs(false);
+
+    // Tier 1: lightweight RPC so map circles appear immediately
+    let tier1Cancelled = false;
+    supabase.rpc('get_network_location_summary').then(({ data }) => {
+      if (!tier1Cancelled && !fullDataReadyRef.current && loadIdRef.current === loadId && data) {
+        setClusters(buildLightClusters(data as Parameters<typeof buildLightClusters>[0], filters));
+      }
+    });
+
+    const hasActiveFilters =
+      filters.availableForLectures ||
+      countActiveMatchCriteria(filters) > 0 ||
+      activeFilters.length > 0;
+
+    // Tier 2a: paginated list — shows 12 people + 12 orgs immediately
+    (async () => {
+      setLoading(true);
+      await ensureLocationsLoaded();
+
+      let peopleData: Person[] = [];
+      let orgsData: Organization[] = [];
+      let morePeople = false;
+      let moreOrgs = false;
+
+      if (filters.showPeople) {
+        if (!hasActiveFilters) {
+          const { data } = await supabase.from('people').select(PEOPLE_SELECT).range(0, INITIAL_PAGE - 1);
+          peopleData = (data || []) as Person[];
+          morePeople = peopleData.length === INITIAL_PAGE;
+        } else {
+          let q = supabase.from('people').select(PEOPLE_SELECT);
+          if (filters.availableForLectures) q = q.eq('available_for_lectures', true);
+          const { data } = await q;
+          let p = applyPeopleMatchCriteria((data || []) as Person[], filters, effectiveMatchMode);
+          if (activeFilters.length > 0) {
+            p = p.filter((person) =>
+              activeFilters.every((f) =>
+                scorePersonAgainstFilter(person as unknown as Record<string, unknown>, f.keywords, f.fields as readonly string[])
+              )
+            );
+          }
+          peopleData = p;
+        }
+      }
+
+      if (filters.showOrganizations) {
+        if (!hasActiveFilters) {
+          const { data } = await supabase.from('organizations').select(ORG_SELECT).range(0, INITIAL_PAGE - 1);
+          orgsData = (data || []) as Organization[];
+          moreOrgs = orgsData.length === INITIAL_PAGE;
+        } else {
+          const { data } = await supabase.from('organizations').select(ORG_SELECT);
+          let rawOrgs = (data || []) as Organization[];
+          if (filters.availableForLectures) rawOrgs = [];
+          orgsData = applyOrganizationMatchCriteria(rawOrgs, filters, effectiveMatchMode);
+        }
+      }
+
+      if (loadIdRef.current !== loadId) return;
+      setPeople(peopleData);
+      setOrganizations(orgsData);
+      setHasMorePeople(morePeople);
+      setHasMoreOrgs(moreOrgs);
+      setStats({ people: peopleData.length, organizations: orgsData.length, cities: 0 });
+      setLoading(false);
+    })();
+
+    // Tier 2b: background full fetch for map cluster popovers
+    (async () => {
+      let allPeople: Person[] = [];
+      let allOrgs: Organization[] = [];
+
+      if (filters.showPeople) {
+        let q = supabase.from('people').select(PEOPLE_SELECT);
+        if (filters.availableForLectures) q = q.eq('available_for_lectures', true);
+        const { data } = await q;
+        allPeople = applyPeopleMatchCriteria((data || []) as Person[], filters, effectiveMatchMode);
+        if (activeFilters.length > 0) {
+          allPeople = allPeople.filter((person) =>
+            activeFilters.every((f) =>
+              scorePersonAgainstFilter(person as unknown as Record<string, unknown>, f.keywords, f.fields as readonly string[])
+            )
+          );
+        }
+      }
+
+      if (filters.showOrganizations) {
+        const { data } = await supabase.from('organizations').select(ORG_SELECT).limit(150);
+        let rawOrgs = (data || []) as Organization[];
+        if (filters.availableForLectures) rawOrgs = [];
+        allOrgs = applyOrganizationMatchCriteria(rawOrgs, filters, effectiveMatchMode);
+      }
+
+      if (loadIdRef.current !== loadId) return;
+
+      const builtClusters = buildNetworkClusters(allPeople, allOrgs, filters);
+      setClusters(builtClusters);
+      fullDataReadyRef.current = true;
+      setFullDataReady(true);
+
+      const uniqueCities = new Set(builtClusters.map((c) => c.city));
+      setStats({ people: allPeople.length, organizations: allOrgs.length, cities: uniqueCities.size });
+
+      const allEntities = [
+        ...allPeople.map((person) => ({
+          city: person.us_network_status === 'us_connected_abroad' ? person.person_us_connections?.[0]?.locations?.city : person.locations?.city,
+          state: person.us_network_status === 'us_connected_abroad' ? person.person_us_connections?.[0]?.locations?.state : person.locations?.state,
+        })),
+        ...allOrgs.map((org) => ({
+          city: org.organization_us_locations?.[0]?.locations?.city || org.locations?.city,
+          state: org.organization_us_locations?.[0]?.locations?.state || org.locations?.state,
+        })),
+      ];
+
+      const needsGeocoding = allEntities.filter((e) => e.city && e.state && !lookupCity(e.city, e.state));
+      if (needsGeocoding.length === 0) return;
+
+      const uniquePairs = new window.Map<string, { city: string; state: string }>();
+      for (const e of needsGeocoding) {
+        const key = `${e.city},${e.state}`;
+        if (!uniquePairs.has(key)) uniquePairs.set(key, { city: e.city!, state: e.state! });
+      }
+
+      const geocoded = await geocodeBatch(Array.from(uniquePairs.values()));
+      if (geocoded.size > 0 && loadIdRef.current === loadId) {
+        for (const [key, coords] of geocoded) {
+          const [city, state] = key.split(',');
+          addToCache(city, state, coords.lat, coords.lng);
+        }
+        const updatedClusters = buildNetworkClusters(allPeople, allOrgs, filters);
+        setClusters(updatedClusters);
+        setStats((prev) => ({ ...prev, cities: new Set(updatedClusters.map((c) => c.city)).size }));
+      }
+    })();
+
+    return () => { tier1Cancelled = true; };
+  }, [activeFilters, activeQuery, effectiveMatchMode, filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activeQuery) {
@@ -747,6 +785,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <MapVisualization
               clusters={clusters}
               loading={loading}
+              fullDataReady={fullDataReady}
               focusedCity={focusedCity}
               onViewInDirectory={handleViewInDirectory}
               onNavigate={onNavigate}
@@ -784,6 +823,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onClearFocus={clearFocusedCity}
                   allPeople={displayedPeople}
                   searchError={searchError}
+                  hasMorePeople={hasMorePeople && !focusedCity}
+                  hasMoreOrgs={hasMoreOrgs && !focusedCity}
+                  loadingMore={loadingMore}
+                  onLoadMorePeople={handleLoadMorePeople}
+                  onLoadMoreOrgs={handleLoadMoreOrgs}
                 />
               )}
             </div>

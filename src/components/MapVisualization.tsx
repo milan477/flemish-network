@@ -21,6 +21,7 @@ L.Icon.Default.mergeOptions({
 interface MapVisualizationProps {
   clusters: MapCluster[];
   loading: boolean;
+  fullDataReady: boolean;
   focusedCity: { city: string; state: string } | null;
   onViewInDirectory: (city: string, state: string, personIds: string[]) => void;
   onNavigate: (page: string, id?: string) => void;
@@ -44,6 +45,7 @@ function MapController({ onMapClick }: { onMapClick: () => void }) {
 export default function MapVisualization({
   clusters,
   loading,
+  fullDataReady,
   focusedCity,
   onViewInDirectory,
   onNavigate,
@@ -86,7 +88,9 @@ export default function MapVisualization({
   // Custom icon for a single city cluster
   const createCityIcon = useCallback((cluster: MapCluster) => {
     const key = `${cluster.city}-${cluster.state}`;
-    const count = cluster.people.length + cluster.organizations.length;
+    const count =
+      (cluster.personCount ?? cluster.people.length) +
+      (cluster.orgCount ?? cluster.organizations.length);
     const scaledCount = Math.min(count, MAX_CIRCLE_SCALE_COUNT);
     const size = Math.max(Math.sqrt(scaledCount) * 12, 32);
     const isSelected = selectedCityKey === key;
@@ -113,7 +117,9 @@ export default function MapVisualization({
     markers.forEach(m => {
       const mc = (m.options as L.MarkerOptions & { mapCluster?: MapCluster }).mapCluster;
       if (mc) {
-        totalCount += mc.people.length + mc.organizations.length;
+        totalCount +=
+          (mc.personCount ?? mc.people.length) +
+          (mc.orgCount ?? mc.organizations.length);
       }
     });
 
@@ -210,6 +216,7 @@ export default function MapVisualization({
                   >
                     <ClusterPopover
                       cluster={cluster}
+                      fullDataReady={fullDataReady}
                       onClose={() => mapRef.current?.closePopup()}
                       onViewInDirectory={onViewInDirectory}
                       onNavigate={onNavigate}

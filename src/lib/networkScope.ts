@@ -1,4 +1,5 @@
 import type {
+  LocationSummaryRow,
   MapCluster,
   MapFilters,
   Organization,
@@ -148,6 +149,43 @@ function personPlacementConnections(person: Person): PersonUsConnection[] {
 
 function organizationPlacementLocations(organization: Organization): OrganizationUsLocation[] {
   return organization.organization_us_locations || [];
+}
+
+export function buildLightClusters(
+  rows: LocationSummaryRow[],
+  filters: MapFilters
+): MapCluster[] {
+  const clusterMap = new Map<string, MapCluster>();
+
+  for (const row of rows) {
+    if (!row.city || !row.state || row.lat == null || row.lng == null) continue;
+
+    const personContrib = filters.showPeople ? row.person_count : 0;
+    const orgContrib = filters.showOrganizations ? row.org_count : 0;
+    if (personContrib + orgContrib === 0) continue;
+
+    const key = `${row.city}|${row.state}`;
+    const existing = clusterMap.get(key);
+    if (existing) {
+      existing.personCount = (existing.personCount ?? 0) + personContrib;
+      existing.orgCount = (existing.orgCount ?? 0) + orgContrib;
+    } else {
+      clusterMap.set(key, {
+        city: row.city,
+        state: row.state,
+        lat: row.lat,
+        lng: row.lng,
+        people: [],
+        organizations: [],
+        personCount: personContrib,
+        orgCount: orgContrib,
+      });
+    }
+  }
+
+  return Array.from(clusterMap.values()).filter(
+    (c) => (c.personCount ?? 0) + (c.orgCount ?? 0) > 0
+  );
 }
 
 export function buildNetworkClusters(

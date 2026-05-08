@@ -23,7 +23,6 @@ const basePerson: PersonWithSectors = {
   sectorNames: ['AI', 'Semiconductors'],
   flemish_connection: 'KU Leuven, imec',
   email: 'jan@example.com',
-  phone: '+1 555 0100',
   linkedin_url: 'https://linkedin.com/in/jandesmet',
   website_url: 'https://example.com/profile?tags=a,b',
   twitter_url: 'https://x.com/jandesmet',
@@ -49,6 +48,6 @@ describe('people export formatting', () => {
     expect(rows[1][3]).toBe('Founder, CEO at Acme; Labs');
     expect(rows[1][5]).toBe('Line one\nLine "two" with café');
     expect(rows[1][8]).toBe('AI; Semiconductors');
-    expect(rows[1][13]).toBe('https://example.com/profile?tags=a,b');
+    expect(rows[1][12]).toBe('https://example.com/profile?tags=a,b');
   });
 });

@@ -13,7 +13,6 @@ import {
   Pencil,
   Sparkles,
   Loader2,
-  Printer,
   Building2,
   Check,
   RotateCcw,
@@ -33,9 +32,8 @@ import {
 } from '../lib/flemishConnections';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type CollectionSuggestionGap } from '../lib/aiService';
-import { printCollectionBriefing } from '../lib/exportService';
 import { ProfileAvatar } from './ProfileAvatar';
-import PeopleExportMenu from './PeopleExportMenu';
+import CollectionExportMenu from './CollectionExportMenu';
 import CollectionSuggestionPreviewModal from './CollectionSuggestionPreviewModal';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
@@ -63,6 +61,10 @@ interface CachedCollectionSuggestions {
   showSuggestions: boolean;
   updatedAt: string;
 }
+
+// Module-level detail cache — keyed by collectionId, survives navigation within a session.
+type DetailCacheEntry = { collection: Collection; members: CollectionMember[] };
+const _detailCache = new Map<string, DetailCacheEntry>();
 
 const COLLECTION_SUGGESTION_CACHE_VERSION = 1;
 
@@ -125,9 +127,10 @@ export default function CollectionDetail({
 }: CollectionDetailProps) {
   const { canEdit } = useAuth();
   const navigate = useNavigate();
-  const [collection, setCollection] = useState<Collection | null>(null);
-  const [members, setMembers] = useState<CollectionMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const _cached = _detailCache.get(collectionId);
+  const [collection, setCollection] = useState<Collection | null>(_cached?.collection ?? null);
+  const [members, setMembers] = useState<CollectionMember[]>(_cached?.members ?? []);
+  const [loading, setLoading] = useState(!_cached);
   const [editingNotes, setEditingNotes] = useState<string | null>(null);
   const [notesValue, setNotesValue] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
@@ -144,10 +147,6 @@ export default function CollectionDetail({
   const [previewCandidate, setPreviewCandidate] = useState<CollectionSuggestionCandidate | null>(null);
   const restoredSuggestionCacheRef = useRef(false);
 
-  const personMembers = useMemo(
-    () => members.filter((member) => member.person).map((member) => member.person!),
-    [members]
-  );
   const currentMemberIds = useMemo(() => ({
     people: new Set(members.map((member) => member.person_id).filter(Boolean) as string[]),
     organizations: new Set(members.map((member) => member.organization_id).filter(Boolean) as string[]),
@@ -161,28 +160,26 @@ export default function CollectionDetail({
     [collectionId]
   );
 
-  const fetchCollectionData = useCallback(async () => {
-    setLoading(true);
+  const fetchCollectionData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     try {
-      // Fetch collection info
-      const { data: collData, error: collError } = await supabase
-        .from('collections')
-        .select('*')
-        .eq('id', collectionId)
-        .single();
+      // Fetch collection info and members in parallel.
+      // Members are fetched separately because Supabase cannot always infer both nullable member relationships (person_id / organization_id) from the schema cache.
+      const [collRes, memRes] = await Promise.all([
+        supabase.from('collections').select('*').eq('id', collectionId).single(),
+        supabase
+          .from('collection_members')
+          .select('*')
+          .eq('collection_id', collectionId)
+          .order('added_at', { ascending: false }),
+      ]);
 
-      if (collError) throw collError;
-      setCollection(collData);
+      if (collRes.error) throw collRes.error;
+      if (memRes.error) throw memRes.error;
 
-      // Fetch collection members first, then load related records explicitly.
-      // Supabase cannot always infer both nullable member relationships from the schema cache.
-      const { data: memData, error: memError } = await supabase
-        .from('collection_members')
-        .select('*')
-        .eq('collection_id', collectionId)
-        .order('added_at', { ascending: false });
+      setCollection(collRes.data);
 
-      if (memError) throw memError;
+      const { data: memData } = memRes;
 
       const baseMembers = (memData || []) as CollectionMember[];
       const personIds = Array.from(new Set(baseMembers.map((member) => member.person_id).filter(Boolean) as string[]));
@@ -212,26 +209,31 @@ export default function CollectionDetail({
         ((organizationsRes.data || []) as Organization[]).map((organization) => [organization.id, organization])
       );
 
-      setMembers(
-        baseMembers.map((member) => ({
-          ...member,
-          person: member.person_id ? peopleById.get(member.person_id) : undefined,
-          organization: member.organization_id
-            ? organizationsById.get(member.organization_id)
-            : undefined,
-        }))
-      );
+      const assembledMembers = baseMembers.map((member) => ({
+        ...member,
+        person: member.person_id ? peopleById.get(member.person_id) : undefined,
+        organization: member.organization_id
+          ? organizationsById.get(member.organization_id)
+          : undefined,
+      }));
+
+      _detailCache.set(collectionId, { collection: collRes.data, members: assembledMembers });
+      setMembers(assembledMembers);
     } catch (err) {
       console.warn('[CollectionDetail] failed to load collection', err);
       notifyError(err, { hint: 'Could not load this collection.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [collectionId]);
 
   useEffect(() => {
-    void fetchCollectionData();
-  }, [fetchCollectionData]);
+    if (_detailCache.has(collectionId)) {
+      void fetchCollectionData({ silent: true });
+    } else {
+      void fetchCollectionData();
+    }
+  }, [fetchCollectionData, collectionId]);
 
   useEffect(() => {
     const cached = readCachedCollectionSuggestions(suggestionCacheKey);
@@ -325,6 +327,7 @@ export default function CollectionDetail({
         .eq('id', collection.id);
 
       if (error) throw error;
+      _detailCache.delete(collectionId);
       onBack();
     } catch (err) {
       notifyError(err, { hint: 'Could not delete the collection.' });
@@ -519,29 +522,10 @@ export default function CollectionDetail({
         </div>
 
         <div className="flex items-center gap-3">
-          {members.length > 0 && (
-            <>
-              <PeopleExportMenu
-                people={personMembers}
-                filename={`${collection.name.replace(/\s+/g, '-').toLowerCase()}.csv`}
-                buttonClassName="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 disabled:opacity-50"
-              />
-              <button
-                onClick={() => {
-                  printCollectionBriefing(
-                    collection.name,
-                    collection.description,
-                    members.filter((m) => m.person).map((m) => ({ person: m.person!, notes: m.notes }))
-                  );
-                }}
-                disabled={personMembers.length === 0}
-                className="flex items-center px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors border border-gray-200 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Export People Briefing
-              </button>
-            </>
-          )}
+          <CollectionExportMenu
+            members={members}
+            filename={collection.name.replace(/\s+/g, '-').toLowerCase()}
+          />
           {canEdit && (
             <button
               onClick={handleDeleteCollection}

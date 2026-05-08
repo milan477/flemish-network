@@ -304,7 +304,7 @@ describe('collection detail mixed member UI contract', () => {
     expect(collectionDetailSource).toContain("onNavigate(isPerson ? 'person' : 'organization'");
     expect(collectionDetailSource).toContain('Add notes about this member in this collection');
     expect(collectionDetailSource).toContain('Remove this member from the collection');
-    expect(collectionDetailSource).toContain('Export People Briefing');
+    expect(collectionDetailSource).toContain('CollectionExportMenu');
   });
 
   it('uses the shared draft workflow for detail collection suggestions and saves mixed accepted candidates', () => {

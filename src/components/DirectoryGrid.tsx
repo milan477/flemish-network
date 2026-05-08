@@ -1,9 +1,10 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Lightbulb } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { displayName } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
 import AddToCollectionDropdown from './AddToCollectionDropdown';
 import PeopleExportMenu from './PeopleExportMenu';
+import OrganizationExportMenu from './OrganizationExportMenu';
 import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
 import { useAuth } from '../lib/auth';
@@ -23,6 +24,11 @@ interface DirectoryGridProps {
   snippets?: Map<string, string>;
   allPeople?: Person[];
   searchError?: string | null;
+  hasMorePeople?: boolean;
+  hasMoreOrgs?: boolean;
+  loadingMore?: boolean;
+  onLoadMorePeople?: () => void;
+  onLoadMoreOrgs?: () => void;
 }
 
 function PersonCard({
@@ -231,7 +237,15 @@ export default function DirectoryGrid({
   snippets,
   allPeople,
   searchError,
+  hasMorePeople,
+  hasMoreOrgs,
+  loadingMore,
+  onLoadMorePeople,
+  onLoadMoreOrgs,
 }: DirectoryGridProps) {
+  const [peopleCollapsed, setPeopleCollapsed] = useState(false);
+  const [orgsCollapsed, setOrgsCollapsed] = useState(false);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -364,41 +378,88 @@ export default function DirectoryGrid({
       {!isSearchMode && displayPeople.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setPeopleCollapsed(!peopleCollapsed)}
+              className="flex items-center space-x-2 group"
+            >
+              {peopleCollapsed
+                ? <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                : <ChevronUp className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />}
               <Users className="w-5 h-5 text-gray-500" />
               <h2 className="text-lg font-semibold text-gray-900">People</h2>
               <span className="text-sm text-gray-400">({displayPeople.length})</span>
-            </div>
+            </button>
             <div className="flex items-center space-x-3">
               <PeopleExportMenu people={displayPeople} />
               <BulkAddButton people={displayPeople} />
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {displayPeople.map((person) => (
-              <PersonCard key={person.id} person={person} onNavigate={onNavigate} />
-            ))}
-          </div>
+          {!peopleCollapsed && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {displayPeople.map((person) => (
+                  <PersonCard key={person.id} person={person} onNavigate={onNavigate} />
+                ))}
+              </div>
+              {hasMorePeople && onLoadMorePeople && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={onLoadMorePeople}
+                    disabled={loadingMore}
+                    className="flex items-center space-x-2 px-6 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:border-yellow-400 hover:text-yellow-600 transition-colors disabled:opacity-50"
+                  >
+                    {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>{loadingMore ? 'Loading...' : 'Show more people'}</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
       {organizations.length > 0 && (
         <div>
-          <div className="flex items-center space-x-2 mb-4">
-            <Building2 className="w-5 h-5 text-gray-500" />
-            <h2 className="text-lg font-semibold text-gray-900">Organizations</h2>
-            <span className="text-sm text-gray-400">({organizations.length})</span>
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => setOrgsCollapsed(!orgsCollapsed)}
+              className="flex items-center space-x-2 group"
+            >
+              {orgsCollapsed
+                ? <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                : <ChevronUp className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />}
+              <Building2 className="w-5 h-5 text-gray-500" />
+              <h2 className="text-lg font-semibold text-gray-900">Organizations</h2>
+              <span className="text-sm text-gray-400">({organizations.length})</span>
+            </button>
+            <OrganizationExportMenu organizations={organizations} />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {organizations.map((org) => (
-              <OrganizationCard
-                key={org.id}
-                organization={org}
-                onNavigate={onNavigate}
-                snippet={snippets?.get(org.id)}
-              />
-            ))}
-          </div>
+          {!orgsCollapsed && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {organizations.map((org) => (
+                  <OrganizationCard
+                    key={org.id}
+                    organization={org}
+                    onNavigate={onNavigate}
+                    snippet={snippets?.get(org.id)}
+                  />
+                ))}
+              </div>
+              {hasMoreOrgs && onLoadMoreOrgs && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    onClick={onLoadMoreOrgs}
+                    disabled={loadingMore}
+                    className="flex items-center space-x-2 px-6 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:border-yellow-400 hover:text-yellow-600 transition-colors disabled:opacity-50"
+                  >
+                    {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>{loadingMore ? 'Loading...' : 'Show more organizations'}</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -25,6 +25,11 @@ import {
   type VerificationRecordType,
   type VerificationStep,
 } from "../_shared/verification.ts";
+import {
+  verifyDiscoveredRecord,
+  type DiscoveredRecordKind,
+  type DiscoveredVerificationStep,
+} from "../_shared/discoveredVerification.ts";
 import { createLogger } from "../_shared/log.ts";
 
 const log = createLogger("agent-verify");
@@ -188,6 +193,89 @@ Deno.serve(wrapHandler(async (req: Request) => {
     const recordTypeRaw = safeStr(body.record_type).toLowerCase();
     const recordType: VerificationRecordType =
       recordTypeRaw === "organization" ? "organization" : "person";
+
+    // Verify-before-promote: discovered_contact / discovered_organization rows.
+    if (
+      recordTypeRaw === "discovered_contact" ||
+      recordTypeRaw === "discovered_organization"
+    ) {
+      const recordKind = recordTypeRaw as DiscoveredRecordKind;
+      const idsRaw = Array.isArray(body.record_ids)
+        ? body.record_ids.map((value: unknown) => safeStr(value)).filter(Boolean)
+        : safeStr(body.record_id)
+          ? [safeStr(body.record_id)]
+          : [];
+
+      if (idsRaw.length === 0) {
+        return new Response(
+          JSON.stringify({
+            error: "record_id or record_ids required for discovered_* targets",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      const startedAt = Date.now();
+      const steps: DiscoveredVerificationStep[] = [];
+      let verified = 0;
+      let deletedContradiction = 0;
+      let errors = 0;
+      let quotaExhausted = false;
+
+      for (const recordId of idsRaw) {
+        if (Date.now() - startedAt > DEADLINE_MS - 5_000) break;
+        await heartbeat(supabase, runId);
+        const step = await verifyDiscoveredRecord(supabase, {
+          geminiApiKey,
+          runId,
+          recordKind,
+          recordId,
+        });
+        steps.push(step);
+        llmCallsMade += step.llm_calls_made;
+        webSearchesMade += step.web_searches_made;
+        if (step.outcome === "verified") verified += 1;
+        else if (step.outcome === "deleted_contradiction") deletedContradiction += 1;
+        else if (step.outcome === "skipped_quota") {
+          quotaExhausted = true;
+          break;
+        } else if (step.outcome === "error") errors += 1;
+      }
+
+      const result = {
+        record_type: recordKind,
+        records_processed: steps.length,
+        verified,
+        deleted_contradiction: deletedContradiction,
+        errors,
+        quota_exhausted: quotaExhausted,
+        llm_calls_made: llmCallsMade,
+        web_searches_made: webSearchesMade,
+        steps,
+      };
+
+      if (runId && supabase) {
+        const costEstimate = llmCallsMade * 0.001 + webSearchesMade * 0.0005;
+        await supabase
+          .from("agent_runs")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            results: result as unknown as Record<string, never>,
+            llm_calls_made: llmCallsMade,
+            web_searches_made: webSearchesMade,
+            cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,
+          })
+          .eq("id", runId);
+      }
+
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // In preview mode the caller is asking for a single record on demand and
     // never expects durable writes (no agent_runs row, no profile_suggestions
