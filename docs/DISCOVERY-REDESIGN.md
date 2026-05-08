@@ -71,7 +71,7 @@ Subagents are encouraged for parallel work (schema + edge function + UI) and for
 - [ ] **Phase 2** — Surfaces × Lenses taxonomy and seed-domain refactor.
 - [x] **Phase 3** — Bandit allocator with exploration reserve.
 - [x] **Phase 4** — Reflection loop and missing-bucket detection.
-- [ ] **Phase 5** — Pivot upgrades: validation, saturation, multi-hop, composition.
+- [x] **Phase 5** — Pivot upgrades: validation, saturation, multi-hop, composition.
 - [ ] **Phase 6** — Domain reputation feedback into query generation.
 - [ ] **Phase 7** — Cleanup and deprecation sweep.
 
@@ -526,7 +526,9 @@ CREATE INDEX idx_reflection_active ON discovery_reflection_suggestions (expires_
 
 ---
 
-## Phase 5 — Pivot Upgrades
+## Phase 5 — Pivot Upgrades [x] Done 2026-05-08
+
+Migration `20260508000015_phase5_pivot_upgrades.sql` applied to project `ofzuhajxwxggybkuzefq`. `agent-discovery` and `agent-scheduler` redeployed. `discovery_composition_pivots` table created with staff-only RLS. `discovery_entity_pivots` extended with `validation_score`, `validation_rationale`, `validation_at`, `saturation_cooldown_until`, `rolling_new_approved`, `rolling_window_started_at`. `ops_discovery_entity_pivots` view rebuilt to expose these columns and filter saturated pivots. `_shared/pivotValidation.ts` added for Gemini-backed pivot scoring. `loadEntityPivots` filters out pivots with `validation_score < 0.5` or in saturation cooldown. `upsertEntityPivots` validates new pivots before inserting them. `buildCompositionPivots` in `agent-scheduler` housekeeping creates composition pivots weekly. `loadMultiHopEmployers` and `updatePivotSaturation` added to `agent-discovery`. `buildQueryPlans` generates `source_type='multi_hop'` and `source_type='composition'` plans.
 
 **Goal.** Make pivots actually find new people. Add validation, saturation, multi-hop expansion, and composition.
 

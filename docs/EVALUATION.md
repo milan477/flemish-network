@@ -104,6 +104,17 @@ The reflection loop (`agent-discovery-reflect`) must satisfy these invariants:
 - **Coverage broadening signal:** the reflection function should propose surfaces/lenses that differ from the current arm with the highest `contacts_approved`. If all suggestions are `faculty_page × alumni_network`, the prompt or population data is too shallow — this is a tuning issue.
 - **Admin visibility:** staff can see the latest population summary (sector/state/career-stage counts) and all active suggestions in the Reflection section of `/admin/growth → Discovery Planning`.
 
+### Pivot quality gates (Phase 5)
+
+Phase 5 adds validation, saturation, multi-hop, and composition to entity pivots. The following invariants must hold:
+
+- **Validation filter:** no pivot with `validation_score < 0.5` may appear in the active rotation loaded by `loadEntityPivots`. After `upsertEntityPivots` runs on a new pivot, the row must have `validation_score IS NOT NULL` and `validation_at IS NOT NULL`. A pivot rejected by validation stays in the table (for audit) but never generates query plans.
+- **Validation fallback:** if Gemini fails during `validatePivot`, the fallback score of `0.5` is used and `validation_rationale = 'validation_failed'`. This keeps the run progressing without silently discarding pivots.
+- **Saturation cooldown:** pivots used in discovery runs where zero new people are approved (rolling window older than 7 days) must acquire `saturation_cooldown_until = now() + 30 days`. `loadEntityPivots` must skip any pivot where `saturation_cooldown_until > now()`. Cooldown clears when the pivot yields new approvals.
+- **Multi-hop tagging:** query attempts generated from multi-hop employer expansion must carry `source_type = 'multi_hop'` in `discovery_query_attempts`. At least 1 in 5 discovery runs (over time as the approved-people population grows) should surface a candidate whose first-touching query had `source_type = 'multi_hop'`.
+- **Composition pivot creation:** after 4+ approved people share a (sector, state) combination, `buildCompositionPivots` (called weekly from `agent-scheduler` housekeeping) must create or update a `discovery_composition_pivots` row with `pivot_type = 'sector_geo_cluster'`. Discovery runs after that must include at least one `source_type = 'composition'` query attempt.
+- **Composition freshness:** `buildCompositionPivots` is gated on a 7-day freshness check (skipped if any `discovery_composition_pivots` row has `updated_at >= now() - 7 days`). First run after 7 days must upsert.
+
 ### Bandit allocator quality gates (Phase 3)
 
 The Thompson-sampling bandit allocator (`supabase/functions/_shared/banditAllocator.ts`) is subject to the following invariants. Violations are regressions:

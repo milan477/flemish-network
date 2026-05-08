@@ -152,6 +152,7 @@ async function runHousekeeping(
   zombies_marked_failed: number;
   cache_entries_purged: number;
   pivots_upserted: number;
+  composition_pivots_upserted: number;
   pending_contacts_pre_filtered: number;
   pending_organizations_pre_filtered: number;
   pending_contacts_enqueued: number;
@@ -159,7 +160,7 @@ async function runHousekeeping(
   arm_stats_refreshed: number;
   reflection_triggered: boolean;
 }> {
-  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult] =
+  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult, compositionPivotsUpserted] =
     await Promise.all([
       markZombieRuns(supabase),
       purgeExpiredCache(supabase),
@@ -169,6 +170,7 @@ async function runHousekeeping(
         log.warn("arm_stats_refresh_failed", err instanceof Error ? err.message : String(err));
         return { arms_refreshed: 0 };
       }),
+      buildCompositionPivots(supabase),
     ]);
 
   // Daily reflection: trigger agent-discovery-reflect once per day.
@@ -183,6 +185,7 @@ async function runHousekeeping(
     zombies_marked_failed: zombiesMarked,
     cache_entries_purged: cacheEntriesPurged,
     pivots_upserted: pivotsUpserted,
+    composition_pivots_upserted: compositionPivotsUpserted,
     pending_contacts_pre_filtered: verifyEnqueue.contacts_pre_filtered,
     pending_organizations_pre_filtered: verifyEnqueue.organizations_pre_filtered,
     pending_contacts_enqueued: verifyEnqueue.contacts_enqueued,
@@ -937,6 +940,129 @@ async function rebuildEntityPivots(
     return upserted;
   } catch (err) {
     log.warn("pivot_rebuild_failed", err instanceof Error ? err.message : String(err));
+    return 0;
+  }
+}
+
+/**
+ * Build composition pivots from approved people clustered by (sector, state)
+ * and by sector alone. Called weekly from housekeeping.
+ *
+ * - sector_geo_cluster: 4+ approved people share (sector, state)
+ * - sector_cluster: 6+ approved people share sector (any state)
+ */
+async function buildCompositionPivots(
+  supabase: SupabaseAdminClient,
+): Promise<number> {
+  try {
+    // Check if composition pivots were refreshed in the last 7 days.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentPivot } = await supabase
+      .from("discovery_composition_pivots")
+      .select("updated_at")
+      .gte("updated_at", sevenDaysAgo)
+      .limit(1);
+
+    if (recentPivot && recentPivot.length > 0) {
+      // Already ran this week.
+      return 0;
+    }
+
+    let upserted = 0;
+    const now = new Date().toISOString();
+
+    // Query approved people with sector and state.
+    const { data: people, error: peopleError } = await supabase
+      .from("people")
+      .select("id, sector, state")
+      .not("sector", "is", null);
+
+    if (peopleError || !people) {
+      log.warn("composition_pivot_people_query_failed", peopleError?.message ?? "no data");
+      return 0;
+    }
+
+    // Group by (sector, state).
+    const sectorGeoMap = new Map<string, { sector: string; state: string; count: number; lastAt: string }>();
+    const sectorMap = new Map<string, { sector: string; count: number; lastAt: string }>();
+
+    for (const person of people) {
+      const sector = (person.sector as string | null)?.trim();
+      const state = (person.state as string | null)?.trim();
+      if (!sector) continue;
+
+      // sector_geo_cluster
+      if (state) {
+        const key = `${sector}|${state}`;
+        const existing = sectorGeoMap.get(key);
+        if (existing) {
+          existing.count += 1;
+          if (now > existing.lastAt) existing.lastAt = now;
+        } else {
+          sectorGeoMap.set(key, { sector, state, count: 1, lastAt: now });
+        }
+      }
+
+      // sector_cluster
+      const existingSector = sectorMap.get(sector);
+      if (existingSector) {
+        existingSector.count += 1;
+      } else {
+        sectorMap.set(sector, { sector, count: 1, lastAt: now });
+      }
+    }
+
+    // Upsert sector_geo_cluster pivots (count >= 4).
+    for (const [, info] of sectorGeoMap.entries()) {
+      if (info.count < 4) continue;
+      const context = { sector: info.sector, state: info.state };
+      const { error: upsertError } = await supabase
+        .from("discovery_composition_pivots")
+        .upsert(
+          {
+            pivot_type: "sector_geo_cluster",
+            context,
+            approved_people_count: info.count,
+            last_approved_match_at: info.lastAt,
+            updated_at: now,
+          },
+          { onConflict: "pivot_type,context" },
+        );
+
+      if (upsertError) {
+        log.warn("composition_pivot_upsert_failed", upsertError.message);
+      } else {
+        upserted += 1;
+      }
+    }
+
+    // Upsert sector_cluster pivots (count >= 6).
+    for (const [, info] of sectorMap.entries()) {
+      if (info.count < 6) continue;
+      const context = { sector: info.sector };
+      const { error: upsertError } = await supabase
+        .from("discovery_composition_pivots")
+        .upsert(
+          {
+            pivot_type: "sector_cluster",
+            context,
+            approved_people_count: info.count,
+            last_approved_match_at: info.lastAt,
+            updated_at: now,
+          },
+          { onConflict: "pivot_type,context" },
+        );
+
+      if (upsertError) {
+        log.warn("composition_pivot_upsert_failed", upsertError.message);
+      } else {
+        upserted += 1;
+      }
+    }
+
+    return upserted;
+  } catch (err) {
+    log.warn("composition_pivot_build_failed", err instanceof Error ? err.message : String(err));
     return 0;
   }
 }

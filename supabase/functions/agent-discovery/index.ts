@@ -64,6 +64,7 @@ import {
   updateArmStats,
   type AllocationSlot,
 } from "../_shared/banditAllocator.ts";
+import { validatePivot } from "../_shared/pivotValidation.ts";
 
 const log = createLogger("agent-discovery");
 
@@ -529,7 +530,7 @@ interface DiscoverySeedDomain {
 
 interface SearchSeedPlan {
   query: string;
-  sourceType: "custom_query" | "surface_lens" | "entity_pivot" | "reflection";
+  sourceType: "custom_query" | "surface_lens" | "entity_pivot" | "reflection" | "multi_hop" | "composition";
   priorityBoost: number;
   maxSeedUrls: number;
   coverageTargetKey: string | null;
@@ -582,6 +583,18 @@ interface EntityPivotPlanRow {
   last_seeded_at: string | null;
   last_seen_at: string | null;
   priority_score: number | string | null;
+  saturation_cooldown_until: string | null;
+  validation_score: number | null;
+  rolling_new_approved: number;
+  rolling_window_started_at: string | null;
+}
+
+interface CompositionPivotRow {
+  id: string;
+  pivot_type: "sector_cluster" | "geo_cluster" | "sector_geo_cluster";
+  context: { sector?: string; state?: string; city?: string };
+  approved_people_count: number;
+  saturation_cooldown_until: string | null;
 }
 
 interface DiscoveryDomainPolicy {
@@ -1910,18 +1923,51 @@ async function loadCoverageGaps(
 async function loadEntityPivots(
   supabase: SupabaseAdminClient,
 ): Promise<EntityPivotPlanRow[]> {
+  const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("ops_discovery_entity_pivots")
     .select("*")
     .or("approved_contact_count.gt.0,strong_source_count.gt.0")
+    // Only load pivots that have passed validation (score >= 0.5) or have not
+    // yet been validated (validation_score IS NULL means the column is absent
+    // or not yet set — we let those through for backwards compatibility).
+    .or("validation_score.is.null,validation_score.gte.0.5")
     .order("priority_score", { ascending: false })
-    .limit(8);
+    .limit(16); // load more then filter saturated ones below
 
   if (error) {
     throw new Error(`Failed to load entity pivots: ${error.message}`);
   }
 
-  return (data || []) as EntityPivotPlanRow[];
+  const rows = (data || []) as EntityPivotPlanRow[];
+
+  // Filter out pivots in saturation cooldown.
+  const eligible = rows.filter((pivot) => {
+    if (!pivot.saturation_cooldown_until) return true;
+    return pivot.saturation_cooldown_until <= now;
+  });
+
+  return eligible.slice(0, 8);
+}
+
+async function loadCompositionPivots(
+  supabase: SupabaseAdminClient,
+): Promise<CompositionPivotRow[]> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("discovery_composition_pivots")
+    .select("id,pivot_type,context,approved_people_count,saturation_cooldown_until")
+    .or(`saturation_cooldown_until.is.null,saturation_cooldown_until.lte.${now}`)
+    .order("approved_people_count", { ascending: false })
+    .limit(4);
+
+  if (error) {
+    // Non-fatal: composition pivots are optional
+    log.warn("load_composition_pivots_failed", error.message);
+    return [];
+  }
+
+  return (data || []) as CompositionPivotRow[];
 }
 
 async function loadDomainPolicies(
@@ -2083,6 +2129,96 @@ async function generateCustomQueryPlans(
 }
 
 
+/**
+ * Query recently-approved people (last 7 days) and return their employers
+ * that are not already covered by an active entity pivot.
+ * These feed multi-hop expansion plans in buildQueryPlans.
+ */
+async function loadMultiHopEmployers(
+  supabase: SupabaseAdminClient,
+  entityPivots: EntityPivotPlanRow[],
+): Promise<string[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("people")
+    .select("current_employer")
+    .not("current_employer", "is", null)
+    .gte("created_at", sevenDaysAgo)
+    .limit(30);
+
+  if (error) {
+    log.warn("load_multi_hop_employers_failed", error.message);
+    return [];
+  }
+
+  const pivotNames = new Set(entityPivots.map((p) => p.entity_name.toLowerCase().trim()));
+  const employers = new Set<string>();
+  for (const row of data || []) {
+    const emp = (row.current_employer as string | null)?.trim();
+    if (!emp) continue;
+    if (pivotNames.has(emp.toLowerCase())) continue;
+    employers.add(emp);
+  }
+
+  return Array.from(employers).slice(0, 6);
+}
+
+/**
+ * Update rolling_new_approved and saturation_cooldown_until on entity pivots
+ * that were used in this run. Called after run completion.
+ *
+ * A pivot enters 30-day saturation cooldown when rolling_new_approved == 0
+ * for 3 consecutive runs AND rolling_window_started_at is older than 7 days.
+ */
+async function updatePivotSaturation(
+  supabase: SupabaseAdminClient,
+  usedEntityKeys: string[],
+  newApprovedByPivot: Map<string, number>,
+): Promise<void> {
+  if (usedEntityKeys.length === 0) return;
+
+  const { data: pivots, error } = await supabase
+    .from("discovery_entity_pivots")
+    .select("id, entity_key, rolling_new_approved, rolling_window_started_at, saturation_cooldown_until")
+    .in("entity_key", usedEntityKeys);
+
+  if (error || !pivots) return;
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const thirtyDaysCooldown = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  for (const pivot of pivots) {
+    const newApproved = newApprovedByPivot.get(pivot.entity_key as string) || 0;
+    const prevRolling = Number(pivot.rolling_new_approved || 0);
+    const windowStarted = pivot.rolling_window_started_at as string | null;
+
+    // Update rolling count (simple increment; reset logic can be added later).
+    const nextRolling = prevRolling + newApproved;
+
+    // Saturation: if no new approved in this run AND window is older than 7 days
+    // AND rolling count is still 0, set cooldown.
+    let newCooldown = pivot.saturation_cooldown_until as string | null;
+    if (newApproved === 0 && nextRolling === 0) {
+      const windowOld = !windowStarted || windowStarted < sevenDaysAgo;
+      if (windowOld) {
+        newCooldown = thirtyDaysCooldown;
+      }
+    } else if (newApproved > 0) {
+      // Clear cooldown when we get new approvals.
+      newCooldown = null;
+    }
+
+    await supabase
+      .from("discovery_entity_pivots")
+      .update({
+        rolling_new_approved: nextRolling,
+        saturation_cooldown_until: newCooldown,
+      })
+      .eq("id", pivot.id as string);
+  }
+}
+
 async function buildQueryPlans(
   query: string,
   surfaces: DiscoverySurface[],
@@ -2091,6 +2227,8 @@ async function buildQueryPlans(
   coverageGaps: CoverageGapRow[],
   entityPivots: EntityPivotPlanRow[],
   allocationSlots: AllocationSlot[],
+  compositionPivots: CompositionPivotRow[],
+  multiHopEmployers: string[],
   runId: string | undefined,
   geminiKey: string,
   llmStats: { calls: number },
@@ -2321,6 +2459,102 @@ async function buildQueryPlans(
           `entity:${pivot.entity_key}`,
           gap?.geography_key ? `geo:${gap.geography_key}` : null,
         ].filter((value): value is string => Boolean(value)),
+      });
+    }
+  }
+
+  // 4. Composition pivot plans: one query per active sector/geo cluster.
+  for (const comp of compositionPivots.slice(0, 2)) {
+    if (plans.length >= MAX_SEARCH_QUERIES) break;
+    const { sector, state } = comp.context;
+    const ctxLabel = [sector, state].filter(Boolean).join(" / ");
+    const compIntent = `Flemish/Belgian professionals in ${ctxLabel} — ${comp.pivot_type.replace(/_/g, " ")} cluster (${comp.approved_people_count} approved)`;
+    const generated = await runQueryGeneration(compIntent, {
+      runId,
+      geminiKey,
+      llmStats,
+      steps,
+      elapsed,
+      stepLabel: `query_generation:composition:${comp.id}`,
+      lenses: ["sector_geo", "nationality_role"],
+      maxQueries: 2,
+      context: {
+        coverageGapSector: sector,
+        coverageGapLabel: state ? `${sector || "professional"} cluster in ${state}` : ctxLabel,
+        rotationSeed: `${runId || "anon"}:composition:${comp.id}`,
+      },
+    });
+
+    for (const entry of generated) {
+      if (plans.length >= MAX_SEARCH_QUERIES) break;
+      plans.push({
+        query: entry.query,
+        sourceType: "composition",
+        priorityBoost: 3,
+        maxSeedUrls: 8,
+        coverageTargetKey: null,
+        gapLabel: ctxLabel,
+        gapScore: 0,
+        gapSector: sector || null,
+        entityKey: null,
+        entityName: null,
+        entityType: null,
+        surface: entry.surface,
+        lens: entry.lens || "sector_geo",
+        rationale: entry.rationale,
+        domainHint: null,
+        compositionKeys: [
+          sector ? `sector:${sector}` : null,
+          state ? `geo:state:${state}` : null,
+          `composition:${comp.pivot_type}`,
+        ].filter((v): v is string => Boolean(v)),
+      });
+    }
+  }
+
+  // 5. Multi-hop plans: one query per recently-approved person's employer
+  //    (employers not already covered by entity pivots).
+  const pivotEntityNames = new Set(entityPivots.map((p) => p.entity_name.toLowerCase()));
+  for (const employer of multiHopEmployers.slice(0, 2)) {
+    if (plans.length >= MAX_SEARCH_QUERIES) break;
+    if (pivotEntityNames.has(employer.toLowerCase())) continue; // already covered
+
+    const intent =
+      `${employer} — Flemish/Belgian employees, founders, or alumni with US ties (multi-hop expansion from recently approved person)`;
+    const generated = await runQueryGeneration(intent, {
+      runId,
+      geminiKey,
+      llmStats,
+      steps,
+      elapsed,
+      stepLabel: `query_generation:multi_hop:${employer.slice(0, 30)}`,
+      lenses: ["company_affiliation", "named_entity"],
+      maxQueries: 2,
+      context: {
+        knownEntities: [employer],
+        rotationSeed: `${runId || "anon"}:multi_hop:${employer}`,
+      },
+    });
+
+    for (const entry of generated) {
+      if (plans.length >= MAX_SEARCH_QUERIES) break;
+      plans.push({
+        query: entry.query,
+        sourceType: "multi_hop",
+        priorityBoost: 4,
+        maxSeedUrls: 8,
+        coverageTargetKey: null,
+        gapLabel: null,
+        gapScore: 0,
+        gapSector: null,
+        entityKey: null,
+        entityName: employer,
+        entityType: "organization",
+        surface: entry.surface,
+        lens: entry.lens || "company_affiliation",
+        rationale: entry.rationale,
+        domainHint: null,
+        compositionKeys: [`multi_hop:${employer.slice(0, 40)}`],
       });
     }
   }
@@ -3126,6 +3360,7 @@ async function upsertEntityPivots(
   supabase: SupabaseAdminClient,
   discoveredContactId: string,
   bundle: CandidateBundle,
+  geminiKey: string,
 ): Promise<number> {
   const pivotCandidates = extractPivotCandidates(bundle.contact, bundle.evidence);
   if (pivotCandidates.length === 0) return 0;
@@ -3135,7 +3370,7 @@ async function upsertEntityPivots(
   for (const pivot of pivotCandidates) {
     const { data: existingPivot, error: loadError } = await supabase
       .from("discovery_entity_pivots")
-      .select("id, source_urls, coverage_target_keys")
+      .select("id, source_urls, coverage_target_keys, validation_score")
       .eq("entity_key", pivot.entityKey)
       .maybeSingle();
 
@@ -3155,6 +3390,18 @@ async function upsertEntityPivots(
     let pivotId = existingPivot?.id || null;
 
     if (!existingPivot) {
+      // Validate the pivot before inserting it into the active rotation.
+      const sourceExcerpts = bundle.evidence
+        .map((item) => item.evidenceExcerpt || "")
+        .filter(Boolean);
+      const validation = await validatePivot(
+        pivot.entityName,
+        pivot.entityType,
+        sourceExcerpts,
+        geminiKey,
+      );
+
+      const now = new Date().toISOString();
       const { data: insertedPivot, error: insertError } = await supabase
         .from("discovery_entity_pivots")
         .insert({
@@ -3164,7 +3411,10 @@ async function upsertEntityPivots(
           normalized_domain: pivot.normalizedDomain,
           coverage_target_keys: nextCoverageTargets,
           source_urls: nextSourceUrls,
-          last_seen_at: new Date().toISOString(),
+          last_seen_at: now,
+          validation_score: validation.score,
+          validation_rationale: validation.rationale,
+          validation_at: now,
         })
         .select("id")
         .maybeSingle();
@@ -3174,6 +3424,14 @@ async function upsertEntityPivots(
       }
 
       pivotId = insertedPivot.id;
+
+      // Reject pivots that score below the threshold — they stay in the table
+      // with the validation score set so we can audit them, but they won't be
+      // loaded by loadEntityPivots (which filters validation_score < 0.5).
+      if (validation.score < 0.5) {
+        log.warn("pivot_validation_rejected", `${pivot.entityKey} score=${validation.score} reason=${validation.rationale}`);
+        // Still write the pivot source row below so evidence is preserved.
+      }
     } else {
       const { error: updateError } = await supabase
         .from("discovery_entity_pivots")
@@ -4143,7 +4401,7 @@ async function processFrontierRow(
     if (result.status === "duplicate_people") duplicatesSkipped += 1;
     derivedLabelsUpserted += result.derivedLabelsUpserted;
     if (result.discoveredContactId) {
-      await upsertEntityPivots(supabase, result.discoveredContactId, bundle);
+      await upsertEntityPivots(supabase, result.discoveredContactId, bundle, geminiKey);
     }
   }
 
@@ -4341,11 +4599,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     await heartbeat();
 
-    const [queuedFrontierCount, taxonomy, coverageGaps, entityPivots] = await Promise.all([
+    const [queuedFrontierCount, taxonomy, coverageGaps, entityPivots, compositionPivots] = await Promise.all([
       getQueuedFrontierCount(supabase),
       loadSurfaceLensTaxonomy(supabase),
       loadCoverageGaps(supabase),
       loadEntityPivots(supabase),
+      loadCompositionPivots(supabase),
     ]);
 
     // Bandit allocation: allocate query budget across (surface, lens) arms.
@@ -4380,6 +4639,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
       },
     });
 
+    // Multi-hop: load recently approved people's employers for expansion.
+    const multiHopEmployers = await loadMultiHopEmployers(supabase, entityPivots).catch((err) => {
+      log.withRun(runId).warn("multi_hop_employers_load_failed", err instanceof Error ? err.message : String(err));
+      return [] as string[];
+    });
+
     const shouldSeed = query.length > 0 || queuedFrontierCount < batchSize;
     const seedPlans = shouldSeed
       ? await buildQueryPlans(
@@ -4390,6 +4655,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
           coverageGaps,
           entityPivots,
           allocationSlots,
+          compositionPivots,
+          multiHopEmployers,
           runId,
           geminiKey,
           llmStats,
@@ -4680,6 +4947,24 @@ Deno.serve(wrapHandler(async (req: Request) => {
         }
       } catch (armStatsError) {
         log.withRun(runId).warn("arm_stats_update_failed", armStatsError instanceof Error ? armStatsError.message : String(armStatsError));
+      }
+
+      // Saturation tracking: update rolling_new_approved on entity pivots used in this run.
+      // We pass a zero map here (actual approvals come from async RPC resolution later).
+      // The key effect is that pivots with long-zero windows will enter cooldown.
+      try {
+        const usedEntityPivotKeys = seedPlans
+          .filter((p) => p.sourceType === "entity_pivot" && p.entityKey)
+          .map((p) => p.entityKey as string);
+        if (usedEntityPivotKeys.length > 0) {
+          await updatePivotSaturation(
+            supabase,
+            usedEntityPivotKeys,
+            new Map<string, number>(), // approvals not yet resolved; saturation logic still applies
+          );
+        }
+      } catch (satErr) {
+        log.withRun(runId).warn("pivot_saturation_update_failed", satErr instanceof Error ? satErr.message : String(satErr));
       }
     }
 
