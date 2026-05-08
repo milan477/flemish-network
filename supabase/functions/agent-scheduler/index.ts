@@ -159,8 +159,9 @@ async function runHousekeeping(
   pending_organizations_enqueued: number;
   arm_stats_refreshed: number;
   reflection_triggered: boolean;
+  domain_reputation_updated: number;
 }> {
-  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult, compositionPivotsUpserted] =
+  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult, compositionPivotsUpserted, domainReputationUpdated] =
     await Promise.all([
       markZombieRuns(supabase),
       purgeExpiredCache(supabase),
@@ -171,6 +172,10 @@ async function runHousekeeping(
         return { arms_refreshed: 0 };
       }),
       buildCompositionPivots(supabase),
+      recomputeDomainReputation(supabase).catch((err) => {
+        log.warn("domain_reputation_recompute_failed", err instanceof Error ? err.message : String(err));
+        return 0;
+      }),
     ]);
 
   // Daily reflection: trigger agent-discovery-reflect once per day.
@@ -192,6 +197,7 @@ async function runHousekeeping(
     pending_organizations_enqueued: verifyEnqueue.organizations_enqueued,
     arm_stats_refreshed: armStatsResult.arms_refreshed,
     reflection_triggered: reflectionTriggered,
+    domain_reputation_updated: domainReputationUpdated,
   };
 }
 
@@ -1099,4 +1105,117 @@ async function purgeExpiredCache(
     .select("id");
 
   return data?.length || 0;
+}
+
+/**
+ * Recompute reputation scores for all active seed domains.
+ *
+ * For each domain in discovery_seed_domains we count:
+ *   - total_candidates_extracted: discovered_contacts whose source_url host matches the domain.
+ *   - total_approved_contacts: same, but status = 'approved'.
+ *
+ * reputation_score = (approved_count + 1) / (extracted_count + 5)  [Bayesian smoothing]
+ *
+ * Returns the number of domains updated.
+ */
+async function recomputeDomainReputation(
+  supabase: SupabaseAdminClient,
+): Promise<number> {
+  // Load all active seed domains.
+  const { data: domains, error: domainsError } = await supabase
+    .from("discovery_seed_domains")
+    .select("id, domain")
+    .eq("active", true);
+
+  if (domainsError || !domains || domains.length === 0) {
+    if (domainsError) {
+      log.warn("domain_reputation_load_failed", domainsError.message);
+    }
+    return 0;
+  }
+
+  // Load all discovered_contacts with source_urls so we can match hostnames.
+  // We do this in a single query and compute per-domain counts in-process to
+  // avoid N+1 round-trips. Reputation is computed over all time (not windowed)
+  // because the table accumulates slowly.
+  const { data: contacts, error: contactsError } = await supabase
+    .from("discovered_contacts")
+    .select("status, source_urls");
+
+  if (contactsError) {
+    log.warn("domain_reputation_contacts_load_failed", contactsError.message);
+    return 0;
+  }
+
+  // Build per-domain counters.
+  const extracted = new Map<string, number>(); // domain -> total candidates
+  const approved = new Map<string, number>();  // domain -> approved candidates
+
+  for (const domain of domains) {
+    extracted.set(domain.domain, 0);
+    approved.set(domain.domain, 0);
+  }
+
+  for (const contact of (contacts || [])) {
+    const urls: string[] = Array.isArray(contact.source_urls)
+      ? (contact.source_urls as string[])
+      : [];
+    const isApproved = contact.status === "approved";
+
+    for (const url of urls) {
+      if (typeof url !== "string") continue;
+      // Extract hostname from URL.
+      let hostname: string;
+      try {
+        hostname = new URL(url).hostname.replace(/^www\./, "");
+      } catch {
+        // Fallback: strip protocol and path with a simple regex.
+        const m = url.match(/^https?:\/\/(?:www\.)?([^/]+)/);
+        if (!m) continue;
+        hostname = m[1];
+      }
+
+      // Match against seed domains (exact or subdomain match).
+      for (const domain of domains) {
+        const d = domain.domain;
+        if (hostname === d || hostname.endsWith(`.${d}`)) {
+          extracted.set(d, (extracted.get(d) || 0) + 1);
+          if (isApproved) {
+            approved.set(d, (approved.get(d) || 0) + 1);
+          }
+          break; // A URL counts against at most one seed domain.
+        }
+      }
+    }
+  }
+
+  // Update each domain row.
+  let updated = 0;
+  const now = new Date().toISOString();
+  for (const domain of domains) {
+    const d = domain.domain;
+    const extractedCount = extracted.get(d) || 0;
+    const approvedCount = approved.get(d) || 0;
+    // Bayesian-smoothed score: (approved + 1) / (extracted + 5)
+    const score = (approvedCount + 1) / (extractedCount + 5);
+    const reputationScore = Math.min(1, Math.max(0, Math.round(score * 1000) / 1000));
+
+    const { error: updateError } = await supabase
+      .from("discovery_seed_domains")
+      .update({
+        total_candidates_extracted: extractedCount,
+        total_approved_contacts: approvedCount,
+        reputation_score: reputationScore,
+        reputation_recompute_at: now,
+      })
+      .eq("id", domain.id);
+
+    if (updateError) {
+      log.warn("domain_reputation_update_failed", `${d}: ${updateError.message}`);
+    } else {
+      updated += 1;
+    }
+  }
+
+  return updated;
 }

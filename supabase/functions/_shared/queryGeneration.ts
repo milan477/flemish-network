@@ -21,6 +21,10 @@ export interface QueryGenerationContext {
   coverageGapSector?: string | null;
   avoidQueryShapes?: string[];
   rotationSeed?: string;
+  /** Top reputable domains — include as site: operators when relevant. */
+  preferredSiteOperators?: string[];
+  /** Low-reputation or manually blocked domains — avoid as site: operators. */
+  blockedDomains?: string[];
 }
 
 export interface QueryGenerationInput {
@@ -65,6 +69,8 @@ Hard requirements for every query:
 - Include surface-form phrasing variants alongside abstract labels: "from Ghent", "born in Antwerp", "Belgian-born", "PhD KU Leuven", "raised in Flanders".
 - Reference canonical Flemish entities (KU Leuven, Ghent University/UGent, VUB, UAntwerpen, imec, BAEF, Vlerick, FIT) only when relevant to the intent or explicitly listed in context.knownEntities.
 - Do NOT emit any query whose shape matches an entry in context.avoidQueryShapes.
+- Do NOT emit any query that uses a site: operator for a domain listed in context.blockedDomains.
+- When context.preferredSiteOperators contains domains and a surface hint suggests they are relevant, USE a site: operator for one of those domains in at least one query. Prefer the highest-yield domain from the list.
 - Across the SET, vary the angle: at least one query SHOULD target US-based people (with \`"United States"\`, USA, or a US city/state) and at least one SHOULD target US-connected-abroad people (Flemish person + explicit US-tie phrase + optional US institution). Not every query needs to mention "United States".
 - Use context.rotationSeed to vary across runs of the same intent — do not return the same set verbatim each time.
 
@@ -136,6 +142,12 @@ function buildUserPrompt(input: QueryGenerationInput, max: number): string {
   }
   if (ctx.avoidQueryShapes && ctx.avoidQueryShapes.length > 0) {
     lines.push(`AVOID_QUERY_SHAPES: ${ctx.avoidQueryShapes.join(" | ")}`);
+  }
+  if (ctx.preferredSiteOperators && ctx.preferredSiteOperators.length > 0) {
+    lines.push(`PREFERRED_SITE_OPERATORS: ${ctx.preferredSiteOperators.join(", ")} (use site: for at least one when surface-relevant)`);
+  }
+  if (ctx.blockedDomains && ctx.blockedDomains.length > 0) {
+    lines.push(`BLOCKED_DOMAINS: ${ctx.blockedDomains.join(", ")} (never use site: for these)`);
   }
   const seed = ctx.rotationSeed || input.runId || new Date().toISOString();
   lines.push(`ROTATION_SEED: ${seed}`);

@@ -526,6 +526,8 @@ interface DiscoverySeedDomain {
   surfaces: string[];
   lenses: string[];
   notes: string | null;
+  reputation_score: number;
+  manually_blocked: boolean;
 }
 
 interface SearchSeedPlan {
@@ -1882,7 +1884,7 @@ async function loadSurfaceLensTaxonomy(
       .order("key"),
     supabase
       .from("discovery_seed_domains")
-      .select("id, domain, surfaces, lenses, notes")
+      .select("id, domain, surfaces, lenses, notes, reputation_score, manually_blocked")
       .eq("active", true)
       .order("domain"),
   ]);
@@ -2262,6 +2264,18 @@ async function buildQueryPlans(
     return matches.length > 0 ? matches[0] : null;
   }
 
+  // Domain reputation context for query generation.
+  // Top 20 domains by reputation_score become preferred site: operators.
+  // Manually blocked or very low-reputation domains become blocked domains.
+  const preferredSiteOperators = [...domains]
+    .filter((d) => !d.manually_blocked)
+    .sort((a, b) => (b.reputation_score || 0) - (a.reputation_score || 0))
+    .slice(0, 20)
+    .map((d) => d.domain);
+  const blockedDomains = domains
+    .filter((d) => d.manually_blocked || (d.reputation_score || 0) < 0.1)
+    .map((d) => d.domain);
+
   // 1. Coverage-gap-driven plans: pair top gaps with bandit-allocated slots.
   //    Exploration slots go first (guaranteed by allocateBudget ordering).
   const topGaps = [...coverageGaps]
@@ -2310,6 +2324,8 @@ async function buildQueryPlans(
         coverageGapSector: gapSector,
         rotationSeed:
           `${runId || "anon"}:${slot.surface}:${slot.lens}:${gap.geography_key}`,
+        preferredSiteOperators,
+        blockedDomains,
       },
     });
 
@@ -2377,6 +2393,8 @@ async function buildQueryPlans(
                 : null,
             }
             : {}),
+          preferredSiteOperators,
+          blockedDomains,
         },
       });
 
@@ -2435,6 +2453,8 @@ async function buildQueryPlans(
         coverageGapSector: pickGapSector(gap),
         rotationSeed:
           `${runId || "anon"}:${pivot.entity_key}:${pivot.seeded_frontier_count || 0}`,
+        preferredSiteOperators,
+        blockedDomains,
       },
     });
 
@@ -2482,6 +2502,8 @@ async function buildQueryPlans(
         coverageGapSector: sector,
         coverageGapLabel: state ? `${sector || "professional"} cluster in ${state}` : ctxLabel,
         rotationSeed: `${runId || "anon"}:composition:${comp.id}`,
+        preferredSiteOperators,
+        blockedDomains,
       },
     });
 
@@ -2533,6 +2555,8 @@ async function buildQueryPlans(
       context: {
         knownEntities: [employer],
         rotationSeed: `${runId || "anon"}:multi_hop:${employer}`,
+        preferredSiteOperators,
+        blockedDomains,
       },
     });
 

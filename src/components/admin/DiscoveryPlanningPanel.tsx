@@ -11,6 +11,8 @@ import {
   BarChart3,
   Brain,
   Play,
+  Globe,
+  ShieldOff,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -121,6 +123,17 @@ interface PopulationSummary {
   generated_at: string;
 }
 
+interface SeedDomainRow {
+  id: string;
+  domain: string;
+  reputation_score: number;
+  total_candidates_extracted: number;
+  total_approved_contacts: number;
+  manually_blocked: boolean;
+  active: boolean;
+  reputation_recompute_at: string | null;
+}
+
 interface DiscoveryPlanningPanelProps {
   onRunDiscovery: (action: RecommendedAction) => void;
   isRunning: boolean;
@@ -212,6 +225,12 @@ export default function DiscoveryPlanningPanel({
   const [armStats, setArmStats] = useState<ArmStatRow[]>([]);
   const [armStatsLoading, setArmStatsLoading] = useState(false);
 
+  // Domain reputation state
+  const [seedDomains, setSeedDomains] = useState<SeedDomainRow[]>([]);
+  const [seedDomainsLoading, setSeedDomainsLoading] = useState(false);
+  const [seedDomainsSortBy, setSeedDomainsSortBy] = useState<'reputation_score' | 'total_approved_contacts' | 'domain'>('reputation_score');
+  const [domainBlockInProgress, setDomainBlockInProgress] = useState<Set<string>>(new Set());
+
   // Reflection state
   const [reflectionSuggestions, setReflectionSuggestions] = useState<ReflectionSuggestion[]>([]);
   const [reflectionLoading, setReflectionLoading] = useState(false);
@@ -269,6 +288,35 @@ export default function DiscoveryPlanningPanel({
     setArmStatsLoading(false);
   }, []);
 
+  const loadSeedDomains = useCallback(async () => {
+    setSeedDomainsLoading(true);
+    const { data } = await supabase
+      .from('discovery_seed_domains')
+      .select('id,domain,reputation_score,total_candidates_extracted,total_approved_contacts,manually_blocked,active,reputation_recompute_at')
+      .order('reputation_score', { ascending: false })
+      .limit(200);
+    setSeedDomains((data || []) as SeedDomainRow[]);
+    setSeedDomainsLoading(false);
+  }, []);
+
+  const toggleDomainBlock = useCallback(async (id: string, currentlyBlocked: boolean) => {
+    setDomainBlockInProgress((prev) => new Set(prev).add(id));
+    const { error } = await supabase
+      .from('discovery_seed_domains')
+      .update({ manually_blocked: !currentlyBlocked })
+      .eq('id', id);
+    if (!error) {
+      setSeedDomains((prev) =>
+        prev.map((d) => (d.id === id ? { ...d, manually_blocked: !currentlyBlocked } : d)),
+      );
+    }
+    setDomainBlockInProgress((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   const loadPlanning = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -294,7 +342,8 @@ export default function DiscoveryPlanningPanel({
     loadPlanning();
     loadArmStats();
     loadReflection();
-  }, [loadPlanning, loadArmStats, loadReflection]);
+    loadSeedDomains();
+  }, [loadPlanning, loadArmStats, loadReflection, loadSeedDomains]);
 
   if (loading) {
     return (
@@ -772,7 +821,148 @@ export default function DiscoveryPlanningPanel({
         </div>
       </div>
 
-      {/* Section 5: Bandit arm heatmap */}
+      {/* Section 5: Domain Reputation Leaderboard */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-900">Domain Reputation</h3>
+          <div className="flex items-center gap-2">
+            <select
+              value={seedDomainsSortBy}
+              onChange={(e) => setSeedDomainsSortBy(e.target.value as typeof seedDomainsSortBy)}
+              className="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              <option value="reputation_score">Sort: Reputation</option>
+              <option value="total_approved_contacts">Sort: Approved</option>
+              <option value="domain">Sort: Domain</option>
+            </select>
+            <button
+              onClick={loadSeedDomains}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${seedDomainsLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <Globe className="w-4 h-4 text-teal-600" />
+            <p className="text-sm font-medium text-gray-800">Seed domain yield scores</p>
+            <span className="text-xs text-gray-400 ml-auto">
+              {seedDomains.length > 0
+                ? `${seedDomains.filter((d) => !d.manually_blocked).length} active, ${seedDomains.filter((d) => d.manually_blocked).length} blocked`
+                : 'Loading…'}
+            </span>
+          </div>
+          {seedDomainsLoading ? (
+            <div className="flex justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-teal-600" />
+            </div>
+          ) : seedDomains.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">
+              No seed domains found — apply the Phase 6 migration.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">Domain</th>
+                    <th className="text-right py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">Score</th>
+                    <th className="text-right py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">Candidates</th>
+                    <th className="text-right py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">Approved</th>
+                    <th className="text-left py-2 pr-3 font-medium text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="text-left py-2 font-medium text-gray-500 whitespace-nowrap">Block</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {[...seedDomains]
+                    .sort((a, b) => {
+                      if (seedDomainsSortBy === 'reputation_score') {
+                        return (b.reputation_score ?? 0) - (a.reputation_score ?? 0);
+                      }
+                      if (seedDomainsSortBy === 'total_approved_contacts') {
+                        return (b.total_approved_contacts ?? 0) - (a.total_approved_contacts ?? 0);
+                      }
+                      return a.domain.localeCompare(b.domain);
+                    })
+                    .map((domain) => {
+                      const score = domain.reputation_score ?? 0;
+                      const scoreColor =
+                        domain.manually_blocked
+                          ? 'text-gray-400'
+                          : score >= 0.5
+                          ? 'text-green-700 font-semibold'
+                          : score >= 0.1
+                          ? 'text-yellow-700'
+                          : 'text-red-600';
+                      const isBlocking = domainBlockInProgress.has(domain.id);
+                      return (
+                        <tr
+                          key={domain.id}
+                          className={`hover:bg-gray-50 transition-colors ${domain.manually_blocked ? 'opacity-50' : ''}`}
+                        >
+                          <td className="py-2 pr-3 text-gray-700 font-mono text-[11px] whitespace-nowrap">
+                            {domain.domain}
+                          </td>
+                          <td className={`py-2 pr-3 text-right tabular-nums ${scoreColor}`}>
+                            {score.toFixed(3)}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-gray-600 tabular-nums">
+                            {domain.total_candidates_extracted ?? 0}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-gray-600 tabular-nums">
+                            {domain.total_approved_contacts ?? 0}
+                          </td>
+                          <td className="py-2 pr-3">
+                            {domain.manually_blocked ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700 border border-red-100">
+                                blocked
+                              </span>
+                            ) : score >= 0.5 ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-700 border border-green-100">
+                                high yield
+                              </span>
+                            ) : score >= 0.1 ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-50 text-yellow-700 border border-yellow-100">
+                                moderate
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-500 border border-gray-200">
+                                low yield
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <button
+                              onClick={() => toggleDomainBlock(domain.id, domain.manually_blocked)}
+                              disabled={isBlocking}
+                              title={domain.manually_blocked ? 'Unblock domain' : 'Block domain'}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors disabled:opacity-50 ${
+                                domain.manually_blocked
+                                  ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                  : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
+                              }`}
+                            >
+                              {isBlocking ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <ShieldOff className="w-3 h-3" />
+                              )}
+                              {domain.manually_blocked ? 'Unblock' : 'Block'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Section 6: Bandit arm heatmap */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-gray-900">

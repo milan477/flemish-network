@@ -72,7 +72,7 @@ Subagents are encouraged for parallel work (schema + edge function + UI) and for
 - [x] **Phase 3** — Bandit allocator with exploration reserve.
 - [x] **Phase 4** — Reflection loop and missing-bucket detection.
 - [x] **Phase 5** — Pivot upgrades: validation, saturation, multi-hop, composition.
-- [ ] **Phase 6** — Domain reputation feedback into query generation.
+- [x] **Phase 6** — Domain reputation feedback into query generation.
 - [ ] **Phase 7** — Cleanup and deprecation sweep.
 
 ---
@@ -598,7 +598,9 @@ CREATE TABLE discovery_composition_pivots (
 
 ---
 
-## Phase 6 — Domain Reputation Feedback
+## Phase 6 — Domain Reputation Feedback [x] Done 2026-05-08
+
+Migration `20260508000016_phase6_domain_reputation.sql` applied to project `ofzuhajxwxggybkuzefq`. `agent-discovery` and `agent-scheduler` redeployed. `discovery_seed_domains` extended with `reputation_score`, `total_candidates_extracted`, `total_approved_contacts`, `reputation_recompute_at`, and `manually_blocked`. Nightly `recomputeDomainReputation` in scheduler housekeeping computes Bayesian-smoothed scores from `discovered_contacts.source_urls`. Top 20 non-blocked domains passed as `preferredSiteOperators`, low-yield/blocked domains passed as `blockedDomains` into every `generateSearchQueries` context call. Admin Domain Reputation leaderboard added to `DiscoveryPlanningPanel` with sortable table and Block/Unblock toggle.
 
 **Goal.** Close the loop from yield back into query generation. Domains that yield approved people get promoted as `site:` operators in future queries, even on unrelated arms. Domains that yield only noise get a soft block.
 

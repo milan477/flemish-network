@@ -98,6 +98,16 @@ Phase 5 pivot upgrades. Four mechanisms make entity pivots more useful for findi
 
 **Composition pivots.** `agent-scheduler` housekeeping calls `buildCompositionPivots` weekly (gated by a 7-day freshness check on `discovery_composition_pivots.updated_at`). It groups approved people by `(sector, state)` — creating `sector_geo_cluster` pivots where count ≥ 4 — and by `sector` alone — creating `sector_cluster` pivots where count ≥ 6. Results are upserted into `discovery_composition_pivots`. At run start, `loadCompositionPivots` loads active (not-saturated) composition pivots and passes them to `buildQueryPlans`, which generates up to 2 `source_type='composition'` plans per run using lens `sector_geo` and the cluster's sector/state context.
 
+Phase 6 domain reputation feedback. `agent-scheduler` housekeeping calls `recomputeDomainReputation` on every housekeeping tick (nightly). The function loads all active `discovery_seed_domains` rows, then loads all `discovered_contacts` and counts per-domain candidates by matching `source_urls` hostnames against seed-domain values. `reputation_score = (approved_count + 1) / (extracted_count + 5)` (Bayesian smoothing). Updated columns: `total_candidates_extracted`, `total_approved_contacts`, `reputation_score`, `reputation_recompute_at`. Staff can also set `manually_blocked = true` from the admin Domain Reputation leaderboard to suppress a domain regardless of score.
+
+At discovery run start, `loadSurfaceLensTaxonomy` fetches `reputation_score` and `manually_blocked` from `discovery_seed_domains`. Inside `buildQueryPlans`, `preferredSiteOperators` is derived from the top 20 non-blocked domains sorted by descending `reputation_score`; `blockedDomains` is the set of manually-blocked or very-low-score (< 0.1) domains. Both lists are injected into the `context` of every `runQueryGeneration` call so the Gemini query generator can:
+- Prefer `site:` operators for high-reputation domains when a surface hint suggests relevance.
+- Avoid `site:` operators for blocked or low-yield domains.
+
+`QueryGenerationContext` in `supabase/functions/_shared/queryGeneration.ts` now has two optional fields: `preferredSiteOperators: string[]` and `blockedDomains: string[]`. These are surfaced to Gemini via `PREFERRED_SITE_OPERATORS` and `BLOCKED_DOMAINS` lines in the user prompt.
+
+The admin Domain Reputation section in `DiscoveryPlanningPanel` shows a sortable table of all seed domains with columns: Domain, Score, Candidates, Approved, Status badge (high yield / moderate / low yield / blocked), and a Block/Unblock toggle button that writes `manually_blocked` directly via a Supabase update.
+
 Organization discovery writes one pending row per candidate to `discovered_organizations`:
 
 - `candidate_key`, `source`, first/last seen timestamps, evidence rollup timestamps/counts, `name`, `website_url`, and a concise evidence-backed `description`.
