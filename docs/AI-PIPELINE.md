@@ -65,7 +65,7 @@ Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`,
 Durable Discovery.
 
 1. Takes `{ query?, run_id, batch_size? }`.
-2. Seeds and claims `discovery_frontier` from prompts, source packs, or evidence-backed pivots.
+2. Seeds and claims `discovery_frontier` from prompts, surface×lens query plans, seed domains, or evidence-backed pivots.
 3. Fetches pages, stores `discovery_pages`, classifies pages, extracts candidates, and stores evidence.
 4. Merges people into `discovered_contacts` and target organizations into `discovered_organizations`.
 5. Writes `derived_label_suggestions`, entity pivots, follow-up searches, and telemetry.

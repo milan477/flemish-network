@@ -68,12 +68,12 @@ Subagents are encouraged for parallel work (schema + edge function + UI) and for
 
 - [x] **Phase 0** — Foundations: reject reasons, held-out eval set, query-attempts table.
 - [x] **Phase 1** — Universal Gemini-Flash query generator.
-- [ ] **Phase 2** — Surfaces × Lenses taxonomy and seed-domain refactor.
+- [x] **Phase 2** — Surfaces × Lenses taxonomy and seed-domain refactor. See completion note in Phase 2 section above.
 - [x] **Phase 3** — Bandit allocator with exploration reserve.
 - [x] **Phase 4** — Reflection loop and missing-bucket detection.
 - [x] **Phase 5** — Pivot upgrades: validation, saturation, multi-hop, composition.
 - [x] **Phase 6** — Domain reputation feedback into query generation.
-- [ ] **Phase 7** — Cleanup and deprecation sweep.
+- [x] **Phase 7** — Cleanup and deprecation sweep. Completed 2026-05-08: audit greps returned zero unjustified matches across code and docs; no `*_legacy` or `*source_pack*` tables exist on the live project (`ofzuhajxwxggybkuzefq`); source-pack vocabulary removed from `docs/AI-PIPELINE.md`, `docs/EVALUATION.md`, `docs/SCHEMA.md`, and `docs/WEBAPP-MASTERPLAN.md`; this file moved to `docs/archive/`; `docs/WEBAPP-MASTERPLAN.md` updated with completion note and archive pointer.
 
 ---
 

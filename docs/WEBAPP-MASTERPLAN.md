@@ -9,7 +9,7 @@ Use these docs as the active source set:
 - `docs/SCHEMA.md`: table contract, current legacy tables, and target schema changes.
 - `docs/AI-PIPELINE.md`: edge function ownership and AI behavior contracts.
 - `docs/EVALUATION.md`: quality gates for discovery, verification, and growth recommendations.
-- `docs/DISCOVERY-REDESIGN.md`: phased plan to replace source-pack discovery with surface×lens, bandit allocation, and a reflection loop.
+- `docs/archive/DISCOVERY-REDESIGN.md`: completed plan (all phases done) to replace source-pack discovery with surface×lens, bandit allocation, and a reflection loop. Archived after Phase 7 cleanup on 2026-05-08.
 
 Archived context lives under `docs/archive/` and is not source of truth. Do not reintroduce standalone AI strategy, Dynamics integration, or organization-discovery-agent docs.
 
@@ -538,7 +538,7 @@ Scope:
 
 - Use `docs/EVALUATION.md` as the acceptance rubric.
 - Show actionable coverage and source signals.
-- Recommend next searches from evidence-backed pivots, proven domains, source packs, and coverage gaps.
+- Recommend next searches from evidence-backed pivots, proven domains, seed domains, and coverage gaps.
 - Remove social graph language.
 
 Todos:
@@ -676,6 +676,18 @@ Exit criteria:
 - No `phone` references in frontend source.
 - Collection export button handles mixed members.
 - Organization list in directory has an Export button.
+
+## Discovery Redesign — Completed 2026-05-08
+
+All seven phases of the Discovery Redesign (surface×lens taxonomy, bandit allocator, reflection loop, pivot upgrades, domain reputation, and Phase 7 cleanup) are done. The implementation plan has been archived at `docs/archive/DISCOVERY-REDESIGN.md`. Key artifacts:
+
+- `discovery_source_packs` table dropped; replaced by `discovery_surfaces`, `discovery_lenses`, `discovery_seed_domains`.
+- All discovery queries flow through the universal Gemini-Flash query generator (`_shared/queryGeneration.ts`).
+- Budget allocated by Thompson-sampling bandit over `(surface, lens)` arms (`discovery_arm_stats`).
+- Daily reflection loop (`agent-discovery-reflect`) writes surface/lens exploration suggestions (`discovery_reflection_suggestions`).
+- Entity pivots have validation, saturation cooldown, multi-hop expansion, and composition (`discovery_composition_pivots`).
+- Domain reputation scoring closes the loop from yield back into query generation.
+- Held-out eval set (`discovery_eval_holdout`) measures recall; north-star target ≥ 50% within 6 weeks of Phase 6 deploy.
 
 ## Cross-Phase Test Policy
 

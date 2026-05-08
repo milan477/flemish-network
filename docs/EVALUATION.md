@@ -193,7 +193,7 @@ Score each recommended action:
 Good recommendation examples:
 
 - Expand Boston biotech domains from approved KU Leuven profiles.
-- Refresh BAEF/Fayat source pack for New York.
+- Run BAEF/Fayat seed domains for New York using the `alumni_network` lens.
 - Follow an imec-linked startup entity pivot into California team and advisory-board pages.
 - Revisit a proven university/lab domain with remaining weekly budget and recent yield.
 
