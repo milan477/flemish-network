@@ -5,7 +5,8 @@ export type JsonSchema = Record<string, unknown>;
 export type AiAgentTask =
   | "smart_search"
   | "merge_text"
-  | "check_profile";
+  | "check_profile"
+  | "check_organization";
 
 export interface SmartSearchKeywords {
   name: string[];
@@ -36,6 +37,17 @@ export interface ProfileCheckSuggestion {
 export interface ProfileCheckResult {
   suggestions: ProfileCheckSuggestion[];
 }
+
+export interface OrganizationCheckResult {
+  suggestions: ProfileCheckSuggestion[];
+}
+
+export const VALID_ORGANIZATION_SUGGESTION_FIELDS = [
+  "name",
+  "description",
+  "website_url",
+  "type",
+] as const;
 
 export const VALID_PROFILE_SUGGESTION_FIELDS = [
   "title",
@@ -152,6 +164,47 @@ export function normalizeProfileCheckResult(
   };
 }
 
+export function normalizeOrganizationCheckResult(
+  payload: unknown
+): OrganizationCheckResult {
+  const obj =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : {};
+  const suggestionsRaw = Array.isArray(obj.suggestions) ? obj.suggestions : [];
+  const validFields = new Set<string>(VALID_ORGANIZATION_SUGGESTION_FIELDS);
+
+  return {
+    suggestions: suggestionsRaw
+      .map((suggestion) => {
+        const row =
+          suggestion && typeof suggestion === "object"
+            ? (suggestion as Record<string, unknown>)
+            : {};
+
+        return {
+          field_name: safeString(row.field_name),
+          current_value: safeString(row.current_value),
+          suggested_value: safeString(row.suggested_value),
+          source: safeString(row.source) || "web_search",
+          evidence_url: safeString(row.evidence_url),
+          evidence_excerpt: safeString(row.evidence_excerpt),
+          confidence: Number.isFinite(Number(row.confidence))
+            ? Math.max(0, Math.min(1, Number(row.confidence)))
+            : undefined,
+        };
+      })
+      .filter(
+        (suggestion) =>
+          Boolean(
+            suggestion.field_name &&
+              suggestion.suggested_value &&
+              validFields.has(suggestion.field_name)
+          )
+      ),
+  };
+}
+
 export const SMART_SEARCH_SYSTEM_PROMPT = `You are a search assistant for a professional network directory of Flemish-connected people in the United States.
 
 Given a natural language search query, extract structured search keywords for each profile field. These keywords will be used for fuzzy similarity matching against profiles.
@@ -194,6 +247,65 @@ Rules:
 - Set evidence_url to the supporting result URL and evidence_excerpt to a short quote/paraphrase from that same result
 - Set confidence to a number between 0 and 1
 - If no changes are found, return an empty suggestions array`;
+
+export const CHECK_ORGANIZATION_SYSTEM_PROMPT = `You are an organization profile checker for a Flemish-American professional network directory.
+
+Given an organization's current profile data and web search results about it, identify factual updates that should be made to the profile.
+
+Rules:
+- Only suggest changes clearly supported by the search results
+- Compare the search results against each current profile field
+- Field names must be exactly one of: name, description, website_url, type
+- For "type", suggest a short category (e.g. "University", "Foundation", "Government Agency", "Company", "Nonprofit")
+- Do not suggest a change if the current value already matches the search evidence
+- Be conservative: only suggest changes you are confident about
+- For description, only suggest if current description is empty or very short and search results provide substantial information
+- The source field should briefly describe where the information was found (e.g. "Official website", "Wikipedia", "News article")
+- Set evidence_url to the supporting result URL and evidence_excerpt to a short quote/paraphrase from that same result
+- Set confidence to a number between 0 and 1
+- If no changes are found, return an empty suggestions array`;
+
+export const CHECK_ORGANIZATION_SCHEMA: JsonSchema = {
+  type: "OBJECT",
+  properties: {
+    suggestions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          field_name: { type: "STRING" },
+          current_value: { type: "STRING" },
+          suggested_value: { type: "STRING" },
+          source: { type: "STRING" },
+          evidence_url: { type: "STRING" },
+          evidence_excerpt: { type: "STRING" },
+          confidence: { type: "NUMBER" },
+        },
+        required: [
+          "field_name",
+          "current_value",
+          "suggested_value",
+          "source",
+        ],
+      },
+    },
+  },
+  required: ["suggestions"],
+};
+
+export function buildCheckOrganizationPrompt(
+  organization: Record<string, unknown> | undefined,
+  searchResults: unknown
+): string {
+  const sanitized: Record<string, string> = {};
+  if (organization && typeof organization === "object") {
+    for (const [key, value] of Object.entries(organization)) {
+      sanitized[key] = safeString(value);
+    }
+  }
+
+  return `Current organization profile:\n${JSON.stringify(sanitized, null, 2)}\n\nWeb search results:\n${safeString(searchResults)}`;
+}
 
 export const SMART_SEARCH_SCHEMA: JsonSchema = {
   type: "OBJECT",
@@ -333,6 +445,18 @@ export const AI_AGENT_TASK_DEFINITIONS: Record<AiAgentTask, AiTaskDefinition> = 
         context.searchResults
       ),
     normalizeResult: normalizeProfileCheckResult,
+  },
+  check_organization: {
+    status: "active",
+    modelRoute: "profile_verification",
+    systemPrompt: CHECK_ORGANIZATION_SYSTEM_PROMPT,
+    schema: CHECK_ORGANIZATION_SCHEMA,
+    buildUserPrompt: (context) =>
+      buildCheckOrganizationPrompt(
+        context.organization as Record<string, unknown> | undefined,
+        context.searchResults
+      ),
+    normalizeResult: normalizeOrganizationCheckResult,
   },
 };
 

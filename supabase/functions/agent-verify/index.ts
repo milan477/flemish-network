@@ -11,11 +11,18 @@ import {
 } from "../_shared/derivedLabels.ts";
 import { getPrimaryGeminiModel } from "../_shared/gemini.ts";
 import {
+  fetchOrganizationVerificationCandidates,
   fetchVerificationCandidates,
   getVerificationApifyAvailability,
   insertVerificationSuggestions,
+  loadVerificationOrganization,
+  loadVerificationPerson,
+  markOrganizationVerified,
   markPersonVerified,
+  runVerificationForOrganization,
   runVerificationForPerson,
+  type VerificationMode,
+  type VerificationRecordType,
   type VerificationStep,
 } from "../_shared/verification.ts";
 import { createLogger } from "../_shared/log.ts";
@@ -175,8 +182,250 @@ Deno.serve(wrapHandler(async (req: Request) => {
         ? [safeStr(body.person_id)]
         : undefined;
 
+    const modeRaw = safeStr(body.mode).toLowerCase();
+    const mode: VerificationMode = modeRaw === "preview" ? "preview" : "durable";
+
+    const recordTypeRaw = safeStr(body.record_type).toLowerCase();
+    const recordType: VerificationRecordType =
+      recordTypeRaw === "organization" ? "organization" : "person";
+
+    // In preview mode the caller is asking for a single record on demand and
+    // never expects durable writes (no agent_runs row, no profile_suggestions
+    // inserts, no derived label upserts, no last_verified_at bump).
+    if (mode === "preview") {
+      const recordId = safeStr(body.record_id) || safeStr(body.person_id) || safeStr(body.organization_id);
+      if (!recordId) {
+        return new Response(
+          JSON.stringify({ error: "record_id is required for preview mode" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (recordType === "organization") {
+        const organization = await loadVerificationOrganization(supabase, recordId);
+        if (!organization) {
+          return new Response(
+            JSON.stringify({ error: "Organization not found" }),
+            {
+              status: 404,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        const orgResult = await runVerificationForOrganization(supabase, organization, {
+          geminiApiKey,
+        });
+        return new Response(
+          JSON.stringify({
+            mode,
+            record_type: recordType,
+            record_id: organization.id,
+            record_name: organization.name,
+            suggestions_count: orgResult.suggestions.length,
+            suggestions: orgResult.suggestions,
+            status: orgResult.status,
+            path: orgResult.path,
+            detail: orgResult.detail,
+            warnings: orgResult.warnings,
+            web_search_provider: orgResult.web_search_provider,
+            llm_model_used: orgResult.llm_model_used,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const person = await loadVerificationPerson(supabase, recordId);
+      if (!person) {
+        return new Response(
+          JSON.stringify({ error: "Person not found" }),
+          {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      const apifyAvailable = await getVerificationApifyAvailability();
+      const previewResult = await runVerificationForPerson(supabase, person, {
+        geminiApiKey,
+        apifyAvailable,
+      });
+      return new Response(
+        JSON.stringify({
+          mode,
+          record_type: recordType,
+          record_id: person.id,
+          record_name: person.name,
+          suggestions_count: previewResult.suggestions.length,
+          suggestions: previewResult.suggestions,
+          status: previewResult.status,
+          path: previewResult.path,
+          detail: previewResult.detail,
+          warnings: previewResult.warnings,
+          web_search_provider: previewResult.web_search_provider,
+          llm_model_used: previewResult.llm_model_used,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const startTime = Date.now();
     const timeLeft = () => DEADLINE_MS - (Date.now() - startTime);
+
+    if (recordType === "organization") {
+      const organizationIds = Array.isArray(body.organization_ids)
+        ? body.organization_ids.map((value: unknown) => safeStr(value)).filter(Boolean)
+        : safeStr(body.organization_id)
+          ? [safeStr(body.organization_id)]
+          : undefined;
+
+      const orgCandidates = await fetchOrganizationVerificationCandidates(
+        supabase,
+        batchSize,
+        maxAgeMonths,
+        organizationIds,
+      );
+
+      let orgQuotaExhausted = false;
+      let orgsChecked = 0;
+      let orgsVerified = 0;
+      let orgSuggestionsCreated = 0;
+      let orgSuggestionsUpdated = 0;
+      let orgDuplicatesSkipped = 0;
+      let orgSkippedNoResults = 0;
+      const orgErrors: string[] = [];
+      const orgWarnings: string[] = [];
+      const orgSteps: VerificationStep[] = [];
+
+      for (const organization of orgCandidates) {
+        if (timeLeft() < 5_000) {
+          orgErrors.push("Stopped early to avoid edge function timeout");
+          break;
+        }
+
+        await heartbeat(supabase, runId);
+        orgsChecked += 1;
+
+        try {
+          const result = await runVerificationForOrganization(supabase, organization, {
+            geminiApiKey,
+          });
+
+          llmCallsMade += result.llm_calls_made;
+          webSearchesMade += result.web_searches_made;
+          webSearchProvider = mergeProvider(webSearchProvider, result.web_search_provider);
+          llmModelUsed = mergeModel(llmModelUsed, result.llm_model_used);
+
+          if (result.warnings.length > 0) {
+            orgWarnings.push(
+              ...result.warnings.map((warning) => `${organization.name}: ${warning}`),
+            );
+          }
+
+          const stepShim = {
+            id: organization.id,
+            name: organization.name,
+          };
+
+          if (result.status === "quota_exhausted") {
+            orgQuotaExhausted = true;
+            orgSteps.push(buildStep(
+              { id: stepShim.id, name: stepShim.name },
+              result.status,
+              result.path,
+              result.detail,
+            ));
+            break;
+          }
+
+          if (result.status === "suggestions") {
+            const insertResult = await insertVerificationSuggestions(
+              supabase,
+              { recordType: "organization", recordId: organization.id },
+              result.suggestions,
+              { agentRunId: runId },
+            );
+            orgSuggestionsCreated += insertResult.inserted;
+            orgSuggestionsUpdated += insertResult.updated;
+            orgDuplicatesSkipped += insertResult.duplicatesSkipped;
+            orgSteps.push(buildStep(stepShim, result.status, result.path, result.detail));
+            continue;
+          }
+
+          if (result.status === "verified") {
+            await markOrganizationVerified(supabase, organization.id);
+            orgsVerified += 1;
+            orgSteps.push(buildStep(stepShim, result.status, result.path, result.detail));
+            continue;
+          }
+
+          if (result.status === "no_results") {
+            orgSkippedNoResults += 1;
+            orgSteps.push(buildStep(stepShim, result.status, result.path, result.detail));
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown error";
+          orgErrors.push(`${organization.name}: verification failed (${message})`);
+          orgSteps.push(buildStep(
+            { id: organization.id, name: organization.name },
+            "error",
+            "web_search",
+            message,
+          ));
+        }
+      }
+
+      const orgResult = {
+        record_type: recordType,
+        profiles_checked: orgsChecked,
+        suggestions_created: orgSuggestionsCreated,
+        suggestions_updated: orgSuggestionsUpdated,
+        profiles_verified: orgsVerified,
+        skipped_no_results: orgSkippedNoResults,
+        duplicates_skipped: orgDuplicatesSkipped,
+        quota_exhausted: orgQuotaExhausted,
+        llm_calls_made: llmCallsMade,
+        web_searches_made: webSearchesMade,
+        web_search_provider: webSearchProvider || "none",
+        llm_model_used:
+          llmCallsMade > 0
+            ? llmModelUsed || getPrimaryGeminiModel("profile_verification")
+            : null,
+        candidate_priorities: orgCandidates.map((candidate) => ({
+          organization_id: candidate.id,
+          organization_name: candidate.name,
+        })),
+        warnings: orgWarnings.length > 0 ? orgWarnings : undefined,
+        errors: orgErrors.length > 0 ? orgErrors : undefined,
+        steps: orgSteps,
+      };
+
+      if (runId && supabase) {
+        const costEstimate = llmCallsMade * 0.001 + webSearchesMade * 0.0005;
+        await supabase
+          .from("agent_runs")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            results: orgResult,
+            llm_calls_made: llmCallsMade,
+            llm_model_used:
+              llmCallsMade > 0
+                ? llmModelUsed || getPrimaryGeminiModel("profile_verification")
+                : null,
+            web_searches_made: webSearchesMade,
+            web_search_provider: webSearchProvider || "none",
+            cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,
+          })
+          .eq("id", runId);
+      }
+
+      return new Response(JSON.stringify(orgResult), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const candidates = await fetchVerificationCandidates(
       supabase,
@@ -234,7 +483,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         if (result.status === "suggestions") {
           const insertResult = await insertVerificationSuggestions(
             supabase,
-            person.id,
+            { recordType: "person", recordId: person.id },
             result.suggestions,
             { agentRunId: runId },
           );

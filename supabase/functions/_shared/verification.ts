@@ -6,6 +6,7 @@ import {
 } from "./apifyClient.ts";
 import {
   getAiAgentTaskDefinition,
+  type OrganizationCheckResult,
   type ProfileCheckResult,
 } from "./aiContracts.ts";
 import { callGeminiStructured } from "./gemini.ts";
@@ -25,6 +26,14 @@ export type VerificationStatus =
   | "no_results"
   | "error"
   | "quota_exhausted";
+
+export type VerificationMode = "preview" | "durable";
+export type VerificationRecordType = "person" | "organization";
+
+export interface VerificationTarget {
+  recordType: VerificationRecordType;
+  recordId: string;
+}
 
 const CANDIDATE_POOL_MULTIPLIER = 15;
 const MIN_CANDIDATE_POOL = 60;
@@ -492,7 +501,7 @@ function truncateExcerpt(value: string, maxLength = 240): string {
 }
 
 export function getFieldRisk(fieldName: string): VerificationRisk {
-  if (fieldName === "bio" || fieldName === "_status") {
+  if (fieldName === "bio" || fieldName === "description" || fieldName === "_status") {
     return "high";
   }
 
@@ -504,7 +513,8 @@ export function getFieldRisk(fieldName: string): VerificationRisk {
     fieldName === "title" ||
     fieldName === "first_name" ||
     fieldName === "last_name" ||
-    fieldName === "name"
+    fieldName === "name" ||
+    fieldName === "website_url"
   ) {
     return "medium";
   }
@@ -1099,6 +1109,7 @@ export async function fetchVerificationCandidates(
       .from("profile_suggestions")
       .select("person_id")
       .in("person_id", personIdsInPool)
+      .eq("record_type", "person")
       .eq("status", "pending"),
     supabase
       .from("search_clicks")
@@ -1302,7 +1313,7 @@ export async function runVerificationForPerson(
 
 export async function insertVerificationSuggestions(
   supabase: SupabaseAdminClient,
-  personId: string,
+  target: VerificationTarget,
   suggestions: VerificationSuggestion[],
   options?: {
     agentRunId?: string;
@@ -1312,10 +1323,13 @@ export async function insertVerificationSuggestions(
     return { inserted: 0, updated: 0, duplicatesSkipped: 0 };
   }
 
+  const targetColumn = target.recordType === "organization" ? "organization_id" : "person_id";
+
   const { data: existing, error: existingError } = await supabase
     .from("profile_suggestions")
     .select("id, dedupe_key, confidence, evidence_url, evidence_excerpt")
-    .eq("person_id", personId)
+    .eq(targetColumn, target.recordId)
+    .eq("record_type", target.recordType)
     .eq("status", "pending");
 
   if (existingError) {
@@ -1351,7 +1365,9 @@ export async function insertVerificationSuggestions(
     const existingRow = existingByKey.get(suggestion.dedupe_key);
     if (!existingRow) {
       toInsert.push({
-        person_id: personId,
+        record_type: target.recordType,
+        person_id: target.recordType === "person" ? target.recordId : null,
+        organization_id: target.recordType === "organization" ? target.recordId : null,
         field_name: suggestion.field_name,
         current_value: suggestion.current_value,
         suggested_value: suggestion.suggested_value,
@@ -1434,5 +1450,345 @@ export async function markPersonVerified(
 
   if (error) {
     throw new Error(`Failed to mark verified: ${error.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Organization verification (Phase 7 scaffolding).
+//
+// The full implementation (web-search-driven evidence gathering, field
+// comparison, Gemini-backed `check_organization` task) is tracked in
+// docs/PHASE-7-VERIFICATION.md. The exports below define the API surface so
+// agent-verify can route record_type='organization' through a single contract.
+// Until the helper is implemented, callers receive a typed "no_results" so the
+// preview/durable contract responds gracefully.
+// ---------------------------------------------------------------------------
+
+export interface VerificationOrganization {
+  id: string;
+  name: string;
+  description: string | null;
+  website_url: string | null;
+  type: string | null;
+  us_network_status: string | null;
+  last_verified_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function loadVerificationOrganization(
+  supabase: SupabaseAdminClient,
+  organizationId: string,
+): Promise<VerificationOrganization | null> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select(`
+      id,
+      name,
+      description,
+      website_url,
+      type,
+      us_network_status,
+      created_at,
+      updated_at
+    `)
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load organization ${organizationId}: ${error.message}`);
+  }
+
+  if (!data) return null;
+  return {
+    ...data,
+    last_verified_at: null,
+  } as VerificationOrganization;
+}
+
+export async function fetchOrganizationVerificationCandidates(
+  supabase: SupabaseAdminClient,
+  batchSize: number,
+  maxAgeMonths: number,
+  organizationIds?: string[],
+): Promise<VerificationOrganization[]> {
+  const selectClause = `
+    id,
+    name,
+    description,
+    website_url,
+    type,
+    us_network_status,
+    created_at,
+    updated_at
+  `;
+
+  if (organizationIds && organizationIds.length > 0) {
+    const { data, error } = await supabase
+      .from("organizations")
+      .select(selectClause)
+      .in("id", organizationIds)
+      .limit(batchSize);
+
+    if (error) {
+      throw new Error(`Failed to load targeted organizations: ${error.message}`);
+    }
+
+    return ((data || []) as Array<Omit<VerificationOrganization, "last_verified_at">>).map(
+      (row) => ({ ...row, last_verified_at: null }) as VerificationOrganization,
+    );
+  }
+
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - maxAgeMonths);
+
+  const candidatePoolSize = Math.max(batchSize * CANDIDATE_POOL_MULTIPLIER, MIN_CANDIDATE_POOL);
+  const { data, error } = await supabase
+    .from("organizations")
+    .select(selectClause)
+    .order("updated_at", { ascending: true, nullsFirst: true })
+    .limit(candidatePoolSize);
+
+  if (error) {
+    throw new Error(`Failed to load organizations: ${error.message}`);
+  }
+
+  const orgs = ((data || []) as Array<Omit<VerificationOrganization, "last_verified_at">>)
+    .map((row) => ({ ...row, last_verified_at: null }) as VerificationOrganization)
+    .filter((org) => {
+      const reference = org.updated_at || org.created_at;
+      if (!reference) return true;
+      return new Date(reference).getTime() < cutoff.getTime();
+    });
+
+  const orgIds = orgs.map((org) => org.id);
+  if (orgIds.length === 0) return [];
+
+  const { data: pendingRows, error: pendingError } = await supabase
+    .from("profile_suggestions")
+    .select("organization_id")
+    .in("organization_id", orgIds)
+    .eq("record_type", "organization")
+    .eq("status", "pending");
+
+  if (pendingError) {
+    throw new Error(
+      `Failed to load pending organization suggestions: ${pendingError.message}`,
+    );
+  }
+
+  const pendingByOrg = new Set<string>();
+  for (const row of pendingRows || []) {
+    const id = safeStr(row.organization_id);
+    if (id) pendingByOrg.add(id);
+  }
+
+  return orgs
+    .filter((org) => !pendingByOrg.has(org.id))
+    .slice(0, batchSize);
+}
+
+export interface VerificationOrganizationExecutionResult {
+  organization: VerificationOrganization;
+  suggestions: VerificationSuggestion[];
+  path: VerificationPath;
+  status: VerificationStatus;
+  detail?: string;
+  warnings: string[];
+  llm_calls_made: number;
+  web_searches_made: number;
+  web_search_provider: string;
+  llm_model_used: string | null;
+  quota_exhausted: boolean;
+}
+
+function getOrganizationFieldValue(
+  organization: VerificationOrganization,
+  fieldName: string,
+): string {
+  switch (fieldName) {
+    case "name":
+      return safeStr(organization.name);
+    case "description":
+      return safeStr(organization.description);
+    case "website_url":
+      return safeStr(organization.website_url);
+    case "type":
+      return safeStr(organization.type);
+    default:
+      return "";
+  }
+}
+
+function buildOrganizationSearchQuery(organization: VerificationOrganization): string {
+  return [organization.name, organization.type, "official website"]
+    .map(safeStr)
+    .filter(Boolean)
+    .join(" ");
+}
+
+async function callCheckOrganization(
+  organization: VerificationOrganization,
+  geminiApiKey: string,
+  searchResults: WebSearchResult[],
+): Promise<{ suggestions: VerificationSuggestion[]; modelUsed: string }> {
+  if (!geminiApiKey) {
+    throw new Error("Missing GEMINI_API_KEY");
+  }
+
+  const definition = getAiAgentTaskDefinition("check_organization");
+  const { data, modelUsed } = await callGeminiStructured<OrganizationCheckResult>({
+    apiKey: geminiApiKey,
+    route: definition.modelRoute,
+    systemPrompt: definition.systemPrompt,
+    userPrompt: definition.buildUserPrompt({
+      organization: {
+        id: organization.id,
+        name: safeStr(organization.name),
+        description: safeStr(organization.description),
+        website_url: safeStr(organization.website_url),
+        type: safeStr(organization.type),
+      },
+      searchResults: formatResultsForLLM(searchResults),
+    }),
+    schema: definition.schema,
+    parse: (payload) => definition.normalizeResult(payload) as OrganizationCheckResult,
+    attemptsPerModel: 2,
+    emptyResponseFallback: { suggestions: [] },
+  });
+
+  const fallbackResult = searchResults[0];
+  const suggestions = data.suggestions
+    .map((suggestion) => {
+      const currentValue = getOrganizationFieldValue(organization, suggestion.field_name);
+
+      // For description, mirror person bio behavior: only suggest if the
+      // existing description is empty/short and the new value is substantial.
+      if (suggestion.field_name === "description") {
+        const next = safeStr(suggestion.suggested_value);
+        if (!shouldSuggestBio(currentValue, next)) return null;
+      }
+
+      return buildSuggestion({
+        field_name: suggestion.field_name,
+        current_value: currentValue,
+        suggested_value: suggestion.suggested_value,
+        source: suggestion.source || "Web search",
+        evidence_url: suggestion.evidence_url || fallbackResult?.url || "",
+        evidence_excerpt:
+          suggestion.evidence_excerpt ||
+          fallbackResult?.content ||
+          suggestion.source ||
+          "",
+        confidence: clampConfidence(
+          suggestion.confidence,
+          getFieldRisk(suggestion.field_name) === "high" ? 0.86 : 0.76,
+        ),
+        method: "web_search_llm",
+      });
+    })
+    .filter((suggestion): suggestion is VerificationSuggestion => Boolean(suggestion));
+
+  return {
+    suggestions: finalizeSuggestions(suggestions),
+    modelUsed,
+  };
+}
+
+export async function runVerificationForOrganization(
+  supabase: SupabaseAdminClient,
+  organization: VerificationOrganization,
+  options: {
+    geminiApiKey?: string;
+  },
+): Promise<VerificationOrganizationExecutionResult> {
+  const warnings: string[] = [];
+  const query = buildOrganizationSearchQuery(organization);
+
+  if (!query) {
+    return {
+      organization,
+      suggestions: [],
+      path: "skipped",
+      status: "no_results",
+      detail: "No usable search query",
+      warnings,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: "none",
+      llm_model_used: null,
+      quota_exhausted: false,
+    };
+  }
+
+  const searchResponse = await searchWeb(query, supabase);
+  const webSearchesMade = searchResponse.provider === "none" ? 0 : 1;
+
+  if (searchResponse.quota_exhausted && searchResponse.results.length === 0) {
+    return {
+      organization,
+      suggestions: [],
+      path: "web_search",
+      status: "quota_exhausted",
+      detail: "Web search quota exhausted",
+      warnings,
+      llm_calls_made: 0,
+      web_searches_made: webSearchesMade,
+      web_search_provider: searchResponse.provider,
+      llm_model_used: null,
+      quota_exhausted: true,
+    };
+  }
+
+  if (searchResponse.results.length === 0) {
+    return {
+      organization,
+      suggestions: [],
+      path: "web_search",
+      status: "no_results",
+      warnings,
+      llm_calls_made: 0,
+      web_searches_made: webSearchesMade,
+      web_search_provider: searchResponse.provider,
+      llm_model_used: null,
+      quota_exhausted: false,
+    };
+  }
+
+  const llmResult = await callCheckOrganization(
+    organization,
+    safeStr(options.geminiApiKey),
+    searchResponse.results,
+  );
+
+  return {
+    organization,
+    suggestions: llmResult.suggestions,
+    path: "web_search",
+    status: llmResult.suggestions.length > 0 ? "suggestions" : "verified",
+    detail: llmResult.suggestions.length > 0
+      ? `${llmResult.suggestions.length} differences detected`
+      : undefined,
+    warnings,
+    llm_calls_made: 1,
+    web_searches_made: webSearchesMade,
+    web_search_provider: searchResponse.provider,
+    llm_model_used: llmResult.modelUsed,
+    quota_exhausted: false,
+  };
+}
+
+export async function markOrganizationVerified(
+  supabase: SupabaseAdminClient,
+  organizationId: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("organizations")
+    .update({ updated_at: now })
+    .eq("id", organizationId);
+
+  if (error) {
+    throw new Error(`Failed to mark organization verified: ${error.message}`);
   }
 }

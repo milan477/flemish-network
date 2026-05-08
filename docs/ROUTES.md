@@ -9,7 +9,7 @@
 | `/collections/:id` | Collection detail |
 | `/admin` | Staff workspace default redirect to `/admin/discovery` |
 | `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and pending people plus pending organization review. URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
-| `/admin/verification` | Stale records, record suggestions, and derived-label review |
+| `/admin/verification` | Stale records, person profile suggestions, organization suggestions, and derived-label review |
 | `/admin/growth` | Coverage, source yield, entity pivots, geography gaps, and recommended next discovery actions |
 | `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
 | `/admin/access` | Admin-only staff access management |

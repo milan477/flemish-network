@@ -225,7 +225,7 @@ async function getOrCreateQuota(
     .eq("month", month)
     .maybeSingle();
 
-  if (data) return data;
+  if (data) return { calls_used: data.calls_used ?? 0, calls_limit: data.calls_limit };
 
   // Create quota row for this month
   const { data: created } = await supabase
@@ -237,7 +237,9 @@ async function getOrCreateQuota(
     .select("calls_used, calls_limit")
     .single();
 
-  return created || { calls_used: 0, calls_limit: defaultLimit };
+  return created
+    ? { calls_used: created.calls_used ?? 0, calls_limit: created.calls_limit }
+    : { calls_used: 0, calls_limit: defaultLimit };
 }
 
 async function incrementQuota(
@@ -263,7 +265,7 @@ async function cacheResults(
         query_hash: queryHash,
         query_text: queryText,
         provider,
-        results,
+        results: results as unknown as import("./database.types.ts").Json,
         searched_at: new Date().toISOString(),
       },
       { onConflict: "query_hash,provider" }

@@ -101,12 +101,26 @@ Derived-label approval canonicalizes Flemish/Belgian labels through approved nam
 
 ## Edge Function: `agent-verify`
 
-Durable verification.
+Unified record verification with preview and durable modes.
 
-1. Takes `{ personIds? | person_ids?, batch_size? }`.
-2. Uses LinkedIn-first evidence when available, falling back to trusted web search.
-3. Writes reviewable suggestions with method, confidence, evidence URL, and evidence excerpt.
-4. Target expansion includes organization verification and a record-level suggestion queue.
+Request shape:
+
+- `mode`: `"preview"` or `"durable"` (default `"durable"`).
+- `record_type`: `"person"` or `"organization"` (default `"person"`).
+- Preview mode: `record_id` is required. Returns suggestions for one record without persisting anything (no `profile_suggestions`, no `agent_runs`, no `derived_label_suggestions`, no `last_verified_at` bump).
+- Durable mode (people): `person_ids?` or `person_id?` to target a batch, plus `batch_size?`, `max_age_months?`, and `run_id?` for scheduler integration. Writes reviewable suggestions to `profile_suggestions` with `record_type='person'`.
+- Durable mode (organizations): `organization_ids?` or `organization_id?` to target a batch, plus `batch_size?`, `max_age_months?`, and `run_id?`. Writes reviewable suggestions to `profile_suggestions` with `record_type='organization'`.
+
+Behavior:
+
+1. Person path uses LinkedIn-first evidence when available, falling back to trusted web search + Gemini `check_profile`.
+2. Organization path uses web search + Gemini `check_organization` (fields: `name`, `description`, `website_url`, `type`). No LinkedIn scraping for organizations in this phase.
+3. Suggestions are evidence-backed (source URL, evidence excerpt, confidence, method) and pass risk policy gates before being returned. High-risk fields stay review-first.
+4. Suggestions are deduped per record by `dedupe_key`; the dedupe key is `field_name::normalized_value`. Higher-confidence or better-evidenced suggestions refresh existing rows instead of duplicating them.
+
+## Edge Function: `update-profile`
+
+Thin preview-mode wrapper for inline person verification (called by `ProfileUpdateModal`). Equivalent to `agent-verify { mode: "preview", record_type: "person", record_id: <personId> }`. Marked for retirement once callers move to the unified contract.
 
 ## Edge Function: `agent-scheduler`
 

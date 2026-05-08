@@ -482,15 +482,18 @@ Scope:
 - Move stale records, suggestion queues, derived labels, and inline profile verification into `/admin/verification`.
 
 Todos:
-
-- `[next]` Define one verification request/response contract with `mode: "preview" | "durable"`.
-- `[next]` Share evidence gathering, field comparison, risk routing, and suggestion formatting.
-- `[next]` Add organization verification inputs and outputs.
-- `[next]` Add record-level suggestion schema or compatibility view.
-- `[next]` Update `/admin/verification` to show people and organization queues.
-- `[next]` Update inline profile verification to call preview mode only.
-- `[next]` Ensure durable mode writes suggestions with source URL, evidence excerpt, confidence, method, and run ID.
+- `[done]` Better the layout of the /admin/verification. Stale Records is now full-width on top and Profile Suggestions full-width below.
+- `[done]` Define one verification request/response contract with `mode: "preview" | "durable"` and `record_type: "person" | "organization"` on `agent-verify`. `update-profile` is a thin preview-mode wrapper for `ProfileUpdateModal`.
+- `[done]` Share evidence gathering, field comparison, risk routing, and suggestion formatting (already shared in `_shared/verification.ts`; `insertVerificationSuggestions` now takes a `{ recordType, recordId }` target).
+- `[done]` Add organization verification inputs and outputs (`runVerificationForOrganization` performs web-search + Gemini `check_organization` for fields name/description/website_url/type; durable org branch in `agent-verify` writes to `profile_suggestions` with `record_type='organization'`).
+- `[done]` Add record-level suggestion schema or compatibility view (`profile_suggestions` extended with `record_type`, nullable `person_id`/`organization_id`, CHECK constraint; rename to `record_suggestions` deferred).
+- `[done]` Update `/admin/verification` to show people and organization queues (`OrganizationSuggestedChanges` panel renders pending `record_type='organization'` suggestions).
+- `[done]` Update inline profile verification to call preview mode only (`update-profile` already preview-only; `agent-verify mode=preview` is the unified path going forward).
+- `[done]` Ensure durable mode writes suggestions with source URL, evidence excerpt, confidence, method, and run ID (existing person path already does this).
+- `[next]` Add focused Deno tests: preview no-write, durable writes, dedupe, high-risk pending.
 - `[later]` Retire separate `update-profile` endpoint after callers move to the unified contract.
+
+See `docs/PHASE-7-VERIFICATION.md` for the granular per-task checklist.
 
 Out of scope:
 

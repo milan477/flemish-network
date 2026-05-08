@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Globe,
   Library,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   supabase,
@@ -118,6 +119,9 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCollections, setShowCollections] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ count: number; status: string } | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const loadOrganization = useCallback(async () => {
     const [orgRes, sectorsRes, allSectorsRes, flemishRes] = await Promise.all([
@@ -209,6 +213,30 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
     setEditSectorIds([]);
     setEditFlemishConnections([]);
   };
+
+  const handleVerify = useCallback(async () => {
+    if (!organization) return;
+    setVerifying(true);
+    setVerifyResult(null);
+    setVerifyError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-verify', {
+        body: {
+          mode: 'preview',
+          record_type: 'organization',
+          record_id: organization.id,
+        },
+      });
+      if (error) throw error;
+      setVerifyResult({
+        count: typeof data?.suggestions_count === 'number' ? data.suggestions_count : 0,
+        status: typeof data?.status === 'string' ? data.status : 'unknown',
+      });
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : 'Verification failed');
+    }
+    setVerifying(false);
+  }, [organization]);
 
   const saveEdits = async () => {
     if (!organization) return;
@@ -623,6 +651,30 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                         </div>
                       </>
                     )}
+                    <div className="flex flex-col">
+                      <button
+                        onClick={handleVerify}
+                        disabled={verifying}
+                        className="px-6 py-2 bg-teal-50 text-teal-700 hover:bg-teal-100 font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
+                      >
+                        {verifying ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-4 h-4" />
+                        )}
+                        <span>Verify</span>
+                      </button>
+                      {verifyResult && (
+                        <span className="mt-1 text-xs text-gray-500">
+                          {verifyResult.count > 0
+                            ? `${verifyResult.count} suggestion${verifyResult.count === 1 ? '' : 's'} found`
+                            : 'Looks current'}
+                        </span>
+                      )}
+                      {verifyError && (
+                        <span className="mt-1 text-xs text-red-500">{verifyError}</span>
+                      )}
+                    </div>
                     {organization.website_url && (
                       <a
                         href={organization.website_url}

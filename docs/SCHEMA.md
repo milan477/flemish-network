@@ -36,7 +36,7 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 
 | Table | Key Columns |
 |---|---|
-| `profile_suggestions` | `id`, `person_id` (FK), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key`, `reviewed_at`. Target replacement is a record-level suggestion queue that supports people and organizations. |
+| `profile_suggestions` | Record-level suggestion queue for people and organizations. Columns: `id`, `record_type` (`'person'` or `'organization'`), `person_id` (nullable FK people), `organization_id` (nullable FK organizations), `field_name`, `current_value`, `suggested_value`, `source`, `status`, `evidence_url`, `evidence_excerpt`, `confidence`, `method`, `agent_run_id`, `dedupe_key`, `reviewed_at`. CHECK constraint enforces exactly one of (`person_id`, `organization_id`) is set and matches `record_type`. Indexes: `idx_profile_suggestions_organization`, `idx_profile_suggestions_pending_dedupe_org`, `idx_profile_suggestions_record_type_status`. Cosmetic rename to `record_suggestions` is deferred. |
 | `derived_label_suggestions` | `id`, `person_id` or `discovered_contact_id`, `label_type`, `label_value`, `normalized_value`, `confidence`, `source`, `method`, `evidence_url`, `evidence_excerpt`, `agent_run_id`, `dedupe_key`, `status` |
 | `person_text_chunks` | `id`, `person_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |
 | `organization_text_chunks` | `id`, `organization_id` (FK), `chunk_type`, `chunk_index`, `chunk_text`, `embedding`, `created_at`, `updated_at` |

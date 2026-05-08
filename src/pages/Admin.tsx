@@ -10,6 +10,9 @@ import {
 import InteractiveStatsOverview from '../components/admin/InteractiveStatsOverview';
 import { type ProfileSuggestion } from '../components/admin/SuggestedChanges';
 import SuggestedChanges from '../components/admin/SuggestedChanges';
+import OrganizationSuggestedChanges, {
+  type OrganizationProfileSuggestion,
+} from '../components/admin/OrganizationSuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
 import AccessManagementPanel from '../components/admin/AccessManagementPanel';
@@ -50,6 +53,7 @@ export default function Admin({ onNavigate }: AdminProps) {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
+  const [orgSuggestions, setOrgSuggestions] = useState<OrganizationProfileSuggestion[]>([]);
   const [derivedLabels, setDerivedLabels] = useState<DerivedLabelSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [discoveryRefreshKey, setDiscoveryRefreshKey] = useState(0);
@@ -67,6 +71,7 @@ export default function Admin({ onNavigate }: AdminProps) {
       .from('profile_suggestions')
       .select('*')
       .eq('status', 'pending')
+      .eq('record_type', 'person')
       .order('created_at', { ascending: false });
 
     if (!data || data.length === 0) {
@@ -92,6 +97,61 @@ export default function Admin({ onNavigate }: AdminProps) {
         status: suggestion.status || 'pending',
         created_at: suggestion.created_at || new Date().toISOString(),
         person_name: nameMap[suggestion.person_id || ''] || 'Unknown',
+      }))
+    );
+  }, []);
+
+  const loadOrgSuggestions = useCallback(async () => {
+    const { data } = await supabase
+      .from('profile_suggestions')
+      .select('*')
+      .eq('status', 'pending')
+      .eq('record_type', 'organization')
+      .order('created_at', { ascending: false });
+
+    if (!data || data.length === 0) {
+      setOrgSuggestions([]);
+      return;
+    }
+
+    const orgIds = [
+      ...new Set(
+        data
+          .map((row) => row.organization_id)
+          .filter((id): id is string => typeof id === 'string')
+      ),
+    ];
+
+    const { data: orgs } = await supabase
+      .from('organizations')
+      .select('id, name')
+      .in('id', orgIds);
+
+    const nameMap: Record<string, string> = {};
+    (orgs || []).forEach((org: { id: string; name: string }) => {
+      nameMap[org.id] = org.name;
+    });
+
+    setOrgSuggestions(
+      data.map((row) => ({
+        id: typeof row.id === 'string' ? row.id : '',
+        organization_id: typeof row.organization_id === 'string' ? row.organization_id : '',
+        field_name: typeof row.field_name === 'string' ? row.field_name : '',
+        current_value: typeof row.current_value === 'string' ? row.current_value : null,
+        suggested_value: typeof row.suggested_value === 'string' ? row.suggested_value : '',
+        source: typeof row.source === 'string' ? row.source : null,
+        status: typeof row.status === 'string' ? row.status : 'pending',
+        created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+        evidence_url: typeof row.evidence_url === 'string' ? row.evidence_url : null,
+        evidence_excerpt: typeof row.evidence_excerpt === 'string' ? row.evidence_excerpt : null,
+        confidence: typeof row.confidence === 'number' ? row.confidence : null,
+        method: typeof row.method === 'string' ? row.method : null,
+        agent_run_id: typeof row.agent_run_id === 'string' ? row.agent_run_id : null,
+        dedupe_key: typeof row.dedupe_key === 'string' ? row.dedupe_key : null,
+        organization_name:
+          typeof row.organization_id === 'string'
+            ? nameMap[row.organization_id] || 'Unknown organization'
+            : 'Unknown organization',
       }))
     );
   }, []);
@@ -173,8 +233,9 @@ export default function Admin({ onNavigate }: AdminProps) {
   useEffect(() => {
     loadData();
     loadSuggestions();
+    loadOrgSuggestions();
     loadDerivedLabels();
-  }, [loadData, loadSuggestions, loadDerivedLabels]);
+  }, [loadData, loadSuggestions, loadOrgSuggestions, loadDerivedLabels]);
 
   useEffect(() => {
     if (tab === 'access' && !isAdmin) {
@@ -266,8 +327,13 @@ export default function Admin({ onNavigate }: AdminProps) {
   );
 
   const handleSuggestionsRefresh = useCallback(async () => {
-    await Promise.all([loadData(), loadSuggestions(), loadDerivedLabels()]);
-  }, [loadData, loadSuggestions, loadDerivedLabels]);
+    await Promise.all([
+      loadData(),
+      loadSuggestions(),
+      loadOrgSuggestions(),
+      loadDerivedLabels(),
+    ]);
+  }, [loadData, loadSuggestions, loadOrgSuggestions, loadDerivedLabels]);
 
   const handleTabChange = useCallback(
     (nextTab: AdminTab) => {
@@ -433,8 +499,8 @@ export default function Admin({ onNavigate }: AdminProps) {
       )}
 
       {activeTab === 'verification' && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="xl:col-span-2 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+        <div className="space-y-6">
+          <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-semibold text-gray-900">Stale Records</h2>
             <StaleContactsBar
               people={people}
@@ -446,21 +512,26 @@ export default function Admin({ onNavigate }: AdminProps) {
               noUpdateIds={noUpdateIds}
             />
           </div>
-          <div className="space-y-6">
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900">Profile Suggestions</h2>
-              <SuggestedChanges
-                suggestions={suggestions}
-                onRefresh={handleSuggestionsRefresh}
-              />
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-900">Derived Labels</h2>
-              <DerivedLabelsPanel
-                labels={derivedLabels}
-                onRefresh={handleSuggestionsRefresh}
-              />
-            </div>
+          <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Profile Suggestions</h2>
+            <SuggestedChanges
+              suggestions={suggestions}
+              onRefresh={handleSuggestionsRefresh}
+            />
+          </div>
+          <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Organization Suggestions</h2>
+            <OrganizationSuggestedChanges
+              suggestions={orgSuggestions}
+              onRefresh={handleSuggestionsRefresh}
+            />
+          </div>
+          <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Derived Labels</h2>
+            <DerivedLabelsPanel
+              labels={derivedLabels}
+              onRefresh={handleSuggestionsRefresh}
+            />
           </div>
         </div>
       )}

@@ -2453,7 +2453,9 @@ export type Database = {
           field_name: string
           id: string
           method: string | null
-          person_id: string
+          organization_id: string | null
+          person_id: string | null
+          record_type: string
           reviewed_at: string | null
           source: string | null
           status: string
@@ -2470,7 +2472,9 @@ export type Database = {
           field_name: string
           id?: string
           method?: string | null
-          person_id: string
+          organization_id?: string | null
+          person_id?: string | null
+          record_type?: string
           reviewed_at?: string | null
           source?: string | null
           status?: string
@@ -2487,7 +2491,9 @@ export type Database = {
           field_name?: string
           id?: string
           method?: string | null
-          person_id?: string
+          organization_id?: string | null
+          person_id?: string | null
+          record_type?: string
           reviewed_at?: string | null
           source?: string | null
           status?: string
@@ -2499,6 +2505,13 @@ export type Database = {
             columns: ["agent_run_id"]
             isOneToOne: false
             referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_suggestions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
