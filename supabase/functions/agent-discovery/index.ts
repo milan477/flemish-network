@@ -4576,6 +4576,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     const body = await req.json();
     const query = normalizeWhitespace(safeString(body.query));
     runId = safeString(body.run_id) || undefined;
+    const suggestionId = safeString(body.suggestion_id) || undefined;
     const batchSize = Math.max(
       1,
       Math.min(MAX_BATCH_SIZE, Number(body.batch_size || DEFAULT_BATCH_SIZE)),
@@ -4640,11 +4641,62 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }).length);
     const surfaceLensBudget = Math.max(1, MAX_SEARCH_QUERIES - pivotBudget);
     let allocationSlots: AllocationSlot[] = [];
-    try {
-      allocationSlots = await allocateBudget(supabase, surfaceLensBudget, runId || "anon");
-    } catch (allocErr) {
-      // Non-fatal: fall back to empty allocation (entity pivots and gaps will still run)
-      log.withRun(runId).warn("bandit_allocation_failed", allocErr instanceof Error ? allocErr.message : String(allocErr));
+    let consumedSuggestionId: string | null = null;
+    if (suggestionId) {
+      // Suggestion-driven: skip bandit; build a single exploration slot from the suggestion row.
+      const { data: row, error: suggErr } = await supabase
+        .from("discovery_reflection_suggestions")
+        .select("id,surface,lens,context_key,expires_at")
+        .eq("id", suggestionId)
+        .maybeSingle();
+      if (suggErr) {
+        log.withRun(runId).warn("suggestion_lookup_failed", suggErr.message);
+      }
+      if (row) {
+        const surfaceKey = (row.surface as string | null) || "";
+        const lensKey = (row.lens as string | null) || "";
+        const resolvedSurface = surfaceKey && taxonomy.surfaces.find((s) => s.key === surfaceKey)
+          ? surfaceKey
+          : taxonomy.surfaces[0]?.key || "";
+        const resolvedLens = lensKey && taxonomy.lenses.find((l) => l.key === lensKey)
+          ? lensKey
+          : taxonomy.lenses[0]?.key || "";
+        if (resolvedSurface && resolvedLens) {
+          allocationSlots = [{
+            surface: resolvedSurface,
+            lens: resolvedLens,
+            contextKey: (row.context_key as string) || "",
+            isExploration: true,
+            reflectionSuggestionId: row.id as string,
+          }];
+          consumedSuggestionId = row.id as string;
+        }
+      }
+    }
+    if (allocationSlots.length === 0) {
+      try {
+        allocationSlots = await allocateBudget(supabase, surfaceLensBudget, runId || "anon");
+      } catch (allocErr) {
+        // Non-fatal: fall back to empty allocation (entity pivots and gaps will still run)
+        log.withRun(runId).warn("bandit_allocation_failed", allocErr instanceof Error ? allocErr.message : String(allocErr));
+      }
+    }
+
+    if (consumedSuggestionId) {
+      // Increment consumed_attempt_count for the explicit suggestion (allocateBudget was skipped).
+      const { data: existing } = await supabase
+        .from("discovery_reflection_suggestions")
+        .select("consumed_attempt_count")
+        .eq("id", consumedSuggestionId)
+        .maybeSingle();
+      if (existing) {
+        await supabase
+          .from("discovery_reflection_suggestions")
+          .update({
+            consumed_attempt_count: ((existing.consumed_attempt_count as number) || 0) + 1,
+          })
+          .eq("id", consumedSuggestionId);
+      }
     }
 
     steps.push({

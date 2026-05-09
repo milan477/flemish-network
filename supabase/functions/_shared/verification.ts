@@ -80,7 +80,6 @@ export interface VerificationPerson {
   profile_photo_url: string | null;
   linkedin_url: string | null;
   email: string | null;
-  phone: string | null;
   website_url: string | null;
   twitter_url: string | null;
   occupation: string | null;
@@ -509,7 +508,6 @@ export function getFieldRisk(fieldName: string): VerificationRisk {
     fieldName === "current_position" ||
     fieldName === "occupation" ||
     fieldName === "email" ||
-    fieldName === "phone" ||
     fieldName === "title" ||
     fieldName === "first_name" ||
     fieldName === "last_name" ||
@@ -628,8 +626,6 @@ function getPersonFieldValue(person: VerificationPerson, fieldName: string): str
       return safeStr(person.linkedin_url);
     case "bio":
       return safeStr(person.bio);
-    case "phone":
-      return safeStr(person.phone);
     case "website_url":
       return safeStr(person.website_url);
     case "twitter_url":
@@ -873,7 +869,6 @@ async function callCheckProfile(
         email: safeStr(person.email),
         linkedin_url: safeStr(person.linkedin_url),
         bio: safeStr(person.bio),
-        phone: safeStr(person.phone),
         website_url: safeStr(person.website_url),
         twitter_url: safeStr(person.twitter_url),
         location_city: safeStr(person.locations?.city),
@@ -935,7 +930,6 @@ export async function loadVerificationPerson(
       profile_photo_url,
       linkedin_url,
       email,
-      phone,
       website_url,
       twitter_url,
       occupation,
@@ -1041,7 +1035,6 @@ export async function fetchVerificationCandidates(
     profile_photo_url,
     linkedin_url,
     email,
-    phone,
     website_url,
     twitter_url,
     occupation,

@@ -14,7 +14,6 @@ import OrganizationSuggestedChanges, {
 } from '../components/admin/OrganizationSuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
-import DiscoveryEvalPanel from '../components/admin/DiscoveryEvalPanel';
 import AccessManagementPanel from '../components/admin/AccessManagementPanel';
 import SystemHealthPanel from '../components/admin/SystemHealthPanel';
 import AddContactPanel from '../components/admin/AddContactPanel';
@@ -359,6 +358,43 @@ export default function Admin({ onNavigate }: AdminProps) {
     }
   }, []);
 
+  const startDiscoveryRun = useCallback(async () => {
+    try {
+      const { error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'trigger',
+          agent_type: 'discovery',
+          params: {},
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      notifyError(err, { hint: 'Could not start a discovery run.' });
+    }
+  }, []);
+
+  const exploreSuggestion = useCallback(
+    async (suggestionId: string, surface: string | null, lens: string | null) => {
+      try {
+        const { error } = await supabase.functions.invoke('agent-scheduler', {
+          body: {
+            action: 'trigger',
+            agent_type: 'discovery',
+            params: {
+              suggestion_id: suggestionId,
+              ...(surface ? { surface } : {}),
+              ...(lens ? { lens } : {}),
+            },
+          },
+        });
+        if (error) throw error;
+      } catch (err) {
+        notifyError(err, { hint: 'Could not start discovery on this suggestion.' });
+      }
+    },
+    []
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -460,7 +496,6 @@ export default function Admin({ onNavigate }: AdminProps) {
             initialDiscoveryPrompt={discoveryPrompt}
           />
           <AgentDashboard refreshKey={discoveryRefreshKey} />
-          <DiscoveryEvalPanel />
         </div>
       )}
 
@@ -539,6 +574,8 @@ export default function Admin({ onNavigate }: AdminProps) {
       {activeTab === 'growth' && (
         <DiscoveryPlanningPanel
           onRunDiscovery={(action) => void triggerDiscovery(action)}
+          onStartDiscovery={() => void startDiscoveryRun()}
+          onExploreSuggestion={(id, surface, lens) => void exploreSuggestion(id, surface, lens)}
           isRunning={false}
         />
       )}

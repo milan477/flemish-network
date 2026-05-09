@@ -47,7 +47,8 @@ describe('Phase 5D discovery review contract', () => {
   });
 
   it('shows separate pending queues with organization sources and evidence', () => {
-    expect(reviewPanel).toContain("useState<'people' | 'organizations'>");
+    expect(reviewPanel).toContain('peopleOpen');
+    expect(reviewPanel).toContain('orgsOpen');
     expect(reviewPanel).toContain('discovered_organization_evidence');
     expect(reviewPanel).toContain('organizationSourceLabel');
     expect(reviewPanel).toContain('source_urls');

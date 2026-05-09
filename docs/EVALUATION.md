@@ -70,15 +70,6 @@ Quality gates before autonomy:
 - Organization candidates are promoted only through explicit reviewer approval or merge, with source URLs and evidence excerpts visible in review.
 - Active UI source must not call retired Discovery endpoints or retired `ai-agent` Discovery tasks; prompted Discovery runs only through `agent-scheduler`.
 
-### Held-out recall
-
-Held-out recall is the primary north-star metric for the Discovery Redesign (see `docs/DISCOVERY-REDESIGN.md`). The held-out set lives in `discovery_eval_holdout` — known Flemish-Americans intentionally excluded from the approved network.
-
-- **Definition:** rolling 30-day recall = (holdout rows whose `last_seen_as_candidate_at` is within the last 30 days) ÷ (total holdout rows).
-- **Update path:** the `eval-holdout-check` edge function fuzzy-matches each holdout row's `full_name` and `known_aliases` against `discovered_contacts.created_at >= now() - 30 days`, updating `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id` on hit. Triggered manually from the Discovery Eval admin panel; should be invoked nightly by an external cron or `agent-scheduler` housekeeping.
-- **Targets:** Phase 0 baseline ≥ 0% (just measure). Phase 1+ ≥ 50% within 6 weeks of deploy. ≥ 30 holdout rows must be seeded before recall numbers are taken seriously.
-- **Source:** seed via `scripts/seed_eval_holdout.ts` from a local JSON file (`HOLDOUT_FILE=`). The list contains contact info and is not committed to the repo.
-
 ### Reject-reason taxonomy
 
 Every rejected `discovered_contacts` and `discovered_organizations` row should carry a structured `reject_reason`:

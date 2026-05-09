@@ -98,6 +98,48 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_schedules: {
+        Row: {
+          job_kind: string
+          cadence_preset: string
+          last_run_at: string | null
+          last_run_id: string | null
+          next_run_at: string
+          last_status: string | null
+          last_error: string | null
+          last_manual_at: string | null
+          last_manual_by: string | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          job_kind: string
+          cadence_preset?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string
+          last_status?: string | null
+          last_error?: string | null
+          last_manual_at?: string | null
+          last_manual_by?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          job_kind?: string
+          cadence_preset?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string
+          last_status?: string | null
+          last_error?: string | null
+          last_manual_at?: string | null
+          last_manual_by?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       api_quotas: {
         Row: {
           calls_limit: number
@@ -1127,69 +1169,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
-      }
-      discovery_eval_holdout: {
-        Row: {
-          added_at: string
-          added_by: string | null
-          flemish_signal: string
-          full_name: string
-          id: string
-          known_aliases: string[]
-          known_city: string | null
-          known_employer: string | null
-          known_state: string | null
-          last_seen_as_candidate_at: string | null
-          last_seen_candidate_id: string | null
-          last_seen_run_id: string | null
-          source_note: string | null
-        }
-        Insert: {
-          added_at?: string
-          added_by?: string | null
-          flemish_signal: string
-          full_name: string
-          id?: string
-          known_aliases?: string[]
-          known_city?: string | null
-          known_employer?: string | null
-          known_state?: string | null
-          last_seen_as_candidate_at?: string | null
-          last_seen_candidate_id?: string | null
-          last_seen_run_id?: string | null
-          source_note?: string | null
-        }
-        Update: {
-          added_at?: string
-          added_by?: string | null
-          flemish_signal?: string
-          full_name?: string
-          id?: string
-          known_aliases?: string[]
-          known_city?: string | null
-          known_employer?: string | null
-          known_state?: string | null
-          last_seen_as_candidate_at?: string | null
-          last_seen_candidate_id?: string | null
-          last_seen_run_id?: string | null
-          source_note?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "discovery_eval_holdout_last_seen_candidate_id_fkey"
-            columns: ["last_seen_candidate_id"]
-            isOneToOne: false
-            referencedRelation: "discovered_contacts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "discovery_eval_holdout_last_seen_run_id_fkey"
-            columns: ["last_seen_run_id"]
-            isOneToOne: false
-            referencedRelation: "agent_runs"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       discovery_evidence: {
         Row: {

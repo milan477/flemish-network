@@ -10,12 +10,13 @@
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
 | Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics, `agent-discovery-reflect` (daily cron via housekeeping) | Coverage gaps, source yield, entity pivots, reflection suggestions, and recommended next discovery actions. |
 | System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, record-index queues, cancellation, housekeeping, API usage. |
-| Staff Access | `/admin/access` | `invite-staff-user`, Supabase Auth | Admin-only staff invitation and role/status management. |
+| Staff Access | `/admin/access` | `invite-staff-user`, `remove-staff-user`, Supabase Auth | Admin-only staff invitation, role management, and removal. |
 
 ## Behavioral Contracts
 
 - Staff login uses Supabase Auth email/password. Magic-link login is not part of the active auth flow.
 - `invite-staff-user` is the only frontend-facing staff invitation endpoint. It requires admin staff auth, writes the approved `staff_users` row with `password_reset_required = true`, and delegates email delivery/user invitation to Supabase Auth `inviteUserByEmail`.
+- `remove-staff-user` is the only frontend-facing staff removal endpoint. It requires admin staff auth, refuses self-removal, deletes the `staff_users` row, and deletes the linked `auth.users` record. The access list does not retain revoked entries; granting access again requires a fresh invite.
 - `agent-scheduler` owns `agent_runs` lifecycle for discovery and verification. UI must not insert/update run rows directly.
 - `agent-scheduler` rejects `agent_type = "connection"`; the person-to-person connection service has been removed.
 - `agent-discovery` is the durable Discovery service. Prompted discovery must call `agent-scheduler` with `agent_type = "discovery"`; retired Discovery compatibility endpoints must not be reintroduced.
@@ -86,7 +87,9 @@ All search queries — Mode A custom intent, surface×lens expansion, and entity
 
 Phase 3 bandit allocator. `agent-discovery` picks query plans using Thompson sampling over `(surface, lens)` arms tracked in `discovery_arm_stats`. At run start, `allocateBudget(supabase, budget, runId)` in `supabase/functions/_shared/banditAllocator.ts` loads all arm stats and all active `(surface, lens)` combinations. It reserves ≥ 25% of slots (`Math.ceil(budget * 0.25)`) for exploration — using a three-tier priority: (1) unconsumed `discovery_reflection_suggestions` with `expires_at > now()`, (2) arms where `last_attempt_at IS NULL` (untried), (3) oldest-attempted arm. When a reflection suggestion is used, `consumed_attempt_count` is incremented on the suggestion row. Remaining slots go to Thompson-sampled exploitation using a Beta prior on `contacts_approved / candidates_extracted`, with a penalty applied when `not_flemish_rejections > 50%` of rejections. Arms with `cooldown_until > now()` are excluded from allocation; an arm enters cooldown when it yields `new_pending_contacts = 0` for ≥ 3 attempts and its `last_yielding_attempt_at` is older than 7 days (or null). At run completion, `updateArmStats` increments `attempts` for each surface_lens plan that ran. The nightly `refreshArmStats` call in `agent-scheduler` housekeeping re-aggregates all `discovery_query_attempts` rows from the last 30 days into `discovery_arm_stats`, providing accurate approved/rejected/not_flemish counters for the next run's sampling. A `bandit_allocation` step is logged in `agent_runs.results.steps` listing all slots with their `is_exploration` flag. Each plan composes up to four axes — surface, lens, optional sector emphasis, and optional metro/state geography — passed to the generator as `surface_hints`, `lens_hints`, `coverageGapLabel`, and `coverageGapSector`. Domain hints (`discovery_seed_domains`) are included when a tuple matches a seeded domain so the generator can emit `site:` operators against high-yield surfaces. Plans always include at least one exploration slot with no coverage-gap context. Entity-pivot plans are kept and propagate surface/lens tags from the generator into `discovery_query_attempts`.
 
-Phase 4 reflection loop. `agent-discovery-reflect` runs daily and builds a structured population summary via SQL aggregations over `people`, `discovered_contacts` (rejected rows), and `person_sectors`: counts by sector (top 10), US state (top 10), current employer (top 10), career stage (executive/academic/researcher/engineer/investor/consultant/other buckets derived from `occupation`), and recent rejection reasons (last 30 days). It then calls Gemini route `query_generation` (`gemini-2.5-flash-lite`) with the `REFLECTION_SYSTEM_PROMPT` and the formatted population summary. The structured-output schema returns `{ suggestions: [{ surface, lens, context_key, rationale }] }` with 3–10 entries. Surface/lens keys are validated against active rows in `discovery_surfaces`/`discovery_lenses`; invalid keys fall back to null (bandit resolves them at slot-fill time). Suggestions are written to `discovery_reflection_suggestions` with `expires_at = now() + 14 days` and `consumed_attempt_count = 0`. On Gemini failure the function logs and returns `suggestions_written: 0` without erroring. `agent-scheduler` housekeeping triggers the function daily (fire-and-forget, skipped when a suggestion was already generated in the last 24 hours). Staff can also trigger manually from the admin Reflection panel. Query attempts generated from reflection suggestions carry `source_type = 'reflection'` in `discovery_query_attempts`; frontier rows for those plans carry `source_type = 'reflection'` and `discovery_reason = 'reflection:<surface>:<lens>'`.
+Phase 4 reflection loop. `agent-discovery-reflect` runs daily and builds a structured population summary via SQL aggregations over `people`, `discovered_contacts` (rejected rows), and `person_sectors`: counts by sector (top 10), US state (top 10), current employer (top 10), career stage (executive/academic/researcher/engineer/investor/consultant/other buckets derived from `occupation`), and recent rejection reasons (last 30 days). The prompt also includes a recent bandit-arm-history summary loaded from `discovery_arm_stats` (top 25 most-recently-attempted arms with their attempt counts and approval rates) so Gemini can avoid recommending arms with poor yield and focus on genuine gaps. It then calls Gemini route `query_generation` (`gemini-2.5-flash-lite`) with the `REFLECTION_SYSTEM_PROMPT` and the formatted population + arm-history summary. The structured-output schema returns `{ suggestions: [{ surface, lens, context_key, rationale }] }` with 3–10 entries. Surface/lens keys are validated against active rows in `discovery_surfaces`/`discovery_lenses`; invalid keys fall back to null (bandit resolves them at slot-fill time). Suggestions are written to `discovery_reflection_suggestions` with `expires_at = now() + 14 days` and `consumed_attempt_count = 0`. On Gemini failure the function logs and returns `suggestions_written: 0` without erroring. `agent-scheduler` housekeeping triggers the function daily (fire-and-forget, skipped when a suggestion was already generated in the last 24 hours). Staff can also trigger manually from the admin Reflection panel.
+
+Suggestion-driven discovery (unifies reflection and bandit). When a discovery run is triggered with `params.suggestion_id` set (UI "Explore" button on a reflection suggestion, or the header "Start discovery run" which auto-picks the top unconsumed suggestion), `agent-discovery` skips `allocateBudget` entirely and builds a single exploration `AllocationSlot` from the suggestion's `surface`/`lens`/`context_key` (falling back to the first active surface/lens when keys are missing or stale). It increments `consumed_attempt_count` on that suggestion row at the start of the run. When no `suggestion_id` is provided (e.g. the daily cron tick or a fully prompted intent with no suggestions available), the bandit `allocateBudget` fallback runs as before. Query attempts generated from reflection-driven runs carry `source_type = 'reflection'` in `discovery_query_attempts`; frontier rows for those plans carry `source_type = 'reflection'` and `discovery_reason = 'reflection:<surface>:<lens>'`. Result: every Explore click is traceable to a specific suggestion, the bandit's history feeds the reflection prompt instead of competing with it at runtime, and the "Where to look next" panel is the actual queue the agent works through.
 
 Phase 5 pivot upgrades. Four mechanisms make entity pivots more useful for finding genuinely new people.
 
@@ -156,7 +159,7 @@ Thin preview-mode wrapper for inline person verification (called by `ProfileUpda
 
 Lifecycle and planning service.
 
-- Actions: `trigger`, `cancel`, `housekeeping`, `metrics`, `planning`
+- Actions: `trigger`, `cancel`, `housekeeping`, `metrics`, `planning`, `tick`, `set_schedule`, `list_schedules`
 - Valid trigger `agent_type` values: `discovery`, `verification`
 - Removed trigger values: `connection`
 - `planning` feeds `/admin/growth`.
@@ -200,9 +203,33 @@ Each `housekeeping` call (and on every other action as a side-effect) runs a dai
 
 This step should be triggered daily by calling `action: 'housekeeping'` from an external cron or operator action. The result is reported as `housekeeping.pivots_upserted`.
 
-## Edge Function: `eval-holdout-check`
+### `tick` action — scheduled cadence driver
 
-Held-out evaluation runner. Self-authenticates: accepts either a staff-editor bearer token (UI trigger) or the service-role key (cron / scheduler trigger). Pulls every `discovery_eval_holdout` row, fuzzy-matches `full_name` and `known_aliases` (lower/diacritic-stripped) against `discovered_contacts.created_at >= now() - lookback_days` (default 30, capped at 180), and on match updates `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id`. Returns `{ holdout_count, matched_count, unchanged_count, lookback_days }`. The Discovery Eval admin panel exposes a manual "Run check" button; later cron wiring will call it nightly.
+`tick` is service-role-only (the Authorization bearer must be a JWT with `role=service_role` and matching project `ref`). It is invoked every 5 minutes by the `agent-scheduler-tick` pg_cron job. The job posts to `<project_url>/functions/v1/agent-scheduler` with `{ "action": "tick", "source": "pg_cron" }`, reading `project_url` and `service_role_key` from `vault.decrypted_secrets`.
+
+For each row in `public.agent_schedules` where `cadence_preset != 'off'` and `next_run_at <= now()`:
+
+- `discovery` and `verify_stale`: dispatched via `triggerAgentRunInternal` (same insert-then-fetch flow as manual triggers, but using service-role auth instead of forwarded user auth). Skipped with `last_status='skipped'` if a prior run for the same `agent_type` is still `pending` or `running`.
+- `embeddings_drain`: invokes `generate-embeddings` with `{ kick: true, batch_size: 50 }` only when `embedding_jobs.status='pending'` count > 0; otherwise records `skipped_empty`.
+
+After dispatch, the row's `last_run_at`, `last_run_id`, `last_status`, `last_error`, and `next_run_at` are updated. `next_run_at` is recomputed by `computeNextRunAt(jobKind, preset)`:
+
+| Job | low | normal | high |
+|---|---|---|---|
+| `discovery` | 09:00 UTC daily | 09:00 + 21:00 UTC | 00/06/12/18 UTC |
+| `verify_stale` | 5 contacts/day (every 4h 48m) | 15/day (~96 min) | 40/day (~36 min) |
+| `embeddings_drain` | — | every 5 min when pending > 0 | — |
+
+`embeddings_drain` only accepts `'normal'` or `'off'`. Discovery/verify_stale accept all four presets.
+
+### `set_schedule` and `list_schedules` actions
+
+- `list_schedules` (editor) returns all rows from `agent_schedules`; powers the System page schedule cards.
+- `set_schedule` (admin) updates `cadence_preset` for a `job_kind` and recomputes `next_run_at`. Body: `{ job_kind, cadence_preset }`.
+
+### Manual `trigger` min-interval guard
+
+When `action: trigger` resolves to a job kind tracked by `agent_schedules` (i.e. `discovery` or `verify_stale` for non-discovered targets), the scheduler reads `last_manual_at` and `last_run_at` and rejects with HTTP 429 / `quota_exhausted` if either is within the last 10 minutes. Pass `force: true` in the body to bypass. Successful manual triggers stamp `last_manual_at` and `last_manual_by` so multi-admin workspaces can see who clicked Run.
 
 ## Edge Function: `generate-embeddings`
 

@@ -57,6 +57,6 @@ Before finishing any change, update every affected source-of-truth file in the s
 - Update `docs/WEBAPP-MASTERPLAN.md` when completing, adding, removing, or reprioritizing cleanup tasks or phase status.
 - Update `docs/EVALUATION.md` when changing quality gates, evaluation cases, benchmarks, or acceptance criteria.
 - Update `.env.example` when adding, renaming, or removing environment variables or Supabase secrets.
-- Update this `AGENTS.md` only when a rule must be read by every future agent.
+- Update this `CLAUDE.md` only when a rule must be read by every future agent.
 
 If a change does not require docs, say that explicitly in the final response.

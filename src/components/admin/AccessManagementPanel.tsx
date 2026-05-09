@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, MailPlus, Save, ShieldCheck, ShieldOff, ShieldPlus } from 'lucide-react';
+import { Loader2, MailPlus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from '../../lib/supabase';
 
 type DraftUser = {
@@ -145,47 +145,23 @@ export default function AccessManagementPanel() {
   };
 
   const handleRevokeRow = async (userId: string, email: string) => {
-    if (!window.confirm(`Revoke access for ${email}? They will be signed out on their next request.`)) return;
+    if (!window.confirm(`Remove access for ${email}? Their account will be deleted and they will need a fresh invite to return.`)) return;
 
     setSavingId(userId);
     setError(null);
     setMessage(null);
 
-    const { error: updateError } = await supabase
-      .from('staff_users')
-      .update({ status: 'disabled' })
-      .eq('id', userId);
+    const { error: removeError } = await supabase.functions.invoke('remove-staff-user', {
+      body: { staff_user_id: userId },
+    });
 
-    if (updateError) {
-      setError(updateError.message);
+    if (removeError) {
+      setError(removeError.message);
       setSavingId(null);
       return;
     }
 
-    setMessage(`Access revoked for ${email}.`);
-    setSavingId(null);
-    await loadStaffUsers();
-  };
-
-  const handleRestoreRow = async (userId: string, email: string) => {
-    if (!window.confirm(`Restore access for ${email}?`)) return;
-
-    setSavingId(userId);
-    setError(null);
-    setMessage(null);
-
-    const { error: updateError } = await supabase
-      .from('staff_users')
-      .update({ status: 'invited' })
-      .eq('id', userId);
-
-    if (updateError) {
-      setError(updateError.message);
-      setSavingId(null);
-      return;
-    }
-
-    setMessage(`Access restored for ${email}.`);
+    setMessage(`Removed access for ${email}.`);
     setSavingId(null);
     await loadStaffUsers();
   };
@@ -345,25 +321,14 @@ export default function AccessManagementPanel() {
                       )}
                       <span>Save</span>
                     </button>
-                    {user.status === 'disabled' ? (
-                      <button
-                        onClick={() => handleRestoreRow(user.id, user.email)}
-                        disabled={savingId === user.id}
-                        className="inline-flex items-center gap-2 rounded-lg border border-green-200 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
-                      >
-                        <ShieldPlus className="h-4 w-4" />
-                        <span>Restore</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleRevokeRow(user.id, user.email)}
-                        disabled={savingId === user.id}
-                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        <ShieldOff className="h-4 w-4" />
-                        <span>Revoke</span>
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleRevokeRow(user.id, user.email)}
+                      disabled={savingId === user.id}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Remove</span>
+                    </button>
                   </div>
                 </div>
               );

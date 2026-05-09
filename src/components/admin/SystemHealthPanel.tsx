@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -12,11 +11,27 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
 import { notifyError, notifySuccess } from '../../lib/toast';
 import StructuredErrorBanner from './StructuredErrorBanner';
 
 type AgentKind = 'discovery' | 'verification';
 type HealthAgentKind = AgentKind | 'embeddings';
+
+type JobKind = 'discovery' | 'verify_stale' | 'embeddings_drain';
+type CadencePreset = 'off' | 'low' | 'normal' | 'high';
+
+interface AgentSchedule {
+  job_kind: JobKind;
+  cadence_preset: CadencePreset;
+  last_run_at: string | null;
+  last_run_id: string | null;
+  next_run_at: string;
+  last_status: 'ok' | 'failed' | 'skipped' | null;
+  last_error: string | null;
+  last_manual_at: string | null;
+  last_manual_by: string | null;
+}
 
 interface AgentRun {
   id: string;
@@ -74,11 +89,39 @@ interface UsageTotals {
   estimatedCostUsd: number;
 }
 
-const AGENTS: Array<{ kind: HealthAgentKind; label: string }> = [
-  { kind: 'discovery', label: 'Discovery' },
-  { kind: 'verification', label: 'Verification' },
-  { kind: 'embeddings', label: 'Record Index' },
+const AGENTS: Array<{ kind: HealthAgentKind; label: string; jobKind: JobKind | null }> = [
+  { kind: 'discovery', label: 'Discovery', jobKind: 'discovery' },
+  { kind: 'verification', label: 'Verification', jobKind: 'verify_stale' },
+  { kind: 'embeddings', label: 'Search Index', jobKind: null },
 ];
+
+const PRESET_LABELS: Record<CadencePreset, string> = {
+  off: 'Off',
+  low: 'Light',
+  normal: 'Normal',
+  high: 'Aggressive',
+};
+
+const PRESET_DESCRIPTIONS: Record<JobKind, Record<CadencePreset, string>> = {
+  discovery: {
+    off: 'No automatic runs',
+    low: '1× per day (09:00 UTC)',
+    normal: '2× per day (09:00 + 21:00 UTC)',
+    high: '4× per day (every 6 hours)',
+  },
+  verify_stale: {
+    off: 'No automatic refreshes',
+    low: '5 contacts per day',
+    normal: '15 contacts per day',
+    high: '40 contacts per day',
+  },
+  embeddings_drain: {
+    off: 'Manual only',
+    low: '',
+    normal: 'Drains every 5 min when pending',
+    high: '',
+  },
+};
 
 const STUCK_AFTER_MS = 2 * 60 * 1000;
 
@@ -178,6 +221,7 @@ function statusClass(status: string): string {
 }
 
 export default function SystemHealthPanel() {
+  const { isAdmin } = useAuth();
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [embeddingBatches, setEmbeddingBatches] = useState<EmbeddingBatchRun[]>([]);
   const [queueHealth, setQueueHealth] = useState<QueueHealth>({
@@ -192,16 +236,20 @@ export default function SystemHealthPanel() {
     apifyCredits: 0,
     estimatedCostUsd: 0,
   });
+  const [schedules, setSchedules] = useState<AgentSchedule[]>([]);
+  const [staleCount, setStaleCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [connectivity, setConnectivity] = useState<'idle' | 'ok' | 'failed'>('idle');
+  const hasLoadedRef = useRef(false);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
 
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [
         runsRes,
         todayRunsRes,
@@ -209,6 +257,8 @@ export default function SystemHealthPanel() {
         runningQueueRes,
         oldestQueueRes,
         batchesRes,
+        schedulesRes,
+        staleRes,
       ] = await Promise.all([
         supabase
           .from('agent_runs')
@@ -237,6 +287,13 @@ export default function SystemHealthPanel() {
         supabase.functions.invoke('generate-embeddings', {
           body: { action: 'list_batches' },
         }),
+        supabase.functions.invoke('agent-scheduler', {
+          body: { action: 'list_schedules' },
+        }),
+        supabase
+          .from('people')
+          .select('id', { count: 'exact', head: true })
+          .lt('updated_at', thirtyDaysAgo),
       ]);
 
       if (runsRes.error) throw runsRes.error;
@@ -258,10 +315,24 @@ export default function SystemHealthPanel() {
         oldestQueuedAt: oldestQueueRes.data?.queued_at || null,
       });
       setTodayUsage(totalUsage((todayRunsRes.data || []) as AgentRun[]));
+      if (schedulesRes.error) {
+        console.warn('[SystemHealthPanel] schedules unavailable', schedulesRes.error);
+        setSchedules([]);
+      } else {
+        const payload = schedulesRes.data as { schedules?: AgentSchedule[] } | null;
+        setSchedules(payload?.schedules ?? []);
+      }
+      if (staleRes.error) {
+        console.warn('[SystemHealthPanel] stale count unavailable', staleRes.error);
+        setStaleCount(0);
+      } else {
+        setStaleCount(staleRes.count || 0);
+      }
     } catch (err) {
       notifyError(err, { hint: 'Could not load system health data.' });
     } finally {
       setLoading(false);
+      hasLoadedRef.current = true;
     }
   }, []);
 
@@ -269,12 +340,18 @@ export default function SystemHealthPanel() {
     loadData();
   }, [loadData]);
 
+  const hasActiveWork = useMemo(
+    () =>
+      runs.some((run) => run.status === 'running' || run.status === 'pending') ||
+      queueHealth.running > 0,
+    [runs, queueHealth.running]
+  );
+
   useEffect(() => {
-    const hasActive = runs.some((run) => run.status === 'running' || run.status === 'pending');
-    if (!hasActive && queueHealth.running === 0) return;
-    const interval = window.setInterval(loadData, 8000);
+    if (!hasActiveWork) return;
+    const interval = window.setInterval(loadData, 15000);
     return () => window.clearInterval(interval);
-  }, [loadData, queueHealth.running, runs]);
+  }, [hasActiveWork, loadData]);
 
   const summaries = useMemo<AgentSummary[]>(() => {
     return AGENTS.map(({ kind, label }) => {
@@ -328,6 +405,25 @@ export default function SystemHealthPanel() {
         await loadData();
       } catch (err) {
         notifyError(err, { hint: 'The run request failed before it could be queued.' });
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [loadData]
+  );
+
+  const setPreset = useCallback(
+    async (jobKind: JobKind, preset: CadencePreset) => {
+      setActionLoading(`preset:${jobKind}`);
+      try {
+        const { error } = await supabase.functions.invoke('agent-scheduler', {
+          body: { action: 'set_schedule', job_kind: jobKind, cadence_preset: preset },
+        });
+        if (error) throw error;
+        notifySuccess(`${PRESET_LABELS[preset]} schedule applied.`);
+        await loadData();
+      } catch (err) {
+        notifyError(err, { hint: 'Could not update schedule. Admin role required.' });
       } finally {
         setActionLoading(null);
       }
@@ -451,52 +547,49 @@ export default function SystemHealthPanel() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-        {summaries.map((summary) => (
-          <AgentHealthCard
-            key={summary.kind}
-            summary={summary}
-            actionLoading={actionLoading}
-            onRunNow={runNow}
-            onCancel={cancelRun}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {summaries
+          .filter((s) => s.kind !== 'embeddings')
+          .map((summary) => {
+            const agent = AGENTS.find((a) => a.kind === summary.kind);
+            const schedule = agent?.jobKind
+              ? schedules.find((s) => s.job_kind === agent.jobKind) ?? null
+              : null;
+            return (
+              <AgentScheduleCard
+                key={summary.kind}
+                summary={summary}
+                schedule={schedule}
+                staleCount={summary.kind === 'verification' ? staleCount : null}
+                isAdmin={isAdmin}
+                actionLoading={actionLoading}
+                onRunNow={runNow}
+                onCancel={cancelRun}
+                onPresetChange={setPreset}
+              />
+            );
+          })}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-teal-600" />
-            <h3 className="font-semibold text-gray-900">Record Index Queue</h3>
-          </div>
-          <dl className="grid grid-cols-3 gap-3 text-sm">
-            <div>
-              <dt className="text-gray-500">Pending</dt>
-              <dd className="mt-1 text-2xl font-semibold text-gray-900">{queueHealth.pending.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Running</dt>
-              <dd className="mt-1 text-2xl font-semibold text-gray-900">{queueHealth.running.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt className="text-gray-500">Oldest</dt>
-              <dd className="mt-1 text-2xl font-semibold text-gray-900">{formatAge(queueHealth.oldestQueuedAt)}</dd>
-            </div>
-          </dl>
-        </div>
+      <SearchIndexFooter
+        queueHealth={queueHealth}
+        embeddingBatches={embeddingBatches}
+        schedule={schedules.find((s) => s.job_kind === 'embeddings_drain') ?? null}
+        actionLoading={actionLoading}
+        onRunNow={() => runNow('embeddings')}
+      />
 
-        <div className="rounded-md border border-gray-200 bg-white p-5 lg:col-span-2">
-          <div className="mb-4 flex items-center gap-2">
-            <Zap className="h-5 w-5 text-amber-600" />
-            <h3 className="font-semibold text-gray-900">Today&apos;s API Usage</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
-            <Metric label="Gemini calls" value={todayUsage.geminiCalls.toLocaleString()} />
-            <Metric label="Tavily calls" value={todayUsage.tavilyCalls.toLocaleString()} />
-            <Metric label="Apify calls" value={todayUsage.apifyCalls.toLocaleString()} />
-            <Metric label="Apify credits" value={todayUsage.apifyCredits.toLocaleString()} />
-            <Metric label="Est. cost" value={`$${todayUsage.estimatedCostUsd.toFixed(4)}`} />
-          </div>
+      <div className="rounded-md border border-gray-200 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <Zap className="h-5 w-5 text-amber-600" />
+          <h3 className="font-semibold text-gray-900">Today&apos;s API Usage</h3>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
+          <Metric label="Gemini calls" value={todayUsage.geminiCalls.toLocaleString()} />
+          <Metric label="Tavily calls" value={todayUsage.tavilyCalls.toLocaleString()} />
+          <Metric label="Apify calls" value={todayUsage.apifyCalls.toLocaleString()} />
+          <Metric label="Apify credits" value={todayUsage.apifyCredits.toLocaleString()} />
+          <Metric label="Est. cost" value={`$${todayUsage.estimatedCostUsd.toFixed(4)}`} />
         </div>
       </div>
 
@@ -534,16 +627,24 @@ export default function SystemHealthPanel() {
   );
 }
 
-function AgentHealthCard({
+function AgentScheduleCard({
   summary,
+  schedule,
+  staleCount,
+  isAdmin,
   actionLoading,
   onRunNow,
   onCancel,
+  onPresetChange,
 }: {
   summary: AgentSummary;
+  schedule: AgentSchedule | null;
+  staleCount: number | null;
+  isAdmin: boolean;
   actionLoading: string | null;
   onRunNow: (kind: HealthAgentKind) => void;
   onCancel: (runId: string) => void;
+  onPresetChange: (jobKind: JobKind, preset: CadencePreset) => void;
 }) {
   const runningRun = summary.running && 'agent_type' in summary.running ? summary.running : null;
   const failureMessage =
@@ -608,6 +709,61 @@ function AgentHealthCard({
         </div>
       </dl>
 
+      {schedule && schedule.job_kind !== 'embeddings_drain' && (
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Schedule</span>
+            <span className="text-xs text-gray-500">
+              {schedule.cadence_preset === 'off'
+                ? 'Paused'
+                : `Next: ${formatRelative(schedule.next_run_at)}`}
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {(['off', 'low', 'normal', 'high'] as CadencePreset[]).map((preset) => {
+              const active = schedule.cadence_preset === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  disabled={!isAdmin || actionLoading === `preset:${schedule.job_kind}`}
+                  onClick={() => onPresetChange(schedule.job_kind, preset)}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100 disabled:hover:bg-gray-50'
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  title={PRESET_DESCRIPTIONS[schedule.job_kind][preset]}
+                >
+                  {PRESET_LABELS[preset]}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            {PRESET_DESCRIPTIONS[schedule.job_kind][schedule.cadence_preset]}
+          </p>
+          {schedule.job_kind === 'verify_stale' && staleCount !== null && staleCount > 0 && (
+            <p className="mt-1 text-xs text-gray-500">
+              <span className="font-medium text-gray-700">{staleCount.toLocaleString()}</span>{' '}
+              contact{staleCount === 1 ? '' : 's'} need refresh
+              {schedule.cadence_preset !== 'off' && (
+                <>
+                  {' '}— full cycle in ~
+                  <span className="font-medium text-gray-700">
+                    {Math.ceil(staleCount / verifyPerDay(schedule.cadence_preset))}
+                  </span>{' '}
+                  days at this pace
+                </>
+              )}
+            </p>
+          )}
+          {!isAdmin && (
+            <p className="mt-1 text-xs text-gray-400">Admin role required to change schedule.</p>
+          )}
+        </div>
+      )}
+
       {runningRun && (
         <button
           type="button"
@@ -631,6 +787,84 @@ function AgentHealthCard({
             hint: `See docs/RUNBOOK.md [${failureCode}] for fix steps.`,
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function verifyPerDay(preset: CadencePreset): number {
+  if (preset === 'low') return 5;
+  if (preset === 'normal') return 15;
+  if (preset === 'high') return 40;
+  return 1;
+}
+
+function formatRelative(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'momentarily';
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `in ${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `in ${hours}h`;
+  const days = Math.round(hours / 24);
+  return `in ${days}d`;
+}
+
+function SearchIndexFooter({
+  queueHealth,
+  embeddingBatches,
+  schedule,
+  actionLoading,
+  onRunNow,
+}: {
+  queueHealth: QueueHealth;
+  embeddingBatches: EmbeddingBatchRun[];
+  schedule: AgentSchedule | null;
+  actionLoading: string | null;
+  onRunNow: () => void;
+}) {
+  const pending = queueHealth.pending;
+  const lastSuccess = embeddingBatches.find((b) => b.status === 'succeeded') || null;
+  const lastDrainAt = lastSuccess?.completed_at || lastSuccess?.created_at || null;
+  const stuck =
+    pending > 0 &&
+    (!lastDrainAt || Date.now() - new Date(lastDrainAt).getTime() > 30 * 60 * 1000);
+
+  let statusLine = 'Search index up to date';
+  let icon = <CheckCircle2 className="h-4 w-4 text-green-600" />;
+  if (pending > 0 && !stuck) {
+    statusLine = `${pending.toLocaleString()} record${pending === 1 ? '' : 's'} pending — draining`;
+    icon = <Loader2 className="h-4 w-4 animate-spin text-teal-600" />;
+  } else if (stuck) {
+    statusLine = `${pending.toLocaleString()} record${pending === 1 ? '' : 's'} pending — last drain ${
+      lastDrainAt ? formatAge(lastDrainAt) + ' ago' : 'never'
+    }`;
+    icon = <AlertTriangle className="h-4 w-4 text-amber-600" />;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
+      <div className="flex items-center gap-2 text-sm text-gray-700">
+        {icon}
+        <span>{statusLine}</span>
+        {schedule?.last_run_at && pending === 0 && (
+          <span className="text-xs text-gray-500">· last drain {formatAge(schedule.last_run_at)} ago</span>
+        )}
+      </div>
+      {(pending > 0 || stuck) && (
+        <button
+          type="button"
+          onClick={onRunNow}
+          disabled={actionLoading === 'run:embeddings'}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+        >
+          {actionLoading === 'run:embeddings' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          Drain now
+        </button>
       )}
     </div>
   );

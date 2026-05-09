@@ -8,7 +8,6 @@ export interface StaffUserContext {
   user_id: string | null;
   email: string;
   full_name: string | null;
-  avatar_url: string | null;
   role: StaffRole;
   status: string;
 }
@@ -119,7 +118,7 @@ export async function requireStaffRole(
 
   const { data: staffUser, error: staffError } = await supabase
     .from("staff_users")
-    .select("id, user_id, email, full_name, avatar_url, role, status")
+    .select("id, user_id, email, full_name, role, status")
     .eq("email", email)
     .maybeSingle();
 
@@ -179,7 +178,6 @@ export async function requireStaffRole(
       user_id: staffUser.user_id ? String(staffUser.user_id) : null,
       email: String(staffUser.email),
       full_name: staffUser.full_name ? String(staffUser.full_name) : null,
-      avatar_url: staffUser.avatar_url ? String(staffUser.avatar_url) : null,
       role: nextRole,
       status: String(staffUser.status),
     },

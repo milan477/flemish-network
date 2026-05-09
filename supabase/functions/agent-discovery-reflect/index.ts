@@ -44,6 +44,15 @@ interface PopulationSummary {
   generated_at: string;
 }
 
+interface ArmHistoryRow {
+  surface: string;
+  lens: string;
+  context_key: string;
+  attempts: number;
+  approval_rate: number;
+  last_attempt_at: string | null;
+}
+
 // ── Gemini schema for structured output ──────────────────────────────────────
 
 const REFLECTION_SCHEMA = {
@@ -147,11 +156,11 @@ async function buildPopulationSummary(
       .select("sector_id, sectors!inner(name)")
       .limit(500),
 
-    // State distribution (via people.state)
+    // State distribution (via locations join)
     supabase
       .from("people")
-      .select("state")
-      .not("state", "is", null)
+      .select("locations!inner(state)")
+      .not("location_id", "is", null)
       .limit(500),
 
     // Current employer distribution
@@ -195,7 +204,8 @@ async function buildPopulationSummary(
   // Count by state
   const stateCounts = new Map<string, number>();
   for (const row of statesRes.data || []) {
-    const state = (row.state as string | null)?.trim();
+    const loc = row.locations as { state?: string | null } | { state?: string | null }[] | null;
+    const state = (Array.isArray(loc) ? loc[0]?.state : loc?.state)?.trim();
     if (state) {
       stateCounts.set(state, (stateCounts.get(state) || 0) + 1);
     }
@@ -270,13 +280,43 @@ async function buildPopulationSummary(
   };
 }
 
+// ── Recent bandit-arm history ─────────────────────────────────────────────────
+
+async function loadRecentArmHistory(
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<ArmHistoryRow[]> {
+  const { data, error } = await supabase
+    .from("discovery_arm_stats")
+    .select("surface,lens,context_key,attempts,candidates_extracted,contacts_approved,last_attempt_at")
+    .gt("attempts", 0)
+    .order("last_attempt_at", { ascending: false, nullsFirst: false })
+    .limit(40);
+  if (error) {
+    log.warn("arm_history_failed", error.message);
+    return [];
+  }
+  return (data || []).map((row) => {
+    const extracted = Number(row.candidates_extracted || 0);
+    const approved = Number(row.contacts_approved || 0);
+    return {
+      surface: row.surface as string,
+      lens: row.lens as string,
+      context_key: (row.context_key as string) || "",
+      attempts: Number(row.attempts || 0),
+      approval_rate: extracted > 0 ? approved / extracted : 0,
+      last_attempt_at: (row.last_attempt_at as string | null) || null,
+    } satisfies ArmHistoryRow;
+  });
+}
+
 // ── Gemini reflection call ────────────────────────────────────────────────────
 
 async function generateReflectionSuggestions(
   summary: PopulationSummary,
+  armHistory: ArmHistoryRow[],
   apiKey: string,
 ): Promise<ReflectionSuggestion[]> {
-  const userPrompt = buildReflectionPrompt(summary);
+  const userPrompt = buildReflectionPrompt(summary, armHistory);
 
   try {
     const result = await callGeminiStructured<ReflectionSuggestion[]>({
@@ -331,7 +371,7 @@ async function generateReflectionSuggestions(
   }
 }
 
-function buildReflectionPrompt(summary: PopulationSummary): string {
+function buildReflectionPrompt(summary: PopulationSummary, armHistory: ArmHistoryRow[]): string {
   const lines: string[] = [];
 
   lines.push("NETWORK POPULATION SUMMARY");
@@ -384,9 +424,22 @@ function buildReflectionPrompt(summary: PopulationSummary): string {
   }
   lines.push("");
 
+  lines.push("Recently attempted (surface, lens, context) arms — DO NOT repeat unless yield is strong:");
+  if (armHistory.length === 0) {
+    lines.push("  (no prior attempts)");
+  } else {
+    for (const row of armHistory.slice(0, 25)) {
+      const ctx = row.context_key ? ` ${row.context_key}` : "";
+      const yieldPct = (row.approval_rate * 100).toFixed(0);
+      lines.push(`  ${row.surface}/${row.lens}${ctx} — ${row.attempts}× attempts, ${yieldPct}% approval`);
+    }
+  }
+  lines.push("");
+
   lines.push(
-    "Based on this population, what surfaces and lenses are MOST underexplored? " +
+    "Based on this population AND the arm history above, what surfaces and lenses are MOST underexplored? " +
     "Which sectors, geographies, or career stages are systematically missing? " +
+    "Avoid recommending (surface, lens, context) tuples that are already in the recent attempts list with low yield. " +
     "Return 3-10 suggestions, each targeting a specific gap with a concrete surface+lens combination.",
   );
 
@@ -445,8 +498,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     log.info("population_summary_built", `total=${summary.total_approved}`);
 
+    const armHistory = await loadRecentArmHistory(supabase);
+    log.info("arm_history_loaded", `rows=${armHistory.length}`);
+
     // 2. Generate suggestions via Gemini.
-    const rawSuggestions = await generateReflectionSuggestions(summary, apiKey);
+    const rawSuggestions = await generateReflectionSuggestions(summary, armHistory, apiKey);
 
     if (rawSuggestions.length === 0) {
       log.warn("reflection_no_suggestions", "Gemini returned no suggestions");

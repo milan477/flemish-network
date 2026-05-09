@@ -687,7 +687,6 @@ All seven phases of the Discovery Redesign (surface×lens taxonomy, bandit alloc
 - Daily reflection loop (`agent-discovery-reflect`) writes surface/lens exploration suggestions (`discovery_reflection_suggestions`).
 - Entity pivots have validation, saturation cooldown, multi-hop expansion, and composition (`discovery_composition_pivots`).
 - Domain reputation scoring closes the loop from yield back into query generation.
-- Held-out eval set (`discovery_eval_holdout`) measures recall; north-star target ≥ 50% within 6 weeks of Phase 6 deploy.
 
 ## Cross-Phase Test Policy
 

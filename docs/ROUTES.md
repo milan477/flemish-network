@@ -11,8 +11,8 @@
 | `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and the held-out Discovery Eval panel. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
 | `/admin/verification` | Two top-level collapsible sections — **Pending Discovered People** and **Pending Discovered Organizations** (each with count badge, chevron toggle, both open by default) — followed by Records Freshness, Profile Update Suggestions, and Organization Update Suggestions. Discovered rows display greyed-out while `verification_status IN ('queued', 'verifying')` and gain Approve/Reject only when `verified`; verification contradictions are hard-deleted by `agent-verify` and disappear from the list. UI subscribes to `discovered_contacts` and `discovered_organizations` via Supabase realtime so cards flip from greyed → normal without manual refresh. No user-facing scope picker — Approve uses the scope inferred by `agent-verify`. |
 | `/admin/coverage` | Descriptive coverage overview: people/org/city stat cards, occupation breakdown, data quality, sector distribution, Flemish connection chart, and location explorer. URL state: `?tab=coverage` |
-| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, reflection loop status, and recommended next discovery actions |
-| `/admin/system` | System health, record-index queues, service runs, usage, housekeeping, and cancellation |
+| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, reflection loop status, and recommended next discovery actions. The "Where to look next" panel's Explore button and the header "Start discovery run" button both trigger `agent-scheduler` with `params.suggestion_id` so the run consumes a specific reflection suggestion (rather than the bandit picking arms independently). |
+| `/admin/system` | Service schedule cards (Discovery, Verification) with cadence presets and Run-now, search-index footer, today's API usage, and stuck-run cancellation. Schedules driven by `agent-scheduler-tick` pg_cron job (every 5 min) and persisted in `agent_schedules`; preset changes require admin role. |
 | `/admin/access` | Admin-only staff access management |
 | `/login` | Staff email/password sign-in and password reset request |
 | `/auth/callback` | Supabase invite/recovery redirect landing; routes password setup to `/account?setPassword=1` |
@@ -26,6 +26,7 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 
 - Staff sign-in uses Supabase Auth email/password (`signInWithPassword`), not magic links.
 - `/admin/access` invites staff through the `invite-staff-user` edge function. The function requires admin staff auth, writes/updates the approved `staff_users` row, and calls Supabase `auth.admin.inviteUserByEmail`.
+- `/admin/access` removes staff through the `remove-staff-user` edge function. The function requires admin staff auth, refuses self-removal, deletes the `staff_users` row, and deletes the linked `auth.users` record so the user disappears from the access list (re-inviting is required to grant access again).
 - Invite and recovery emails redirect through `/auth/callback` and then to `/account?setPassword=1`.
 - New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to `/account` until Supabase Auth password update succeeds and the flag is cleared.
 - Client password setup requires at least 12 characters with uppercase, lowercase, number, and symbol characters. Supabase Auth password policy should match or exceed that rule in project settings.
@@ -69,11 +70,3 @@ The `agent-discovery-reflect` endpoint:
 - Response: `{ status: "ok", suggestions_written, population_summary, suggestions }` or `{ status: "ok", suggestions_written: 0, message }` when Gemini returned nothing.
 - Side effect: inserts rows into `discovery_reflection_suggestions`; `agent-scheduler` housekeeping calls it daily when no suggestions were generated in the last 24 hours.
 
-## Discovery Eval Endpoint
-
-`/admin/discovery` calls the `eval-holdout-check` edge function from the Discovery Eval panel.
-
-- Request: `{ lookback_days?: number }` (default 30, max 180).
-- Auth: staff editor bearer token, or service-role key (cron path).
-- Response: `{ status: "ok", holdout_count, matched_count, unchanged_count, lookback_days }`.
-- Side effect: updates `last_seen_as_candidate_at`, `last_seen_candidate_id`, `last_seen_run_id` on matched `discovery_eval_holdout` rows.

@@ -25,7 +25,28 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, apikey, x-client-info",
 };
 
-type SchedulerAction = "trigger" | "cancel" | "housekeeping" | "planning" | "metrics";
+type SchedulerAction =
+  | "trigger"
+  | "cancel"
+  | "housekeeping"
+  | "planning"
+  | "metrics"
+  | "tick"
+  | "set_schedule"
+  | "list_schedules";
+
+const VALID_ACTIONS: SchedulerAction[] = [
+  "trigger",
+  "cancel",
+  "housekeeping",
+  "planning",
+  "metrics",
+  "tick",
+  "set_schedule",
+  "list_schedules",
+];
+
+const MANUAL_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 Deno.serve(wrapHandler(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -39,17 +60,52 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
 
     const body = req.method === "POST" ? await req.json() : {};
     const action = (body.action as SchedulerAction | undefined) || "trigger";
 
-    if (!["trigger", "cancel", "housekeeping", "planning", "metrics"].includes(action)) {
+    if (!VALID_ACTIONS.includes(action)) {
       return jsonError(
         400,
         "invalid_input",
-        "Invalid action. Must be one of: trigger, cancel, housekeeping, planning, metrics",
+        `Invalid action. Must be one of: ${VALID_ACTIONS.join(", ")}`,
       );
+    }
+
+    // tick is service-role-only (called from pg_cron); skip the staff check.
+    if (action === "tick") {
+      assertServiceRole(req);
+      const tickResult = await runScheduleTick(supabase, supabaseUrl);
+      return jsonResponse({ status: "ok", tick: tickResult });
+    }
+
+    // set_schedule requires admin; everything else requires editor.
+    const minimumRole = action === "set_schedule" ? "admin" : "editor";
+    const { staffUser } = await requireStaffRole(req, supabase, minimumRole);
+
+    if (action === "list_schedules") {
+      const schedules = await loadSchedules(supabase);
+      return jsonResponse({ status: "ok", schedules });
+    }
+
+    if (action === "set_schedule") {
+      const jobKind = typeof body.job_kind === "string" ? body.job_kind : "";
+      const preset = typeof body.cadence_preset === "string" ? body.cadence_preset : "";
+      if (!isJobKind(jobKind)) {
+        return jsonError(400, "invalid_input", "Invalid job_kind");
+      }
+      if (!isPreset(preset)) {
+        return jsonError(400, "invalid_input", "Invalid cadence_preset");
+      }
+      if (jobKind === "embeddings_drain" && preset !== "normal" && preset !== "off") {
+        return jsonError(
+          400,
+          "invalid_input",
+          "embeddings_drain only supports 'normal' or 'off'",
+        );
+      }
+      const updated = await setSchedule(supabase, jobKind, preset, staffUser.user_id);
+      return jsonResponse({ status: "ok", schedule: updated });
     }
 
     const housekeeping = await runHousekeeping(supabase, supabaseUrl, req);
@@ -119,6 +175,13 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const agentType = requestedAgentType as SchedulerAgentType;
 
+    const force = body.force === true;
+    const scheduleJobKind = agentTypeToJobKind(agentType, params);
+    if (scheduleJobKind && !force) {
+      const guardError = await enforceManualMinInterval(supabase, scheduleJobKind);
+      if (guardError) return guardError;
+    }
+
     const runId = await triggerAgentRun(
       supabase,
       supabaseUrl,
@@ -126,6 +189,16 @@ Deno.serve(wrapHandler(async (req: Request) => {
       agentType,
       params
     );
+
+    if (scheduleJobKind) {
+      await supabase
+        .from("agent_schedules")
+        .update({
+          last_manual_at: new Date().toISOString(),
+          last_manual_by: staffUser.user_id,
+        })
+        .eq("job_kind", scheduleJobKind);
+    }
 
     return jsonResponse({
       run_id: runId,
@@ -142,6 +215,374 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+// ---------- Schedules: types, helpers, tick ----------
+
+type JobKind = "discovery" | "verify_stale" | "embeddings_drain";
+type CadencePreset = "off" | "low" | "normal" | "high";
+
+interface AgentScheduleRow {
+  job_kind: JobKind;
+  cadence_preset: CadencePreset;
+  last_run_at: string | null;
+  last_run_id: string | null;
+  next_run_at: string;
+  last_status: "ok" | "failed" | "skipped" | null;
+  last_error: string | null;
+  last_manual_at: string | null;
+  last_manual_by: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+const JOB_KINDS: JobKind[] = ["discovery", "verify_stale", "embeddings_drain"];
+const PRESETS: CadencePreset[] = ["off", "low", "normal", "high"];
+
+function isJobKind(value: string): value is JobKind {
+  return (JOB_KINDS as readonly string[]).includes(value);
+}
+
+function isPreset(value: string): value is CadencePreset {
+  return (PRESETS as readonly string[]).includes(value);
+}
+
+function assertServiceRole(req: Request): void {
+  const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
+  const apiKey = req.headers.get("apikey") || req.headers.get("Apikey") || "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  const candidate = bearer || apiKey;
+  if (!candidate) {
+    throw new HttpError(401, "tick requires service-role auth (missing token)");
+  }
+  // Decode JWT payload and require role=service_role and ref matching this project.
+  const parts = candidate.split(".");
+  if (parts.length !== 3) {
+    throw new HttpError(401, "tick requires service-role auth (malformed token)");
+  }
+  let payload: Record<string, unknown>;
+  try {
+    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
+    const decoded = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+    payload = JSON.parse(decoded);
+  } catch {
+    throw new HttpError(401, "tick requires service-role auth (cannot decode)");
+  }
+  if (payload.role !== "service_role") {
+    throw new HttpError(401, "tick requires service-role auth (wrong role)");
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+  const expectedRef = supabaseUrl.replace(/^https?:\/\//, "").split(".")[0];
+  if (expectedRef && payload.ref && payload.ref !== expectedRef) {
+    throw new HttpError(401, "tick requires service-role auth (project mismatch)");
+  }
+}
+
+/**
+ * Compute the next scheduled run for a given job + preset. Returned as ISO string.
+ *
+ * - discovery: low=09:00, normal=09:00+21:00, high=00/06/12/18 UTC
+ * - verify_stale: low/normal/high spread evenly across the day; we just use intervals
+ *     of 24h/N from `now`, since exact wall-clock hours don't matter for verify
+ * - embeddings_drain: every 5 min when on
+ */
+function computeNextRunAt(jobKind: JobKind, preset: CadencePreset, from: Date = new Date()): Date {
+  if (preset === "off") {
+    // Park far in the future; tick will skip 'off' jobs anyway.
+    const far = new Date(from);
+    far.setUTCFullYear(far.getUTCFullYear() + 10);
+    return far;
+  }
+
+  if (jobKind === "embeddings_drain") {
+    return new Date(from.getTime() + 5 * 60 * 1000);
+  }
+
+  if (jobKind === "discovery") {
+    const hours = preset === "low" ? [9] : preset === "normal" ? [9, 21] : [0, 6, 12, 18];
+    return nextUtcSlot(from, hours);
+  }
+
+  // verify_stale: even spread
+  const perDay = preset === "low" ? 5 : preset === "normal" ? 15 : 40;
+  const intervalMs = Math.floor((24 * 60 * 60 * 1000) / perDay);
+  return new Date(from.getTime() + intervalMs);
+}
+
+function nextUtcSlot(from: Date, hours: number[]): Date {
+  const sorted = [...hours].sort((a, b) => a - b);
+  for (const h of sorted) {
+    const candidate = new Date(Date.UTC(
+      from.getUTCFullYear(),
+      from.getUTCMonth(),
+      from.getUTCDate(),
+      h,
+      0,
+      0,
+      0,
+    ));
+    if (candidate.getTime() > from.getTime()) return candidate;
+  }
+  // Tomorrow at the earliest slot.
+  const next = new Date(Date.UTC(
+    from.getUTCFullYear(),
+    from.getUTCMonth(),
+    from.getUTCDate() + 1,
+    sorted[0],
+    0,
+    0,
+    0,
+  ));
+  return next;
+}
+
+function presetVerifyBatchSize(preset: CadencePreset): number {
+  if (preset === "low") return 5;
+  if (preset === "normal") return 15;
+  if (preset === "high") return 40;
+  return 0;
+}
+
+function agentTypeToJobKind(agentType: SchedulerAgentType, params: Record<string, unknown>): JobKind | null {
+  if (agentType === "discovery") return "discovery";
+  if (agentType === "verification") {
+    // Manual verifications targeting discovered_* records aren't on the verify_stale schedule.
+    const recordType = typeof params.record_type === "string" ? params.record_type : "";
+    if (recordType === "discovered_contact" || recordType === "discovered_organization") return null;
+    return "verify_stale";
+  }
+  return null;
+}
+
+async function enforceManualMinInterval(
+  supabase: SupabaseAdminClient,
+  jobKind: JobKind,
+): Promise<Response | null> {
+  const { data: schedule } = await supabase
+    .from("agent_schedules")
+    .select("last_manual_at, last_run_at")
+    .eq("job_kind", jobKind)
+    .maybeSingle();
+  if (!schedule) return null;
+  const candidates = [schedule.last_manual_at, schedule.last_run_at]
+    .filter((value): value is string => typeof value === "string");
+  for (const ts of candidates) {
+    const elapsed = Date.now() - new Date(ts).getTime();
+    if (elapsed >= 0 && elapsed < MANUAL_MIN_INTERVAL_MS) {
+      const waitMin = Math.ceil((MANUAL_MIN_INTERVAL_MS - elapsed) / 60000);
+      return jsonError(
+        429,
+        "quota_exhausted",
+        `Recently ran. Wait ${waitMin} more minute${waitMin === 1 ? "" : "s"} or pass force=true.`,
+      );
+    }
+  }
+  return null;
+}
+
+async function loadSchedules(supabase: SupabaseAdminClient): Promise<AgentScheduleRow[]> {
+  const { data, error } = await supabase
+    .from("agent_schedules")
+    .select("*")
+    .order("job_kind");
+  if (error) throw new HttpError(500, error.message);
+  return (data || []) as AgentScheduleRow[];
+}
+
+async function setSchedule(
+  supabase: SupabaseAdminClient,
+  jobKind: JobKind,
+  preset: CadencePreset,
+  updatedBy: string | null,
+): Promise<AgentScheduleRow> {
+  const nextRunAt = computeNextRunAt(jobKind, preset).toISOString();
+  const { data, error } = await supabase
+    .from("agent_schedules")
+    .update({
+      cadence_preset: preset,
+      next_run_at: nextRunAt,
+      updated_by: updatedBy,
+    })
+    .eq("job_kind", jobKind)
+    .select("*")
+    .single();
+  if (error) throw new HttpError(500, error.message);
+  return data as AgentScheduleRow;
+}
+
+interface TickJobOutcome {
+  job_kind: JobKind;
+  status: "dispatched" | "skipped_off" | "skipped_not_due" | "skipped_busy" | "skipped_empty" | "failed";
+  run_id?: string;
+  reason?: string;
+}
+
+async function runScheduleTick(
+  supabase: SupabaseAdminClient,
+  supabaseUrl: string,
+): Promise<{ outcomes: TickJobOutcome[] }> {
+  const schedules = await loadSchedules(supabase);
+  const now = new Date();
+  const outcomes: TickJobOutcome[] = [];
+
+  for (const schedule of schedules) {
+    if (schedule.cadence_preset === "off") {
+      outcomes.push({ job_kind: schedule.job_kind, status: "skipped_off" });
+      continue;
+    }
+    if (new Date(schedule.next_run_at).getTime() > now.getTime()) {
+      outcomes.push({ job_kind: schedule.job_kind, status: "skipped_not_due" });
+      continue;
+    }
+
+    try {
+      const outcome = await dispatchScheduledJob(supabase, supabaseUrl, schedule);
+      outcomes.push(outcome);
+
+      const nextRunAt = computeNextRunAt(schedule.job_kind, schedule.cadence_preset, new Date()).toISOString();
+      const lastRunAt = new Date().toISOString();
+      const lastStatus =
+        outcome.status === "dispatched" ? "ok" :
+        outcome.status === "failed" ? "failed" : "skipped";
+
+      await supabase
+        .from("agent_schedules")
+        .update({
+          last_run_at: lastRunAt,
+          last_run_id: outcome.run_id ?? null,
+          last_status: lastStatus,
+          last_error: outcome.status === "failed" ? (outcome.reason ?? null) : null,
+          next_run_at: nextRunAt,
+        })
+        .eq("job_kind", schedule.job_kind);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log.warn("schedule_tick_failed", { job_kind: schedule.job_kind, reason });
+      outcomes.push({ job_kind: schedule.job_kind, status: "failed", reason });
+      const nextRunAt = computeNextRunAt(schedule.job_kind, schedule.cadence_preset, new Date()).toISOString();
+      await supabase
+        .from("agent_schedules")
+        .update({
+          last_run_at: new Date().toISOString(),
+          last_status: "failed",
+          last_error: reason.slice(0, 500),
+          next_run_at: nextRunAt,
+        })
+        .eq("job_kind", schedule.job_kind);
+    }
+  }
+
+  return { outcomes };
+}
+
+async function dispatchScheduledJob(
+  supabase: SupabaseAdminClient,
+  supabaseUrl: string,
+  schedule: AgentScheduleRow,
+): Promise<TickJobOutcome> {
+  if (schedule.job_kind === "embeddings_drain") {
+    const { count } = await supabase
+      .from("embedding_jobs")
+      .select("person_id", { count: "exact", head: true })
+      .eq("status", "pending");
+    if (!count || count === 0) {
+      return { job_kind: "embeddings_drain", status: "skipped_empty" };
+    }
+    await invokeEdgeWithServiceRole(supabaseUrl, "generate-embeddings", { kick: true, batch_size: 50 });
+    return { job_kind: "embeddings_drain", status: "dispatched" };
+  }
+
+  // Skip if a prior run is still in flight (idempotency).
+  const agentType: SchedulerAgentType = schedule.job_kind === "discovery" ? "discovery" : "verification";
+  const { data: inflight } = await supabase
+    .from("agent_runs")
+    .select("id")
+    .eq("agent_type", agentType)
+    .in("status", ["pending", "running"])
+    .limit(1);
+  if (inflight && inflight.length > 0) {
+    return { job_kind: schedule.job_kind, status: "skipped_busy", reason: "previous run in flight" };
+  }
+
+  const params: Record<string, unknown> =
+    schedule.job_kind === "verify_stale"
+      ? { batch_size: presetVerifyBatchSize(schedule.cadence_preset) }
+      : {};
+
+  const runId = await triggerAgentRunInternal(supabase, supabaseUrl, agentType, params);
+  return { job_kind: schedule.job_kind, status: "dispatched", run_id: runId };
+}
+
+async function invokeEdgeWithServiceRole(
+  supabaseUrl: string,
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function triggerAgentRunInternal(
+  supabase: SupabaseAdminClient,
+  supabaseUrl: string,
+  agentType: SchedulerAgentType,
+  params: Record<string, unknown>,
+): Promise<string> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+  const { data: run, error: insertError } = await supabase
+    .from("agent_runs")
+    .insert({ agent_type: agentType, status: "pending", params })
+    .select("id")
+    .single();
+  if (insertError || !run) {
+    throw new Error(insertError?.message || "Failed to create agent run");
+  }
+  const runId = run.id;
+
+  const { error: runningError } = await supabase
+    .from("agent_runs")
+    .update({
+      status: "running",
+      started_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", runId);
+  if (runningError) throw new Error(runningError.message);
+
+  const functionName = SCHEDULER_AGENT_FUNCTIONS[agentType];
+  fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+    },
+    body: JSON.stringify({ ...params, run_id: runId }),
+  }).catch(async (dispatchError) => {
+    log.withRun(runId).warn("downstream_dispatch_failed", dispatchError);
+    await supabase
+      .from("agent_runs")
+      .update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: "Failed to dispatch to agent function",
+        error_kind: "network",
+      })
+      .eq("id", runId);
+  });
+
+  return runId;
 }
 
 async function runHousekeeping(
