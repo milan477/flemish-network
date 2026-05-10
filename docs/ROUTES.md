@@ -2,17 +2,17 @@
 
 | Path | Description |
 |---|---|
-| `/` | Search the network. URL state: `view`, `q`, `sector`, `occupation`, `fc×N`, `city`, `state`, `people`, `organizations`, `lectures`, `focusCity`, `focusState` |
+| `/` | Search the network. URL state: `view`, `q`, `sector`, `occupation`, `fc×N`, `city`, `state`, `people`, `organizations`, `lectures`, `focusCity`, `focusState`. The `people` and `organizations` toggles are written symmetrically as `=1` or `=0` (never omitted) so that on→off→on round-trips through merged URL state (UX_REMEDIATION Phase 4A). |
 | `/people/:id` | Person profile. Editor staff can edit and verify profiles; admin staff can permanently delete approved contacts from this page. |
 | `/organizations/:id` | Organization profile |
 | `/collections` | Collection list |
 | `/collections/:id` | Collection detail |
 | `/admin` | Staff workspace default redirect to `/admin/discovery` |
-| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, Discovery history, and the held-out Discovery Eval panel. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: optional `prompt` pre-fills the Discovery intake prompt box without starting a run. |
+| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, and Discovery history. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: `mode=discovery\|manual\|import` selects the intake sub-tab (default `discovery`; missing/unknown values normalize to `discovery`); optional `prompt` pre-fills the Discovery intake prompt box without starting a run. The header `+` button (aria-label "Add person or organization") deep-links to `/admin/discovery?mode=manual`. The Run Discovery button is disabled while any `discovery` agent_run is `pending` or `running`. |
 | `/admin/verification` | Two top-level collapsible sections — **Pending Discovered People** and **Pending Discovered Organizations** (each with count badge, chevron toggle, both open by default) — followed by Records Freshness, Profile Update Suggestions, and Organization Update Suggestions. Discovered rows display greyed-out while `verification_status IN ('queued', 'verifying')` and gain Approve/Reject only when `verified`; verification contradictions are hard-deleted by `agent-verify` and disappear from the list. UI subscribes to `discovered_contacts` and `discovered_organizations` via Supabase realtime so cards flip from greyed → normal without manual refresh. No user-facing scope picker — Approve uses the scope inferred by `agent-verify`. |
 | `/admin/coverage` | Descriptive coverage overview: people/org/city stat cards, occupation breakdown, data quality, sector distribution, Flemish connection chart, and location explorer. URL state: `?tab=coverage` |
-| `/admin/growth` | Source yield, entity pivots, geography gaps, discovery planning, reflection loop status, and recommended next discovery actions. The "Where to look next" panel's Explore button and the header "Start discovery run" button both trigger `agent-scheduler` with `params.suggestion_id` so the run consumes a specific reflection suggestion (rather than the bandit picking arms independently). |
-| `/admin/system` | Service schedule cards (Discovery, Verification) with cadence presets and Run-now, search-index footer, today's API usage, and stuck-run cancellation. Schedules driven by `agent-scheduler-tick` pg_cron job (every 5 min) and persisted in `agent_schedules`; preset changes require admin role. |
+| `/admin/growth` | Discovery planning and reflection loop status. The "Where to look next" panel's Explore button and the header "Start discovery run" button both trigger `agent-scheduler` with `params.suggestion_id` so the run consumes a specific reflection suggestion (rather than the bandit picking arms independently). _Planned (not yet built): source yield panel, entity pivots panel, geography gaps panel, recommended-next-actions panel. These are tracked in `docs/WEBAPP-MASTERPLAN.md` and will be re-added here when shipped._ |
+| `/admin/system` | Service schedule cards (Discovery, Verification) with cadence presets, per-card Run-now, and a `Schedule: <cadence>` line; search-index footer reads `N search-index records pending` with a `Drain now` button (tooltip describes that it flushes the embedding queue); top toolbar exposes `Test Supabase` and `Run Housekeeping` (both with `title`/`aria-label` describing their effect); today's API usage tile (Apify metrics gated behind `VITE_SHOW_APIFY` or non-zero usage); and stuck-run cancellation. Stale failure banners are suppressed once a newer success lands. Schedules driven by `agent-scheduler-tick` pg_cron job (every 5 min) and persisted in `agent_schedules`; preset changes require admin role. |
 | `/admin/access` | Admin-only staff access management |
 | `/login` | Staff email/password sign-in and password reset request |
 | `/auth/callback` | Supabase invite/recovery redirect landing; routes password setup to `/account?setPassword=1` |
@@ -36,10 +36,25 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 
 `/` uses the `search-people` edge function as the Search The Network backend.
 
+- The query box on `/` is a pure semantic-intent channel (UX_REMEDIATION Phase
+  1A). The natural-language filter parser was removed; filter chips are set
+  only by clicks on the filter panel and never auto-extracted from `?q=`.
 - Request: `{ query, max_results, match_mode?, filters? }`
-- Filters sent from the route state: `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and alias-aware canonical `flemish_connections`.
-- Response: `results` is a ranked mixed list with `entity_type = "person" | "organization"`, `score`, `snippet`, and `rationale`; `people` and `organizations` mirror the visible typed subsets.
-- Active organization searches use server results. The dashboard no longer fetches the full organization table to filter active queries in the browser; browse mode uses capped organization loads.
+- Filters sent from the route state: `show_people`, `show_organizations`,
+  `sector`, `person_scope`, `occupation`, `city`, `state`, and alias-aware
+  canonical `flemish_connections`. Filters now act as soft signals — Stage 2
+  Gemini rerank is the authority on which Stage 1 candidates make the top of
+  the list.
+- Response:
+  `{ results, people, organizations, keywords, match_mode, route, degraded, rerank, rerank_status, rerank_model, rerank_duration_ms, diagnostics, message, total_with_embeddings }`.
+  `results` is a ranked mixed list with
+  `entity_type = "person" | "organization"`, `score`, `snippet`, and
+  `rationale`; `people` and `organizations` mirror the visible typed subsets.
+  When `rerank_status !== "ok"` the order is the Stage 1 hybrid ranking and
+  the per-row rationale falls back to the lexical-derived text.
+- Active organization searches use server results. The dashboard no longer
+  fetches the full organization table to filter active queries in the
+  browser; browse mode uses capped organization loads.
 
 ## Collection Suggestion API Contract
 

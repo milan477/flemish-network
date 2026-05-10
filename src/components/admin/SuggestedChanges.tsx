@@ -4,12 +4,13 @@ import {
   CheckCheck,
   CheckCircle,
   ExternalLink,
+  Info,
   Inbox,
   Loader2,
   ShieldAlert,
   XCircle,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, US_STATES } from '../../lib/supabase';
 import { resolveLocationId } from '../../lib/locations';
 import {
   formatConfidence,
@@ -21,6 +22,40 @@ import {
   VERIFICATION_FIELD_LABELS,
   type VerificationSuggestion,
 } from '../../lib/verification';
+
+const US_STATE_NAMES = new Set(US_STATES.map((s) => s.name.toLowerCase()));
+const US_STATE_CODES = new Set(US_STATES.map((s) => s.code.toLowerCase()));
+
+/** Returns true if the value clearly identifies a US state (full name or code). */
+function isUsState(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  if (!v) return false;
+  return US_STATE_NAMES.has(v) || US_STATE_CODES.has(v);
+}
+
+/** Returns true if the suggested location change moves a US person to a non-US locale. */
+function isNonUsLocaleChange(
+  suggestion: ProfileSuggestion,
+  pairedStateSuggestion: ProfileSuggestion | undefined,
+  currentState: string | null | undefined,
+): boolean {
+  // Domain assumption: persons of interest are US-based. Flag any city/state
+  // change whose destination state is not a recognized US state.
+  if (
+    suggestion.field_name !== 'location_city' &&
+    suggestion.field_name !== 'location_state'
+  ) {
+    return false;
+  }
+  const destinationState =
+    suggestion.field_name === 'location_state'
+      ? suggestion.suggested_value
+      : pairedStateSuggestion?.suggested_value || currentState || '';
+  // If destination state is empty we can't classify; skip the guard.
+  if (!destinationState || !destinationState.trim()) return false;
+  return !isUsState(destinationState);
+}
 
 export interface ProfileSuggestion extends VerificationSuggestion {
   id: string;
@@ -50,6 +85,13 @@ export default function SuggestedChanges({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Phase 5C: in-app confirmation modal for non-US locale changes (no native confirm()).
+  const [pendingNonUsConfirm, setPendingNonUsConfirm] = useState<{
+    suggestion: ProfileSuggestion;
+    destinationCity: string;
+    destinationState: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
 
   const pending = suggestions.filter((suggestion) => suggestion.status === 'pending');
 
@@ -122,6 +164,31 @@ export default function SuggestedChanges({
             (suggestion.field_name === 'location_state'
               ? suggestion.suggested_value
               : pairedStateSuggestion?.suggested_value || currentLocation?.state || '').trim();
+
+          // Phase 5C: destination-locale guard. If this change moves a US-based
+          // person of interest to a non-US locale, require explicit confirmation
+          // through an in-app modal (never the native confirm()).
+          if (
+            isNonUsLocaleChange(
+              suggestion,
+              pairedStateSuggestion,
+              currentLocation?.state,
+            )
+          ) {
+            const confirmed = await new Promise<boolean>((resolve) => {
+              setPendingNonUsConfirm({
+                suggestion,
+                destinationCity: nextCity,
+                destinationState: nextState,
+                resolve,
+              });
+            });
+            if (!confirmed) {
+              throw new Error(
+                'Non-US locale change cancelled. Persons of interest are assumed US-based; confirm explicitly to proceed.',
+              );
+            }
+          }
 
           if (nextCity && nextState) {
             const locationId = await resolveLocationId(nextCity, nextState, {
@@ -281,6 +348,60 @@ export default function SuggestedChanges({
         </div>
       )}
 
+      {pendingNonUsConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="non-us-confirm-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-start gap-2">
+              <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-600" />
+              <div>
+                <h3 id="non-us-confirm-title" className="text-sm font-semibold text-gray-900">
+                  Confirm non-US locale change
+                </h3>
+                <p className="mt-1 text-xs text-gray-600">
+                  This suggestion would move{' '}
+                  <span className="font-medium">
+                    {pendingNonUsConfirm.suggestion.person_name || 'this person'}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {[pendingNonUsConfirm.destinationCity, pendingNonUsConfirm.destinationState]
+                      .filter(Boolean)
+                      .join(', ') || 'an unspecified locale'}
+                  </span>
+                  , which is outside the United States. The Flemish Network platform assumes
+                  persons of interest are US-based — please confirm explicitly before approving.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  pendingNonUsConfirm.resolve(false);
+                  setPendingNonUsConfirm(null);
+                }}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  pendingNonUsConfirm.resolve(true);
+                  setPendingNonUsConfirm(null);
+                }}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Confirm change
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border border-gray-100">
         <div className="divide-y divide-gray-50">
           {pending.map((suggestion) => {
@@ -314,44 +435,74 @@ export default function SuggestedChanges({
                       <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                         {VERIFICATION_FIELD_LABELS[suggestion.field_name] || suggestion.field_name}
                       </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(
-                          suggestion.field_name
-                        )}`}
-                      >
-                        {getSuggestionRiskLabel(suggestion.field_name)}
-                      </span>
                       {suggestion.method && (
                         <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                           {getMethodLabel(suggestion.method)}
                         </span>
                       )}
-                      {confidence && (
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                          {confidence}
-                        </span>
-                      )}
+                      {/* Phase 5C: Risk and Confidence are different things. Render
+                          them as one combined chip ("Confidence X% · <Risk> field")
+                          with a single info-tooltip explaining precedence. */}
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(
+                          suggestion.field_name
+                        )}`}
+                        title="Confidence = how strong the evidence is. Risk = how sensitive the field is. Approve only when confidence is high AND the risk class is acceptable for this field."
+                      >
+                        {confidence
+                          ? `${confidence.replace(' confidence', '')} · ${getSuggestionRiskLabel(
+                              suggestion.field_name,
+                            )
+                              .replace(' Risk', '-risk')
+                              .toLowerCase()
+                              .replace(/^(\w)/, (m) => m.toUpperCase())} field`
+                          : `${getSuggestionRiskLabel(suggestion.field_name)
+                              .replace(' Risk', '-risk')
+                              .toLowerCase()
+                              .replace(/^(\w)/, (m) => m.toUpperCase())} field`}
+                        <Info className="h-3 w-3 opacity-70" />
+                      </span>
                     </div>
 
-                    <div className="flex items-start space-x-2 text-xs">
-                      {suggestion.current_value && (
-                        <>
-                          <span className="max-w-[40%] flex-shrink-0 truncate text-gray-400 line-through">
+                    {suggestion.field_name === 'bio' ? (
+                      // Phase 5C: bio diff stacks vertically (full width is fine for prose).
+                      <div className="space-y-1 text-xs">
+                        {suggestion.current_value && (
+                          <div className="rounded bg-gray-50 px-2 py-1 text-gray-400 line-through">
                             {suggestion.current_value}
+                          </div>
+                        )}
+                        <div className="rounded bg-white px-2 py-1 font-medium text-gray-700">
+                          {suggestion.suggested_value}
+                        </div>
+                        {!actionable && (
+                          <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                            <ShieldAlert className="h-3 w-3" />
+                            Advisory only
                           </span>
-                          <ArrowRight className="mt-0.5 h-3 w-3 flex-shrink-0 text-gray-300" />
-                        </>
-                      )}
-                      <span className="truncate font-medium text-gray-700">
-                        {suggestion.suggested_value}
-                      </span>
-                      {!actionable && (
-                        <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
-                          <ShieldAlert className="h-3 w-3" />
-                          Advisory only
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-start space-x-2 text-xs">
+                        {suggestion.current_value && (
+                          <>
+                            <span className="max-w-[40%] flex-shrink-0 truncate text-gray-400 line-through">
+                              {suggestion.current_value}
+                            </span>
+                            <ArrowRight className="mt-0.5 h-3 w-3 flex-shrink-0 text-gray-300" />
+                          </>
+                        )}
+                        <span className="truncate font-medium text-gray-700">
+                          {suggestion.suggested_value}
                         </span>
-                      )}
-                    </div>
+                        {!actionable && (
+                          <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                            <ShieldAlert className="h-3 w-3" />
+                            Advisory only
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <p className="mt-2 text-[11px] text-gray-500">
                       {getSuggestionGuidance(suggestion.field_name)}

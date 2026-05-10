@@ -21,7 +21,6 @@ import {
   addToCache,
 } from '../lib/locations';
 import { geocodeBatch } from '../lib/geocoding';
-import { isLocationOnlyQuery, parseFiltersFromQuery } from '../lib/filterParser';
 import {
   scorePersonAgainstFilter,
   networkSearch,
@@ -50,6 +49,7 @@ import {
   organizationMatchesLocation,
   personMatchesLocation,
 } from '../lib/networkScope';
+import { countUniqueClusterCities } from '../hooks/useCityCount';
 
 const MapVisualization = lazy(() => import('../components/MapVisualization'));
 
@@ -167,7 +167,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         setStats({
           people: cached.nameMatches.length + cached.aiResults.length,
           organizations: (cached.organizationResults || []).length,
-          cities: new Set(cachedClusters.map((cluster) => cluster.city)).size,
+          cities: countUniqueClusterCities(cachedClusters),
         });
         setAiLoading(false);
         return;
@@ -258,7 +258,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         setStats({
           people: nameResults.length + aiPeople.length,
           organizations: searchOrganizations.length,
-          cities: new Set(searchClusters.map((cluster) => cluster.city)).size,
+          cities: countUniqueClusterCities(searchClusters),
         });
 
         setCachedDashboardSearch({
@@ -300,21 +300,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       }
 
       const trimmedQuery = query.trim();
-      const parsed = parseFiltersFromQuery(trimmedQuery, filters);
-      const nextQuery = isLocationOnlyQuery(trimmedQuery) ? '' : trimmedQuery;
 
       clearSearchResults();
       setSearchError(null);
 
+      // The natural-language query box is now a pure semantic-intent channel.
+      // Filter chips are click-only — we never auto-extract them from the query
+      // (UX_REMEDIATION Phase 1A). Stage 1 hybrid retrieval + Stage 2 Gemini
+      // rerank in the search-people edge function handle intent.
       updateRouteState((current) => ({
         ...current,
-        query: nextQuery,
+        query: trimmedQuery,
         view: 'list',
-        filters: parsed.filters,
         focusedCity: null,
       }));
     },
-    [clearSearchResults, filters, handleClearSearchQuery, onNavigate, updateRouteState]
+    [clearSearchResults, handleClearSearchQuery, onNavigate, updateRouteState]
   );
 
   const handleLoadMorePeople = useCallback(async () => {
@@ -482,8 +483,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       fullDataReadyRef.current = true;
       setFullDataReady(true);
 
-      const uniqueCities = new Set(builtClusters.map((c) => c.city));
-      setStats({ people: allPeople.length, organizations: allOrgs.length, cities: uniqueCities.size });
+      setStats({
+        people: allPeople.length,
+        organizations: allOrgs.length,
+        cities: countUniqueClusterCities(builtClusters),
+      });
 
       const allEntities = [
         ...allPeople.map((person) => ({
@@ -513,7 +517,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         }
         const updatedClusters = buildNetworkClusters(allPeople, allOrgs, filters);
         setClusters(updatedClusters);
-        setStats((prev) => ({ ...prev, cities: new Set(updatedClusters.map((c) => c.city)).size }));
+        setStats((prev) => ({
+          ...prev,
+          cities: countUniqueClusterCities(updatedClusters),
+        }));
       }
     })();
 

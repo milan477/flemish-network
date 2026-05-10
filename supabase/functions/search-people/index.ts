@@ -14,6 +14,11 @@ import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts
 import { embedTexts } from "../_shared/embeddings.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
 import {
+  rerankSearchCandidates,
+  type RerankBlobCandidate,
+  type RerankStatus,
+} from "./rerank.ts";
+import {
   buildSearchTerms,
   classifySearchRoute,
   getSearchRouteConfig,
@@ -26,7 +31,6 @@ import {
   buildLexicalQueryForIntent,
   buildManualFilterKeywords,
   calculateStructuredCriteriaCoverage,
-  criteriaCoveragePasses,
   addCriterionCoverage,
   mergeSearchKeywords,
   normalizePersonScope,
@@ -260,11 +264,17 @@ async function callUntypedRpc<T>(
   fn: string,
   args: Record<string, unknown>,
 ): Promise<{ data: T[] | null; error: unknown }> {
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: T[] | null; error: unknown }>;
-  return await rpc(fn, args);
+  // Cast through unknown so we can call RPC names not in the generated types,
+  // but invoke via supabase.rpc(...) so the client retains its `this` context
+  // (otherwise the postgrest builder throws "Cannot read properties of
+  // undefined (reading 'rest')" inside its method chain).
+  const client = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: T[] | null; error: unknown }>;
+  };
+  return await client.rpc(fn, args);
 }
 
 function clampScore(value: number | null | undefined): number {
@@ -751,15 +761,17 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
         const document =
           documentsByPerson.get(personId) || buildFallbackDocument(person);
+        // Coverage signal becomes a soft boost only — Stage 2 Gemini rerank is
+        // the authority on whether candidates match the user's intent. Strict
+        // criteria filtering used to drop "loose" matches before the user could
+        // see them; that produced the Boston→Indiana surprise. (UX_REMEDIATION
+        // Phase 1A.)
         const coverage = personScope
           ? addCriterionCoverage(
               calculateStructuredCriteriaCoverage(criteriaKeywords, document),
               person.us_network_status === personScope
             )
           : calculateStructuredCriteriaCoverage(criteriaKeywords, document);
-        if (!criteriaCoveragePasses(coverage, matchMode)) {
-          return null;
-        }
 
         const coverageBoost = coverage.total > 0 ? 0.04 * coverage.score : 0;
         const hint: LexicalMatchHint | undefined = lexical
@@ -899,10 +911,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
           organizationDocumentsById.get(organizationId) ||
           buildFallbackOrganizationDocument(organization);
         const snippetSource = organizationSnippetSource(document);
+        // See people scoring above: coverage is a boost, not a gate.
         const coverage = calculateStructuredCriteriaCoverage(criteriaKeywords, snippetSource);
-        if (!criteriaCoveragePasses(coverage, matchMode)) {
-          return null;
-        }
 
         const coverageBoost = coverage.total > 0 ? 0.04 * coverage.score : 0;
         const lexicalSnippet = pickSearchSnippet(
@@ -955,12 +965,79 @@ Deno.serve(wrapHandler(async (req: Request) => {
       rationale: rationaleFromMatch("organization", matchField, fusedScore),
     }));
 
-    const results: MixedSearchResultItem[] = [
+    let stage1: MixedSearchResultItem[] = [
       ...peopleResults,
       ...organizationResults,
     ]
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+
+    // Stage 2: Gemini rerank. Build a compact blob per top candidate (we cap at
+    // 50 inside rerank.ts) and ask the model to reorder by intent. On failure
+    // or timeout, keep Stage 1 ordering and tag rerank_status accordingly.
+    const blobCandidates: RerankBlobCandidate[] = stage1
+      .slice(0, 50)
+      .map((item) => {
+        if (item.entity_type === "person") {
+          const document = documentsByPerson.get(item.id) ||
+            buildFallbackDocument(peopleById.get(item.id)!);
+          const blob = [
+            item.name,
+            item.title,
+            item.current_position,
+            item.occupation,
+            document.flemish_connection_names,
+            document.sector_names,
+            document.location_text,
+            item.bio,
+          ]
+            .filter(Boolean)
+            .join(" | ");
+          return { id: item.id, kind: "person" as const, blob };
+        }
+        const orgDoc = organizationDocumentsById.get(item.id) ||
+          buildFallbackOrganizationDocument(organizationsById.get(item.id)!);
+        const blob = [
+          item.name,
+          orgDoc.type,
+          orgDoc.description,
+          orgDoc.flemish_fact_text,
+          orgDoc.sector_names,
+          orgDoc.primary_location_text || orgDoc.location_text,
+          orgDoc.us_network_status,
+        ]
+          .filter(Boolean)
+          .join(" | ");
+        return { id: item.id, kind: "organization" as const, blob };
+      });
+
+    const rerankOutcome = geminiKey
+      ? await rerankSearchCandidates(geminiKey, query, blobCandidates)
+      : { status: "skipped" as RerankStatus, ranked: [], model: null };
+
+    let results = stage1;
+    if (rerankOutcome.status === "ok" && rerankOutcome.ranked.length > 0) {
+      const stage1ById = new Map(
+        stage1.map((item) => [`${item.entity_type}:${item.id}`, item])
+      );
+      const reordered: MixedSearchResultItem[] = [];
+      const consumed = new Set<string>();
+      for (const ranked of rerankOutcome.ranked) {
+        const key = `${ranked.kind}:${ranked.id}`;
+        const item = stage1ById.get(key);
+        if (!item) continue;
+        consumed.add(key);
+        reordered.push({ ...item, rationale: ranked.reason || item.rationale });
+      }
+      // Append any Stage-1 candidates the model didn't return so the user still
+      // sees them as loose matches at the bottom of the list.
+      for (const item of stage1) {
+        const key = `${item.entity_type}:${item.id}`;
+        if (consumed.has(key)) continue;
+        reordered.push(item);
+      }
+      results = reordered.slice(0, limit);
+    }
 
     const visiblePeople = results.filter(
       (result): result is PersonSearchResultItem => result.entity_type === "person"
@@ -979,6 +1056,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
         match_mode: matchMode,
         route,
         degraded: !queryEmbedding,
+        rerank: rerankOutcome.ranked,
+        rerank_status: rerankOutcome.status,
+        rerank_model: rerankOutcome.model,
+        rerank_duration_ms: rerankOutcome.duration_ms ?? null,
         diagnostics: {
           lexical_candidates: lexicalMatches.length,
           vector_candidates: vectorMatches.length,
@@ -1006,6 +1087,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
       }
     );
   } catch (err) {
+    console.error(
+      "[search-people] uncaught error",
+      err instanceof Error ? err.stack : err,
+    );
     return errorToResponse(err);
   }
 }));

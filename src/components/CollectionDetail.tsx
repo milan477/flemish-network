@@ -394,11 +394,9 @@ export default function CollectionDetail({
       setSuggestMessage(response.message);
       setSuggestionGap(response.gap || { should_offer: false });
     } catch (error) {
-      setSuggestError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to load collection suggestions right now.'
-      );
+      // Never surface raw JS exception text to staff — always a friendly banner.
+      console.warn('[CollectionDetail] suggestion failed (non-fatal)', error);
+      setSuggestError('Suggestions unavailable — please retry.');
     }
 
     setSuggestLoading(false);

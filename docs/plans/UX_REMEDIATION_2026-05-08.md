@@ -22,14 +22,16 @@ The two flows that staff use most — **AI Search** and **Run Discovery / Explor
 
 **Decision**: delete the natural-language filter parser entirely. The query box becomes a pure semantic-intent channel. Filter chips remain as a manual control only — set by user clicks, never auto-extracted from the query. This kills the entire bug class (Boston-IN, healthcare→biotech, SF/NYC/LA, filter persistence, stale empty-state, loose-rerank-with-no-coverage) at the root rather than patching six surfaces.
 
-**Why this is fine at 1000 people**: pgvector with an `hnsw` index does cosine over 1000 vectors in single-digit ms; tsvector full-text the same. The only slow step is the Haiku rerank on top-50 (~1s), which streams in over an instant Stage-1 result. Failure mode shifts from "silently filtered to Indiana" to "loose match" — fixable by the user with explicit chips.
+**Why this is fine at 1000 people**: pgvector with an `hnsw` index does cosine over 1000 vectors in single-digit ms; tsvector full-text the same. The only slow step is the Gemini rerank on top-50 (~1s), which streams in over an instant Stage-1 result. Failure mode shifts from "silently filtered to Indiana" to "loose match" — fixable by the user with explicit chips.
+
+**Model choice**: this codebase uses Gemini, not Anthropic models. Per `docs/AI-PIPELINE.md` model routing, the rerank should run on the `offline_evaluation` route (`gemini-2.5-pro`, override `GEMINI_EVAL_MODEL`) — the same route `suggest-people` already uses for collection reranking — or the faster `gemini-2.5-flash` (`GEMINI_FLASH_MODEL`) if p95 latency budget is tight. Pick one and document it in `AI-PIPELINE.md`; do not introduce a new provider for this step.
 
 **The architecture**
 
 Two stages, no parser:
 
 - **Stage 1 — hybrid retrieval, <100ms, top 50.** Apply user-set filter chips as SQL `WHERE` first to shrink the candidate pool. Then run pgvector cosine over per-entity profile blobs *and* tsvector BM25 over the same blobs in parallel. Merge with **Reciprocal Rank Fusion** (`score = 1/(k+rank_embed) + 1/(k+rank_bm25)`, `k≈60`). Return top 50 tagged as "loose match". Embeddings handle "biotech founders" → "biotechnology entrepreneur"; BM25 handles exact tokens like "KU Leuven" that embeddings can wash out.
-- **Stage 2 — Haiku rerank, streaming, ~500–1500ms, top 10–20.** Send the original query plus 50 candidate blobs to Haiku 4.5; ask for ranked IDs with a one-line "why this matches." Stream into the UI. This is where "in Boston" gets respected without a parser — Haiku reads the query and the blobs and just understands.
+- **Stage 2 — Gemini rerank, streaming, ~500–1500ms, top 10–20.** Send the original query plus 50 candidate blobs to Gemini (route `offline_evaluation` → `gemini-2.5-pro`, or `gemini-2.5-flash` if latency-bound); ask for ranked IDs with a one-line "why this matches" via Gemini structured output. Stream into the UI. This is where "in Boston" gets respected without a parser — the model reads the query and the blobs and just understands.
 
 A "profile blob" is one concatenated text string per entity covering everything semantically relevant: name, current title, current org, full city + state (spelled out, not codes), sector names (not IDs), Flemish-tie names, bio, role history. The richer the blob, the more retrieval "just works." One vector per person; embedded on write.
 
@@ -37,15 +39,15 @@ A "profile blob" is one concatenated text string per entity covering everything 
 
 1. **Build the profile-blob view + embed job.** Add a SQL view `person_search_blob` (and `organization_search_blob`) that concatenates the fields above. Add an `embedding vector(N)` column on a backing table with an `hnsw` index. Build an event-driven embed job: re-embed on insert/update of person, location, sectors, flemish_connections, role; one-time backfill for existing rows. Document the blob shape in `docs/AI-PIPELINE.md`.
 2. **Ship `search-people` v2.** New code path: explicit-filter `WHERE` → pgvector cosine + tsvector BM25 in parallel → RRF merge → return top 50 with a `match_kind: "loose"` tag and per-row `score`. Cache query embeddings (LRU keyed on the query string). Keep v1 reachable behind a flag for one release for fallback.
-3. **Add Haiku rerank as a streaming second response.** UI renders Stage 1 immediately as "loose match" cards. Stage 2 calls Haiku with original query + 50 blobs, streams ranked IDs back, UI re-orders + drops the "loose match" tag from the top N. If Haiku fails, Stage 1 results stay — graceful degradation by default.
-4. **Delete the parser.** Remove `src/lib/filterParser.ts`, `parseFiltersFromQuery`, the chip auto-extraction in `Dashboard.tsx:303–316`, and the merge logic in `appRouting.ts:140–175`. Keep the chip *components* — they are now driven only by user clicks. Remove the empty-state header at `DirectoryGrid.tsx:311–315` (now subsumed by Stage 1's "loose match" path returning 0 rows). Drop the dead branches in `search-people/index.ts:737–762` (coverage-check fallthrough) — Haiku is the ranker now.
+3. **Add Gemini rerank as a streaming second response.** UI renders Stage 1 immediately as "loose match" cards. Stage 2 calls Gemini (`offline_evaluation` route, or `gemini-2.5-flash` if chosen for latency) with original query + 50 blobs, streams ranked IDs back via structured output, UI re-orders + drops the "loose match" tag from the top N. If the rerank call fails or times out, Stage 1 results stay — graceful degradation by default (matches the existing `search-people` degraded-fallback pattern).
+4. **Delete the parser.** Remove `src/lib/filterParser.ts`, `parseFiltersFromQuery`, the chip auto-extraction in `Dashboard.tsx:303–316`, and the merge logic in `appRouting.ts:140–175`. Keep the chip *components* — they are now driven only by user clicks. Remove the empty-state header at `DirectoryGrid.tsx:311–315` (now subsumed by Stage 1's "loose match" path returning 0 rows). Drop the dead branches in `search-people/index.ts:737–762` (coverage-check fallthrough) — the Gemini rerank is the ranker now.
 
 **What this resolves from the review**
 
 - #1 Boston-IN, second-pass SF/NYC/LA/Indianapolis, #5 healthcare→Biotech, MIT-CS-prof loose rerank — all collapse with the parser.
 - #2 filter chip persistence — chips are only set by clicks, so a new query can't drag old chips along.
 - #3 stale empty-state header — replaced by a single ranked list.
-- AI Search §"Sector synonym slop" and §"Healthcare query mapped to Biotechnology" — handled by Haiku reading the query, not by alias tables.
+- AI Search §"Sector synonym slop" and §"Healthcare query mapped to Biotechnology" — handled by Gemini reading the query, not by alias tables.
 
 **Acceptance**
 
@@ -56,19 +58,19 @@ A "profile blob" is one concatenated text string per entity covering everything 
 
 **Risks / open questions**
 
-- Embedding cost on backfill: 1000 people × small blobs is trivial (cents). Ongoing event-driven embeds are negligible.
+- Embedding cost on backfill: 1000 people × small blobs is trivial (cents) on `gemini-embedding-001` (the model already wired in `AI-PIPELINE.md`). Ongoing event-driven embeds are negligible.
 - Query embedding latency adds to Stage 1; mitigate with the LRU cache (common queries become free) and by running it in parallel with the BM25 query.
-- Haiku rerank cost: ~50 short blobs per query, fractions of a cent per search at Haiku 4.5 prices. Acceptable for staff-only tool.
-- Embedding model choice + dimension is a separate decision — match what `search-people` already uses if possible to avoid a second backfill.
+- Gemini rerank cost: ~50 short blobs per query. `gemini-2.5-flash` is fractions of a cent per search; `gemini-2.5-pro` is higher but still acceptable for a staff-only tool. Decide flash vs. pro before implementation based on the latency/quality trade-off (flash hits the p95 <2s target more comfortably).
+- Embedding model: reuse `gemini-embedding-001` per the existing `embeddings` route in `AI-PIPELINE.md` — match dimensions used by `search-people` and `suggest-people` so existing `match_people` / `match_organizations` infra can be leaned on rather than backfilled twice.
 
 **Docs to update**
 
-- `docs/AI-PIPELINE.md` — replace the existing search section: document the profile-blob shape, the embed job (event-driven + backfill), Stage 1 hybrid retrieval (pgvector + tsvector + RRF), Stage 2 Haiku rerank streaming contract, graceful-degradation behavior, and the removal of `filterParser.ts` / `parseFiltersFromQuery`.
+- `docs/AI-PIPELINE.md` — replace the existing search section: document the profile-blob shape, the embed job (event-driven + backfill on `gemini-embedding-001`), Stage 1 hybrid retrieval (pgvector + tsvector + RRF), Stage 2 Gemini rerank streaming contract (route choice — `offline_evaluation` / `gemini-2.5-pro` or `gemini-2.5-flash` — recorded in the model-routing table with its env override), graceful-degradation behavior, and the removal of `filterParser.ts` / `parseFiltersFromQuery`.
 - `docs/SCHEMA.md` — document the `person_search_blob` / `organization_search_blob` views, the embedding column + `hnsw` index, and the trigger/event wiring for re-embed on write.
 - `docs/EVALUATION.md` — add a "search regression" suite covering every repro snippet from `UX_REVIEW_2026-05-08.md` (Boston-IN, KU Leuven healthcare, Indianapolis, SF, `Boston, MA biotech`, `AI researchers in Atlanta`); set the latency targets (p95 first-result <200ms, p95 reranked <2s at 1000 people) as gates.
 - `docs/ROUTES.md` — note that the AI Search query box no longer auto-extracts filter chips; chips are click-only.
 - `docs/PRODUCT-SERVICES.md` — update the AI Search service description to reflect "semantic intent in, ranked list out, filters are explicit."
-- `.env.example` — add any new embedding-model / Haiku rerank env vars introduced.
+- `.env.example` — add any new env vars introduced (e.g. a dedicated `GEMINI_SEARCH_RERANK_MODEL` override if the rerank route is split out from `offline_evaluation`); reuse existing `GEMINI_EMBEDDING_MODEL` / `GEMINI_EVAL_MODEL` / `GEMINI_FLASH_MODEL` rather than introducing parallel keys.
 
 ### 1B. Discovery + Growth silent-failure pattern
 

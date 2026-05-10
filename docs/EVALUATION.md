@@ -167,6 +167,15 @@ Phase 4 acceptance criteria:
 - Organization candidates come from approved organization lexical, vector, and text-chunk retrieval when embeddings are available.
 - Collection prompts may produce a Discovery handoff, but Phase 4 does not add autonomous Discovery, persistent gap analytics, or persistent draft tables.
 - Collection organization retrieval uses canonical organization Flemish/Belgian facts when available; durable organization verification remains a later record-level verification phase.
+- Collection scope text is advisory: candidates outside the user-described scope (city, state, sector) are not auto-filtered; the user is the authority on collection contents.
+
+Phase 3A / 5C UX acceptance:
+
+- **No raw JS exception strings reach the UI.** When `suggest-people` returns a malformed payload or any call site throws, both `CollectionModal` and `CollectionDetail` show the fixed banner "Suggestions unavailable — please retry." The string `Cannot read properties of undefined` must not be visible to staff under any failure mode.
+- **Server-side raw model logging.** When the `suggest-people` plan or rerank parser throws, the function logs the raw model output (truncated) so failures are diagnosable from edge logs without leaking detail to staff.
+- **Non-US city change requires confirmation.** In `/admin/verification`, approving a `location_city` or `location_state` Profile Update Suggestion whose destination state is not a US state must open an in-app confirmation modal (never `window.confirm`). Cancelling leaves the suggestion pending.
+- **Risk vs Confidence are presented together.** Each suggestion chip in the Verification panel renders as `Confidence X% · <Risk> field` with a tooltip explaining that Confidence is evidence strength and Risk is field sensitivity. The two values are never shown as unlabeled separate chips.
+- **Bio diff is vertical.** Bio Profile Update Suggestions render the current value (struck through) above the new value, full width — never side-by-side.
 
 ## Planning / Next Searches Evaluation
 
@@ -194,3 +203,31 @@ Bad recommendation examples:
 - "Flemish professionals USA"
 - Repeated searches for an already exhausted domain
 - Broad open-web searches that do not name a source family, geography, sector, domain, or entity pivot
+
+## Search The Network (search-people) regression suite
+
+UX_REMEDIATION Phase 1A replaced the natural-language filter parser with a
+two-stage pipeline (hybrid retrieval + Gemini rerank). Every reproduction
+snippet from `docs/plans/UX_REVIEW_2026-05-08.md` must produce sensible top-3
+results without surprise filtering.
+
+Required passing snippets (run via `/?q=<query>` against the deployed
+`search-people` function):
+
+- `Flemish people working in biotech in Boston` — top hits are Boston / Cambridge MA people; no Indiana misfire; no auto-populated chips.
+- `KU Leuven alumni in healthcare` — KU Leuven matches; no stale chips dragged in from a prior search.
+- `founders in Indianapolis` — Indianapolis-located people if any exist, otherwise a clean "loose match" list with the Stage-1 fallback rationale.
+- `Belgian founders in SF` — San Francisco / Bay Area people.
+- `Boston, MA biotech` — Boston biotech people; the spelled-out "Massachusetts" must not be required to match `MA` rows (covered by `expand_us_state` in migration `20260509000000`).
+- `AI researchers in Atlanta` — Atlanta AI people surfaced first.
+
+Latency gates:
+
+- p95 time-to-Stage-1 result < 1 s at the current dataset size (~1000 people, ~1000 organizations).
+- p95 time-to-reranked result < 12 s; on timeout the response carries `rerank_status = "timeout"` and the UI keeps Stage 1 ordering rather than failing.
+
+Behavior gates:
+
+- The query box never auto-extracts filter chips. `src/lib/filterParser.ts` is deleted; any reintroduction must be reviewed against this section.
+- A search response always includes `rerank`, `rerank_status`, `rerank_model`, and `rerank_duration_ms` so the UI can label loose-match results when Stage 2 did not run.
+- Structured-criteria coverage is a soft boost only; it must never zero out a candidate. The Stage 2 model decides relevance.

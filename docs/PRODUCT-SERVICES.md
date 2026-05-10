@@ -2,6 +2,8 @@
 
 This document describes the target user-facing service structure for the webapp. It is intentionally product-level: endpoints, agents, and tables are implementation details underneath these services.
 
+**Canonical product name.** The product is called **Flemish Network**. That string is the canonical browser tab title (`index.html` `<title>`) and the canonical staff-facing label everywhere the product is named. Do not reintroduce older variants such as "Flemish Network Navigator" or "Prototype" in user-visible surfaces.
+
 ## High-Level Structure
 
 ```text
@@ -43,6 +45,20 @@ Output:
 - Clear match rationale/snippets
 - Facets/filters
 - Ability to add selected people and organizations to a collection
+
+Contract: semantic intent in, ranked list out, filters are explicit.
+
+- The query box is a single semantic-intent channel — type a question, get
+  a ranked list. The system does not auto-extract filter chips from your
+  query (UX_REMEDIATION Phase 1A removed the natural-language filter parser).
+- Filter chips are click-only: they apply when you click them in the filter
+  panel and never silently appear from typing in the query box. A new query
+  cannot drag old chips along with it.
+- Under the hood the function runs a hybrid retrieval stage (lexical + vector)
+  followed by a Gemini rerank that respects the constraints in your query
+  (city, state, sector, organization). When the rerank is unavailable or
+  slow, the Stage 1 ranking is shown as a "loose match" so you still get
+  results.
 
 Important distinction:
 
@@ -136,6 +152,8 @@ Scope:
 
 Discovery intake defaults to prompted discovery, with manual add and file import as adjacent intake options. Manual intake and imports create pending candidates only. They do not create or update approved `people` or `organizations`; approval, merge, and rejection happen in Discovery review. Discovery review has separate people and organization queues, and organization cards show source URLs and evidence excerpts before a reviewer promotes or merges the candidate.
 
+**Staff-facing run-button contract.** Every staff-triggered run button (Discovery intake "Run Discovery", Growth "Start discovery run", per-suggestion "Explore", recommended-action runs) must give three signals: a started toast on success, a disabled state for the duration of the in-flight run, and either a completed toast or an informative error toast. When the scheduler rejects a fresh trigger because a previous run finished within the 10-minute cooldown, the UI surfaces an info-level toast explaining how long to wait — not a generic error. The Discovery intake textarea preserves its prompt across submissions so staff can re-run or refine without retyping; it only clears on explicit reset.
+
 Output:
 
 - Pending people
@@ -181,6 +199,14 @@ Target simplification:
 - `update-profile` and `agent-verify` should be two modes of one verification service:
   - preview mode: inline suggestions, no durable writes
   - durable mode: writes reviewable suggestions
+
+Staff-facing copy in the Verification panel uses plain language. The organization queue empty-state reads "Run organization verification to queue reviewable suggestions." (the "(durable mode)" parenthetical was removed in Phase 5C — staff don't need the implementation mode name).
+
+Approval guards staff can expect in the Verification panel:
+
+- A confirmation modal appears when approving a city/state suggestion that would move a person of interest to a non-US locale (the platform assumes persons of interest are US-based).
+- Each suggestion chip shows `Confidence X% · <Risk> field` with a tooltip explaining that Confidence describes evidence strength while Risk describes field sensitivity.
+- Bio suggestions display as a vertical diff (old value struck through above, new value below).
 
 ## 5. Understand And Grow The Network
 
@@ -364,3 +390,37 @@ Avoid exposing implementation names as product concepts:
 - `agent-verify`
 - `update-profile`
 - `agent-connections`
+
+### Discovery step-label vocabulary
+
+Discovery run telemetry uses internal step IDs (often suffixed with a UUID or numeric counter, e.g. `page_extraction_<uuid>`, `linkedin_enrichment_2`). The Discovery History panel renders these via a presentation layer (`formatStepLabel`), not the raw IDs. Staff-facing labels for each step prefix:
+
+| Internal step prefix | Staff-facing label |
+| --- | --- |
+| `web_search` | Web Search |
+| `llm_extraction` | LLM Extraction |
+| `linkedin_search` | LinkedIn Search |
+| `linkedin_enrichment` | LinkedIn Enrichment |
+| `cross_dedup` | Cross-Channel Dedup |
+| `db_dedup` | Database Dedup |
+| `insert` | Insert Contacts |
+| `discovery_plan` | Discovery Plan |
+| `frontier_claim` | Claim Frontier |
+| `frontier_process` | Process Frontier |
+| `seed_search` | Seed Search |
+| `page_classification` | Page Classification |
+| `page_extraction` | Page Extraction |
+| `domain_harvest` | Domain Harvest |
+
+Run-summary counters in the same panel use plain-language synonyms in place of internal jargon. The `claimed` / `sitemap` / `rss` / `merged` shorthand stays in row summaries because each token appears next to a count in a list of metrics; do not introduce them as standalone navigation labels or filter chips. Where they appear with a count, the singular/plural form is normalised through `formatCount` (e.g. `1 page` vs `7 pages`).
+
+### System Health operator vocabulary
+
+The `/admin/system` panel is staff-facing operations tooling. Its controls and labels follow a fixed shape so admins can scan them at a glance:
+
+- **Drain now** flushes the embedding queue: it processes any pending `search-index records` immediately instead of waiting for the next scheduled drain. The pending counter in the search-index footer is always rendered as `N search-index records pending` (singular `1 search-index record pending`).
+- **Run Housekeeping** marks stuck (zombie) agent runs as failed and frees their slots so new runs can start. Its `title`/`aria-label` describe that effect verbatim.
+- **Test Supabase** runs a lightweight Supabase query to confirm the URL, anon key, and RLS policies still work. Its `title`/`aria-label` describe that effect verbatim.
+- **Schedule cadence labels** under each agent card use the form `Schedule: <human cadence>`. Discovery uses cadences like `Once daily (09:00 UTC)` / `Twice daily (09:00 + 21:00 UTC)` / `Every 6 hours`; Verification uses cadences like `Up to 5 contacts/day` / `Up to 15 contacts/day` / `Up to 40 contacts/day`. Both kinds share the `Schedule:` prefix and a count-based shape so the unit is consistent across cards.
+- **Stale failure cards** are only rendered when the most recent failure is newer than the most recent success; once a successful run lands, the failure banner clears.
+- **Apify metrics** in the Today's API Usage row are hidden by default. Set `VITE_SHOW_APIFY=1` to surface them for diagnostics; otherwise they appear only when actual usage is non-zero.

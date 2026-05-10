@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ExternalLink,
   Inbox,
+  Info,
   Loader2,
   MapPin,
   ShieldAlert,
@@ -463,19 +464,26 @@ export default function PersonChangesGroup({
                               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                                 {VERIFICATION_FIELD_LABELS[s.field_name] || s.field_name}
                               </span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(s.field_name)}`}>
-                                {getSuggestionRiskLabel(s.field_name)}
-                              </span>
                               {s.method && (
                                 <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                                   {getMethodLabel(s.method)}
                                 </span>
                               )}
-                              {confidence && (
-                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                                  {confidence}
-                                </span>
-                              )}
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(s.field_name)}`}
+                                title="Confidence = how strong the evidence is. Risk = how sensitive the field is. Approve only when confidence is high AND the risk class is acceptable for this field."
+                              >
+                                {confidence
+                                  ? `${confidence.replace(' confidence', '')} · ${getSuggestionRiskLabel(s.field_name)
+                                      .replace(' Risk', '-risk')
+                                      .toLowerCase()
+                                      .replace(/^(\w)/, (m) => m.toUpperCase())} field`
+                                  : `${getSuggestionRiskLabel(s.field_name)
+                                      .replace(' Risk', '-risk')
+                                      .toLowerCase()
+                                      .replace(/^(\w)/, (m) => m.toUpperCase())} field`}
+                                <Info className="h-3 w-3 opacity-70" />
+                              </span>
                               {!actionable && (
                                 <span className="inline-flex items-center gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
                                   <ShieldAlert className="h-3 w-3" />

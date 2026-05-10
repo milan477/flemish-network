@@ -329,7 +329,23 @@ If the goal suggests missing database coverage that should be discovered later, 
       },
       required: ["searches", "gap"],
     },
-    parse: (payload: unknown) => parseCollectionSuggestionPlan(payload, query),
+    parse: (payload: unknown) => {
+      try {
+        return parseCollectionSuggestionPlan(payload, query);
+      } catch (parseErr) {
+        // Server-side log of raw model output so we can diagnose without
+        // leaking implementation details to the staff UI (Phase 3A).
+        try {
+          console.warn(
+            "[suggest-people] collection plan parse failed; raw model output:",
+            JSON.stringify(payload).slice(0, 4000),
+          );
+        } catch {
+          console.warn("[suggest-people] collection plan parse failed; raw payload not serializable");
+        }
+        throw parseErr;
+      }
+    },
     temperature: 0.1,
     attemptsPerModel: 1,
   });
@@ -380,7 +396,21 @@ Return the best mixed candidates. Include only relevant IDs from the list.`,
       },
       required: ["message", "candidates"],
     },
-    parse: parseRerankedCollectionCandidates,
+    parse: (payload: unknown) => {
+      try {
+        return parseRerankedCollectionCandidates(payload);
+      } catch (parseErr) {
+        try {
+          console.warn(
+            "[suggest-people] rerank parse failed; raw model output:",
+            JSON.stringify(payload).slice(0, 4000),
+          );
+        } catch {
+          console.warn("[suggest-people] rerank parse failed; raw payload not serializable");
+        }
+        throw parseErr;
+      }
+    },
     temperature: 0.2,
     attemptsPerModel: 1,
   });

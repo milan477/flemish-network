@@ -42,6 +42,7 @@ import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
+import FlemishConnectionList from '../components/FlemishConnectionList';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
 import { useSmartBack } from '../lib/useSmartBack';
 import { useAuth } from '../lib/auth';
@@ -94,11 +95,6 @@ function reconcileConnections(
   });
 
   return Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function formatConfidence(confidence: number | null | undefined): string | null {
-  if (confidence === null || confidence === undefined) return null;
-  return `${Math.round(confidence * 100)}% confidence`;
 }
 
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
@@ -1180,61 +1176,13 @@ function ViewBody({
       {flemishConnections.length > 0 && (
         <div className="mb-8 pb-8 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {flemishConnections.map((connection) => (
-                <button
-                  key={connection.id}
-                  onClick={() => onNavigate('dashboard', undefined, { flemishConnections: [connection.name] })}
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer hover:ring-2 bg-blue-50 text-blue-700 hover:ring-blue-300"
-                >
-                  {connection.name}
-                </button>
-              ))}
-            </div>
-            <div className="space-y-2">
-              {(person.person_flemish_connections || []).map((link) => {
-                const connection = Array.isArray(link.flemish_connections)
-                  ? link.flemish_connections[0]
-                  : link.flemish_connections;
-                if (!connection?.name) return null;
-                return (
-                  <div
-                    key={`${connection.id || connection.name}-evidence`}
-                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-gray-800">{connection.name}</span>
-                      {link.role && (
-                        <span className="rounded-full bg-white px-2 py-0.5 text-xs text-gray-500 border border-gray-200">
-                          {link.role.replace(/_/g, ' ')}
-                        </span>
-                      )}
-                      {formatConfidence(link.confidence) && (
-                        <span className="text-xs text-gray-500">
-                          {formatConfidence(link.confidence)}
-                        </span>
-                      )}
-                    </div>
-                    {link.evidence_excerpt && (
-                      <p className="mt-1 text-xs text-gray-500">{link.evidence_excerpt}</p>
-                    )}
-                    {link.source_url && (
-                      <a
-                        href={link.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
-                      >
-                        <Link className="h-3 w-3" />
-                        Source
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <FlemishConnectionList
+            links={person.person_flemish_connections || []}
+            onSelect={(name) =>
+              onNavigate('dashboard', undefined, { flemishConnections: [name] })
+            }
+            sourceIcon="link"
+          />
         </div>
       )}
 

@@ -15,10 +15,12 @@ import {
   type CrossFilterState,
   type PersonSectorRow,
 } from './interactiveStatsShared';
+import { countUniqueLocationCities } from '../../hooks/useCityCount';
 
 interface InteractiveStatsOverviewProps {
   people: Person[];
   orgCount: number;
+  organizations?: { locations?: { city?: string | null; state?: string | null } | null }[];
   personSectors: PersonSectorRow[];
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
 }
@@ -57,14 +59,6 @@ function buildCounts(values: string[]): Map<string, number> {
   });
 
   return counts;
-}
-
-function countUniqueBy<T>(items: T[], getKey: (item: T) => string | null | undefined) {
-  return new Set(
-    items
-      .map((item) => getKey(item))
-      .filter((value): value is string => Boolean(value))
-  ).size;
 }
 
 function StatCard({
@@ -196,6 +190,7 @@ function LocationExplorer({
 export default function InteractiveStatsOverview({
   people,
   orgCount,
+  organizations,
   personSectors,
   onNavigate,
 }: InteractiveStatsOverviewProps) {
@@ -312,20 +307,11 @@ export default function InteractiveStatsOverview({
     [crossFilters]
   );
 
-  const totalCities = countUniqueBy(
-    people,
-    (person) =>
-      person.locations?.city && person.locations?.state
-        ? `${person.locations.city}|${person.locations.state}`
-        : null
-  );
-  const filteredCities = countUniqueBy(
-    filteredPeople,
-    (person) =>
-      person.locations?.city && person.locations?.state
-        ? `${person.locations.city}|${person.locations.state}`
-        : null
-  );
+  const totalCities = countUniqueLocationCities([
+    ...people,
+    ...((organizations ?? []) as unknown as Person[]),
+  ]);
+  const filteredCities = countUniqueLocationCities(filteredPeople);
   const filteredOrganizations = new Set(
     filteredPeople
       .map((person) => person.organization_id)
@@ -455,7 +441,7 @@ export default function InteractiveStatsOverview({
       crossFilters.state
         ? {
             key: `state:${crossFilters.state}`,
-            label: `State: ${crossFilters.state}`,
+            label: crossFilters.state,
             onRemove: () =>
               setCrossFilters((prev) => ({
                 ...prev,
@@ -467,7 +453,7 @@ export default function InteractiveStatsOverview({
       crossFilters.city
         ? {
             key: `city:${crossFilters.city}`,
-            label: `City: ${crossFilters.city}`,
+            label: crossFilters.city,
             onRemove: () =>
               setCrossFilters((prev) => ({ ...prev, city: null })),
           }

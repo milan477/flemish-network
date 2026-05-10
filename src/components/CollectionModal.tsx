@@ -60,7 +60,8 @@ export default function CollectionModal({
       setSuggestionGap(response.gap || { should_offer: false });
     } catch (err) {
       console.warn('[CollectionModal] suggestion failed (non-fatal)', err);
-      setError('Unable to load collection suggestions right now. You can save the collection without them.');
+      // Never surface raw JS exception text to staff — always a friendly banner.
+      setError('Suggestions unavailable — please retry.');
     } finally {
       setIsLoadingSuggestions(false);
     }

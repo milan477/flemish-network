@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ExternalLink,
   Inbox,
+  Info,
   Loader2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -149,7 +150,7 @@ export default function OrganizationSuggestedChanges({
       <div className="flex flex-col items-center justify-center py-8 text-gray-400">
         <Inbox className="mb-2 h-8 w-8" />
         <p className="text-sm">No pending organization suggestions</p>
-        <p className="mt-1 text-xs">Run organization verification (durable mode) to queue reviewable suggestions.</p>
+        <p className="mt-1 text-xs">Run organization verification to queue reviewable suggestions.</p>
       </div>
     );
   }
@@ -247,19 +248,27 @@ export default function OrganizationSuggestedChanges({
                             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                               {ORG_FIELD_LABELS[suggestion.field_name] || suggestion.field_name}
                             </span>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(suggestion.field_name)}`}>
-                              {getSuggestionRiskLabel(suggestion.field_name)}
-                            </span>
                             {suggestion.method && (
                               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                                 {getMethodLabel(suggestion.method)}
                               </span>
                             )}
-                            {confidence && (
-                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                                {confidence}
-                              </span>
-                            )}
+                            {/* Phase 5C: combined Confidence + Risk chip with tooltip. */}
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${getRiskClasses(suggestion.field_name)}`}
+                              title="Confidence = how strong the evidence is. Risk = how sensitive the field is. Approve only when confidence is high AND the risk class is acceptable for this field."
+                            >
+                              {confidence
+                                ? `${confidence.replace(' confidence', '')} · ${getSuggestionRiskLabel(suggestion.field_name)
+                                    .replace(' Risk', '-risk')
+                                    .toLowerCase()
+                                    .replace(/^(\w)/, (m) => m.toUpperCase())} field`
+                                : `${getSuggestionRiskLabel(suggestion.field_name)
+                                    .replace(' Risk', '-risk')
+                                    .toLowerCase()
+                                    .replace(/^(\w)/, (m) => m.toUpperCase())} field`}
+                              <Info className="h-3 w-3 opacity-70" />
+                            </span>
                           </div>
                           <div className="mt-1 flex items-center gap-2 text-xs">
                             {suggestion.current_value && (

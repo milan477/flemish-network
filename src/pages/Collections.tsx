@@ -4,6 +4,7 @@ import { supabase, type Collection } from '../lib/supabase';
 import CollectionModal from '../components/CollectionModal';
 import CollectionDetail from '../components/CollectionDetail';
 import { useAuth } from '../lib/auth';
+import { formatDate } from '../lib/formatDateTime';
 
 interface CollectionsProps {
   collectionId?: string;
@@ -166,7 +167,7 @@ export default function Collections({
                 </div>
                 <div className="flex items-center text-xs text-gray-400">
                   <Calendar className="w-3.5 h-3.5 mr-1" />
-                  {new Date(collection.created_at).toLocaleDateString()}
+                  {formatDate(collection.created_at)}
                 </div>
               </div>
             </div>

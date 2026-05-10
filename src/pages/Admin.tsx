@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useActiveAgentRun } from '../hooks/useActiveAgentRun';
 import { Activity, BarChart3, ChevronDown, ChevronRight, Globe, Search, ShieldCheck, Users } from 'lucide-react';
 import {
   supabase,
@@ -25,12 +26,14 @@ import {
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { useAuth } from '../lib/auth';
-import { notifyError } from '../lib/toast';
+import { notifyError, notifySuccess, notifyInfo } from '../lib/toast';
 import {
   isCanonicalAdminTab,
   normalizeAdminTab,
   parseAdminDiscoveryPrompt,
+  parseAddContactMode,
   type AdminTab,
+  type AddContactMode,
 } from '../lib/appRouting';
 const VERIFY_BATCH_SIZE = 5;
 
@@ -42,11 +45,32 @@ export default function Admin({ onNavigate }: AdminProps) {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = normalizeAdminTab(tab, isAdmin);
   const discoveryPrompt = parseAdminDiscoveryPrompt(searchParams);
+  const addContactMode = parseAddContactMode(searchParams);
+  const discoveryRunActive = useActiveAgentRun('discovery');
+
+  const setAddContactMode = useCallback(
+    (next: AddContactMode) => {
+      const nextParams = new URLSearchParams(searchParams);
+      if (next === 'discovery') {
+        nextParams.delete('mode');
+      } else {
+        nextParams.set('mode', next);
+      }
+      // Clear prompt when switching off the discovery sub-tab so a stale
+      // prefill does not reappear next time the user comes back.
+      if (next !== 'discovery') {
+        nextParams.delete('prompt');
+      }
+      setSearchParams(nextParams, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
   const [people, setPeople] = useState<Person[]>([]);
   const [orgCount, setOrgCount] = useState(0);
+  const [orgLocations, setOrgLocations] = useState<{ locations: { city: string | null; state: string | null } | null }[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
@@ -208,7 +232,7 @@ export default function Admin({ onNavigate }: AdminProps) {
           .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'),
         supabase
           .from('organizations')
-          .select('id', { count: 'exact', head: true }),
+          .select('id, locations(city, state)', { count: 'exact' }),
         supabase
           .from('person_sectors')
           .select('person_id, sector_id, sectors(name)'),
@@ -217,6 +241,7 @@ export default function Admin({ onNavigate }: AdminProps) {
 
       setPeople((peopleRes.data || []) as Person[]);
       setOrgCount(orgsRes.count || 0);
+      setOrgLocations(((orgsRes.data || []) as unknown) as { locations: { city: string | null; state: string | null } | null }[]);
       setPersonSectors((personSectorsRes.data || []) as unknown as PersonSectorRow[]);
       setSectors((sectorsRes.data || []) as Sector[]);
     } finally {
@@ -338,9 +363,43 @@ export default function Admin({ onNavigate }: AdminProps) {
     [navigate]
   );
 
+  const handleSchedulerResponse = useCallback(
+    (
+      data: { status?: string; reason?: string; message?: string; wait_minutes?: number } | null,
+      successMessage: string,
+    ): boolean => {
+      const status = data?.status;
+      if (status === 'running') {
+        notifySuccess(successMessage);
+        return true;
+      }
+      if (status === 'rejected') {
+        const reason = data?.reason;
+        if (reason === 'quota_exhausted') {
+          notifyInfo('Discovery already ran recently.', {
+            hint: data?.message ||
+              `Wait ${data?.wait_minutes ?? 'a few'} more minute${data?.wait_minutes === 1 ? '' : 's'} or pass force=true.`,
+          });
+          return false;
+        }
+        notifyError(data?.message || 'Discovery run was rejected.', {
+          hint: reason ? `Reason: ${reason}` : undefined,
+        });
+        return false;
+      }
+      // Unknown / undefined status — treat as soft failure so the user always
+      // gets feedback (Phase 1B contract: every action button needs a toast).
+      notifyError('Discovery run did not start.', {
+        hint: 'The scheduler returned an unexpected response. Check the Discovery History panel.',
+      });
+      return false;
+    },
+    []
+  );
+
   const triggerDiscovery = useCallback(async (action: RecommendedAction) => {
     try {
-      const { error } = await supabase.functions.invoke('agent-scheduler', {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
         body: {
           action: 'trigger',
           agent_type: 'discovery',
@@ -353,14 +412,15 @@ export default function Admin({ onNavigate }: AdminProps) {
         },
       });
       if (error) throw error;
+      handleSchedulerResponse(data, 'Discovery run started.');
     } catch (err) {
       notifyError(err, { hint: 'Could not start discovery from this recommendation.' });
     }
-  }, []);
+  }, [handleSchedulerResponse]);
 
   const startDiscoveryRun = useCallback(async () => {
     try {
-      const { error } = await supabase.functions.invoke('agent-scheduler', {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
         body: {
           action: 'trigger',
           agent_type: 'discovery',
@@ -368,15 +428,16 @@ export default function Admin({ onNavigate }: AdminProps) {
         },
       });
       if (error) throw error;
+      handleSchedulerResponse(data, 'Discovery run started.');
     } catch (err) {
       notifyError(err, { hint: 'Could not start a discovery run.' });
     }
-  }, []);
+  }, [handleSchedulerResponse]);
 
   const exploreSuggestion = useCallback(
     async (suggestionId: string, surface: string | null, lens: string | null) => {
       try {
-        const { error } = await supabase.functions.invoke('agent-scheduler', {
+        const { data, error } = await supabase.functions.invoke('agent-scheduler', {
           body: {
             action: 'trigger',
             agent_type: 'discovery',
@@ -388,11 +449,12 @@ export default function Admin({ onNavigate }: AdminProps) {
           },
         });
         if (error) throw error;
+        handleSchedulerResponse(data, 'Exploring this suggestion now.');
       } catch (err) {
         notifyError(err, { hint: 'Could not start discovery on this suggestion.' });
       }
     },
-    []
+    [handleSchedulerResponse]
   );
 
   if (loading) {
@@ -492,8 +554,10 @@ export default function Admin({ onNavigate }: AdminProps) {
               loadData({ showSpinner: false });
               setDiscoveryRefreshKey((current) => current + 1);
             }}
-            initialTab={searchParams.get('mode') === 'import' ? 'import' : 'discovery'}
+            mode={addContactMode}
+            onModeChange={setAddContactMode}
             initialDiscoveryPrompt={discoveryPrompt}
+            discoveryRunActive={discoveryRunActive}
           />
           <AgentDashboard refreshKey={discoveryRefreshKey} />
         </div>
@@ -566,6 +630,7 @@ export default function Admin({ onNavigate }: AdminProps) {
         <InteractiveStatsOverview
           people={people}
           orgCount={orgCount}
+          organizations={orgLocations}
           personSectors={personSectors}
           onNavigate={onNavigate}
         />
@@ -576,7 +641,7 @@ export default function Admin({ onNavigate }: AdminProps) {
           onRunDiscovery={(action) => void triggerDiscovery(action)}
           onStartDiscovery={() => void startDiscoveryRun()}
           onExploreSuggestion={(id, surface, lens) => void exploreSuggestion(id, surface, lens)}
-          isRunning={false}
+          isRunning={discoveryRunActive}
         />
       )}
     </div>

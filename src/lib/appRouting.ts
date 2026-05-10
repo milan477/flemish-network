@@ -36,6 +36,18 @@ export function parseAdminDiscoveryPrompt(searchParams: URLSearchParams): string
   return searchParams.get('prompt') || '';
 }
 
+export type AddContactMode = 'discovery' | 'manual' | 'import';
+
+export function parseAddContactMode(
+  searchParams: URLSearchParams
+): AddContactMode {
+  const value = searchParams.get('mode');
+  if (value === 'manual' || value === 'import' || value === 'discovery') {
+    return value;
+  }
+  return 'discovery';
+}
+
 export type DashboardViewMode = 'map' | 'list';
 
 export interface DashboardRouteState {
@@ -149,8 +161,10 @@ export function buildDashboardSearchParams(
   } else if (state.query) {
     params.set('view', 'map');
   }
-  if (!state.filters.showPeople) params.set('people', '0');
-  if (!state.filters.showOrganizations) params.set('organizations', '0');
+  // Write both states explicitly so toggling on→off→on round-trips even when
+  // the URL is merged onto an existing search (UX_REMEDIATION Phase 4A).
+  params.set('people', state.filters.showPeople ? '1' : '0');
+  params.set('organizations', state.filters.showOrganizations ? '1' : '0');
   if (state.filters.personScope !== 'all') {
     params.set('personScope', state.filters.personScope);
   }

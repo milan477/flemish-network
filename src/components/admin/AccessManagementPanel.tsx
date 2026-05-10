@@ -72,6 +72,27 @@ export default function AccessManagementPanel() {
     [staffUsers]
   );
 
+  const activeOrDisabledUsers = useMemo(
+    () => staffUsers.filter((user) => user.status !== 'invited'),
+    [staffUsers]
+  );
+
+  const invitedUsers = useMemo(
+    () => staffUsers.filter((user) => user.status === 'invited'),
+    [staffUsers]
+  );
+
+  const isRowDirty = useCallback(
+    (user: StaffUser) => {
+      const draft = drafts[user.id];
+      if (!draft) return false;
+      const draftName = draft.full_name.trim();
+      const originalName = (user.full_name || '').trim();
+      return draftName !== originalName || draft.role !== user.role;
+    },
+    [drafts]
+  );
+
   const updateDraft = (id: string, patch: Partial<DraftUser>) => {
     setDrafts((prev) => ({
       ...prev,
@@ -166,6 +187,112 @@ export default function AccessManagementPanel() {
     await loadStaffUsers();
   };
 
+  const renderUserSection = ({
+    heading,
+    emptyLabel,
+    users,
+  }: {
+    heading: string;
+    emptyLabel: string;
+    users: StaffUser[];
+  }) => (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="border-b border-gray-100 bg-gray-50 px-6 py-3">
+        <h3 className="text-sm font-semibold text-gray-700">{heading}</h3>
+      </div>
+      <div className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 border-b border-gray-100 px-6 py-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <span>Email</span>
+        <span>Name</span>
+        <span>Role</span>
+        <span>Status</span>
+        <span>Last Sign-In</span>
+        <span className="text-right">Actions</span>
+      </div>
+      {users.length === 0 ? (
+        <div className="px-6 py-6 text-sm text-gray-500">{emptyLabel}</div>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {users.map((user) => {
+            const draft = drafts[user.id];
+            const badge = STATUS_BADGE[user.status];
+            const dirty = isRowDirty(user);
+            return (
+              <div
+                key={user.id}
+                className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 px-6 py-4 items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-900">
+                    {user.email}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {user.user_id
+                      ? user.password_reset_required
+                        ? 'Password setup required'
+                        : 'Linked account'
+                      : 'Awaiting invite acceptance'}
+                  </p>
+                </div>
+                <input
+                  value={draft?.full_name || ''}
+                  onChange={(event) =>
+                    updateDraft(user.id, { full_name: event.target.value })
+                  }
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+                  placeholder="No name"
+                />
+                <select
+                  value={draft?.role || 'viewer'}
+                  onChange={(event) =>
+                    updateDraft(user.id, {
+                      role: event.target.value as AppRole,
+                    })
+                  }
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+                >
+                  {ROLE_OPTIONS.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+                <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge.className}`}>
+                  {badge.label}
+                </span>
+                <span className="text-sm text-gray-500">
+                  {formatDate(user.last_sign_in_at)}
+                </span>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => handleSaveRow(user.id)}
+                    disabled={savingId === user.id || !dirty}
+                    title={dirty ? 'Save changes to this row' : 'No unsaved changes'}
+                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingId === user.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    <span>Save</span>
+                  </button>
+                  <button
+                    onClick={() => handleRevokeRow(user.id, user.email)}
+                    disabled={savingId === user.id}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -239,103 +366,32 @@ export default function AccessManagementPanel() {
         )}
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 border-b border-gray-100 px-6 py-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          <span>Email</span>
-          <span>Name</span>
-          <span>Role</span>
-          <span>Status</span>
-          <span>Last Sign-In</span>
-          <span className="text-right">Actions</span>
-        </div>
-
-        {loading ? (
+      {loading ? (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-center px-6 py-12">
             <Loader2 className="h-5 w-5 animate-spin text-yellow-500" />
           </div>
-        ) : staffUsers.length === 0 ? (
+        </div>
+      ) : staffUsers.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="px-6 py-10 text-sm text-gray-500">
             No staff users configured yet.
           </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {staffUsers.map((user) => {
-              const draft = drafts[user.id];
-              const badge = STATUS_BADGE[user.status];
-              return (
-                <div
-                  key={user.id}
-                  className="grid grid-cols-[2fr,2fr,1fr,1fr,1.5fr,220px] gap-4 px-6 py-4 items-center"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900">
-                      {user.email}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {user.user_id
-                        ? user.password_reset_required
-                          ? 'Password setup required'
-                          : 'Linked account'
-                        : 'Awaiting invite acceptance'}
-                    </p>
-                  </div>
-                  <input
-                    value={draft?.full_name || ''}
-                    onChange={(event) =>
-                      updateDraft(user.id, { full_name: event.target.value })
-                    }
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
-                    placeholder="No name"
-                  />
-                  <select
-                    value={draft?.role || 'viewer'}
-                    onChange={(event) =>
-                      updateDraft(user.id, {
-                        role: event.target.value as AppRole,
-                      })
-                    }
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
-                  >
-                    {ROLE_OPTIONS.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                  <span className={`inline-flex w-fit items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${badge.className}`}>
-                    {badge.label}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {formatDate(user.last_sign_in_at)}
-                  </span>
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => handleSaveRow(user.id)}
-                      disabled={savingId === user.id}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      {savingId === user.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      <span>Save</span>
-                    </button>
-                    <button
-                      onClick={() => handleRevokeRow(user.id, user.email)}
-                      disabled={savingId === user.id}
-                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Remove</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <>
+          {renderUserSection({
+            heading: 'Active staff',
+            emptyLabel: 'No active staff yet.',
+            users: activeOrDisabledUsers,
+          })}
+          {invitedUsers.length > 0 && renderUserSection({
+            heading: 'Invited (pending acceptance)',
+            emptyLabel: '',
+            users: invitedUsers,
+          })}
+        </>
+      )}
     </div>
   );
 }

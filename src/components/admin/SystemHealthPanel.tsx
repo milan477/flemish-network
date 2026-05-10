@@ -105,15 +105,15 @@ const PRESET_LABELS: Record<CadencePreset, string> = {
 const PRESET_DESCRIPTIONS: Record<JobKind, Record<CadencePreset, string>> = {
   discovery: {
     off: 'No automatic runs',
-    low: '1× per day (09:00 UTC)',
-    normal: '2× per day (09:00 + 21:00 UTC)',
-    high: '4× per day (every 6 hours)',
+    low: 'Once daily (09:00 UTC)',
+    normal: 'Twice daily (09:00 + 21:00 UTC)',
+    high: 'Every 6 hours',
   },
   verify_stale: {
     off: 'No automatic refreshes',
-    low: '5 contacts per day',
-    normal: '15 contacts per day',
-    high: '40 contacts per day',
+    low: 'Up to 5 contacts/day',
+    normal: 'Up to 15 contacts/day',
+    high: 'Up to 40 contacts/day',
   },
   embeddings_drain: {
     off: 'Manual only',
@@ -124,6 +124,11 @@ const PRESET_DESCRIPTIONS: Record<JobKind, Record<CadencePreset, string>> = {
 };
 
 const STUCK_AFTER_MS = 2 * 60 * 1000;
+
+// Apify is a legacy enrichment provider that almost always reports zero usage
+// in the current pipeline. Hide its metrics by default to reduce admin noise;
+// staff diagnosing an issue can flip VITE_SHOW_APIFY=1 to see them.
+const SHOW_APIFY_METRICS = import.meta.env.VITE_SHOW_APIFY === '1' || import.meta.env.VITE_SHOW_APIFY === 'true';
 
 function serviceLabelForKind(kind: string): string {
   return AGENTS.find((agent) => agent.kind === kind)?.label || 'Service run';
@@ -509,6 +514,8 @@ export default function SystemHealthPanel() {
             type="button"
             onClick={testConnectivity}
             disabled={actionLoading === 'connectivity'}
+            title="Run a lightweight Supabase query to confirm the URL, anon key, and RLS policies still work."
+            aria-label="Test Supabase connectivity"
             className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {actionLoading === 'connectivity' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
@@ -518,6 +525,8 @@ export default function SystemHealthPanel() {
             type="button"
             onClick={runHousekeeping}
             disabled={actionLoading === 'housekeeping'}
+            title="Mark stuck (zombie) agent runs as failed and free their slots so new runs can start."
+            aria-label="Run housekeeping to clear stuck agent runs"
             className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             {actionLoading === 'housekeeping' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -584,13 +593,25 @@ export default function SystemHealthPanel() {
           <Zap className="h-5 w-5 text-amber-600" />
           <h3 className="font-semibold text-gray-900">Today&apos;s API Usage</h3>
         </div>
-        <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
-          <Metric label="Gemini calls" value={todayUsage.geminiCalls.toLocaleString()} />
-          <Metric label="Tavily calls" value={todayUsage.tavilyCalls.toLocaleString()} />
-          <Metric label="Apify calls" value={todayUsage.apifyCalls.toLocaleString()} />
-          <Metric label="Apify credits" value={todayUsage.apifyCredits.toLocaleString()} />
-          <Metric label="Est. cost" value={`$${todayUsage.estimatedCostUsd.toFixed(4)}`} />
-        </div>
+        {(() => {
+          const showApify =
+            SHOW_APIFY_METRICS || todayUsage.apifyCalls > 0 || todayUsage.apifyCredits > 0;
+          return (
+            <div
+              className={`grid grid-cols-2 gap-3 text-sm ${showApify ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}
+            >
+              <Metric label="Gemini calls" value={todayUsage.geminiCalls.toLocaleString()} />
+              <Metric label="Tavily calls" value={todayUsage.tavilyCalls.toLocaleString()} />
+              {showApify && (
+                <>
+                  <Metric label="Apify calls" value={todayUsage.apifyCalls.toLocaleString()} />
+                  <Metric label="Apify credits" value={todayUsage.apifyCredits.toLocaleString()} />
+                </>
+              )}
+              <Metric label="Est. cost" value={`$${todayUsage.estimatedCostUsd.toFixed(4)}`} />
+            </div>
+          );
+        })()}
       </div>
 
       <div className="rounded-md border border-gray-200 bg-white">
@@ -647,12 +668,21 @@ function AgentScheduleCard({
   onPresetChange: (jobKind: JobKind, preset: CadencePreset) => void;
 }) {
   const runningRun = summary.running && 'agent_type' in summary.running ? summary.running : null;
-  const failureMessage =
-    summary.lastFailure && 'error_message' in summary.lastFailure
+  const lastFailureAt = runCompletedAt(summary.lastFailure) || runStartedAt(summary.lastFailure);
+  const lastSuccessAt = runCompletedAt(summary.lastSuccess) || runStartedAt(summary.lastSuccess);
+  // Only surface the failure banner when the most recent failure is newer
+  // than the most recent success — otherwise the banner is stale and lies
+  // about current health (see UX_REMEDIATION_2026-05-08 phase 2C).
+  const failureIsCurrent = Boolean(
+    lastFailureAt && (!lastSuccessAt || new Date(lastFailureAt).getTime() > new Date(lastSuccessAt).getTime())
+  );
+  const failureMessage = failureIsCurrent
+    ? summary.lastFailure && 'error_message' in summary.lastFailure
       ? summary.lastFailure.error_message
       : summary.lastFailure && 'last_error' in summary.lastFailure
         ? summary.lastFailure.last_error
-        : null;
+        : null
+    : null;
   const failureCode =
     summary.lastFailure && 'error_kind' in summary.lastFailure
       ? summary.lastFailure.error_kind || 'unknown'
@@ -741,7 +771,7 @@ function AgentScheduleCard({
             })}
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            {PRESET_DESCRIPTIONS[schedule.job_kind][schedule.cadence_preset]}
+            Schedule: {PRESET_DESCRIPTIONS[schedule.job_kind][schedule.cadence_preset]}
           </p>
           {schedule.job_kind === 'verify_stale' && staleCount !== null && staleCount > 0 && (
             <p className="mt-1 text-xs text-gray-500">
@@ -833,10 +863,10 @@ function SearchIndexFooter({
   let statusLine = 'Search index up to date';
   let icon = <CheckCircle2 className="h-4 w-4 text-green-600" />;
   if (pending > 0 && !stuck) {
-    statusLine = `${pending.toLocaleString()} record${pending === 1 ? '' : 's'} pending — draining`;
+    statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — draining`;
     icon = <Loader2 className="h-4 w-4 animate-spin text-teal-600" />;
   } else if (stuck) {
-    statusLine = `${pending.toLocaleString()} record${pending === 1 ? '' : 's'} pending — last drain ${
+    statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — last drain ${
       lastDrainAt ? formatAge(lastDrainAt) + ' ago' : 'never'
     }`;
     icon = <AlertTriangle className="h-4 w-4 text-amber-600" />;
@@ -856,6 +886,8 @@ function SearchIndexFooter({
           type="button"
           onClick={onRunNow}
           disabled={actionLoading === 'run:embeddings'}
+          title="Flush the embedding queue: process pending search-index records now instead of waiting for the next scheduled drain."
+          aria-label="Drain the embedding queue now"
           className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
         >
           {actionLoading === 'run:embeddings' ? (

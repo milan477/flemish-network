@@ -116,7 +116,8 @@ export default function Navigation({
                     ? 'bg-yellow-100 text-yellow-700'
                     : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
                 }`}
-                title="Add through Discovery"
+                title="Add person or organization"
+                aria-label="Add person or organization"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -211,9 +212,11 @@ export default function Navigation({
               className={`flex flex-col items-center space-y-1 px-3 py-2 rounded-lg ${
                 currentPage === 'add-contact' ? 'text-yellow-600' : 'text-gray-600'
               }`}
+              aria-label="Add person or organization"
+              title="Add person or organization"
             >
               <Plus className="w-5 h-5" />
-              <span className="text-xs">Discover</span>
+              <span className="text-xs">Add</span>
             </button>
           )}
         </div>

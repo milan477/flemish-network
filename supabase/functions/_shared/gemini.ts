@@ -5,7 +5,8 @@ export type GeminiModelRoute =
   | "contact_extraction"
   | "profile_verification"
   | "lightweight_text_merge"
-  | "offline_evaluation";
+  | "offline_evaluation"
+  | "search_rerank";
 
 const FLASH_DEFAULT =
   Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-2.5-flash";
@@ -76,6 +77,16 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
         Deno.env.get("GEMINI_EVAL_FALLBACK_MODEL"),
         FLASH_DEFAULT,
       ]);
+    case "search_rerank":
+      // Owner decision (UX_REMEDIATION Phase 1A): default to gemini-2.5-flash.
+      // Override via GEMINI_SEARCH_RERANK_MODEL (e.g. flash-lite if latency
+      // becomes the dominant constraint at scale).
+      return unique([
+        Deno.env.get("GEMINI_SEARCH_RERANK_MODEL"),
+        FLASH_DEFAULT,
+        Deno.env.get("GEMINI_SEARCH_RERANK_FALLBACK_MODEL"),
+        FLASH_LITE_DEFAULT,
+      ]);
   }
 }
 
@@ -96,6 +107,7 @@ export function getGeminiModelSummary(): Record<GeminiModelRoute, string[]> {
     profile_verification: getGeminiModelChain("profile_verification"),
     lightweight_text_merge: getGeminiModelChain("lightweight_text_merge"),
     offline_evaluation: getGeminiModelChain("offline_evaluation"),
+    search_rerank: getGeminiModelChain("search_rerank"),
   };
 }
 
@@ -196,6 +208,12 @@ interface StructuredGeminiCallOptions<T> {
   attemptsPerModel?: number;
   emptyResponseFallback?: T;
   cachedContentName?: string;
+  /**
+   * Optional thinking budget passed through to the Gemini 2.5 thinking config.
+   * Set to `0` to disable extended thinking entirely (useful for latency-bound
+   * paths like search rerank where reasoning depth doesn't move the needle).
+   */
+  thinkingBudget?: number;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -213,6 +231,7 @@ export async function callGeminiStructured<T>({
   attemptsPerModel = 2,
   emptyResponseFallback,
   cachedContentName,
+  thinkingBudget,
 }: StructuredGeminiCallOptions<T>): Promise<{ data: T; modelUsed: string }> {
   const models = getGeminiModelChain(route);
   let lastError = `No Gemini models configured for route "${route}"`;
@@ -237,6 +256,9 @@ export async function callGeminiStructured<T>({
                     response_mime_type: "application/json",
                     response_schema: schema,
                     temperature,
+                    ...(thinkingBudget !== undefined
+                      ? { thinking_config: { thinking_budget: thinkingBudget } }
+                      : {}),
                   },
                 }
                 : {
@@ -248,6 +270,9 @@ export async function callGeminiStructured<T>({
                     response_mime_type: "application/json",
                     response_schema: schema,
                     temperature,
+                    ...(thinkingBudget !== undefined
+                      ? { thinking_config: { thinking_budget: thinkingBudget } }
+                      : {}),
                   },
                 },
             ),

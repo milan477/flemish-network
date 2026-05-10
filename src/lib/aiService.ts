@@ -310,6 +310,116 @@ export interface SuggestPeopleResponse {
   gap: CollectionSuggestionGap;
 }
 
+const EMPTY_SUGGEST_GAP: CollectionSuggestionGap = { should_offer: false };
+
+/**
+ * Hand-rolled response schema for the `suggest-people` edge function.
+ * Every branch returns safe defaults so a malformed payload never throws
+ * a `Cannot read properties of undefined (reading 'rest')`-style error
+ * into the UI. See docs/AI-PIPELINE.md for the response envelope.
+ */
+function parseCollectionSuggestionGap(value: unknown): CollectionSuggestionGap {
+  if (!value || typeof value !== 'object') return { ...EMPTY_SUGGEST_GAP };
+  const record = value as Record<string, unknown>;
+  const reason = typeof record.reason === 'string' ? record.reason.trim() : '';
+  const suggestedPrompt =
+    typeof record.suggested_prompt === 'string' ? record.suggested_prompt.trim() : '';
+  const shouldOffer =
+    record.should_offer === true || Boolean(reason || suggestedPrompt);
+  return {
+    should_offer: shouldOffer,
+    ...(reason ? { reason } : {}),
+    ...(suggestedPrompt ? { suggested_prompt: suggestedPrompt } : {}),
+  };
+}
+
+function parseSuggestPeopleCandidate(value: unknown, fallbackQuery: string): CollectionSuggestionCandidate | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const entityType = record.entity_type;
+  const id = typeof record.id === 'string' ? record.id : '';
+  const name = typeof record.name === 'string' ? record.name : '';
+  if (!id || !name) return null;
+  if (entityType !== 'person' && entityType !== 'organization') return null;
+  const score = typeof record.score === 'number' && Number.isFinite(record.score) ? record.score : 0;
+  return {
+    entity_type: entityType,
+    id,
+    name,
+    reason: typeof record.reason === 'string' ? record.reason : '',
+    score,
+    snippet: typeof record.snippet === 'string' ? record.snippet : undefined,
+    source_search: typeof record.source_search === 'string' ? record.source_search : fallbackQuery,
+  };
+}
+
+function parseSuggestPeoplePerson(value: unknown): SuggestPeopleResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id : '';
+  const name = typeof record.name === 'string' ? record.name : '';
+  if (!id || !name) return null;
+  const similarity =
+    typeof record.similarity === 'number' && Number.isFinite(record.similarity)
+      ? record.similarity
+      : 0;
+  return {
+    id,
+    name,
+    reason: typeof record.reason === 'string' ? record.reason : '',
+    similarity,
+  };
+}
+
+export function parseSuggestPeopleResponse(
+  data: unknown,
+  fallbackQuery: string,
+): SuggestPeopleResponse {
+  const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const candidates: CollectionSuggestionCandidate[] = Array.isArray(record.candidates)
+    ? (record.candidates as unknown[])
+        .map((c) => parseSuggestPeopleCandidate(c, fallbackQuery))
+        .filter((c): c is CollectionSuggestionCandidate => Boolean(c))
+    : [];
+
+  const suggestionsRaw = Array.isArray(record.suggestions) ? (record.suggestions as unknown[]) : [];
+  const suggestions: SuggestPeopleResult[] = suggestionsRaw.length
+    ? suggestionsRaw
+        .map(parseSuggestPeoplePerson)
+        .filter((s): s is SuggestPeopleResult => Boolean(s))
+    : candidates
+        .filter((candidate) => candidate.entity_type === 'person')
+        .map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+          reason: candidate.reason,
+          similarity: candidate.score,
+        }));
+
+  // If candidates was empty but suggestions had entries, project them as candidates.
+  const finalCandidates = candidates.length
+    ? candidates
+    : suggestions.map((s) => ({
+        entity_type: 'person' as const,
+        id: s.id,
+        name: s.name,
+        reason: s.reason,
+        score: s.similarity,
+        source_search: fallbackQuery,
+      }));
+
+  return {
+    message:
+      typeof record.message === 'string' && record.message.trim()
+        ? record.message
+        : `Found ${finalCandidates.length} collection candidates.`,
+    suggestions,
+    candidates: finalCandidates,
+    searches: Array.isArray(record.searches) ? (record.searches as unknown[]) : [],
+    gap: parseCollectionSuggestionGap(record.gap),
+  };
+}
+
 /**
  * Suggest people via server-side embedding search + Gemini Pro ranking.
  * Falls back to client-side keyword scoring if the edge function is unavailable.
@@ -335,41 +445,11 @@ export async function suggestPeopleEmbedding(
     });
 
     if (error) throw await extractEdgeError(error, 'People suggestion request failed');
-    if (!data?.suggestions && !data?.candidates) throw new Error('No suggestions returned');
+    if (!data || (data.suggestions === undefined && data.candidates === undefined)) {
+      throw new Error('No suggestions returned');
+    }
 
-    const candidates: CollectionSuggestionCandidate[] = Array.isArray(data.candidates)
-      ? (data.candidates as CollectionSuggestionCandidate[])
-      : (data.suggestions || []).map((suggestion: SuggestPeopleResult) => ({
-          entity_type: 'person' as const,
-          id: suggestion.id,
-          name: suggestion.name,
-          reason: suggestion.reason,
-          score: suggestion.similarity,
-          source_search: query,
-        }));
-
-    return {
-      message:
-        typeof data.message === 'string'
-          ? data.message
-          : `Found ${candidates.length} collection candidates.`,
-      suggestions: Array.isArray(data.suggestions)
-        ? (data.suggestions as SuggestPeopleResult[])
-        : candidates
-            .filter((candidate) => candidate.entity_type === 'person')
-            .map((candidate) => ({
-              id: candidate.id,
-              name: candidate.name,
-              reason: candidate.reason,
-              similarity: candidate.score,
-            })),
-      candidates,
-      searches: Array.isArray(data.searches) ? data.searches : [],
-      gap:
-        data.gap && typeof data.gap === 'object'
-          ? (data.gap as CollectionSuggestionGap)
-          : { should_offer: false },
-    };
+    return parseSuggestPeopleResponse(data, query);
   } catch (error) {
     // Fallback to client-side scoring
     const fallback = await suggestPeople(query);

@@ -9,7 +9,7 @@
 | Expand The Database | `/admin/discovery` | `agent-scheduler` -> `agent-discovery` | Prompted and autonomous discovery. Evidence-first review queues; no auto-promotion. |
 | Verify And Enrich Records | `/admin/verification` | `agent-verify`, `update-profile` preview | Target is one verification service with preview and durable modes. |
 | Understand And Grow The Network | `/admin/growth` | `agent-scheduler` planning/metrics, `agent-discovery-reflect` (daily cron via housekeeping) | Coverage gaps, source yield, entity pivots, reflection suggestions, and recommended next discovery actions. |
-| System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, record-index queues, cancellation, housekeeping, API usage. |
+| System | `/admin/system` | `agent-scheduler`, `generate-embeddings` | Health, record-index queues, cancellation, housekeeping, API usage. Today's API Usage tile reports Gemini, Tavily, and estimated cost by default; the legacy Apify call/credit metrics are hidden unless `VITE_SHOW_APIFY=1` or actual usage is non-zero. |
 | Staff Access | `/admin/access` | `invite-staff-user`, `remove-staff-user`, Supabase Auth | Admin-only staff invitation, role management, and removal. |
 
 ## Behavioral Contracts
@@ -45,21 +45,72 @@ Defined in `supabase/functions/_shared/gemini.ts`.
 | `query_parsing`, `query_generation`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_QUERY_GENERATION_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
 | `contact_extraction`, `profile_verification` | `gemini-2.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL`, `GEMINI_PROFILE_MODEL` |
 | `lightweight_text_merge`, `offline_evaluation` | `gemini-2.5-pro` | `GEMINI_PRO_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` |
+| `search_rerank` | `gemini-2.5-flash` (thinking budget = 0) | `GEMINI_SEARCH_RERANK_MODEL`, `GEMINI_SEARCH_RERANK_FALLBACK_MODEL` |
 | embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |
 
 ## Edge Function: `search-people`
 
 Server-side Search The Network endpoint for approved people and organizations.
 
-1. Takes `{ query, max_results, match_mode?, filters? }`.
-2. Supported filters include `show_people`, `show_organizations`, `sector`, `person_scope`, `occupation`, `city`, `state`, and `flemish_connections`.
-3. Runs Gemini keyword extraction and original-query embedding in parallel, degrading to lexical-only when needed.
-4. Parses shared search intent, preserving `original_query` for semantic retrieval while using canonical structured terms for lexical retrieval.
-5. Calls people and organization lexical, record-vector, and text-chunk retrieval, then fuses those ranking signals.
-6. Applies structured criteria coverage for sector, location, occupation/type, and canonical Flemish/Belgian relevance. `filters.flemish_connections` is alias-aware and resolves broad filterable facts such as KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, and VIB.
-7. Returns `{ results, people, organizations, keywords, match_mode, route, degraded, diagnostics, message, total_with_embeddings }`.
+The architecture is two stages with no natural-language filter parser
+(`src/lib/filterParser.ts` was deleted in UX_REMEDIATION Phase 1A — chips are
+click-only on the dashboard, never auto-extracted from the query).
 
-Each item in `results` includes `entity_type`, `id`, `name`, `score`, `snippet`, and `rationale`. `entity_type = "person"` rows preserve the people fields used by the existing UI; `entity_type = "organization"` rows include organization type, description, website/logo, canonical Flemish/Belgian fact text, US network status, and US locations. Search and profile surfaces can add approved people or organizations to Collections.
+**Stage 1 — hybrid retrieval (~100–500 ms).** Lexical (`search_people_lexical`
+/ `search_organizations_lexical`) + record-vector (`match_people` /
+`match_organizations`) + text-chunk vector (`match_person_text_chunks` /
+`match_organization_text_chunks`) run in parallel. Signals are fused with
+Reciprocal Rank Fusion (`k = 60`) plus per-route weights and small boosts for
+exact-name matches, name overlap, and structured-criteria coverage. The
+`people_search_documents.search_text` and
+`organization_search_documents.search_text` blobs include city, two-letter
+state, and the spelled-out US state name (via `expand_us_state` /
+`format_location_search_text`, migration `20260509000000`) so a query like
+"Massachusetts" matches rows whose location only stores `MA`.
+Structured-criteria coverage is now a soft boost only — it never drops
+candidates from the result set (the old strict gate produced the
+Boston→Indiana surprise documented in the 2026-05-08 UX review).
+
+**Stage 2 — Gemini rerank (best-effort, 0–12 s timeout).** The top mixed
+people+organization candidates from Stage 1 (capped at 30 by
+`supabase/functions/search-people/rerank.ts`) are sent to Gemini route
+`search_rerank` (default `gemini-2.5-flash` with `thinking_budget = 0`,
+override via `GEMINI_SEARCH_RERANK_MODEL`) with structured output. Each
+candidate is rendered as a compact `KIND | ID | BLOB` line covering name,
+title, role, sectors, Flemish ties, location, and bio. The model returns
+`{ ranked: [{ id, kind, reason }] }`; any IDs not in the supplied list are
+discarded. On success the response carries `rerank_status = "ok"` and the
+`results` array is reordered with the model's ranking; Stage-1 candidates the
+model omitted are appended at the bottom so nothing disappears. On timeout,
+error, or empty key the response carries
+`rerank_status ∈ {"timeout","error","skipped"}`, the Stage 1 ordering is kept,
+and the per-row rationale falls back to the lexical-derived text.
+
+**Request / response.**
+
+1. Takes `{ query, max_results, match_mode?, filters? }`.
+2. Supported filters include `show_people`, `show_organizations`, `sector`,
+   `person_scope`, `occupation`, `city`, `state`, and `flemish_connections`.
+   `filters.flemish_connections` is alias-aware and resolves broad filterable
+   facts such as KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB,
+   Vlerick, VITO, Flanders Make, and VIB. Filters are applied as soft
+   coverage signals — the Gemini rerank decides what actually matches the
+   user's intent.
+3. Runs Gemini keyword extraction and original-query embedding in parallel,
+   degrading to lexical-only when needed.
+4. Parses shared search intent, preserving `original_query` for semantic
+   retrieval while using canonical structured terms for lexical retrieval.
+5. Calls Stage 1 retrieval (six parallel RPCs), fuses signals, then runs
+   Stage 2 Gemini rerank.
+6. Returns
+   `{ results, people, organizations, keywords, match_mode, route, degraded, rerank, rerank_status, rerank_model, rerank_duration_ms, diagnostics, message, total_with_embeddings }`.
+
+Each item in `results` includes `entity_type`, `id`, `name`, `score`,
+`snippet`, and `rationale`. `entity_type = "person"` rows preserve the people
+fields used by the existing UI; `entity_type = "organization"` rows include
+organization type, description, website/logo, canonical Flemish/Belgian fact
+text, US network status, and US locations. Search and profile surfaces can
+add approved people or organizations to Collections.
 
 ## Edge Function: `agent-discovery`
 
@@ -130,6 +181,10 @@ Discovery review has separate pending people and pending organization queues. Pe
 
 Derived-label approval canonicalizes Flemish/Belgian labels through approved names and aliases before writing `person_flemish_connections`; it preserves confidence, evidence URL, evidence excerpt, and relationship role where available.
 
+### Discovery telemetry presentation layer
+
+Agent telemetry written to `agent_runs.results.steps` uses internal step IDs that may include parameterized suffixes (`page_extraction_<uuid>`, `linkedin_enrichment_2`, `frontier_process_<uuid>`). The `AgentDashboard` panel never renders these IDs raw; it routes them through `formatStepLabel` in `src/components/admin/AgentDashboard.tsx`, which strips a trailing `_<uuid>` or `_<n>` suffix and looks the prefix up in `STEP_LABELS`. New agent steps render readably without a UI code change as long as their ID prefix matches a known label, otherwise the cleaned prefix shows through. Step `params` values that are strings are displayed unescaped (`renderParamValue`); only non-string values are JSON-stringified. The full label table lives in `docs/PRODUCT-SERVICES.md` under "Discovery step-label vocabulary."
+
 ## Edge Function: `agent-verify`
 
 Unified record verification with preview and durable modes.
@@ -150,6 +205,14 @@ Behavior:
 3. Discovered-record path uses web search + Gemini structured output. The prompt requires `network_scope` to be `null` when no clear residence/tie signal is present (no guessing). `contradiction=true` triggers a hard delete; ambiguity does not.
 4. Suggestions are evidence-backed (source URL, evidence excerpt, confidence, method) and pass risk policy gates before being returned. High-risk fields stay review-first.
 5. Suggestions are deduped per record by `dedupe_key`; the dedupe key is `field_name::normalized_value`. Higher-confidence or better-evidenced suggestions refresh existing rows instead of duplicating them.
+
+### Verification approval guards (Phase 5C)
+
+**Destination-locale guard.** The Flemish Network platform assumes persons of interest are US-based. When approving a `location_city` or `location_state` Profile Update Suggestion in `SuggestedChanges.tsx`, the UI inspects the destination state (combining the suggestion under review with any paired city/state suggestion and the person's existing location). If the destination is not a recognized US state name or code, the approval pauses and an in-app modal asks the staff user to confirm the move explicitly. Native `confirm()` is never used. Cancelling the modal aborts the approval with an explanatory error, leaving the suggestion pending.
+
+**Risk vs Confidence presentation.** Risk and Confidence describe different things and must be shown together with a tooltip explaining precedence. **Risk** is the field's intrinsic sensitivity (set by `getSuggestionRisk` in `src/lib/verification.ts`: `bio` and `_status` are high-risk; `current_position`, `occupation`, `email`, `title`, names are medium-risk; everything else is low-risk). **Confidence** is the model's evidence strength for this specific suggestion. The Verification panel renders one combined chip in the form `Confidence 90% · Low-risk field` colored by risk, with an info icon whose `title` reads: "Confidence = how strong the evidence is. Risk = how sensitive the field is. Approve only when confidence is high AND the risk class is acceptable for this field." Both `SuggestedChanges.tsx` and `OrganizationSuggestedChanges.tsx` follow this contract.
+
+**Bio diff layout.** Bio suggestions render as a vertical stack (strikethrough current value above, new value below, full width) instead of side-by-side, since prose does not fit in a 40%-width column.
 
 ## Edge Function: `update-profile`
 
@@ -229,7 +292,19 @@ After dispatch, the row's `last_run_at`, `last_run_id`, `last_status`, `last_err
 
 ### Manual `trigger` min-interval guard
 
-When `action: trigger` resolves to a job kind tracked by `agent_schedules` (i.e. `discovery` or `verify_stale` for non-discovered targets), the scheduler reads `last_manual_at` and `last_run_at` and rejects with HTTP 429 / `quota_exhausted` if either is within the last 10 minutes. Pass `force: true` in the body to bypass. Successful manual triggers stamp `last_manual_at` and `last_manual_by` so multi-admin workspaces can see who clicked Run.
+When `action: trigger` resolves to a job kind tracked by `agent_schedules` (i.e. `discovery` or `verify_stale` for non-discovered targets):
+
+1. The scheduler first runs `markZombieRuns` so a stale `running` row whose heartbeat is older than 2 minutes is flipped to `failed` before its `last_run_at` timestamp is consulted. This prevents zombie rows from blocking fresh manual runs (UX_REMEDIATION Phase 1B).
+2. It then reads `last_manual_at` and `last_run_at`; if either is within the last 10 minutes the call is rejected. Pass `force: true` in the body to bypass.
+3. Successful manual triggers stamp `last_manual_at` and `last_manual_by` so multi-admin workspaces can see who clicked Run.
+
+**Response envelope (in-body signaling, not HTTP status).** Edge functions must signal in the body because the supabase-js client surfaces non-2xx responses as `error: null` for many call sites. `agent-scheduler` returns HTTP 200 with one of:
+
+- `{ status: "running", run_id, housekeeping }` — the run was created and dispatched to the downstream agent function.
+- `{ status: "rejected", reason: "quota_exhausted", job_kind, wait_minutes, message, housekeeping: null }` — the min-interval guard fired; the UI should toast the `message` (informative) and keep the form state intact.
+- `{ status: "cancelled" | "noop", run_id, housekeeping }` — for `action: "cancel"`.
+
+UI contract: callers inspect `data?.status` and `data?.reason`. On `running` they toast success; on `rejected/quota_exhausted` they toast an info-level message; on any other shape they toast a generic "Discovery run did not start" error so the user always gets feedback. The Discovery intake textarea persists on submit so staff can re-run without retyping.
 
 ## Edge Function: `generate-embeddings`
 
@@ -263,6 +338,12 @@ Collection suggestion service. The deployed function name remains `suggest-peopl
 9. Returns `{ message, searches, candidates, gap }`, plus legacy `suggestions` for people-only callers.
 
 Each `candidates` item includes `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`. `gap.should_offer` may include `reason` and `suggested_prompt` for a staff-controlled handoff to `/admin/discovery?prompt=<encoded prompt>`; the function never starts Discovery.
+
+### `suggest-people` response envelope (Phase 3A)
+
+The UI parses the response through a hand-rolled schema (`parseSuggestPeopleResponse` in `src/lib/aiService.ts`) that returns safe defaults on every branch — `gap` defaults to `{ should_offer: false }`, missing `candidates`/`suggestions` collapse to `[]`, malformed entries are dropped. This eliminates the "`Cannot read properties of undefined (reading 'rest')`" class of crashes when the model returns an unexpected shape.
+
+**Edge functions must return validated shapes; the UI converts thrown errors into friendly banners, never raw JS messages.** Both Collection call sites (`CollectionModal`, `CollectionDetail`) wrap suggestion calls and surface the fixed copy "Suggestions unavailable — please retry." When the server-side `parseCollectionSuggestionPlan` or `parseRerankedCollectionCandidates` parser throws, `suggest-people` logs the raw model output (truncated to 4 KB) so we can diagnose without leaking implementation detail to staff.
 
 Phase 4 Collections does not add autonomous Discovery, canonical organization Flemish/Belgian facts, persistent gap analytics, or persistent draft tables. Draft approval/rejection state is client-side until staff save accepted candidates into `collection_members`; `/collections/:id` may cache that client draft in browser storage so suggestions survive route revisits without becoming durable database rows.
 

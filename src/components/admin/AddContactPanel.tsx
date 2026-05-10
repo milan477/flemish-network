@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   UserPlus,
   FileUp,
@@ -36,13 +36,17 @@ import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
 import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/networkScope';
 import { buildCandidateKeyForMode } from '../../lib/csvParser';
-import { notifyError } from '../../lib/toast';
+import { notifyError, notifySuccess, notifyInfo } from '../../lib/toast';
 
 interface AddContactPanelProps {
   sectors: Sector[];
   onContactAdded: () => void;
-  initialTab?: Tab;
+  /** URL-driven sub-tab. The parent owns the source of truth via ?mode=. */
+  mode?: Tab;
+  onModeChange?: (next: Tab) => void;
   initialDiscoveryPrompt?: string;
+  /** True while a discovery agent_run is pending or running. */
+  discoveryRunActive?: boolean;
 }
 
 type Tab = 'discovery' | 'manual' | 'import';
@@ -182,31 +186,44 @@ function reconcileConnections(
 export default function AddContactPanel({
   sectors,
   onContactAdded,
-  initialTab = 'discovery',
+  mode,
+  onModeChange,
   initialDiscoveryPrompt = '',
+  discoveryRunActive = false,
 }: AddContactPanelProps) {
-  const [tab, setTab] = useState<Tab>(initialTab);
+  // Internal fallback when the parent does not pass a controlled `mode`.
+  const [internalTab, setInternalTab] = useState<Tab>(mode ?? 'discovery');
+  const tab: Tab = mode ?? internalTab;
+  const setTab = useCallback(
+    (next: Tab) => {
+      if (onModeChange) {
+        onModeChange(next);
+      } else {
+        setInternalTab(next);
+      }
+    },
+    [onModeChange]
+  );
+
   const [addedPerson, setAddedPerson] = useState<Person | null>(null);
   const [manualMode, setManualMode] = useState<'people' | 'organizations'>('people');
   const [discoveryPrompt, setDiscoveryPrompt] = useState(initialDiscoveryPrompt);
   const [discoveryRunning, setDiscoveryRunning] = useState(false);
 
   useEffect(() => {
-    setTab(initialTab);
-  }, [initialTab]);
-
-  useEffect(() => {
     if (!initialDiscoveryPrompt) return;
     setDiscoveryPrompt(initialDiscoveryPrompt);
     setTab('discovery');
-  }, [initialDiscoveryPrompt]);
+  }, [initialDiscoveryPrompt, setTab]);
+
+  const runButtonDisabled = discoveryRunning || discoveryRunActive;
 
   const handleRunDiscovery = async () => {
     setDiscoveryRunning(true);
     const trimmedPrompt = discoveryPrompt.trim();
 
     try {
-      const { error } = await supabase.functions.invoke('agent-scheduler', {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
         body: {
           action: 'trigger',
           agent_type: 'discovery',
@@ -215,8 +232,35 @@ export default function AddContactPanel({
       });
 
       if (error) throw error;
-      setDiscoveryPrompt('');
-      onContactAdded();
+
+      const status = (data as { status?: string; reason?: string; message?: string; wait_minutes?: number } | null)?.status;
+      if (status === 'running') {
+        notifySuccess('Discovery run started.', {
+          hint: trimmedPrompt
+            ? `Query: ${trimmedPrompt.slice(0, 80)}${trimmedPrompt.length > 80 ? '…' : ''}`
+            : 'Seeded sweep — see Discovery History below.',
+        });
+        // Persist the prompt in the textarea so the user can re-run or edit
+        // without retyping. Phase 1B explicitly calls this out: do NOT clear
+        // on submit.
+        onContactAdded();
+      } else if (status === 'rejected') {
+        const payload = data as { reason?: string; message?: string; wait_minutes?: number };
+        if (payload.reason === 'quota_exhausted') {
+          notifyInfo('Discovery already ran recently.', {
+            hint: payload.message ||
+              `Wait ${payload.wait_minutes ?? 'a few'} more minute${payload.wait_minutes === 1 ? '' : 's'} or pass force=true.`,
+          });
+        } else {
+          notifyError(payload.message || 'Discovery run was rejected.', {
+            hint: payload.reason ? `Reason: ${payload.reason}` : undefined,
+          });
+        }
+      } else {
+        notifyError('Discovery run did not start.', {
+          hint: 'The scheduler returned an unexpected response. Check the Discovery History panel.',
+        });
+      }
     } catch (err) {
       notifyError(err, { hint: 'Could not start discovery.' });
     } finally {
@@ -276,15 +320,20 @@ export default function AddContactPanel({
               <button
                 type="button"
                 onClick={handleRunDiscovery}
-                disabled={discoveryRunning}
+                disabled={runButtonDisabled}
+                title={
+                  discoveryRunActive && !discoveryRunning
+                    ? 'A discovery run is already in flight — wait for it to finish.'
+                    : undefined
+                }
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
               >
-                {discoveryRunning ? (
+                {runButtonDisabled ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Search className="h-4 w-4" />
                 )}
-                Run Discovery
+                {discoveryRunActive && !discoveryRunning ? 'Discovery in progress…' : 'Run Discovery'}
               </button>
               <span className="text-xs text-gray-500">
                 Creates pending people and organizations for review.

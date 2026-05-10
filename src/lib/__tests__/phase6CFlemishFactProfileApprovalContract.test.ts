@@ -12,6 +12,14 @@ const organizationProfileSource = readFileSync(
   'utf8'
 );
 
+// Phase 2A (UX_REMEDIATION_2026-05-08): per-connection chip + evidence row
+// rendering was extracted into a shared <FlemishConnectionList> component used
+// by both profile pages. Evidence-rendering assertions point at that file now.
+const flemishConnectionListSource = readFileSync(
+  resolve(process.cwd(), 'src/components/FlemishConnectionList.tsx'),
+  'utf8'
+);
+
 const discoveryReviewSource = readFileSync(
   resolve(process.cwd(), 'src/components/admin/DiscoveredContactsPanel.tsx'),
   'utf8'
@@ -26,8 +34,7 @@ describe('Phase 6C Flemish fact profile and approval contract', () => {
   it('loads profile fact relationship evidence for person and organization profiles', () => {
     expect(personProfileSource).toContain('person_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt');
     expect(organizationProfileSource).toContain('organization_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt');
-    expect(personProfileSource).toContain('link.evidence_excerpt');
-    expect(organizationProfileSource).toContain('link.evidence_excerpt');
+    expect(flemishConnectionListSource).toContain('link.evidence_excerpt');
   });
 
   it('saves profile edits through canonical fact junctions instead of organization raw relevance', () => {

@@ -10,6 +10,7 @@ import {
   getCurrentPageFromPathname,
   normalizeAdminTab,
   parseAdminDiscoveryPrompt,
+  parseAddContactMode,
   type DashboardRouteState,
 } from '../appRouting';
 import { DEFAULT_MAP_FILTERS } from '../supabase';
@@ -20,9 +21,13 @@ function roundtrip(state: DashboardRouteState): DashboardRouteState {
 }
 
 describe('appRouting - dashboard URL roundtrip', () => {
-  it('default state encodes to empty search', () => {
+  it('default state always emits symmetric people/organizations toggles', () => {
+    // Phase 4A: showPeople/showOrganizations are written explicitly in both
+    // states so toggling on->off->on round-trips even when merging onto an
+    // existing search.
     const params = buildDashboardSearchParams(defaultDashboardRouteState());
-    expect(params.toString()).toBe('');
+    expect(params.get('people')).toBe('1');
+    expect(params.get('organizations')).toBe('1');
     expect(roundtrip(defaultDashboardRouteState())).toEqual(
       defaultDashboardRouteState()
     );
@@ -183,7 +188,10 @@ describe('appRouting - dashboard URL roundtrip', () => {
     expect(loc.search).toContain('q=foo');
 
     const empty = buildDashboardLocation(defaultDashboardRouteState());
-    expect(empty.search).toBe('');
+    // Phase 4A: default state still emits the symmetric people/organizations
+    // toggles, so the search is non-empty but encodes the defaults.
+    expect(empty.search).toContain('people=1');
+    expect(empty.search).toContain('organizations=1');
   });
 });
 
@@ -232,6 +240,19 @@ describe('appRouting - admin discovery prompt', () => {
 
   it('defaults to an empty prompt when no handoff prompt is present', () => {
     expect(parseAdminDiscoveryPrompt(new URLSearchParams())).toBe('');
+  });
+});
+
+describe('appRouting - add contact mode', () => {
+  it('decodes ?mode=manual|import|discovery', () => {
+    expect(parseAddContactMode(new URLSearchParams('mode=manual'))).toBe('manual');
+    expect(parseAddContactMode(new URLSearchParams('mode=import'))).toBe('import');
+    expect(parseAddContactMode(new URLSearchParams('mode=discovery'))).toBe('discovery');
+  });
+
+  it('defaults to discovery when mode is missing or unknown', () => {
+    expect(parseAddContactMode(new URLSearchParams())).toBe('discovery');
+    expect(parseAddContactMode(new URLSearchParams('mode=bogus'))).toBe('discovery');
   });
 });
 

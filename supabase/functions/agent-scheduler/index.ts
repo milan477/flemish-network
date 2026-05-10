@@ -177,9 +177,28 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const force = body.force === true;
     const scheduleJobKind = agentTypeToJobKind(agentType, params);
+
+    // Run zombie cleanup before the interval guard so a stale "running" row's
+    // recent timestamp does not block a fresh manual run. See UX_REMEDIATION
+    // Phase 1B.
+    await markZombieRuns(supabase).catch((err) => {
+      log.warn("zombie_cleanup_failed_pre_trigger", err instanceof Error ? err.message : String(err));
+    });
+
     if (scheduleJobKind && !force) {
-      const guardError = await enforceManualMinInterval(supabase, scheduleJobKind);
-      if (guardError) return guardError;
+      const guardResult = await enforceManualMinInterval(supabase, scheduleJobKind);
+      if (guardResult) {
+        // Return as 200 with body envelope so the supabase-js client surfaces
+        // it as `data` instead of swallowing it (non-2xx becomes `error: null`).
+        return jsonResponse({
+          status: "rejected",
+          reason: "quota_exhausted",
+          job_kind: scheduleJobKind,
+          wait_minutes: guardResult.waitMinutes,
+          message: guardResult.message,
+          housekeeping: null,
+        });
+      }
     }
 
     const runId = await triggerAgentRun(
@@ -354,10 +373,15 @@ function agentTypeToJobKind(agentType: SchedulerAgentType, params: Record<string
   return null;
 }
 
+interface IntervalGuardResult {
+  waitMinutes: number;
+  message: string;
+}
+
 async function enforceManualMinInterval(
   supabase: SupabaseAdminClient,
   jobKind: JobKind,
-): Promise<Response | null> {
+): Promise<IntervalGuardResult | null> {
   const { data: schedule } = await supabase
     .from("agent_schedules")
     .select("last_manual_at, last_run_at")
@@ -370,11 +394,10 @@ async function enforceManualMinInterval(
     const elapsed = Date.now() - new Date(ts).getTime();
     if (elapsed >= 0 && elapsed < MANUAL_MIN_INTERVAL_MS) {
       const waitMin = Math.ceil((MANUAL_MIN_INTERVAL_MS - elapsed) / 60000);
-      return jsonError(
-        429,
-        "quota_exhausted",
-        `Recently ran. Wait ${waitMin} more minute${waitMin === 1 ? "" : "s"} or pass force=true.`,
-      );
+      return {
+        waitMinutes: waitMin,
+        message: `Recently ran. Wait ${waitMin} more minute${waitMin === 1 ? "" : "s"} or pass force=true.`,
+      };
     }
   }
   return null;

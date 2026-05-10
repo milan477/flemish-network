@@ -308,12 +308,6 @@ export default function DirectoryGrid({
             </div>
           )}
 
-          {nameMatches.length === 0 && !aiLoading && (
-            <p className="text-sm text-gray-500">
-              No people found matching the name &ldquo;{searchQuery}&rdquo;.
-            </p>
-          )}
-
           {aiLoading && (
             <div className="flex items-center space-x-3 py-6">
               <Loader2 className="w-5 h-5 text-yellow-600 animate-spin" />

@@ -104,6 +104,8 @@ Collection suggestion drafts are not persisted to database tables in Phase 4. Re
 | `match_person_text_chunks(query_embedding, match_count, similarity_threshold, exclude_person_id)` | Returns approved people text-chunk vector candidates. |
 | `match_organizations(query_embedding, match_count, similarity_threshold)` | Returns approved organization vector candidates from `organizations.embedding`. |
 | `match_organization_text_chunks(query_embedding, match_count, similarity_threshold, exclude_organization_id)` | Returns approved organization text-chunk vector candidates. |
+| `expand_us_state(state_code)` | Returns the spelled-out US state name for a two-letter code (or NULL). Added in `20260509000000_phase1a_search_state_expansion.sql` so the search blob carries "Boston, MA Massachusetts" and lexical/BM25 matches a query like "Massachusetts" against rows whose location only stores `MA`. |
+| `format_location_search_text(city, state)` | Renders `"<City>, <ST> <SpelledOutState>"` for use inside `build_people_search_document` / `build_organization_search_document`. Same migration. |
 
 Phase 6A adds SQL lookup helpers for Flemish/Belgian facts. They normalize raw input, resolve exact canonical names and approved aliases, and can create/reuse canonical rows for migration or editor-owned write paths. SQL and TypeScript canonicalization must stay aligned; 6B owns moving active search/filter code to alias-aware helper behavior.
 

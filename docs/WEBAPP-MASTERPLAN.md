@@ -688,6 +688,19 @@ All seven phases of the Discovery Redesign (surface×lens taxonomy, bandit alloc
 - Entity pivots have validation, saturation cooldown, multi-hop expansion, and composition (`discovery_composition_pivots`).
 - Domain reputation scoring closes the loop from yield back into query generation.
 
+## UX Remediation — Completed 2026-05-09
+
+All phases of `docs/plans/UX_REMEDIATION_2026-05-08.md` shipped (1A through 5; Phase 6 = this entry):
+
+- **Phase 1A** — `search-people` v2: kept existing pgvector + tsvector + chunk RRF as Stage 1; added `gemini-2.5-flash` rerank (route `search_rerank`) as Stage 2 with graceful degradation. New migration `20260509000000_phase1a_search_state_expansion.sql` rebuilds `search_text` blobs with spelled-out US states and triggers a re-embed of all 165 people+orgs. Parser deleted (`src/lib/filterParser.ts` + tests). Stale empty-state header in `DirectoryGrid` removed. Six repro queries from the review verified PASS in chrome.
+- **Phase 1B** — agent-scheduler now runs `markZombieRuns` before the interval guard; returns `{status, reason}` envelopes instead of HTTP 429; new `useActiveAgentRun` hook drives in-flight disable; toasts on success / cooldown / failure; prompt textarea persisted across submit.
+- **Phase 2A–2G** — `<FlemishConnectionList>` extracted (PersonProfile + OrganizationProfile); Discovery row labels via `formatStepLabel` (no UUIDs); SystemHealthPanel and Discovery History suppress superseded failure cards; single `useCityCount` hook drives Cities counters across home / browse / Coverage; chip taxonomy stripped to bare values; `formatDateTime` helper applied to Collections list.
+- **Phase 3** — `parseSuggestPeopleResponse` schema + safe defaults; UI converts thrown errors into "Suggestions unavailable — please retry"; suggest-people logs raw model output on parse failure.
+- **Phase 4A–4E** — `?mode=manual|import|discovery` URL contract on `/admin/discovery`; symmetric map URL state in `buildDashboardSearchParams`; header `+` icon labelled; `docs/RUNBOOK.md` created with sections per `error_kind`; page title set to `Flemish Network`; ROUTES.md aligned with built panels.
+- **Phase 5A–5C** — Access Save buttons disabled until dirty; Active vs Invited split; SystemHealthPanel cadence labels normalized; Drain / Run Housekeeping / Test Supabase tooltips; Apify metrics gated on `VITE_SHOW_APIFY`; Verification destination-locale guard modal; combined `Confidence X% · low-risk field` chip with single info-tooltip; bio diff stacks vertically; "(durable mode)" copy replaced.
+
+`npm run typecheck`, `npm test` (132/132), and `npm run build` all green at completion. Migration applied via `supabase db push --linked`; `search-people` and `suggest-people` deployed to project ref `ofzuhajxwxggybkuzefq`; embedding queue drained to zero against the new blob.
+
 ## Cross-Phase Test Policy
 
 Run the smallest relevant suite during development, then run the full suite before handoff for any code or schema change.
@@ -723,6 +736,17 @@ npm run build
 ```
 
 Add focused tests in the phase where behavior changes. Do not rely only on snapshots or broad build success.
+
+## UX Remediation — Phase 1A (Search) — Completed 2026-05-09
+
+`docs/plans/UX_REMEDIATION_2026-05-08.md` Phase 1A landed:
+
+- Migration `20260509000000_phase1a_search_state_expansion.sql` adds `expand_us_state` + `format_location_search_text`, rebuilds `build_people_search_document` and `build_organization_search_document` to write the spelled-out US state into the search blob, and backfills every approved row.
+- `supabase/functions/search-people/index.ts` now runs Stage 1 hybrid retrieval (unchanged) and Stage 2 Gemini rerank in `supabase/functions/search-people/rerank.ts` (route `search_rerank`, default `gemini-2.5-flash` with `thinking_budget = 0`, override via `GEMINI_SEARCH_RERANK_MODEL`). Strict criteria-coverage filtering was demoted to a soft boost. Response envelope adds `rerank`, `rerank_status`, `rerank_model`, and `rerank_duration_ms`.
+- `src/lib/filterParser.ts`, its tests, and the chip auto-extraction in `Dashboard.tsx` were deleted. The `/` query box is now pure semantic intent; chips are click-only.
+- `src/components/DirectoryGrid.tsx` lost the duplicate "no people found matching the name" banner.
+- Browser verification: all six reproduction snippets from `docs/plans/UX_REVIEW_2026-05-08.md` pass with rerank=ok and Cambridge/Boston-MA results for the Boston biotech query (no Indiana misfire).
+- Docs updated: `AI-PIPELINE.md`, `SCHEMA.md`, `ROUTES.md`, `EVALUATION.md`, `PRODUCT-SERVICES.md`.
 
 ## Handoff Rules For Future Agents
 

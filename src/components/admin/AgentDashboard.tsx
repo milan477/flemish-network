@@ -129,7 +129,7 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
     const r = run.results;
     const parts: string[] = [];
     if (typeof r.frontier_claimed === 'number') parts.push(`${r.frontier_claimed} claimed`);
-    if (typeof r.pages_fetched === 'number') parts.push(`${r.pages_fetched} pages`);
+    if (typeof r.pages_fetched === 'number') parts.push(formatCount(r.pages_fetched, 'page', 'pages'));
     if (typeof r.profiles_found === 'number') parts.push(`${r.profiles_found} found`);
     if (typeof r.suggestions_created === 'number') parts.push(`${formatCount(r.suggestions_created, 'person', 'people')} created`);
     if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) {
@@ -212,6 +212,16 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
                   const StatusIcon = style.icon;
                   const isExpanded = expandedRunId === run.id;
                   const hasSteps = run.results && Array.isArray(run.results.steps);
+                  const runRef = run.completed_at || run.started_at;
+                  const supersededBySuccess = run.status === 'failed' && !!runRef && runs.some(
+                    (other) =>
+                      other.id !== run.id &&
+                      other.agent_type === run.agent_type &&
+                      other.status === 'completed' &&
+                      !!(other.completed_at || other.started_at) &&
+                      new Date(other.completed_at || other.started_at!).getTime() >
+                        new Date(runRef).getTime()
+                  );
 
                   return (
                     <React.Fragment key={run.id}>
@@ -284,7 +294,7 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
                         </td>
                       </tr>
                     )}
-                    {run.status === 'failed' && run.error_message && (
+                    {run.status === 'failed' && run.error_message && !supersededBySuccess && (
                       <tr>
                         <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
                           <StructuredErrorBanner
@@ -294,7 +304,7 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
                               message: run.error_message,
                               code: run.error_kind || 'unknown',
                               hint: run.error_kind
-                                ? `See docs/RUNBOOK.md entry [${run.error_kind}] when available.`
+                                ? `See docs/RUNBOOK.md [${run.error_kind}] for fix steps.`
                                 : undefined,
                             }}
                           />
@@ -330,7 +340,41 @@ const STEP_LABELS: Record<string, string> = {
   insert: 'Insert Contacts',
   discovery_plan: 'Discovery Plan',
   frontier_claim: 'Claim Frontier',
+  // Prefix matches for parameterized step IDs (`<prefix>_<uuid>` / `<prefix>_<n>`).
+  seed_search: 'Seed Search',
+  page_classification: 'Page Classification',
+  page_extraction: 'Page Extraction',
+  domain_harvest: 'Domain Harvest',
+  linkedin_enrichment: 'LinkedIn Enrichment',
+  frontier_process: 'Process Frontier',
 };
+
+const UUID_SUFFIX_RE = /_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NUMERIC_SUFFIX_RE = /_\d+$/;
+
+/**
+ * Strip a trailing `_<uuid>` or `_<n>` suffix from a step id and look the
+ * resulting prefix up in `STEP_LABELS`. Falls back to the (cleaned) raw step
+ * id so future agent steps still render readably without a code change.
+ */
+function formatStepLabel(stepId: string): string {
+  let prefix = stepId.replace(UUID_SUFFIX_RE, '');
+  if (prefix === stepId) {
+    prefix = stepId.replace(NUMERIC_SUFFIX_RE, '');
+  }
+  if (STEP_LABELS[prefix]) return STEP_LABELS[prefix];
+  if (STEP_LABELS[stepId]) return STEP_LABELS[stepId];
+  return prefix;
+}
+
+/**
+ * Render a discovery-step `params` value for display. Strings are shown
+ * without surrounding JSON quotes / escapes; everything else is JSON-stringified.
+ */
+function renderParamValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
 
 const STEP_STATUS_STYLE: Record<string, string> = {
   ok: 'bg-green-100 text-green-700',
@@ -358,7 +402,7 @@ function RunStepsDetail({
           {Object.entries(params).map(([k, v]) => (
             <span key={k} className="mr-3">
               <span className="text-gray-400">{k}=</span>
-              <span className="text-gray-700">{JSON.stringify(v)}</span>
+              <span className="text-gray-700">{renderParamValue(v)}</span>
             </span>
           ))}
         </div>
@@ -382,7 +426,7 @@ function RunStepsDetail({
                     {step.elapsed}
                   </span>
                   <span className="text-xs font-medium text-gray-900">
-                    {STEP_LABELS[step.step] || step.step}
+                    {formatStepLabel(step.step)}
                   </span>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${STEP_STATUS_STYLE[step.status] || ''}`}
