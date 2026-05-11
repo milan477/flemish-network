@@ -191,6 +191,12 @@ export default function App() {
     <Routes>
       <Route path="/login" element={wrap('login', <Login />)} />
       <Route path="/auth/callback" element={wrap('auth-callback', <AuthCallback />)} />
+      {/* Legacy admin slugs — short-circuit before RequireAuth so they cannot
+          fail an auth race and trigger a global signOut. */}
+      <Route path="/admin/overview" element={<Navigate to="/admin/discovery" replace />} />
+      <Route path="/admin/discovered" element={<Navigate to="/admin/discovery" replace />} />
+      <Route path="/admin/agents" element={<Navigate to="/admin/discovery" replace />} />
+      <Route path="/contacts/new" element={<Navigate to="/admin/discovery?mode=manual" replace />} />
       <Route element={<RequireAuth />}>
         <Route
           element={

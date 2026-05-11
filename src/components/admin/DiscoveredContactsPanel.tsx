@@ -71,7 +71,8 @@ interface DiscoveredContact {
   reviewed_at?: string | null;
   review_outcome?: string | null;
   approved_person_id?: string | null;
-  verification_status?: 'queued' | 'verifying' | 'verified' | null;
+  verification_status?: 'queued' | 'verifying' | 'verified' | 'failed' | null;
+  verification_attempts?: number | null;
   verification_payload?: VerificationPayload | null;
   verified_at?: string | null;
 }
@@ -134,7 +135,8 @@ interface DiscoveredOrganization {
   last_seen_at: string | null;
   last_evidence_at: string | null;
   evidence_count: number | null;
-  verification_status?: 'queued' | 'verifying' | 'verified' | null;
+  verification_status?: 'queued' | 'verifying' | 'verified' | 'failed' | null;
+  verification_attempts?: number | null;
   verification_payload?: VerificationPayload | null;
   verified_at?: string | null;
 }
@@ -1135,16 +1137,20 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   } | null>(null);
 
   const loadData = useCallback(async () => {
+    // Lifecycle is owned by verification_status — NOT the legacy `status`
+    // column. Filtering on status='pending' silently hides rows whose status
+    // drifted (e.g. 'approved' + verification_status='queued').
+    const verificationStates = ['queued', 'verifying', 'verified', 'failed'];
     const [contactsRes, organizationsRes, sectorsRes] = await Promise.all([
       supabase
         .from('discovered_contacts')
         .select('*')
-        .eq('status', 'pending')
+        .in('verification_status', verificationStates)
         .order('last_seen_at', { ascending: false }),
       supabase
         .from('discovered_organizations')
         .select('*')
-        .eq('status', 'pending')
+        .in('verification_status', verificationStates)
         .order('last_seen_at', { ascending: false }),
       supabase.from('sectors').select('*'),
     ]);
@@ -1263,7 +1269,13 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         { event: '*', schema: 'public', table: 'discovered_organizations' },
         () => loadData(),
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) {
+          console.warn('[verification realtime]', status, err);
+        } else {
+          console.debug('[verification realtime]', status);
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);
@@ -1329,13 +1341,33 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   }, [contacts, sectors, duplicates, loadData]);
 
   const handleRejectAll = useCallback(async () => {
-    setActionId('all');
-    const ids = contacts.map((c) => c.id);
-    if (ids.length > 0) {
-      await supabase.from('discovered_contacts').delete().in('id', ids);
+    // Only verified rows are eligible for rejection. Non-verified rows are in
+    // the verify pipeline and must not be hard-deleted by a bulk reject.
+    const eligible = contacts.filter(
+      (c) => (c.verification_status ?? 'queued') === 'verified',
+    );
+    if (eligible.length === 0) {
+      window.alert('No verified rows to reject. Queued/verifying rows must complete verification first.');
+      return;
     }
-    setContacts([]);
-    setDuplicates(new Map());
+    const reason = window.prompt(
+      `Reject ${eligible.length} verified contact${eligible.length !== 1 ? 's' : ''}? Enter an optional rejection reason:`,
+      '',
+    );
+    if (reason === null) return; // user cancelled
+    setActionId('all');
+    const ids = eligible.map((c) => c.id);
+    await supabase
+      .from('discovered_contacts')
+      .update({ reject_reason: reason || 'bulk_reject', reviewed_at: new Date().toISOString() })
+      .in('id', ids);
+    await supabase.from('discovered_contacts').delete().in('id', ids);
+    setContacts((prev) => prev.filter((c) => !ids.includes(c.id)));
+    setDuplicates((prev) => {
+      const next = new Map(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
     setActionId(null);
   }, [contacts]);
 
@@ -1397,13 +1429,31 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   );
 
   const handleRejectAllOrganizations = useCallback(async () => {
-    setActionId('all-organizations');
-    const ids = organizations.map((organization) => organization.id);
-    if (ids.length > 0) {
-      await supabase.from('discovered_organizations').delete().in('id', ids);
+    const eligible = organizations.filter(
+      (o) => (o.verification_status ?? 'queued') === 'verified',
+    );
+    if (eligible.length === 0) {
+      window.alert('No verified organizations to reject. Queued/verifying rows must complete verification first.');
+      return;
     }
-    setOrganizations([]);
-    setOrganizationDuplicates(new Map());
+    const reason = window.prompt(
+      `Reject ${eligible.length} verified organization${eligible.length !== 1 ? 's' : ''}? Enter an optional rejection reason:`,
+      '',
+    );
+    if (reason === null) return;
+    setActionId('all-organizations');
+    const ids = eligible.map((o) => o.id);
+    await supabase
+      .from('discovered_organizations')
+      .update({ reject_reason: reason || 'bulk_reject', reviewed_at: new Date().toISOString() })
+      .in('id', ids);
+    await supabase.from('discovered_organizations').delete().in('id', ids);
+    setOrganizations((prev) => prev.filter((o) => !ids.includes(o.id)));
+    setOrganizationDuplicates((prev) => {
+      const next = new Map(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
     setActionId(null);
   }, [organizations]);
 
@@ -1574,7 +1624,8 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             ? Math.round(contact.discovery_confidence * 100)
             : null;
 
-        const verificationStatus = contact.verification_status ?? 'verified';
+        // Safer default: a NULL must NOT silently bypass the verify gate.
+        const verificationStatus = contact.verification_status ?? 'queued';
         const isVerified = verificationStatus === 'verified';
 
         return (
@@ -1589,12 +1640,18 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             }`}
           >
             {!isVerified && (
-              <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-slate-100 rounded-lg">
-                <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
-                <span className="text-[11px] text-slate-600 font-medium">
-                  {verificationStatus === 'verifying'
-                    ? 'Verifying — checking sources and Flemish ties…'
-                    : 'Queued for verification'}
+              <div className={`flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg ${verificationStatus === 'failed' ? 'bg-red-100' : 'bg-slate-100'}`}>
+                {verificationStatus === 'failed' ? (
+                  <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
+                ) : (
+                  <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                )}
+                <span className={`text-[11px] font-medium ${verificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
+                  {verificationStatus === 'failed'
+                    ? 'Verification failed — review or retry'
+                    : verificationStatus === 'verifying'
+                      ? 'Verifying — checking sources and Flemish ties…'
+                      : 'Queued for verification'}
                 </span>
               </div>
             )}
@@ -2020,7 +2077,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                   ? Math.round(organization.confidence * 100)
                   : null;
               const locations = normalizeOrganizationLocations(organization.us_locations);
-              const orgVerificationStatus = organization.verification_status ?? 'verified';
+              const orgVerificationStatus = organization.verification_status ?? 'queued';
               const orgIsVerified = orgVerificationStatus === 'verified';
 
               return (
@@ -2035,12 +2092,18 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                   }`}
                 >
                   {!orgIsVerified && (
-                    <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 bg-slate-100 rounded-lg">
-                      <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
-                      <span className="text-[11px] text-slate-600 font-medium">
-                        {orgVerificationStatus === 'verifying'
-                          ? 'Verifying — checking sources and Flemish ties…'
-                          : 'Queued for verification'}
+                    <div className={`flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg ${orgVerificationStatus === 'failed' ? 'bg-red-100' : 'bg-slate-100'}`}>
+                      {orgVerificationStatus === 'failed' ? (
+                        <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
+                      ) : (
+                        <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                      )}
+                      <span className={`text-[11px] font-medium ${orgVerificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
+                        {orgVerificationStatus === 'failed'
+                          ? 'Verification failed — review or retry'
+                          : orgVerificationStatus === 'verifying'
+                            ? 'Verifying — checking sources and Flemish ties…'
+                            : 'Queued for verification'}
                       </span>
                     </div>
                   )}

@@ -204,11 +204,17 @@ async function callUntypedRpc<T>(
   fn: string,
   args: Record<string, unknown>,
 ): Promise<{ data: T[] | null; error: unknown }> {
-  const rpc = supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: T[] | null; error: unknown }>;
-  return await rpc(fn, args);
+  // Cast through unknown so we can call RPC names not in the generated types,
+  // but invoke via supabase.rpc(...) so the client retains its `this` context
+  // (otherwise the postgrest builder throws "Cannot read properties of
+  // undefined (reading 'rest')" inside its method chain).
+  const client = supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: T[] | null; error: unknown }>;
+  };
+  return await client.rpc(fn, args);
 }
 
 function getOrganizationMatchId(

@@ -308,10 +308,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       // Filter chips are click-only — we never auto-extract them from the query
       // (UX_REMEDIATION Phase 1A). Stage 1 hybrid retrieval + Stage 2 Gemini
       // rerank in the search-people edge function handle intent.
+      // Preserve the user's current view — do not force 'list' on every query.
       updateRouteState((current) => ({
         ...current,
         query: trimmedQuery,
-        view: 'list',
         focusedCity: null,
       }));
     },

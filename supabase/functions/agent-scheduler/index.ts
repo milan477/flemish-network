@@ -832,21 +832,42 @@ async function enqueueVerificationBatch(
 
   const forwardedAuth = req.headers.get("Authorization") || req.headers.get("authorization");
   const forwardedApiKey = req.headers.get("apikey") || req.headers.get("Apikey");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!forwardedAuth) {
-    // Without staff auth we can't dispatch. Reset rows so a future caller can pick them up.
-    await supabase
-      .from(tableName)
-      .update({ verification_status: "queued", verification_run_id: null })
-      .in("id", recordIds);
-    return 0;
+  // Verification dispatch does not require user context — fall back to the
+  // service-role client when the caller did not forward auth (e.g. anonymous
+  // housekeeping invocation). Persist the failure to agent_runs instead of
+  // silently re-queueing the rows; that pattern produced an invisible
+  // perpetual loop ("rows stay queued, housekeeping says ok").
+  let dispatchAuth = forwardedAuth;
+  let dispatchApiKey = forwardedApiKey;
+  if (!dispatchAuth) {
+    if (!serviceKey) {
+      log.withRun(run.id).warn("auto_verify_no_auth_no_service_key");
+      await supabase
+        .from("agent_runs")
+        .update({
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: "Cannot dispatch verification: no forwarded auth and SUPABASE_SERVICE_ROLE_KEY unavailable.",
+          error_kind: "auth_missing",
+        })
+        .eq("id", run.id);
+      await supabase
+        .from(tableName)
+        .update({ verification_status: "queued", verification_run_id: null })
+        .in("id", recordIds);
+      return 0;
+    }
+    dispatchAuth = `Bearer ${serviceKey}`;
+    dispatchApiKey = serviceKey;
   }
 
   const dispatchHeaders: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: forwardedAuth,
+    Authorization: dispatchAuth,
   };
-  if (forwardedApiKey) dispatchHeaders.apikey = forwardedApiKey;
+  if (dispatchApiKey) dispatchHeaders.apikey = dispatchApiKey;
 
   fetch(`${supabaseUrl}/functions/v1/agent-verify`, {
     method: "POST",
@@ -857,23 +878,60 @@ async function enqueueVerificationBatch(
       run_id: run.id,
     }),
   }).catch(async (dispatchError) => {
-    log.withRun(run.id).warn("auto_verify_dispatch_failed", dispatchError);
+    const msg = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+    log.withRun(run.id).warn("auto_verify_dispatch_failed", msg);
     await supabase
       .from("agent_runs")
       .update({
         status: "failed",
         completed_at: new Date().toISOString(),
-        error_message: "Failed to dispatch auto-verification",
+        error_message: `Failed to dispatch auto-verification: ${msg}`,
         error_kind: "network",
       })
       .eq("id", run.id);
-    await supabase
-      .from(tableName)
-      .update({ verification_status: "queued", verification_run_id: null })
-      .in("id", recordIds);
+    // Increment attempts so a chronically-failing row escalates to 'failed'
+    // rather than silently re-queueing forever.
+    await incrementVerificationAttempts(supabase, tableName, recordIds);
   });
 
   return recordIds.length;
+}
+
+async function incrementVerificationAttempts(
+  supabase: SupabaseAdminClient,
+  tableName: "discovered_contacts" | "discovered_organizations",
+  recordIds: string[],
+): Promise<void> {
+  if (recordIds.length === 0) return;
+  // Fetch existing attempts, then update per-row. supabase-js v2 has no
+  // server-side increment expression so we read-modify-write here.
+  const { data: rows } = await supabase
+    .from(tableName)
+    .select("id, verification_attempts")
+    .in("id", recordIds);
+  const VERIFICATION_MAX_ATTEMPTS = 3;
+  for (const row of rows ?? []) {
+    const attempts = ((row as { verification_attempts?: number | null }).verification_attempts ?? 0) + 1;
+    if (attempts >= VERIFICATION_MAX_ATTEMPTS) {
+      await supabase
+        .from(tableName)
+        .update({
+          verification_status: "failed",
+          verification_run_id: null,
+          verification_attempts: attempts,
+        })
+        .eq("id", row.id);
+    } else {
+      await supabase
+        .from(tableName)
+        .update({
+          verification_status: "queued",
+          verification_run_id: null,
+          verification_attempts: attempts,
+        })
+        .eq("id", row.id);
+    }
+  }
 }
 
 interface PlanningAction {

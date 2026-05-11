@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, MailPlus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from '../../lib/supabase';
+import { useAuth } from '../../lib/auth';
 
 type DraftUser = {
   full_name: string;
@@ -21,6 +22,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function AccessManagementPanel() {
+  const { staffUser: currentStaffUser } = useAuth();
   const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DraftUser>>({});
   const [loading, setLoading] = useState(true);
@@ -276,14 +278,21 @@ export default function AccessManagementPanel() {
                     )}
                     <span>Save</span>
                   </button>
-                  <button
-                    onClick={() => handleRevokeRow(user.id, user.email)}
-                    disabled={savingId === user.id}
-                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>Remove</span>
-                  </button>
+                  {(() => {
+                    const isSelf = currentStaffUser?.id === user.id ||
+                      currentStaffUser?.email?.toLowerCase() === user.email.toLowerCase();
+                    return (
+                      <button
+                        onClick={() => handleRevokeRow(user.id, user.email)}
+                        disabled={savingId === user.id || isSelf}
+                        title={isSelf ? 'You cannot remove yourself' : undefined}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Remove</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             );

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, X, Loader2, Sparkles, User, Building2 } from 'lucide-react';
-import { supabase, displayName } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface UnifiedSearchBarProps {
   onSearch: (query: string) => void;
@@ -15,6 +15,28 @@ interface Suggestion {
   type: 'person' | 'organization';
   name: string;
   subtitle?: string;
+}
+
+interface AutofillRow {
+  entity_type: 'person' | 'organization';
+  id: string;
+  name: string;
+  subtitle: string | null;
+}
+
+const AUTOFILL_CACHE = new Map<string, Suggestion[]>();
+const AUTOFILL_CACHE_MAX = 20;
+
+function readAutofillCache(key: string): Suggestion[] | undefined {
+  return AUTOFILL_CACHE.get(key);
+}
+
+function writeAutofillCache(key: string, value: Suggestion[]) {
+  if (AUTOFILL_CACHE.size >= AUTOFILL_CACHE_MAX) {
+    const first = AUTOFILL_CACHE.keys().next().value;
+    if (first !== undefined) AUTOFILL_CACHE.delete(first);
+  }
+  AUTOFILL_CACHE.set(key, value);
 }
 
 export default function UnifiedSearchBar({
@@ -50,55 +72,59 @@ export default function UnifiedSearchBar({
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     const q = value.trim();
-    if (q.length < 1) {
+    if (q.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
 
+    const cached = readAutofillCache(q.toLowerCase());
+    if (cached) {
+      setSuggestions(cached);
+      setShowSuggestions(cached.length > 0);
+      return;
+    }
+
+    const controller = new AbortController();
     debounceRef.current = setTimeout(async () => {
-      // Search people
-      const { data: people } = await supabase
-        .from('people').select('id, name, first_name, last_name, title, current_position, location_id, locations(*)')
-        .or(`name.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%`)
-        .limit(4);
+      try {
+        const rpc = supabase.rpc as unknown as (
+          fn: string,
+          args: Record<string, unknown>,
+          options?: { signal?: AbortSignal }
+        ) => Promise<{ data: AutofillRow[] | null; error: unknown }>;
 
-      // Search organizations
-      const { data: orgs } = await supabase
-        .from('organizations').select('id, name, type, location_id, locations(*)')
-        .ilike('name', `%${q}%`)
-        .limit(3);
+        const { data, error } = await rpc(
+          'search_people_autofill',
+          { q, lim: 8 },
+          { signal: controller.signal }
+        );
 
-      const allSuggestions: Suggestion[] = [];
-      
-      if (people) {
-        allSuggestions.push(...people.map(p => ({
-          id: p.id,
-          type: 'person' as const,
-          name: displayName(p),
-          subtitle: p.current_position || undefined
-        })));
-      }
+        if (controller.signal.aborted) return;
+        if (error || !data) {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          return;
+        }
 
-      if (orgs) {
-        allSuggestions.push(...orgs.map(o => ({
-          id: o.id,
-          type: 'organization' as const,
-          name: o.name,
-          subtitle: o.type || undefined
-        })));
-      }
+        const allSuggestions: Suggestion[] = data.map(row => ({
+          id: row.id,
+          type: row.entity_type,
+          name: row.name,
+          subtitle: row.subtitle ?? undefined,
+        }));
 
-      if (allSuggestions.length > 0) {
+        writeAutofillCache(q.toLowerCase(), allSuggestions);
         setSuggestions(allSuggestions);
-        setShowSuggestions(true);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
+        setShowSuggestions(allSuggestions.length > 0);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.warn('[autofill] failed', err);
       }
-    }, 200);
+    }, 250);
 
     return () => {
+      controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [value]);
@@ -122,19 +148,24 @@ export default function UnifiedSearchBar({
     if (e) e.preventDefault();
     const q = value.trim();
     if (!q) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setShowSuggestions(false);
     onSearch(q);
     inputRef.current?.blur();
   };
 
   const handleSuggestionClick = (s: Suggestion) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setShowSuggestions(false);
     setValue(s.name);
-    // Directly navigate if it's a specific person/org
-    onSearch(`id:${s.id}:${s.type}:${s.name}`);
+    // Directly navigate if it's a specific person/org. Sentinel format consumed
+    // by Dashboard.handleSearch; name may contain ':' but Dashboard only reads
+    // [1]/[2], so trailing tokens are ignored safely.
+    onSearch(`id:${s.id}:${s.type}`);
   };
 
   const handleClear = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     setValue('');
     setSuggestions([]);
     setShowSuggestions(false);

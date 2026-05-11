@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2"
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2.57.4"
 
 export type Json =
   | string

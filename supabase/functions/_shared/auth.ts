@@ -1,4 +1,4 @@
-import { createClient, type User } from "npm:@supabase/supabase-js@2";
+import { createClient, type User } from "npm:@supabase/supabase-js@2.57.4";
 import type { Database, SupabaseAdminClient } from "./database.types.ts";
 
 export type StaffRole = "viewer" | "editor" | "admin";

@@ -91,6 +91,18 @@ async function loadStaffUser(session: Session): Promise<StaffUser> {
   return profileResult.data as StaffUser;
 }
 
+function isInvalidJwtError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return (
+    msg.includes('invalid jwt') ||
+    msg.includes('jwt expired') ||
+    msg.includes('not approved') ||
+    msg.includes('disabled') ||
+    msg.includes('staff profile')
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [staffUser, setStaffUser] = useState<StaffUser | null>(null);
@@ -98,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const sessionRef = useRef<Session | null>(null);
   const staffUserRef = useRef<StaffUser | null>(null);
+  // Single-flight guard: collapse concurrent loadStaffUser calls for the same user.
+  const inflightLoadRef = useRef<{ userId: string; promise: Promise<StaffUser> } | null>(null);
 
   const updateSession = useCallback((nextSession: Session | null) => {
     sessionRef.current = nextSession;
@@ -107,6 +121,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateStaffUser = useCallback((nextStaffUser: StaffUser | null) => {
     staffUserRef.current = nextStaffUser;
     setStaffUser(nextStaffUser);
+  }, []);
+
+  const loadStaffUserSingleFlight = useCallback((nextSession: Session) => {
+    const existing = inflightLoadRef.current;
+    if (existing && existing.userId === nextSession.user.id) {
+      return existing.promise;
+    }
+    const promise = loadStaffUser(nextSession).finally(() => {
+      if (inflightLoadRef.current?.promise === promise) {
+        inflightLoadRef.current = null;
+      }
+    });
+    inflightLoadRef.current = { userId: nextSession.user.id, promise };
+    return promise;
   }, []);
 
   const hydrateSession = useCallback(async (
@@ -127,17 +155,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (cached?.user_id === nextSession.user.id) {
       updateStaffUser(cached);
       setLoading(false);
-      void loadStaffUser(nextSession)
+      void loadStaffUserSingleFlight(nextSession)
         .then(fresh => {
           updateStaffUser(fresh);
           writeCache(fresh);
         })
-        .catch(async err => {
-          updateStaffUser(null);
-          writeCache(null);
-          setAuthError(err instanceof Error ? err.message : 'Authentication failed.');
-          await supabase.auth.signOut();
-          updateSession(null);
+        .catch(err => {
+          // Transient revalidation failure must NOT broadcast a global signOut
+          // to every tab. Keep the cached profile and surface a console warning.
+          // Only an explicit invalid-JWT error nukes the session.
+          if (isInvalidJwtError(err)) {
+            updateStaffUser(null);
+            writeCache(null);
+            setAuthError(err instanceof Error ? err.message : 'Authentication failed.');
+            void supabase.auth.signOut({ scope: 'local' }).then(() => updateSession(null));
+            return;
+          }
+          console.warn('[auth] staff revalidation failed, keeping cached profile', err);
         });
       return;
     }
@@ -145,7 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // First login or cache miss: block until loaded
     if (options.showLoading ?? true) setLoading(true);
     try {
-      const fresh = await loadStaffUser(nextSession);
+      const fresh = await loadStaffUserSingleFlight(nextSession);
       updateStaffUser(fresh);
       writeCache(fresh);
       setAuthError(null);
@@ -155,12 +189,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(
         error instanceof Error ? error.message : 'Authentication failed.'
       );
-      await supabase.auth.signOut();
+      // Local-scope signOut — don't broadcast SIGNED_OUT to sibling tabs.
+      await supabase.auth.signOut({ scope: 'local' });
       updateSession(null);
     } finally {
       setLoading(false);
     }
-  }, [updateSession, updateStaffUser]);
+  }, [updateSession, updateStaffUser, loadStaffUserSingleFlight]);
 
   useEffect(() => {
     let active = true;
@@ -202,10 +237,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setAuthError(null);
+    // Global scope: explicit user-initiated logout SHOULD broadcast to sibling tabs.
     await supabase.auth.signOut();
     updateStaffUser(null);
     updateSession(null);
   }, [updateSession, updateStaffUser]);
+
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const hasRole = useCallback(
     (role: AppRole) => {
@@ -215,20 +253,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [staffUser]
   );
 
+  const canEdit = hasRole('editor');
+  const isAdmin = hasRole('admin');
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       staffUser,
       loading,
       authError,
-      clearAuthError: () => setAuthError(null),
+      clearAuthError,
       refreshStaffUser,
       signOut,
       hasRole,
-      canEdit: hasRole('editor'),
-      isAdmin: hasRole('admin'),
+      canEdit,
+      isAdmin,
     }),
-    [session, staffUser, loading, authError, refreshStaffUser, signOut, hasRole]
+    [session, staffUser, loading, authError, clearAuthError, refreshStaffUser, signOut, hasRole, canEdit, isAdmin]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

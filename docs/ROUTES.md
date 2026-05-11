@@ -18,13 +18,14 @@
 | `/auth/callback` | Supabase invite/recovery redirect landing; routes password setup to `/account?setPassword=1` |
 | `/account` | Staff profile and password update |
 
-Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The old `/contacts/new`, `/admin/agents`, `/admin/discovered`, and `/admin/overview` migration routes are not part of the active route contract.
+Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The legacy slugs `/admin/overview`, `/admin/discovered`, `/admin/agents`, and `/contacts/new` are registered as explicit `<Navigate to="/admin/discovery" replace />` aliases ahead of the `<RequireAuth>` boundary so they short-circuit before any auth race can fire — earlier versions exposed a transient `loadStaffUser` failure on those routes that broadcast a global SIGNED_OUT to every tab.
 
 Discovery intake defaults to the prompted Discovery option and starts runs only through `agent-scheduler`. Manual intake and file import create pending candidates only. People are written to `discovered_contacts`; organizations are written to `discovered_organizations` plus evidence rows when evidence is supplied. Reviewer approval in the pending queues is the route path that creates or merges approved `people` or `organizations`; intake and import do not create or update approved records.
 
 ## Staff Auth Contract
 
 - Staff sign-in uses Supabase Auth email/password (`signInWithPassword`), not magic links.
+- `AuthProvider` (`src/lib/auth.tsx`) collapses concurrent `loadStaffUser` calls behind a single-flight ref keyed by `user.id` so the `activate_staff_user_session` RPC fires at most once per session change (was 3–5× per page load before 2026-05-10). Transient revalidation failures keep the cached profile and log a `console.warn`; only a confirmed invalid-JWT / disabled / unapproved error clears the session, and the cleanup uses `signOut({ scope: 'local' })` so it does not broadcast to sibling tabs. Explicit user-initiated logout still uses global scope.
 - `/admin/access` invites staff through the `invite-staff-user` edge function. The function requires admin staff auth, writes/updates the approved `staff_users` row, and calls Supabase `auth.admin.inviteUserByEmail`.
 - `/admin/access` removes staff through the `remove-staff-user` edge function. The function requires admin staff auth, refuses self-removal, deletes the `staff_users` row, and deletes the linked `auth.users` record so the user disappears from the access list (re-inviting is required to grant access again).
 - Invite and recovery emails redirect through `/auth/callback` and then to `/account?setPassword=1`.
@@ -34,7 +35,7 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 
 ## Search API Contract
 
-`/` uses the `search-people` edge function as the Search The Network backend.
+`/` uses the `search-people` edge function as the Search The Network backend. The header autofill dropdown (`UnifiedSearchBar`) uses the `search_people_autofill(q, lim)` RPC over the trigram-GIN-indexed `*_search_documents.name_normalized` columns — not raw `people`/`organizations` ILIKE chains. Triggers at `q.length >= 2` after a 250 ms debounce, with an `AbortController` cancelling stale requests and a small in-memory LRU caching the last 20 queries.
 
 - The query box on `/` is a pure semantic-intent channel (UX_REMEDIATION Phase
   1A). The natural-language filter parser was removed; filter chips are set

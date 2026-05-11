@@ -118,7 +118,14 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
     const ms = endMs - new Date(start).getTime();
     if (ms < 1000) return '<1s';
     if (ms < 60000) return `${Math.round(ms / 1000)}s`;
-    return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+    const totalSec = Math.floor(ms / 1000);
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m ${seconds}s`;
   };
 
   const formatCount = (count: number, singular: string, plural = `${singular}s`) =>

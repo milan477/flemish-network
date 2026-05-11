@@ -62,15 +62,30 @@ interface PersonSector {
   sectors: { name: string } | null;
 }
 
-function ensureProtocol(url: string): string {
-  if (!url || !url.trim()) return '';
+function normalizeUrl(url: string): { ok: true; value: string } | { ok: false; reason: string } {
+  if (!url || !url.trim()) return { ok: true, value: '' };
   const trimmed = url.trim();
-  // If it's just an @username, leave it (or maybe prefix with x.com/ later?)
-  // For now, only prefix if it doesn't look like an absolute URL
-  if (!/^https?:\/\//i.test(trimmed) && trimmed.includes('.')) {
-    return `https://${trimmed}`;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const u = new URL(trimmed);
+      if (!/\./.test(u.hostname) || u.hostname.length < 4) {
+        return { ok: false, reason: 'Enter a valid URL (e.g. https://example.com).' };
+      }
+      return { ok: true, value: u.toString() };
+    } catch {
+      return { ok: false, reason: 'Enter a valid URL (e.g. https://example.com).' };
+    }
   }
-  return trimmed;
+  // Allow bare domain shape — require at least one dot and a TLD.
+  if (/^([\w-]+\.)+[a-z]{2,}(\/.*)?$/i.test(trimmed)) {
+    try {
+      const u = new URL(`https://${trimmed}`);
+      return { ok: true, value: u.toString() };
+    } catch {
+      return { ok: false, reason: 'Enter a valid URL (e.g. https://example.com).' };
+    }
+  }
+  return { ok: false, reason: 'Enter a valid URL (e.g. https://example.com).' };
 }
 
 function normalizeConnectionName(value: string) {
@@ -197,9 +212,25 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     const title = (editForm.title || '').trim();
     const computedName = [title, first, last].filter(Boolean).join(' ') || editForm.name || person.name;
 
-    const linkedin = ensureProtocol(editForm.linkedin_url || '');
-    const twitter = ensureProtocol(editForm.twitter_url || '');
-    const website = ensureProtocol(editForm.website_url || '');
+    const linkedinResult = normalizeUrl(editForm.linkedin_url || '');
+    const twitterResult = normalizeUrl(editForm.twitter_url || '');
+    const websiteResult = normalizeUrl(editForm.website_url || '');
+
+    if (!linkedinResult.ok) {
+      setSaveError(`LinkedIn URL: ${linkedinResult.reason}`);
+      setSaving(false);
+      return;
+    }
+    if (!twitterResult.ok) {
+      setSaveError(`Twitter URL: ${twitterResult.reason}`);
+      setSaving(false);
+      return;
+    }
+    if (!websiteResult.ok) {
+      setSaveError(`Website URL: ${websiteResult.reason}`);
+      setSaving(false);
+      return;
+    }
 
     const updatePayload = {
       name: computedName,
@@ -213,11 +244,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       current_location_country: editForm.current_location_country || null,
       bio: editForm.bio || null,
       email: editForm.email || null,
-      linkedin_url: linkedin || null,
-      website_url: website || null,
-      twitter_url: twitter || null,
+      linkedin_url: linkedinResult.value || null,
+      website_url: websiteResult.value || null,
+      twitter_url: twitterResult.value || null,
       profile_photo_url: editForm.profile_photo_url || null,
-      last_verified_at: new Date().toISOString(),
+      // Profile edits MUST NOT auto-verify. Verification is owned by the
+      // verify pipeline (/admin/verification, agent-verify).
       updated_at: new Date().toISOString(),
     };
 

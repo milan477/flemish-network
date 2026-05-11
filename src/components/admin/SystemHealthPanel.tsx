@@ -608,7 +608,14 @@ export default function SystemHealthPanel() {
                   <Metric label="Apify credits" value={todayUsage.apifyCredits.toLocaleString()} />
                 </>
               )}
-              <Metric label="Est. cost" value={`$${todayUsage.estimatedCostUsd.toFixed(4)}`} />
+              <Metric
+                label="Est. cost"
+                value={
+                  todayUsage.geminiCalls === 0 && todayUsage.tavilyCalls === 0
+                    ? '—'
+                    : `$${todayUsage.estimatedCostUsd.toFixed(4)}`
+                }
+              />
             </div>
           );
         })()}

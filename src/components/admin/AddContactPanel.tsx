@@ -589,6 +589,10 @@ function ManualAddForm({
       setError('First name is required');
       return;
     }
+    if (!form.lastName.trim()) {
+      setError('Last name is required');
+      return;
+    }
     if (form.us_network_status === 'us_based' && !form.location_id) {
       setError('US-based people need a US base city.');
       return;
