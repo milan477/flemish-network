@@ -1,0 +1,154 @@
+{
+  "Belgian biotech founders in the United States": {
+    "wall_ms": 7793,
+    "server_ms": 7505.05,
+    "rerank_ms": 4331.82,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Sofie Peeters",
+        "score": 0.121,
+        "reason": "Directly identified as a \"Biotech founder in Leuven\" with \"US university and investor connections.\""
+      },
+      {
+        "type": "person",
+        "name": "Jan De Smet 153",
+        "score": 0.118,
+        "reason": "Identified as \"Founder, Belgian Biotech New York Exchange\" and located in Miami, FL."
+      },
+      {
+        "type": "person",
+        "name": "Annelies Mertens 037",
+        "score": 0.117,
+        "reason": "Snippet mentions \"Belgian biotech New York clinical operations and investor network\" and is an \"Investor.\""
+      },
+      {
+        "type": "person",
+        "name": "Jan De Smet 033",
+        "score": 0.117,
+        "reason": "Identified as a \"Founder\" and snippet mentions \"Belgian biotech New York clinical operations and investor network.\""
+      },
+      {
+        "type": "person",
+        "name": "Annelies De Smet 097",
+        "score": 0.116,
+        "reason": "Identified as a \"Founder\" of a US-based venture fund and snippet mentions \"biotechnology search\" and \"VIB and biotechnology activity across the Flemish network.\""
+      }
+    ]
+  },
+  "Flemish academics at MIT or Harvard": {
+    "wall_ms": 10986,
+    "server_ms": 10601.81,
+    "rerank_ms": 8550.37,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Dr. Jan De Smedt",
+        "score": 0.95,
+        "reason": "Directly states \"Professor of Computer Science at MIT\" and is a \"Flemish academic\"."
+      },
+      {
+        "type": "person",
+        "name": "Daan Mertens 028",
+        "score": 0.9,
+        "reason": "Directly states \"Professor, Cambridge Education Flanders Venture fund 28\" and is a \"Flemish academic\". Cambridge is near MIT/Harvard."
+      },
+      {
+        "type": "person",
+        "name": "Felix De Smet 042",
+        "score": 0.88,
+        "reason": "Directly states \"Research director, Cambridge Culture & Arts Flanders Public agency 42\" and is a \"Flemish academic\". Cambridge is near MIT/Harvard."
+      },
+      {
+        "type": "person",
+        "name": "Bram Peeters 002",
+        "score": 0.85,
+        "reason": "Snippet mentions \"KU Leuven Boston collaboration\" and \"Leuven-trained life sciences work\", indicating a Flemish academic connection to Boston (where MIT/Harvard are)."
+      },
+      {
+        "type": "person",
+        "name": "Daan Peeters 076",
+        "score": 0.85,
+        "reason": "Snippet mentions \"Professor, Leuven Boston Life Sciences Forum\" and \"Flanders Investment & Trade and education activity across the Flemish network\", indicating a Flemish academic connection to Boston."
+      }
+    ]
+  },
+  "Vlaams government officials abroad": {
+    "wall_ms": 25394,
+    "server_ms": 24854.63,
+    "rerank_ms": 22658.32,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Griet Bogaerts 055",
+        "score": 0.95,
+        "reason": "Directly identified as 'Policy advisor' for a 'Flanders Company' in Miami, aligning with 'Vlaams government officials abroad'."
+      },
+      {
+        "type": "person",
+        "name": "Griet Janssens 031",
+        "score": 0.95,
+        "reason": "Directly identified as 'Policy advisor' for a 'Flanders Company' in San Francisco, aligning with 'Vlaams government officials abroad'."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Mertens 111",
+        "score": 0.92,
+        "reason": "Identified as 'Policy advisor' for a 'Flanders Public agency' in Houston, aligning with 'Vlaams government officials abroad'."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Willems 087",
+        "score": 0.92,
+        "reason": "Identified as 'Policy advisor' for a 'Flanders Public agency' in Atlanta, aligning with 'Vlaams government officials abroad'."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Claes 135",
+        "score": 0.92,
+        "reason": "Identified as 'Policy advisor' for a 'Flanders Public agency' in San Diego, aligning with 'Vlaams government officials abroad'."
+      }
+    ]
+  },
+  "investors with Flemish ties on the East Coast": {
+    "wall_ms": 18275,
+    "server_ms": 17920.59,
+    "rerank_ms": 13538.29,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Annelies Mertens 037",
+        "score": 0.172,
+        "reason": "This person is explicitly identified as an 'Investor' and has 'Belgian biotech New York clinical operations and investor network', directly linking them to both investment and the East Coast, with 'Flanders Company' in their name."
+      },
+      {
+        "type": "organization",
+        "name": "Belgian Biotech New York Exchange",
+        "score": 0.165,
+        "reason": "This organization is an 'Industry association' with 'Belgian-founded biotech companies with New York clinical operations, investor briefings, and Flanders life sciences ties', making it highly relevant for investors on the East Coast with Flemish ties."
+      },
+      {
+        "type": "person",
+        "name": "Jan Peeters 141",
+        "score": 0.164,
+        "reason": "This person is an 'Investor' located in 'Washington' (East Coast) with 'Flanders Investment & Trade and public policy activity across the Flemish network'."
+      },
+      {
+        "type": "person",
+        "name": "Annelies Peeters 085",
+        "score": 0.158,
+        "reason": "This person is an 'Investor' in 'Washington' (East Coast) with 'Climate Tech Flanders Venture fund' and 'finance activity across the Flemish network'."
+      },
+      {
+        "type": "person",
+        "name": "Annelies Willems 013",
+        "score": 0.149,
+        "reason": "This person is an 'Investor' in 'Miami' (East Coast) with 'AI Flanders Company'."
+      }
+    ]
+  }
+}

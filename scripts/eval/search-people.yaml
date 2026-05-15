@@ -1,0 +1,100 @@
+# Search-people Stage-2 rerank eval
+#
+# claude_pass: true → first-pass label by Claude based on returned snippets.
+#   Verify and switch to human_reviewed: true.
+#
+# Metric: nDCG@5 against human_top5.
+
+- id: search-001
+  query: "Belgian researchers in Boston"
+  claude_pass: true
+  candidate_pool:
+    - { id: "f1d8d2ae-1c10-4e30-8ae6-defed0db0091", type: "person", name: "Dr. Jan De Smedt", city: "Boston", state: "MA" }
+    - { id: "a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef", type: "organization", name: "Leuven Boston Life Sciences Forum", city: "Boston", state: "MA" }
+    - { id: "0e7bfd6c-16c0-4b1b-81d0-835f353728b8", type: "organization", name: "Boston Research Flanders University center 15", city: "Boston", state: "MA" }
+    - { id: "35ab0956-7492-4987-8fb9-73725fc03f42", type: "person", name: "Charlotte Martens 099", city: "Boston", state: "MA" }
+    - { id: "eac10fd5-e0db-48cf-b90b-8ce421e15410", type: "person", name: "Charlotte Claes 015", city: "Boston", state: "MA" }
+    - { id: "79344858-3dfc-4a21-a954-e5c8c9aabb5a", type: "person", name: "Bram Peeters 002", city: "New York", state: "NY" }
+    - { id: "9500bfc8-6d9e-4358-b5f7-5c88e5c81889", type: "person", name: "Lena Vermeulen 011", city: null }
+    - { id: "c7b8c558-5f68-4a45-ae7d-2eed8832bf45", type: "person", name: "Felix Martens 090", city: "Seattle", state: "WA" }
+    - { id: "37c06aec-15b4-4f9b-9b62-4f0d1b9dad5b", type: "organization", name: "Boston Health Care Flanders Cultural organization 71", city: "Boston", state: "MA" }
+    - { id: "e929f4db-f567-4489-8d4e-faa1d391693d", type: "person", name: "Bram Goossens 146", city: "Seattle", state: "WA" }
+  human_top5:
+    - "person:f1d8d2ae-1c10-4e30-8ae6-defed0db0091"          # Dr. Jan De Smedt — Boston, KU Leuven, MIT Prof
+    - "organization:a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef"    # Leuven Boston Life Sciences Forum — explicit Belgian researchers in Boston
+    - "person:35ab0956-7492-4987-8fb9-73725fc03f42"          # Charlotte Martens 099 — Principal scientist, Boston, Flanders Make
+    - "organization:0e7bfd6c-16c0-4b1b-81d0-835f353728b8"    # Boston Research Flanders University center
+    - "person:eac10fd5-e0db-48cf-b90b-8ce421e15410"          # Charlotte Claes 015 — Boston, UAntwerp (Policy advisor, weaker fit)
+  human_reject:
+    - "person:79344858-3dfc-4a21-a954-e5c8c9aabb5a"   # Bram Peeters 002 — actually in NY, not Boston
+    - "person:c7b8c558-5f68-4a45-ae7d-2eed8832bf45"   # Felix Martens 090 — Seattle, not Boston
+    - "person:e929f4db-f567-4489-8d4e-faa1d391693d"   # Bram Goossens 146 — Seattle, not Boston
+    - "organization:37c06aec-15b4-4f9b-9b62-4f0d1b9dad5b"  # Boston Health Care Cultural org — Boston but cultural, not research
+  notes: |
+    Adversarial dimension: several candidates have "Boston" in their snippet
+    via job-title strings ("Research director, Boston Research Flanders
+    University center 15") but their actual current city is Seattle or NY.
+    A good Stage-2 rerank should weight `locations.city` over snippet text;
+    if Felix Martens 090 ends up in top-3 the rerank is being fooled by the
+    snippet.
+
+- id: search-002
+  query: "KU Leuven PhD New York"
+  claude_pass: true
+  candidate_pool:
+    - { id: "18825178-3281-42b9-91b3-522c2794bce8", type: "person", name: "Hanne Martens 044", flemish: "imec", city: "New York" }
+    - { id: "79344858-3dfc-4a21-a954-e5c8c9aabb5a", type: "person", name: "Bram Peeters 002", flemish: "UAntwerp", city: "New York" }
+    - { id: "400277c9-2899-4b71-bbe7-8c7e56d0e943", type: "person", name: "Daan Martens 016", flemish: "UHasselt", city: "New York" }
+    - { id: "6db551a8-a30e-42c2-9958-b3cf5adc6e67", type: "person", name: "Maarten Martens 072", flemish: "VITO", city: "New York" }
+    - { id: "e4d6a663-6f55-4c34-91da-260f0f8079d9", type: "person", name: "Felix Peeters 030", flemish: "Vlerick", city: "New York" }
+    - { id: "a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef", type: "organization", name: "Leuven Boston Life Sciences Forum", flemish: "KU Leuven, VIB", city: "Boston" }
+    - { id: "3efe00c8-017f-4a1b-8dc6-0781dba4da39", type: "organization", name: "New York Life Sciences Flanders Research lab 44", flemish: "VIB", city: "New York" }
+    - { id: "60420770-2cf8-4c39-84a6-ecd60a4bc866", type: "organization", name: "New York Culture & Arts Flanders Public agency 30", flemish: "imec", city: "New York" }
+    - { id: "db5e0a1d-9352-4e6a-9051-8b1dc1cc113c", type: "organization", name: "New York Education Flanders Venture fund 16", flemish: "Vlerick", city: "New York" }
+    - { id: "1bf1030c-2676-4260-aca6-8aa1d88a0909", type: "organization", name: "Belgian Biotech New York Exchange", flemish: "FIT, VIB", city: "New York" }
+  human_top5:
+    - "person:79344858-3dfc-4a21-a954-e5c8c9aabb5a"          # Bram Peeters — snippet explicitly mentions "KU Leuven Boston collaboration", NY-located
+    - "organization:a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef"    # Leuven Boston Life Sciences Forum — only candidate with EXPLICIT KU Leuven tie (despite Boston location)
+    - "person:18825178-3281-42b9-91b3-522c2794bce8"          # Hanne Martens 044 — Professor in NY (PhD implied)
+  human_reject:
+    - "person:e4d6a663-6f55-4c34-91da-260f0f8079d9"   # Felix Peeters 030 — Product lead in NY, no KU Leuven tie, no academic role
+    - "person:400277c9-2899-4b71-bbe7-8c7e56d0e943"   # Daan Martens 016 — Curator (not academic), UHasselt not KU Leuven
+    - "person:6db551a8-a30e-42c2-9958-b3cf5adc6e67"   # Maarten Martens 072 — Curator, VITO not KU Leuven
+  notes: |
+    SPARSE-GOOD-MATCH case. Only 2-3 candidates are genuinely strong: the
+    flemish_connection field is the authority on whether someone has a KU
+    Leuven tie, not the alias-coverage boilerplate text. Most NY-located
+    candidates have non-KU-Leuven Flemish ties (UAntwerp, UHasselt, VITO,
+    Vlerick, imec) — those should rank below the explicit KU Leuven matches
+    even if KU Leuven matches are in the wrong city. The only entry with an
+    actual KU Leuven flemish_connection is the Boston org, which is a
+    legitimate Stage-2 dilemma (right entity, wrong city).
+    "PhD" is implicit — Professor / Research director / Principal scientist
+    roles satisfy it; Curator and Product lead do not.
+
+- id: search-003
+  query: "founders in Indianapolis"
+  claude_pass: true
+  candidate_pool:
+    - { id: "454cba0f-a36b-43d3-bace-abaec01c81fa", type: "person", name: "Jan De Smet 153", city: "Miami", state: "FL" }
+    - { id: "40011518-e737-468f-8945-e3b447b4cf3e", type: "person", name: "Jan Bogaerts 129", city: "San Francisco", state: "CA" }
+    - { id: "9040966c-45b0-4561-95e9-22471848351a", type: "person", name: "Annelies Vermeulen 121", city: "Chicago", state: "IL" }
+    - { id: "ddf3c67e-4573-4c6f-8916-86ce40ae165d", type: "person", name: "Jan Bogaerts 009", city: "Chicago", state: "IL" }
+    - { id: "534c8019-e1eb-4fc5-bc64-96a0a0b7652f", type: "person", name: "Els Willems 041", city: null }
+    - { id: "c1853677-e43e-4187-bdcd-402ee2c37aaf", type: "person", name: "Els Mertens 065", city: null }
+    - { id: "646cceed-d8cc-4d96-9ba0-9715841be2a4", type: "person", name: "Annelies Bogaerts 073", city: "San Francisco", state: "CA" }
+    - { id: "e74f679d-63cf-4e3f-acf7-55949b95f98e", type: "person", name: "Els Goossens 137", city: null }
+    - { id: "72436ff2-c09f-4674-a00e-7cf1f3a1680e", type: "person", name: "Els Peeters 113", city: null }
+    - { id: "4fef91d0-8f0f-4253-9e91-a87948337891", type: "person", name: "Jan Janssens 105", city: "Austin", state: "TX" }
+  human_top5: []
+  human_reject: []
+  notes: |
+    REGRESSION TEST from docs/EVALUATION.md. No Indianapolis-located founders
+    exist in the dataset. Per the docs, correct behavior is a clean
+    "loose match" list — the response should set `rerank_status` and the UI
+    labels these as loose matches, not a confident answer.
+    None of these belong in human_top5 (none are in Indianapolis).
+    Also none belong in human_reject — they are acceptable Stage-1 fallback
+    candidates given an empty real result set. The eval check for this
+    entry is structural: was rerank_status set? Did the response label this
+    as loose-match? It is not a top-5 ranking question.

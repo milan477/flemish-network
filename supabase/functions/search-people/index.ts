@@ -38,6 +38,7 @@ import {
   parseSearchIntent,
   type ManualSearchFilters,
 } from "../_shared/searchCriteria.ts";
+import { createTimer } from "../_shared/log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -413,10 +414,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const timer = createTimer("search-people", "search-people");
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY") || null;
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "viewer");
+    await timer.span("auth", () => requireStaffRole(req, supabase, "viewer"));
 
     const body = await req.json();
     const query = typeof body?.query === "string" ? body.query.trim() : "";
@@ -431,16 +433,18 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const [keywords, queryEmbedding] = geminiKey
-      ? await Promise.all([
-          extractKeywords(geminiKey, query).catch((error) => {
-            console.warn("[search-people] keyword extraction failed; using empty keywords", error);
-            return EMPTY_KEYWORDS;
-          }),
-          getEmbedding(geminiKey, query).catch((error) => {
-            console.warn("[search-people] query embedding failed; running lexical-only", error);
-            return null;
-          }),
-        ])
+      ? await timer.span("gemini_parse_and_embed_parallel", () =>
+          Promise.all([
+            extractKeywords(geminiKey, query).catch((error) => {
+              console.warn("[search-people] keyword extraction failed; using empty keywords", error);
+              return EMPTY_KEYWORDS;
+            }),
+            getEmbedding(geminiKey, query).catch((error) => {
+              console.warn("[search-people] query embedding failed; running lexical-only", error);
+              return null;
+            }),
+          ])
+        )
       : [EMPTY_KEYWORDS, null];
 
     const filters: Record<string, unknown> | null =
@@ -468,7 +472,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       organizationLexicalResponse,
       organizationVectorResponse,
       organizationChunkResponse,
-    ] = await Promise.all([
+    ] = await timer.span("retrieval_rpcs_parallel", () => Promise.all([
       showPeople
         ? supabase.rpc("search_people_lexical", {
             search_query: lexicalQuery,
@@ -535,7 +539,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           },
         );
       })(),
-    ]);
+    ]));
 
     if (lexicalResponse.error) {
       throw lexicalResponse.error;
@@ -673,7 +677,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const [peopleResponse, documentsResponse, embeddingCountResponse] =
-      await Promise.all([
+      await timer.span("hydrate_people_parallel", () => Promise.all([
         candidateIds.length > 0
           ? supabase
               .from("people")
@@ -694,7 +698,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           .from("people")
           .select("id", { count: "exact", head: true })
           .not("embedding", "is", null),
-      ]);
+      ]));
 
     if (peopleResponse.error) {
       throw peopleResponse.error;
@@ -830,7 +834,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }));
 
     const [organizationsResponse, organizationDocumentsResponse] =
-      await Promise.all([
+      await timer.span("hydrate_orgs_parallel", () => Promise.all([
         organizationCandidateIds.length > 0
           ? supabase
               .from("organizations")
@@ -847,7 +851,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
               )
               .in("organization_id", organizationCandidateIds)
           : { data: [] as OrganizationSearchDocumentRow[], error: null },
-      ]);
+      ]));
 
     if (organizationsResponse.error) {
       throw organizationsResponse.error;
@@ -1012,7 +1016,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
       });
 
     const rerankOutcome = geminiKey
-      ? await rerankSearchCandidates(geminiKey, query, blobCandidates)
+      ? await timer.span(
+          "gemini_rerank",
+          () => rerankSearchCandidates(geminiKey, query, blobCandidates),
+          { candidates: blobCandidates.length }
+        )
       : { status: "skipped" as RerankStatus, ranked: [], model: null };
 
     let results = stage1;
@@ -1081,6 +1089,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         },
         message: `Found ${visiblePeople.length} people and ${visibleOrganizations.length} organizations using ${routeLabel(route)}.`,
         total_with_embeddings: embeddingCountResponse.count || 0,
+        _timing: (timer.flush({ route, query_len: query.length, results: results.length }), timer.summary({ route, query_len: query.length, results: results.length })),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

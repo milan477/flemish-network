@@ -1,0 +1,27 @@
+# Contact extraction eval — agent-discovery
+#
+# Include 2-3 NEGATIVE pages where the right behavior is to extract no one
+# (vague Belgium mentions, Walloon-only content, unrelated events). These are
+# the highest-value examples because they teach the model to abstain.
+#
+# Metric: field-level precision/recall + a hand-judged "would this be
+# approved by a reviewer" rate.
+
+- id: extract-001
+  source_url: ""
+  excerpt: |
+    # page text the extractor saw
+  human_expected_contacts:
+    - name: ""
+      role: ""
+      flemish_evidence: ""   # quote from excerpt; "" if no tie
+      us_evidence: ""        # quote from excerpt; "" if no US presence
+      should_extract: true
+  notes: ""
+
+- id: extract-002-negative
+  # Example of a page where NO contact should be extracted.
+  source_url: ""
+  excerpt: |
+  human_expected_contacts: []   # empty list = "extract nothing"
+  notes: "Negative control: page mentions Belgium only in the footer; no person-level tie."

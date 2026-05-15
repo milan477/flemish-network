@@ -11,6 +11,7 @@ import {
 } from "../_shared/auth.ts";
 import { structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
+import { createTimer } from "../_shared/log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,9 +25,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const timer = createTimer("ai-agent", "ai-agent");
   try {
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "viewer");
+    await timer.span("auth", () => requireStaffRole(req, supabase, "viewer"));
 
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
@@ -54,15 +56,19 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const definition = getAiAgentTaskDefinition(task);
     const userPrompt = definition.buildUserPrompt(context);
-    const { data: result, modelUsed } = await callGeminiStructured({
-      apiKey,
-      route: definition.modelRoute,
-      systemPrompt: definition.systemPrompt,
-      userPrompt,
-      schema: definition.schema,
-      parse: definition.normalizeResult,
-      attemptsPerModel: 2,
-    });
+    const { data: result, modelUsed } = await timer.span(
+      `gemini_${task}`,
+      () => callGeminiStructured({
+        apiKey,
+        route: definition.modelRoute,
+        systemPrompt: definition.systemPrompt,
+        userPrompt,
+        schema: definition.schema,
+        parse: definition.normalizeResult,
+        attemptsPerModel: 2,
+      }),
+      { route: definition.modelRoute, task },
+    );
 
     return new Response(
       JSON.stringify({
@@ -72,6 +78,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           task_status: definition.status,
           model_used: modelUsed,
         },
+        _timing: (timer.flush({ task }), timer.summary({ task })),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

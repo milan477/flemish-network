@@ -1,0 +1,154 @@
+{
+  "Belgian biotech founders in the United States": {
+    "wall_ms": 40658,
+    "server_ms": 40242.84,
+    "rerank_ms": 29171.45,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Sofie Peeters",
+        "score": 0.121,
+        "reason": "Explicitly a 'Biotech founder' and 'Flemish founder' with 'US university and investor connections'."
+      },
+      {
+        "type": "person",
+        "name": "Jan De Smet 153",
+        "score": 0.118,
+        "reason": "Explicitly a 'Founder' of 'Belgian Biotech New York Exchange' and located in 'Miami, FL'."
+      },
+      {
+        "type": "person",
+        "name": "Jan De Smet 033",
+        "score": 0.117,
+        "reason": "Explicitly a 'Founder' with 'Belgian biotech New York clinical operations' and located in 'Los Angeles'."
+      },
+      {
+        "type": "person",
+        "name": "Annelies De Smet 097",
+        "score": 0.116,
+        "reason": "Explicitly a 'Founder' with a 'biotechnology search' profile and 'biotechnology activity' in 'Houston'."
+      },
+      {
+        "type": "person",
+        "name": "Els Willems 041",
+        "score": 0.113,
+        "reason": "Explicitly a 'Founder' with 'Belgian biotech New York clinical operations' and located in 'Miami'."
+      }
+    ]
+  },
+  "Flemish academics at MIT or Harvard": {
+    "wall_ms": 79581,
+    "server_ms": 78522.16,
+    "rerank_ms": 68748.41,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Dr. Jan De Smedt",
+        "score": 0.124,
+        "reason": "Professor at MIT, directly matching 'Flemish academics at MIT'."
+      },
+      {
+        "type": "person",
+        "name": "Daan Mertens 028",
+        "score": 0.12,
+        "reason": "Professor in Cambridge, MA, with 'Flanders' relevance, matching 'Flemish academics at Harvard/MIT'."
+      },
+      {
+        "type": "person",
+        "name": "Maarten Mertens 084",
+        "score": 0.119,
+        "reason": "Professor in Cambridge, MA, with 'Flanders' relevance, matching 'Flemish academics at Harvard/MIT'."
+      },
+      {
+        "type": "person",
+        "name": "Felix De Smet 042",
+        "score": 0.117,
+        "reason": "Research director in Cambridge, MA, with 'Flanders' relevance, matching 'Flemish academics at Harvard/MIT'."
+      },
+      {
+        "type": "person",
+        "name": "Hanne Vermeulen 140",
+        "score": 0.117,
+        "reason": "Professor in Cambridge, MA, with 'Flanders' relevance, matching 'Flemish academics at Harvard/MIT'."
+      }
+    ]
+  },
+  "Vlaams government officials abroad": {
+    "wall_ms": 64978,
+    "server_ms": 64425.69,
+    "rerank_ms": 55303.56,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Griet Bogaerts 055",
+        "score": 0.113,
+        "reason": "Policy advisor for a Flanders-related entity abroad."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Mertens 111",
+        "score": 0.112,
+        "reason": "Policy advisor for a Flanders Public agency abroad."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Willems 087",
+        "score": 0.112,
+        "reason": "Policy advisor for a Flanders Public agency abroad."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Claes 135",
+        "score": 0.11,
+        "reason": "Policy advisor for a Flanders Public agency abroad."
+      },
+      {
+        "type": "person",
+        "name": "Charlotte Goossens 063",
+        "score": 0.11,
+        "reason": "Policy advisor for Flanders Investment & Trade abroad."
+      }
+    ]
+  },
+  "investors with Flemish ties on the East Coast": {
+    "wall_ms": 55929,
+    "server_ms": 55492.35,
+    "rerank_ms": 49679.87,
+    "candidates_count": 10,
+    "top5": [
+      {
+        "type": "person",
+        "name": "Annelies Mertens 037",
+        "score": 0.172,
+        "reason": "Explicitly an 'Investor' with 'New York' presence and 'Flanders Company'/'Belgian biotech' ties."
+      },
+      {
+        "type": "organization",
+        "name": "Belgian Biotech New York Exchange",
+        "score": 0.165,
+        "reason": "An organization with 'New York' operations, 'Belgian-founded biotech' and 'Flanders life sciences ties', and holds 'investor briefings'."
+      },
+      {
+        "type": "person",
+        "name": "Jan Peeters 141",
+        "score": 0.164,
+        "reason": "Explicitly an 'Investor' in 'Washington' with 'Flanders Investment & Trade' and 'Flemish network' activity."
+      },
+      {
+        "type": "person",
+        "name": "Annelies Peeters 085",
+        "score": 0.158,
+        "reason": "Explicitly an 'Investor' in 'Washington' associated with a 'Flanders Venture fund' and 'finance activity'."
+      },
+      {
+        "type": "person",
+        "name": "Annelies Willems 013",
+        "score": 0.149,
+        "reason": "Explicitly an 'Investor' with 'Finance' role in 'Miami' and 'Flanders Company' ties."
+      }
+    ]
+  }
+}

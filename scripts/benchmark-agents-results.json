@@ -1,0 +1,212 @@
+{
+  "Search The Network": [
+    {
+      "span": "__total_ms",
+      "n": 10,
+      "avg_ms": 8059.8,
+      "p50_ms": 9272.4,
+      "p95_ms": 11794.5,
+      "max_ms": 11794.5
+    },
+    {
+      "span": "gemini_rerank",
+      "n": 10,
+      "avg_ms": 5266.5,
+      "p50_ms": 5551.8,
+      "p95_ms": 8092.4,
+      "max_ms": 8092.4
+    },
+    {
+      "span": "gemini_parse_and_embed_parallel",
+      "n": 10,
+      "avg_ms": 1452.9,
+      "p50_ms": 1310.1,
+      "p95_ms": 2345.8,
+      "max_ms": 2345.8
+    },
+    {
+      "span": "retrieval_rpcs_parallel",
+      "n": 10,
+      "avg_ms": 635.2,
+      "p50_ms": 605.9,
+      "p95_ms": 1314.8,
+      "max_ms": 1314.8
+    },
+    {
+      "span": "auth",
+      "n": 10,
+      "avg_ms": 442.9,
+      "p50_ms": 290.9,
+      "p95_ms": 1051.5,
+      "max_ms": 1051.5
+    },
+    {
+      "span": "hydrate_people_parallel",
+      "n": 10,
+      "avg_ms": 159.4,
+      "p50_ms": 151.9,
+      "p95_ms": 324.3,
+      "max_ms": 324.3
+    },
+    {
+      "span": "hydrate_orgs_parallel",
+      "n": 10,
+      "avg_ms": 78.1,
+      "p50_ms": 73.7,
+      "p95_ms": 135.2,
+      "max_ms": 135.2
+    }
+  ],
+  "Collection suggestions": [
+    {
+      "span": "__total_ms",
+      "n": 8,
+      "avg_ms": 52758.8,
+      "p50_ms": 50294,
+      "p95_ms": 92783.8,
+      "max_ms": 92783.8
+    },
+    {
+      "span": "gemini_rerank",
+      "n": 8,
+      "avg_ms": 49378.2,
+      "p50_ms": 45908.1,
+      "p95_ms": 89469.8,
+      "max_ms": 89469.8
+    },
+    {
+      "span": "gemini_parse_goal",
+      "n": 8,
+      "avg_ms": 1215.9,
+      "p50_ms": 1352.1,
+      "p95_ms": 1644.3,
+      "max_ms": 1644.3
+    },
+    {
+      "span": "retrieve_candidates_all_searches",
+      "n": 8,
+      "avg_ms": 1053.9,
+      "p50_ms": 1068.2,
+      "p95_ms": 1854.3,
+      "max_ms": 1854.3
+    },
+    {
+      "span": "auth",
+      "n": 8,
+      "avg_ms": 875.4,
+      "p50_ms": 1048.3,
+      "p95_ms": 1273.1,
+      "max_ms": 1273.1
+    },
+    {
+      "span": "gemini_embed_searches",
+      "n": 8,
+      "avg_ms": 222.3,
+      "p50_ms": 197.8,
+      "p95_ms": 325.6,
+      "max_ms": 325.6
+    }
+  ],
+  "ai-agent task=smart_search": [
+    {
+      "span": "__total_ms",
+      "n": 6,
+      "avg_ms": 3873.8,
+      "p50_ms": 3484.8,
+      "p95_ms": 8328.5,
+      "max_ms": 8328.5
+    },
+    {
+      "span": "gemini_smart_search",
+      "n": 6,
+      "avg_ms": 3455.7,
+      "p50_ms": 3032.4,
+      "p95_ms": 7682.1,
+      "max_ms": 7682.1
+    },
+    {
+      "span": "auth",
+      "n": 6,
+      "avg_ms": 414.6,
+      "p50_ms": 448,
+      "p95_ms": 642.1,
+      "max_ms": 642.1
+    }
+  ],
+  "update-profile (inline verify)": [
+    {
+      "span": "__total_ms",
+      "n": 3,
+      "avg_ms": 15989.2,
+      "p50_ms": 15005.3,
+      "p95_ms": 19615,
+      "max_ms": 19615
+    },
+    {
+      "span": "run_verification_person",
+      "n": 3,
+      "avg_ms": 15183.8,
+      "p50_ms": 14441,
+      "p95_ms": 18482,
+      "max_ms": 18482
+    },
+    {
+      "span": "auth",
+      "n": 3,
+      "avg_ms": 473.2,
+      "p50_ms": 361.8,
+      "p95_ms": 727.9,
+      "max_ms": 727.9
+    },
+    {
+      "span": "load_person",
+      "n": 3,
+      "avg_ms": 240,
+      "p50_ms": 258.3,
+      "p95_ms": 317.2,
+      "max_ms": 317.2
+    },
+    {
+      "span": "check_apify_available",
+      "n": 3,
+      "avg_ms": 88.8,
+      "p50_ms": 86.5,
+      "p95_ms": 95.4,
+      "max_ms": 95.4
+    }
+  ],
+  "agent-verify mode=preview": [
+    {
+      "span": "__total_ms",
+      "n": 3,
+      "avg_ms": 17279.8,
+      "p50_ms": 17982.9,
+      "p95_ms": 17988,
+      "max_ms": 17988
+    },
+    {
+      "span": "run_verification_person",
+      "n": 3,
+      "avg_ms": 13677,
+      "p50_ms": 13834.1,
+      "p95_ms": 14026.6,
+      "max_ms": 14026.6
+    },
+    {
+      "span": "load_person",
+      "n": 3,
+      "avg_ms": 1353.3,
+      "p50_ms": 1051.2,
+      "p95_ms": 2402,
+      "max_ms": 2402
+    },
+    {
+      "span": "check_apify_available",
+      "n": 3,
+      "avg_ms": 93.2,
+      "p50_ms": 93.5,
+      "p95_ms": 96,
+      "max_ms": 96
+    }
+  ]
+}

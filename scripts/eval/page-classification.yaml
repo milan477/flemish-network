@@ -1,0 +1,23 @@
+# Page classification eval — agent-discovery
+#
+# Aim for 3–5 examples per active label class. Active labels come from
+# discovery_surfaces (faculty_page, alumni_list, press_release, team_page,
+# conference_roster, etc.).
+#
+# human_rationale doubles as the few-shot example text once the prompt is
+# updated to include exemplars.
+#
+# Metric: macro-F1 across labels.
+
+- id: page-001
+  source_url: ""
+  excerpt: |
+    # paste the page text the classifier sees (first 1-2 KB is enough)
+  human_label: ""
+  human_rationale: ""
+
+- id: page-002
+  source_url: ""
+  excerpt: |
+  human_label: ""
+  human_rationale: ""

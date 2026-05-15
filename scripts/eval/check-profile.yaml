@@ -1,0 +1,35 @@
+# Profile verification eval — agent-verify mode=preview
+#
+# Skew toward hard cases:
+# - recent job changes
+# - common names
+# - people who left the US
+# - ambiguous LinkedIn evidence
+# - high-risk fields (bio, current_position) where wrong = severe
+#
+# For each field the model emitted a suggestion for, fill human judgment.
+# Use human_should_be: "null" to mean the model should have abstained.
+#
+# Metric: per-field precision/recall + count of high-severity errors.
+
+- id: verify-001
+  person_id: ""
+  fields:
+    - field_name: "current_position"
+      model_value: ""
+      model_evidence_url: ""
+      human_correct: null         # true / false / "ambiguous"
+      human_should_be: ""
+      severity: ""                # ok | low | high
+    - field_name: "location_city"
+      model_value: ""
+      model_evidence_url: ""
+      human_correct: null
+      human_should_be: ""
+      severity: ""
+  notes: ""
+
+- id: verify-002
+  person_id: ""
+  fields: []
+  notes: ""

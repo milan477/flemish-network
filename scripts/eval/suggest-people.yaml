@@ -1,0 +1,105 @@
+# Collection rerank eval — suggest-people
+#
+# Workflow:
+# - claude_pass: true  → entry was first-pass labeled by Claude based on
+#   candidate snippets only. NOT verified against real people. Treat as draft.
+# - human_reviewed: true → you have read the candidates, kept/edited the
+#   ordering, and the entry is canonical. Remove claude_pass when you do this.
+#
+# Metric: nDCG@5 against human_top5; secondary: top-1 agreement.
+
+- id: collection-001
+  prompt: "Belgian biotech founders in the United States"
+  claude_pass: true
+  candidate_pool:
+    - { id: "2ede938f-25e1-4210-94b2-6ca18f889f2a", type: "person", name: "Sofie Peeters" }
+    - { id: "454cba0f-a36b-43d3-bace-abaec01c81fa", type: "person", name: "Jan De Smet 153" }
+    - { id: "723a674f-a87a-432b-b0e7-f6a27a2156d3", type: "person", name: "Annelies De Smet 097" }
+    - { id: "534c8019-e1eb-4fc5-bc64-96a0a0b7652f", type: "person", name: "Els Willems 041" }
+    - { id: "1bf1030c-2676-4260-aca6-8aa1d88a0909", type: "organization", name: "Belgian Biotech New York Exchange" }
+    - { id: "a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef", type: "organization", name: "Leuven Boston Life Sciences Forum" }
+    - { id: "646cceed-d8cc-4d96-9ba0-9715841be2a4", type: "person", name: "Annelies Bogaerts 073" }
+    - { id: "bed5280f-2e71-437a-a393-aa89bbec813d", type: "person", name: "Els Claes 089" }
+    - { id: "e74f679d-63cf-4e3f-acf7-55949b95f98e", type: "person", name: "Els Goossens 137" }
+    - { id: "72436ff2-c09f-4674-a00e-7cf1f3a1680e", type: "person", name: "Els Peeters 113" }
+  human_top5:
+    - "person:2ede938f-25e1-4210-94b2-6ca18f889f2a"   # Sofie Peeters — explicit "Biotech founder in Leuven" + US ties
+    - "person:454cba0f-a36b-43d3-bace-abaec01c81fa"   # Jan De Smet 153 — Founder Belgian Biotech NY Exchange, Miami FL
+    - "person:bed5280f-2e71-437a-a393-aa89bbec813d"   # Els Claes 089 — Founder Cambridge Biotechnology Flanders Research lab
+    - "person:e74f679d-63cf-4e3f-acf7-55949b95f98e"   # Els Goossens 137 — Founder Seattle Biotechnology Research lab
+    - "person:72436ff2-c09f-4674-a00e-7cf1f3a1680e"   # Els Peeters 113 — Founder Washington Biotechnology Research lab
+  human_reject:
+    - "person:646cceed-d8cc-4d96-9ba0-9715841be2a4"   # Annelies Bogaerts 073 — SF AI Company, not biotech
+  notes: |
+    Goal is "founders" (person attribute), so people outrank orgs.
+    Belgian Biotech NY Exchange and Leuven Boston Life Sciences Forum are
+    legitimate orgs but should sit just outside top-5 unless you weight orgs
+    equally. Annelies De Smet 097 has "VIB and biotechnology" in snippet but
+    her role is Climate Tech, not biotech founder — marginal.
+
+- id: collection-002
+  prompt: "Flemish academics at MIT or Harvard"
+  claude_pass: true
+  candidate_pool:
+    - { id: "f1d8d2ae-1c10-4e30-8ae6-defed0db0091", type: "person", name: "Dr. Jan De Smedt" }
+    - { id: "0ea0d81b-777a-4337-8032-315f658891c6", type: "person", name: "Daan Mertens 028" }
+    - { id: "a8e83127-2585-48c5-b7ab-7ce3199b08b9", type: "person", name: "Felix De Smet 042" }
+    - { id: "79344858-3dfc-4a21-a954-e5c8c9aabb5a", type: "person", name: "Bram Peeters 002" }
+    - { id: "eb089b24-e859-450a-a429-1b3d833f044a", type: "person", name: "Daan Peeters 076" }
+    - { id: "a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef", type: "organization", name: "Leuven Boston Life Sciences Forum" }
+    - { id: "80c845d0-384e-4c63-9fdb-2b19b54d620e", type: "organization", name: "Cambridge Education Flanders Venture fund 28" }
+    - { id: "16d93e2a-2e1a-4ddb-b81d-9f87b49bdfd4", type: "person", name: "Maarten Peeters 132" }
+    - { id: "467cfc12-6b65-4779-a104-0434369bce10", type: "person", name: "Annelies Vermeulen 001" }
+    - { id: "e65f767f-ea64-4fbc-bee1-4ea9bafbd334", type: "organization", name: "Cambridge Climate Tech Flanders Venture fund 70" }
+  human_top5:
+    - "person:f1d8d2ae-1c10-4e30-8ae6-defed0db0091"   # Dr. Jan De Smedt — Professor of CS at MIT explicitly
+    - "person:0ea0d81b-777a-4337-8032-315f658891c6"   # Daan Mertens 028 — Professor in Cambridge MA
+    - "person:eb089b24-e859-450a-a429-1b3d833f044a"   # Daan Peeters 076 — Professor at Leuven Boston Life Sciences Forum
+    - "person:a8e83127-2585-48c5-b7ab-7ce3199b08b9"   # Felix De Smet 042 — Research director in Cambridge MA
+    - "organization:a8c8fb4e-7f32-4de5-8225-ca255e4cb4ef"  # Leuven Boston Life Sciences Forum — KU Leuven alumni in Boston/Cambridge
+  human_reject:
+    - "person:79344858-3dfc-4a21-a954-e5c8c9aabb5a"   # Bram Peeters 002 — based at imec California, not Boston/Cambridge
+    - "person:467cfc12-6b65-4779-a104-0434369bce10"   # Annelies Vermeulen 001 — Founder (not academic role)
+  notes: |
+    "Academics at MIT or Harvard" requires both (a) academic role —
+    Professor / Research director — and (b) Cambridge MA location (Boston
+    is acceptable proxy). Bram Peeters has "KU Leuven Boston" in snippet
+    but his current_position is imec California — that's the kind of
+    snippet-vs-position mismatch a good rerank should catch and a weaker
+    one (or a Stage-1-only result) will fail.
+
+- id: collection-003
+  prompt: "Walloon-only French-speaking executives in Phoenix Arizona"
+  claude_pass: true
+  candidate_pool:
+    - { id: "a8e83127-2585-48c5-b7ab-7ce3199b08b9", type: "person", name: "Felix De Smet 042" }
+    - { id: "aa880bd8-74b7-4e5f-84b6-9876e6b6e4b7", type: "person", name: "Felix Mertens 102" }
+    - { id: "1c1c921c-8bc3-4838-9112-20d129f83898", type: "person", name: "Bram Vermeulen 038" }
+    - { id: "265cca0e-c2ce-4e31-9724-d2885b5f037f", type: "person", name: "Maarten Goossens 036" }
+    - { id: "bbc9175f-776a-4360-8445-5fb6368711f7", type: "person", name: "Bram De Smet 134" }
+    - { id: "b6e29d60-31d2-4b1d-a676-282f4728dfd7", type: "person", name: "Charlotte Claes 135" }
+    - { id: "09474521-0079-4c84-aebc-122a64899bf5", type: "organization", name: "Chicago AI Flanders Company 37" }
+    - { id: "6924fa22-a1c7-42c7-834f-f25da40fdaf4", type: "organization", name: "Durham Semiconductor Flanders Company 67" }
+    - { id: "adbc068a-4aef-4743-af6e-7d960ec47cb1", type: "person", name: "Felix Claes 126" }
+    - { id: "1f0d36b4-7237-4a9b-b144-91a57a8d71b4", type: "person", name: "Felix Peeters 150" }
+  human_top5: []
+  human_reject:
+    - "person:a8e83127-2585-48c5-b7ab-7ce3199b08b9"
+    - "person:aa880bd8-74b7-4e5f-84b6-9876e6b6e4b7"
+    - "person:1c1c921c-8bc3-4838-9112-20d129f83898"
+    - "person:265cca0e-c2ce-4e31-9724-d2885b5f037f"
+    - "person:bbc9175f-776a-4360-8445-5fb6368711f7"
+    - "person:b6e29d60-31d2-4b1d-a676-282f4728dfd7"
+    - "organization:09474521-0079-4c84-aebc-122a64899bf5"
+    - "organization:6924fa22-a1c7-42c7-834f-f25da40fdaf4"
+    - "person:adbc068a-4aef-4743-af6e-7d960ec47cb1"
+    - "person:1f0d36b4-7237-4a9b-b144-91a57a8d71b4"
+  notes: |
+    Negative control. Every returned candidate is FLEMISH (Vlerick, UAntwerp,
+    UHasselt, VITO, KU Leuven, BAEF, imec) — i.e. Dutch-speaking Flanders,
+    the opposite of "Walloon-only French-speaking." None are in Phoenix.
+    The rerank is fabricating relevance because the lexical "executives" /
+    "Arizona" tokens match weakly across the dataset. Correct behavior:
+    return empty or signal low confidence. This entry exists to catch the
+    "model confidently returns 5 results when there are zero good matches"
+    failure mode.

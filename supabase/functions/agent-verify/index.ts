@@ -30,7 +30,7 @@ import {
   type DiscoveredRecordKind,
   type DiscoveredVerificationStep,
 } from "../_shared/discoveredVerification.ts";
-import { createLogger } from "../_shared/log.ts";
+import { createLogger, createTimer } from "../_shared/log.ts";
 
 const log = createLogger("agent-verify");
 
@@ -141,6 +141,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const timer = createTimer("agent-verify", "agent-verify");
   let supabase: SupabaseAdminClient | null = null;
   let runId: string | undefined;
   let llmCallsMade = 0;
@@ -293,7 +294,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       }
 
       if (recordType === "organization") {
-        const organization = await loadVerificationOrganization(supabase, recordId);
+        const organization = await timer.span("load_organization", () => loadVerificationOrganization(supabase!, recordId));
         if (!organization) {
           return new Response(
             JSON.stringify({ error: "Organization not found" }),
@@ -303,9 +304,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
             },
           );
         }
-        const orgResult = await runVerificationForOrganization(supabase, organization, {
-          geminiApiKey,
-        });
+        const orgResult = await timer.span("run_verification_organization", () =>
+          runVerificationForOrganization(supabase!, organization, { geminiApiKey })
+        );
+        const previewTiming = (timer.flush({ mode, record_type: recordType }), timer.summary({ mode, record_type: recordType }));
         return new Response(
           JSON.stringify({
             mode,
@@ -320,12 +322,13 @@ Deno.serve(wrapHandler(async (req: Request) => {
             warnings: orgResult.warnings,
             web_search_provider: orgResult.web_search_provider,
             llm_model_used: orgResult.llm_model_used,
+            _timing: previewTiming,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      const person = await loadVerificationPerson(supabase, recordId);
+      const person = await timer.span("load_person", () => loadVerificationPerson(supabase!, recordId));
       if (!person) {
         return new Response(
           JSON.stringify({ error: "Person not found" }),
@@ -335,11 +338,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
           },
         );
       }
-      const apifyAvailable = await getVerificationApifyAvailability();
-      const previewResult = await runVerificationForPerson(supabase, person, {
-        geminiApiKey,
-        apifyAvailable,
-      });
+      const apifyAvailable = await timer.span("check_apify_available", () => getVerificationApifyAvailability());
+      const previewResult = await timer.span("run_verification_person", () =>
+        runVerificationForPerson(supabase!, person, { geminiApiKey, apifyAvailable })
+      );
+      const previewTiming = (timer.flush({ mode, record_type: recordType }), timer.summary({ mode, record_type: recordType }));
       return new Response(
         JSON.stringify({
           mode,
@@ -354,6 +357,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           warnings: previewResult.warnings,
           web_search_provider: previewResult.web_search_provider,
           llm_model_used: previewResult.llm_model_used,
+          _timing: previewTiming,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );

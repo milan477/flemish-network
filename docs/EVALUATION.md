@@ -231,3 +231,135 @@ Behavior gates:
 - The query box never auto-extracts filter chips. `src/lib/filterParser.ts` is deleted; any reintroduction must be reviewed against this section.
 - A search response always includes `rerank`, `rerank_status`, `rerank_model`, and `rerank_duration_ms` so the UI can label loose-match results when Stage 2 did not run.
 - Structured-criteria coverage is a soft boost only; it must never zero out a candidate. The Stage 2 model decides relevance.
+
+## Human-labeled eval sets
+
+These eval sets serve two purposes: (1) regression detection when prompts or
+models change, and (2) source material for few-shot examples once the prompts
+themselves are tuned. Fill in the **human ground truth** fields below. Each set
+should have 10–20 examples before it is considered useful.
+
+### Where few-shot is high-value
+
+| Task | Why few-shot helps | Eval set needed |
+|---|---|---|
+| `suggest-people` rerank | Ranking criteria ("what makes a collection candidate good") is fuzzy and domain-specific. | Yes (§A) |
+| `search-people` Stage-2 rerank | Same shape as above; weights on Flemish-tie vs. role vs. location are not obvious to the model. | Yes (§B) |
+| `agent-verify` `check_profile` | High-stakes extraction; ambiguous evidence must produce `null` rather than a guess. Examples teach the "when in doubt, abstain" behavior. | Yes (§C) |
+| `agent-discovery` page classification | Classic classification problem; small label set, big payoff from 3–5 examples per class. | Yes (§D) |
+| `agent-discovery` contact extraction | Teaches the model which signals on a page count as Flemish/Belgian-tie evidence vs. noise. | Yes (§E) |
+
+### Where few-shot is low-value (skip)
+
+- `smart_search` keyword extraction — schema-constrained, output is mechanical.
+- `query_generation` for discovery — output is too varied to benefit from a small example set; the existing surface/lens taxonomy already does the job examples would do.
+- Embeddings — N/A (no prompt).
+- `offline_evaluation` — it *is* the eval task.
+
+### Metrics
+
+| Task type | Metric |
+|---|---|
+| Ranking (suggest-people, search-people) | nDCG@5 against human top-5 ordering; secondary: top-1 agreement. |
+| Extraction with possible `null` (check_profile) | Per-field precision/recall; count of false-positive non-null answers separately from accuracy. |
+| Classification (page classification) | Macro-F1 across labels. |
+| Structured extraction (contact extraction) | Field-level precision/recall + a hand-judged "would this be approved" rate. |
+
+A change is real if the metric moves by more than ~1 standard error on a set of 15+ examples. If you can't see a difference, the change didn't matter.
+
+### §A. Collection rerank eval set (`suggest-people`)
+
+```yaml
+# scripts/eval/suggest-people.yaml
+- id: collection-001
+  prompt: "Belgian biotech founders in the United States"
+  # Run suggest-people once and paste the returned top-10 candidates here as the
+  # candidate pool. Then put their IDs in human_top5 in the order YOU consider
+  # correct. Any retrieved candidate not in human_top5 is implicitly "ok but not
+  # top-5"; explicitly bad candidates go in human_reject.
+  candidate_pool: []          # auto-populated by eval runner
+  human_top5: []              # ["person:<uuid>", "organization:<uuid>", ...] in correct order
+  human_reject: []            # IDs that should never appear in top-10
+  notes: ""                   # optional rationale, surfaces later as few-shot example text
+
+- id: collection-002
+  prompt: "Flemish academics at MIT or Harvard"
+  candidate_pool: []
+  human_top5: []
+  human_reject: []
+  notes: ""
+```
+
+Add 10–20 entries. Keep prompts varied across: sectors, geographies, mixed people+organization goals, and at least one prompt where the right answer is "almost no good candidates exist" (catches the rerank inventing relevance).
+
+### §B. Search-people Stage-2 rerank eval set
+
+Same shape as §A but for free-text search rather than collection goals. File: `scripts/eval/search-people.yaml`. Use queries that exercise the Stage-1 → Stage-2 disagreement (the cases where Stage-1 ordering is "obviously wrong" and Gemini fixes it).
+
+### §C. Profile verification eval set (`agent-verify` / `update-profile`)
+
+```yaml
+# scripts/eval/check-profile.yaml
+- id: verify-001
+  person_id: ""               # uuid from people
+  # Run agent-verify in preview mode and inspect the returned suggestions.
+  # For each field the model emitted, fill in the human judgment.
+  fields:
+    - field_name: "current_position"
+      model_value: ""         # auto-populated by eval runner
+      model_evidence_url: ""  # auto-populated
+      human_correct: null     # true / false / "ambiguous"
+      human_should_be: ""     # what the value should be (or "null" if model should have abstained)
+      severity: ""            # "ok" | "low" | "high" — high = belongs-to-different-person class
+    - field_name: "location_city"
+      model_value: ""
+      model_evidence_url: ""
+      human_correct: null
+      human_should_be: ""
+      severity: ""
+  notes: ""
+```
+
+Skew the set toward hard cases: people who recently changed jobs, common names, people who left the US, ambiguous LinkedIn evidence.
+
+### §D. Page classification eval set (`agent-discovery`)
+
+```yaml
+# scripts/eval/page-classification.yaml
+- id: page-001
+  source_url: ""
+  # Paste the page excerpt the classifier sees, or a stable URL the eval runner can refetch.
+  excerpt: ""
+  human_label: ""             # one of the active labels in discovery_surfaces × pages
+  human_rationale: ""         # one sentence — these double as few-shot examples
+```
+
+Aim for 3–5 examples per active label class (faculty page, alumni list, press release, team page, conference roster, etc.).
+
+### §E. Contact extraction eval set (`agent-discovery`)
+
+```yaml
+# scripts/eval/contact-extraction.yaml
+- id: extract-001
+  source_url: ""
+  excerpt: ""                 # the page text the extractor processed
+  human_expected_contacts:    # list of contacts a careful reviewer would extract
+    - name: ""
+      role: ""
+      flemish_evidence: ""    # quote from the excerpt — empty if no tie
+      us_evidence: ""         # quote from the excerpt — empty if no US presence
+      should_extract: true    # set false to test "do not extract this person" cases
+  notes: ""
+```
+
+Include 2–3 "negative" pages where the right behavior is **not** to extract anyone (vague Belgium mentions, walloon-only content, unrelated events).
+
+### Eval runner (to be built later)
+
+A small Node script (`scripts/eval/run.mjs`) that:
+1. Reads the YAML files.
+2. For ranking tasks: pulls fresh model output from the deployed function, computes nDCG@5 against `human_top5`.
+3. For extraction/classification: compares per-field and emits a confusion matrix.
+4. Writes a single Markdown report with diffs from the previous run.
+
+This does not exist yet — add the eval sets first, build the runner once at least one set has 10+ entries.

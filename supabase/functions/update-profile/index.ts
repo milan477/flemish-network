@@ -9,6 +9,7 @@ import {
   loadVerificationPerson,
   runVerificationForPerson,
 } from "../_shared/verification.ts";
+import { createTimer } from "../_shared/log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,9 +28,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const timer = createTimer("update-profile", "update-profile");
   try {
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    await timer.span("auth", () => requireStaffRole(req, supabase, "editor"));
 
     const body = await req.json().catch(() => ({}));
     const personId = safeStr(body.personId);
@@ -39,17 +41,16 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    const person = await loadVerificationPerson(supabase, personId);
+    const person = await timer.span("load_person", () => loadVerificationPerson(supabase, personId));
 
     if (!person) {
       return jsonError(404, "not_found", "Person not found");
     }
 
-    const apifyAvailable = await getVerificationApifyAvailability();
-    const result = await runVerificationForPerson(supabase, person, {
-      geminiApiKey,
-      apifyAvailable,
-    });
+    const apifyAvailable = await timer.span("check_apify_available", () => getVerificationApifyAvailability());
+    const result = await timer.span("run_verification_person", () =>
+      runVerificationForPerson(supabase, person, { geminiApiKey, apifyAvailable })
+    );
 
     return new Response(
       JSON.stringify({
@@ -63,6 +64,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         warnings: result.warnings,
         web_search_provider: result.web_search_provider,
         llm_model_used: result.llm_model_used,
+        _timing: (timer.flush(), timer.summary()),
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -335,7 +335,7 @@ Collection suggestion service. The deployed function name remains `suggest-peopl
 4. Retrieves people through lexical search plus `gemini-embedding-001` original-query embeddings against `match_people` and `match_person_text_chunks`; degraded embedding coverage keeps lexical people search active.
 5. Retrieves organizations through lexical search plus `match_organizations` and `match_organization_text_chunks` when organization embeddings are available.
 6. Excludes current collection members when `collection_id` is supplied, plus rejected or already accepted draft IDs supplied as `exclude_ids` and `exclude_organization_ids`.
-7. Reranks with Gemini route `offline_evaluation`, which defaults to `gemini-2.5-pro`. Reranked IDs are validated against retrieved candidates; unknown IDs are ignored.
+7. Reranks with Gemini route `search_rerank` (`gemini-2.5-flash`, `thinking_budget = 0`). Switched from `offline_evaluation`/`gemini-2.5-pro` on 2026-05-14 after benchmarking showed pro p50 ≈ 46 s vs flash-no-thinking p50 ≈ 11 s with no observable ranking-quality difference across four representative collection prompts. Reranked IDs are validated against retrieved candidates; unknown IDs are ignored.
 8. Backfills by deterministic retrieved score order when reranking fails or returns too few valid candidates.
 9. Returns `{ message, searches, candidates, gap }`, plus legacy `suggestions` for people-only callers.
 

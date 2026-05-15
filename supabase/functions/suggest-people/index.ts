@@ -25,6 +25,7 @@ import {
   parseSearchIntent,
 } from "../_shared/searchCriteria.ts";
 import type { SmartSearchKeywords } from "../_shared/aiContracts.ts";
+import { createTimer } from "../_shared/log.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -373,7 +374,7 @@ async function rerankWithGemini(
 
   const { data } = await callGeminiStructured({
     apiKey,
-    route: "offline_evaluation",
+    route: "search_rerank",
     systemPrompt:
       "Rank existing approved people and organizations for a collection. Never invent IDs; only return IDs from the supplied candidate list.",
     userPrompt: `Collection goal: "${query}"
@@ -419,6 +420,7 @@ Return the best mixed candidates. Include only relevant IDs from the list.`,
     },
     temperature: 0.2,
     attemptsPerModel: 1,
+    thinkingBudget: 0,
   });
 
   return {
@@ -762,6 +764,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const timer = createTimer("suggest-people", "suggest-people");
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {
@@ -774,7 +777,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    await timer.span("auth", () => requireStaffRole(req, supabase, "editor"));
 
     const body = await req.json();
     const query = typeof body?.query === "string" ? body.query.trim() : "";
@@ -793,30 +796,40 @@ Deno.serve(wrapHandler(async (req: Request) => {
     );
 
     if (collectionId) {
-      const { data: members, error: membersError } = await supabase
-        .from("collection_members")
-        .select("person_id, organization_id")
-        .eq("collection_id", collectionId);
+      await timer.span("load_collection_members", async () => {
+        const { data: members, error: membersError } = await supabase
+          .from("collection_members")
+          .select("person_id, organization_id")
+          .eq("collection_id", collectionId);
 
-      if (membersError) throw membersError;
+        if (membersError) throw membersError;
 
-      ((members || []) as CollectionMemberRow[]).forEach((member) => {
-        if (member.person_id) excludedPeople.add(member.person_id);
-        if (member.organization_id) excludedOrganizations.add(member.organization_id);
+        ((members || []) as CollectionMemberRow[]).forEach((member) => {
+          if (member.person_id) excludedPeople.add(member.person_id);
+          if (member.organization_id) excludedOrganizations.add(member.organization_id);
+        });
       });
     }
 
     let plan: CollectionSuggestionPlan;
     try {
-      plan = await parseGoalWithGemini(geminiKey, query);
+      plan = await timer.span("gemini_parse_goal", () => parseGoalWithGemini(geminiKey, query));
     } catch (err) {
       console.warn("[suggest-people] collection goal parsing failed; using fallback", err);
       plan = fallbackCollectionSuggestionPlan(query);
     }
 
     const intents = buildSearchIntents(query, plan.searches);
-    const embeddings = await getSearchEmbeddings(geminiKey, intents);
-    const retrieved = (await retrieveCandidates(supabase, intents, embeddings))
+    const embeddings = await timer.span(
+      "gemini_embed_searches",
+      () => getSearchEmbeddings(geminiKey, intents),
+      { search_count: intents.length },
+    );
+    const retrieved = (await timer.span(
+      "retrieve_candidates_all_searches",
+      () => retrieveCandidates(supabase, intents, embeddings),
+      { search_count: intents.length },
+    ))
       .filter((candidate) =>
         candidate.entity_type === "person"
           ? !excludedPeople.has(candidate.id)
@@ -827,7 +840,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
     let message: string;
 
     try {
-      const ranked = await rerankWithGemini(geminiKey, query, retrieved);
+      const ranked = await timer.span(
+        "gemini_rerank",
+        () => rerankWithGemini(geminiKey, query, retrieved),
+        { retrieved_count: retrieved.length },
+      );
       candidates = ranked.candidates.slice(0, limit);
       message = ranked.message || `Found ${candidates.length} collection candidates.`;
     } catch (err) {
@@ -854,6 +871,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
             reason: candidate.reason,
             similarity: candidate.score,
           })),
+        _timing: (timer.flush({ query_len: query.length, candidates: candidates.length }), timer.summary({ query_len: query.length, candidates: candidates.length })),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
