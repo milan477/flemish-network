@@ -25,7 +25,7 @@ Archived docs under `docs/archive/` are historical context only. Do not treat th
 - Use React 18, TypeScript, Vite, Tailwind, Supabase Edge Functions, and the existing helper modules.
 - Keep product UI vocabulary aligned with `docs/PRODUCT-SERVICES.md`; do not expose implementation names like `agent-*` as staff-facing labels.
 - Route all discovery and verification run lifecycle changes through `agent-scheduler`; the UI must not write `agent_runs` directly.
-- Keep edge functions self-authenticated with shared auth helpers. Do not re-enable Supabase gateway JWT verification for functions listed in `supabase/config.toml`.
+- Keep edge functions self-authenticated with shared auth helpers. Do not re-enable Supabase gateway JWT verification for functions listed in `supabase/config.toml`. Any function that `agent-scheduler` or pg_cron invokes must authenticate with `requireStaffOrServiceRole` (exact service-key equality) so scheduled runs are not rejected as `auth_failed`.
 - Preserve normalized data rules: locations go through `locations.location_id`; Flemish ties go through `flemish_connections` and `person_flemish_connections`.
 - Do not reintroduce removed person-to-person graph features or hidden database expansion inside Collections.
 - When adding or changing a Supabase migration, apply it to the linked project in the same session with `supabase db push --linked`, then verify the remote schema/data contract. If you cannot apply it, explicitly say so before handoff.

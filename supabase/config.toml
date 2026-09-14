@@ -11,6 +11,9 @@ verify_jwt = false
 [functions.agent-discovery]
 verify_jwt = false
 
+[functions.agent-discovery-reflect]
+verify_jwt = false
+
 [functions.agent-scheduler]
 verify_jwt = false
 

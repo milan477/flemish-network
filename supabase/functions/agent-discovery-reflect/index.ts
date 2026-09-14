@@ -10,7 +10,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  requireStaffRole,
+  requireStaffOrServiceRole,
 } from "../_shared/auth.ts";
 import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
 import { callGeminiStructured } from "../_shared/gemini.ts";
@@ -478,7 +478,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
   try {
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    await requireStaffOrServiceRole(req, supabase, "editor");
 
     const apiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_AI_API_KEY") || "";
     if (!apiKey) {

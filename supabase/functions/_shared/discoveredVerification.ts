@@ -83,15 +83,19 @@ evidence: 1-3 supporting URLs with one-sentence excerpts. Empty array if no usef
 
 confidence: 0..1.`;
 
-const VERIFICATION_SCHEMA: JsonSchema = {
+// Gemini's response_schema is an OpenAPI subset: a nullable field is
+// `{ type: "string", nullable: true }`. A JSON-Schema style `type: ["string",
+// "null"]` is rejected with HTTP 400 ("Proto field is not repeating"), which
+// silently failed every verify-before-promote call until 2026-09-14.
+export const VERIFICATION_SCHEMA: JsonSchema = {
   type: "object",
   properties: {
-    network_scope: { type: ["string", "null"], enum: ["us_based", "us_connected_abroad", null] },
-    location_city: { type: ["string", "null"] },
-    location_state: { type: ["string", "null"] },
-    location_country: { type: ["string", "null"] },
-    current_role: { type: ["string", "null"] },
-    current_employer: { type: ["string", "null"] },
+    network_scope: { type: "string", enum: ["us_based", "us_connected_abroad"], nullable: true },
+    location_city: { type: "string", nullable: true },
+    location_state: { type: "string", nullable: true },
+    location_country: { type: "string", nullable: true },
+    current_role: { type: "string", nullable: true },
+    current_employer: { type: "string", nullable: true },
     flemish_ties: { type: "array", items: { type: "string" } },
     evidence: {
       type: "array",
@@ -106,8 +110,8 @@ const VERIFICATION_SCHEMA: JsonSchema = {
     },
     confidence: { type: "number" },
     contradiction: { type: "boolean" },
-    contradiction_reason: { type: ["string", "null"] },
-    notes: { type: ["string", "null"] },
+    contradiction_reason: { type: "string", nullable: true },
+    notes: { type: "string", nullable: true },
   },
   required: [
     "network_scope",

@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createAdminClient, requireStaffRole } from "../_shared/auth.ts";
+import { createAdminClient, requireStaffOrServiceRole } from "../_shared/auth.ts";
 import {
   jsonError,
   statusForError,
@@ -1331,7 +1331,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     const supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    await requireStaffOrServiceRole(req, supabase, "editor");
     const body = req.method === "POST"
       ? await req.json() as Record<string, unknown>
       : {};

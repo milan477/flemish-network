@@ -85,6 +85,129 @@ export function createAdminClient(): SupabaseAdminClient {
   return createClient<Database>(supabaseUrl, serviceKey);
 }
 
+const SYSTEM_STAFF_USER: StaffUserContext = {
+  id: "system",
+  user_id: null,
+  email: "system@scheduler.internal",
+  full_name: "Scheduler",
+  role: "editor",
+  status: "active",
+};
+
+/**
+ * Constant-time string comparison so a forged key cannot be guessed one byte
+ * at a time from response timing.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const bytesA = encoder.encode(a);
+  const bytesB = encoder.encode(b);
+  let diff = bytesA.length ^ bytesB.length;
+  const length = Math.max(bytesA.length, bytesB.length);
+  for (let index = 0; index < length; index += 1) {
+    diff |= (bytesA[index] ?? 0) ^ (bytesB[index] ?? 0);
+  }
+  return diff === 0;
+}
+
+function parseSecretKeyList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return items
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          const candidate = record.api_key ?? record.key ?? record.value ?? record.secret;
+          return typeof candidate === "string" ? candidate : "";
+        }
+        return "";
+      })
+      .map((value) => value.trim())
+      .filter(Boolean);
+  } catch {
+    return trimmed
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+}
+
+/**
+ * Keys that identify an internal, machine-to-machine call: the service-role
+ * key edge functions receive as SUPABASE_SERVICE_ROLE_KEY plus any secret API
+ * keys Supabase exposes through SUPABASE_SECRET_KEYS. pg_cron and
+ * agent-scheduler dispatch with one of these keys.
+ */
+export function loadInternalServiceKeys(
+  env: (name: string) => string | undefined = (name) => Deno.env.get(name),
+): string[] {
+  const keys = new Set<string>();
+  const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (serviceRoleKey) keys.add(serviceRoleKey);
+  for (const key of parseSecretKeyList(env("SUPABASE_SECRET_KEYS"))) {
+    keys.add(key);
+  }
+  return [...keys];
+}
+
+export function extractRequestToken(req: Request): string {
+  const authHeader = req.headers.get("Authorization") ||
+    req.headers.get("authorization") || "";
+  const bearer = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+  if (bearer) return bearer;
+  return (req.headers.get("apikey") || req.headers.get("Apikey") || "").trim();
+}
+
+/**
+ * True when the request carries the project service-role key (or another
+ * secret API key) instead of a user session. Only exact key equality counts;
+ * a JWT that merely claims role=service_role is not trusted because gateway
+ * JWT verification is disabled for these functions.
+ */
+export function isInternalServiceRequest(
+  req: Request,
+  keys: string[] = loadInternalServiceKeys(),
+): boolean {
+  const token = extractRequestToken(req);
+  if (!token) return false;
+  let matched = false;
+  for (const key of keys) {
+    if (constantTimeEqual(token, key)) matched = true;
+  }
+  return matched;
+}
+
+/**
+ * Like requireStaffRole, but internal service calls (pg_cron tick,
+ * agent-scheduler dispatch) are accepted as a synthetic editor. Use this in
+ * every function the scheduler invokes; keep requireStaffRole for actions
+ * that must be tied to a signed-in staff member.
+ */
+export async function requireStaffOrServiceRole(
+  req: Request,
+  supabase: SupabaseAdminClient,
+  minimumRole: StaffRole = "viewer",
+): Promise<{ user: User | null; staffUser: StaffUserContext; internal: boolean }> {
+  if (isInternalServiceRequest(req)) {
+    if (ROLE_RANK[SYSTEM_STAFF_USER.role] < ROLE_RANK[minimumRole]) {
+      throw new HttpError(
+        403,
+        "Internal service calls cannot perform admin-only actions",
+      );
+    }
+    return { user: null, staffUser: { ...SYSTEM_STAFF_USER }, internal: true };
+  }
+  const result = await requireStaffRole(req, supabase, minimumRole);
+  return { ...result, internal: false };
+}
+
 export async function requireStaffRole(
   req: Request,
   supabase: SupabaseAdminClient,

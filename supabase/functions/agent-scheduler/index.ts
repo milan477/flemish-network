@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
   HttpError,
+  isInternalServiceRequest,
   requireStaffRole,
 } from "../_shared/auth.ts";
 import { errorToResponse, jsonError, wrapHandler } from "../_shared/httpError.ts";
@@ -75,7 +76,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     // tick is service-role-only (called from pg_cron); skip the staff check.
     if (action === "tick") {
       assertServiceRole(req);
-      const tickResult = await runScheduleTick(supabase, supabaseUrl);
+      const tickResult = await runScheduleTick(supabase, supabaseUrl, req);
       return jsonResponse({ status: "ok", tick: tickResult });
     }
 
@@ -267,33 +268,14 @@ function isPreset(value: string): value is CadencePreset {
 }
 
 function assertServiceRole(req: Request): void {
-  const auth = req.headers.get("Authorization") || req.headers.get("authorization") || "";
-  const apiKey = req.headers.get("apikey") || req.headers.get("Apikey") || "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  const candidate = bearer || apiKey;
-  if (!candidate) {
-    throw new HttpError(401, "tick requires service-role auth (missing token)");
-  }
-  // Decode JWT payload and require role=service_role and ref matching this project.
-  const parts = candidate.split(".");
-  if (parts.length !== 3) {
-    throw new HttpError(401, "tick requires service-role auth (malformed token)");
-  }
-  let payload: Record<string, unknown>;
-  try {
-    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
-    const decoded = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
-    payload = JSON.parse(decoded);
-  } catch {
-    throw new HttpError(401, "tick requires service-role auth (cannot decode)");
-  }
-  if (payload.role !== "service_role") {
-    throw new HttpError(401, "tick requires service-role auth (wrong role)");
-  }
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-  const expectedRef = supabaseUrl.replace(/^https?:\/\//, "").split(".")[0];
-  if (expectedRef && payload.ref && payload.ref !== expectedRef) {
-    throw new HttpError(401, "tick requires service-role auth (project mismatch)");
+  // Only exact equality with the project's service-role / secret API key
+  // counts. Gateway JWT verification is off for this function, so a token
+  // that merely claims role=service_role must not be trusted.
+  if (!isInternalServiceRequest(req)) {
+    throw new HttpError(401, "tick requires the project service-role key", {
+      hint:
+        "pg_cron must send the same secret key that edge functions receive as SUPABASE_SERVICE_ROLE_KEY.",
+    });
   }
 }
 
@@ -443,10 +425,23 @@ interface TickJobOutcome {
 async function runScheduleTick(
   supabase: SupabaseAdminClient,
   supabaseUrl: string,
-): Promise<{ outcomes: TickJobOutcome[] }> {
+  req: Request,
+): Promise<{
+  outcomes: TickJobOutcome[];
+  zombies_marked_failed: number;
+  housekeeping: Awaited<ReturnType<typeof runHousekeeping>> | null;
+}> {
   const schedules = await loadSchedules(supabase);
   const now = new Date();
   const outcomes: TickJobOutcome[] = [];
+
+  // A run whose function died without reporting back would otherwise block
+  // every later scheduled run with "previous run in flight" until a staff
+  // member happens to open the admin UI.
+  const zombiesMarkedFailed = await markZombieRuns(supabase).catch((err) => {
+    log.warn("zombie_cleanup_failed_pre_tick", err instanceof Error ? err.message : String(err));
+    return 0;
+  });
 
   for (const schedule of schedules) {
     if (schedule.cadence_preset === "off") {
@@ -495,7 +490,18 @@ async function runScheduleTick(
     }
   }
 
-  return { outcomes };
+  // Full housekeeping (verification enqueue, reflection, pivots, arm stats,
+  // domain reputation) runs on the first tick of every hour so the system
+  // keeps moving when nobody is using the admin UI.
+  let housekeeping: Awaited<ReturnType<typeof runHousekeeping>> | null = null;
+  if (now.getUTCMinutes() < 5) {
+    housekeeping = await runHousekeeping(supabase, supabaseUrl, req).catch((err) => {
+      log.warn("tick_housekeeping_failed", err instanceof Error ? err.message : String(err));
+      return null;
+    });
+  }
+
+  return { outcomes, zombies_marked_failed: zombiesMarkedFailed, housekeeping };
 }
 
 async function dispatchScheduledJob(
@@ -543,7 +549,7 @@ async function invokeEdgeWithServiceRole(
 ): Promise<void> {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-  await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -552,6 +558,142 @@ async function invokeEdgeWithServiceRole(
     },
     body: JSON.stringify(body),
   });
+  if (!response.ok) {
+    const failure = await describeDispatchFailure(response);
+    throw new Error(`${functionName} rejected the dispatch: ${failure.message}`);
+  }
+}
+
+type DispatchErrorKind =
+  | "quota_exhausted"
+  | "auth_failed"
+  | "network"
+  | "db_timeout"
+  | "invalid_input"
+  | "agent_failure"
+  | "unknown";
+
+const DISPATCH_ERROR_KINDS: DispatchErrorKind[] = [
+  "quota_exhausted",
+  "auth_failed",
+  "network",
+  "db_timeout",
+  "invalid_input",
+  "agent_failure",
+  "unknown",
+];
+
+function isDispatchErrorKind(value: unknown): value is DispatchErrorKind {
+  return typeof value === "string" &&
+    (DISPATCH_ERROR_KINDS as string[]).includes(value);
+}
+
+/**
+ * Turn a non-2xx response from an agent function into an agent_runs error
+ * message/kind. Structured `{ error: { code, message } }` bodies are preferred;
+ * anything else falls back to the HTTP status.
+ */
+async function describeDispatchFailure(
+  response: Response,
+): Promise<{ message: string; kind: DispatchErrorKind }> {
+  let message = `Agent function responded with HTTP ${response.status}`;
+  let kind: DispatchErrorKind = response.status === 401 || response.status === 403
+    ? "auth_failed"
+    : response.status === 429
+    ? "quota_exhausted"
+    : response.status >= 500
+    ? "agent_failure"
+    : "invalid_input";
+  const text = await response.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text) as { error?: { code?: unknown; message?: unknown } };
+    if (typeof parsed?.error?.message === "string" && parsed.error.message) {
+      message = `${message}: ${parsed.error.message}`;
+    }
+    if (isDispatchErrorKind(parsed?.error?.code)) {
+      kind = parsed.error.code;
+    }
+  } catch {
+    if (text.trim()) message = `${message}: ${text.trim().slice(0, 200)}`;
+  }
+  return { message, kind };
+}
+
+/**
+ * Keep a promise alive after the response is sent. Supabase Edge Runtime
+ * exposes EdgeRuntime.waitUntil for exactly this; locally the promise simply
+ * continues while the worker is alive.
+ */
+function backgroundTask(task: Promise<unknown>): void {
+  const runtime = (globalThis as {
+    EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void };
+  }).EdgeRuntime;
+  if (runtime?.waitUntil) {
+    runtime.waitUntil(task);
+  }
+}
+
+async function markDispatchFailure(
+  supabase: SupabaseAdminClient,
+  runId: string,
+  message: string,
+  kind: DispatchErrorKind,
+): Promise<void> {
+  // Only overwrite runs that nobody else has finished; the agent function
+  // records its own failures once it has accepted the request.
+  await supabase
+    .from("agent_runs")
+    .update({
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error_message: message.slice(0, 500),
+      error_kind: kind,
+    })
+    .eq("id", runId)
+    .in("status", ["pending", "running"]);
+}
+
+/**
+ * Dispatch an agent run to its edge function without blocking the caller.
+ * The response is still inspected in the background: a rejected dispatch
+ * (401 auth_failed, 429 quota, 5xx, network error) is written to the run row
+ * instead of leaving a silent "running" zombie.
+ */
+function dispatchAgentFunction(options: {
+  supabase: SupabaseAdminClient;
+  runId: string;
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+  label: string;
+  onFailure?: () => Promise<void>;
+}): void {
+  const { supabase, runId, url, headers, body, label, onFailure } = options;
+  const runLog = log.withRun(runId);
+  const task = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch (dispatchError) {
+      const detail = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+      runLog.warn(`${label}_dispatch_failed`, detail);
+      await markDispatchFailure(supabase, runId, `Failed to dispatch to agent function: ${detail}`, "network");
+      if (onFailure) await onFailure();
+      return;
+    }
+    if (response.ok) return;
+    const failure = await describeDispatchFailure(response);
+    runLog.warn(`${label}_dispatch_rejected`, { status: response.status, message: failure.message });
+    await markDispatchFailure(supabase, runId, failure.message, failure.kind);
+    if (onFailure) await onFailure();
+  })().catch((bookkeepingError) => {
+    runLog.warn(`${label}_dispatch_bookkeeping_failed`, bookkeepingError);
+  });
+  backgroundTask(task);
 }
 
 async function triggerAgentRunInternal(
@@ -584,25 +726,17 @@ async function triggerAgentRunInternal(
   if (runningError) throw new Error(runningError.message);
 
   const functionName = SCHEDULER_AGENT_FUNCTIONS[agentType];
-  fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-    method: "POST",
+  dispatchAgentFunction({
+    supabase,
+    runId,
+    url: `${supabaseUrl}/functions/v1/${functionName}`,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${serviceKey}`,
       apikey: serviceKey,
     },
-    body: JSON.stringify({ ...params, run_id: runId }),
-  }).catch(async (dispatchError) => {
-    log.withRun(runId).warn("downstream_dispatch_failed", dispatchError);
-    await supabase
-      .from("agent_runs")
-      .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message: "Failed to dispatch to agent function",
-        error_kind: "network",
-      })
-      .eq("id", runId);
+    body: { ...params, run_id: runId },
+    label: "scheduled_run",
   });
 
   return runId;
@@ -869,29 +1003,20 @@ async function enqueueVerificationBatch(
   };
   if (dispatchApiKey) dispatchHeaders.apikey = dispatchApiKey;
 
-  fetch(`${supabaseUrl}/functions/v1/agent-verify`, {
-    method: "POST",
+  dispatchAgentFunction({
+    supabase,
+    runId: run.id,
+    url: `${supabaseUrl}/functions/v1/agent-verify`,
     headers: dispatchHeaders,
-    body: JSON.stringify({
+    body: {
       record_type: recordKind,
       record_ids: recordIds,
       run_id: run.id,
-    }),
-  }).catch(async (dispatchError) => {
-    const msg = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
-    log.withRun(run.id).warn("auto_verify_dispatch_failed", msg);
-    await supabase
-      .from("agent_runs")
-      .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message: `Failed to dispatch auto-verification: ${msg}`,
-        error_kind: "network",
-      })
-      .eq("id", run.id);
+    },
+    label: "auto_verify",
     // Increment attempts so a chronically-failing row escalates to 'failed'
     // rather than silently re-queueing forever.
-    await incrementVerificationAttempts(supabase, tableName, recordIds);
+    onFailure: () => incrementVerificationAttempts(supabase, tableName, recordIds),
   });
 
   return recordIds.length;
@@ -1360,21 +1485,13 @@ async function triggerAgentRun(
     dispatchHeaders.apikey = forwardedApiKey;
   }
 
-  fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-    method: "POST",
+  dispatchAgentFunction({
+    supabase,
+    runId,
+    url: `${supabaseUrl}/functions/v1/${functionName}`,
     headers: dispatchHeaders,
-    body: JSON.stringify({ ...params, run_id: runId }),
-  }).catch(async (dispatchError) => {
-    log.withRun(runId).warn("downstream_dispatch_failed", dispatchError);
-    await supabase
-      .from("agent_runs")
-      .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message: "Failed to dispatch to agent function",
-        error_kind: "network",
-      })
-      .eq("id", runId);
+    body: { ...params, run_id: runId },
+    label: "manual_run",
   });
 
   return runId;
@@ -1599,8 +1716,9 @@ async function markZombieRuns(
   supabase: SupabaseAdminClient
 ): Promise<number> {
   const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-  const { data } = await supabase
+  const { data: stalled } = await supabase
     .from("agent_runs")
     .update({
       status: "failed",
@@ -1612,7 +1730,22 @@ async function markZombieRuns(
     .lt("heartbeat_at", twoMinutesAgo)
     .select("id");
 
-  return data?.length || 0;
+  // A run that never left "pending" (the insert succeeded but the start
+  // update or dispatch did not) would otherwise block its job kind forever
+  // with "previous run in flight".
+  const { data: neverStarted } = await supabase
+    .from("agent_runs")
+    .update({
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error_message: "Zombie: never started",
+      error_kind: "db_timeout",
+    })
+    .eq("status", "pending")
+    .lt("created_at", tenMinutesAgo)
+    .select("id");
+
+  return (stalled?.length || 0) + (neverStarted?.length || 0);
 }
 
 async function purgeExpiredCache(

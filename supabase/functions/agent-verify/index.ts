@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createAdminClient,
-  requireStaffRole,
+  requireStaffOrServiceRole,
 } from "../_shared/auth.ts";
 import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
@@ -153,7 +153,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
   try {
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     supabase = createAdminClient();
-    await requireStaffRole(req, supabase, "editor");
+    await requireStaffOrServiceRole(req, supabase, "editor");
 
     const body = await req.json().catch(() => ({}));
     const batchSizeRaw = Number(body.batch_size ?? DEFAULT_BATCH_SIZE);

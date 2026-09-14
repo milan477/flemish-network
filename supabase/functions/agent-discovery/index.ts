@@ -3,7 +3,7 @@ import { searchWeb } from "../_shared/webSearch.ts";
 import {
   createAdminClient,
   HttpError,
-  requireStaffRole,
+  requireStaffOrServiceRole,
 } from "../_shared/auth.ts";
 import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
@@ -4571,7 +4571,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     supabase = createAdminClient();
     const adminClient = supabase;
-    await requireStaffRole(req, adminClient, "editor");
+    await requireStaffOrServiceRole(req, adminClient, "editor");
 
     const body = await req.json();
     const query = normalizeWhitespace(safeString(body.query));
@@ -4591,9 +4591,15 @@ Deno.serve(wrapHandler(async (req: Request) => {
     };
 
     const startTime = Date.now();
-    const DEADLINE_MS = 110_000;
+    // Edge functions on the free plan are killed at 150 s wall clock. The
+    // budget has to leave room for one in-flight page (fetch + classify +
+    // extract, up to ~30 s) plus the wrap-up writes after the loop; a run
+    // killed mid-wrap-up never records its results and surfaces as a zombie.
+    const DEADLINE_MS = 80_000;
+    const PAGE_START_BUDGET_MS = 30_000;
     const timeLeft = () => DEADLINE_MS - (Date.now() - startTime);
     const isTimedOut = () => timeLeft() < 3_000;
+    const canStartPage = () => timeLeft() >= PAGE_START_BUDGET_MS;
     const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
 
     let llmCallsMade = 0;
@@ -4840,7 +4846,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
     );
 
     for (const frontier of claimed) {
-      if (isTimedOut()) {
+      if (!canStartPage()) {
         steps.push({
           step: `frontier_process_${frontier.id}`,
           timestamp: new Date().toISOString(),

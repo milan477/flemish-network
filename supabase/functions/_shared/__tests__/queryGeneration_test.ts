@@ -29,10 +29,12 @@ function geminiResponseBody(payload: unknown): string {
 }
 
 Deno.test("generateSearchQueries returns parsed Gemini queries", async () => {
-  let captured: { url: string; body: string } | null = null;
+  // Keep the captured request in a holder object: TypeScript narrows a plain
+  // `let x: T | null = null` to `never` after assignments inside the callback.
+  const captured: { value: { url: string; body: string } | null } = { value: null };
   await withFetch(
     async (input, init) => {
-      captured = {
+      captured.value = {
         url: typeof input === "string" ? input : input.toString(),
         body: typeof init?.body === "string" ? init.body : "",
       };
@@ -78,10 +80,10 @@ Deno.test("generateSearchQueries returns parsed Gemini queries", async () => {
     },
   );
 
-  assert(captured !== null);
-  assertStringIncludes(captured!.url, "generativelanguage.googleapis.com");
-  assertStringIncludes(captured!.body, "ROTATION_SEED");
-  assertStringIncludes(captured!.body, "biotech researcher Boston");
+  assert(captured.value !== null);
+  assertStringIncludes(captured.value.url, "generativelanguage.googleapis.com");
+  assertStringIncludes(captured.value.body, "ROTATION_SEED");
+  assertStringIncludes(captured.value.body, "biotech researcher Boston");
 });
 
 Deno.test("generateSearchQueries falls back when Gemini returns malformed payload", async () => {
