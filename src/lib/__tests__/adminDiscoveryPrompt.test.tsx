@@ -19,12 +19,17 @@ vi.mock('../supabase', async (importOriginal) => {
     },
     from: (table: string) => {
       if (table === 'agent_runs') {
+        const result = () => ({
+          order: () => ({
+            limit: () => Promise.resolve({ data: agentRuns }),
+          }),
+        });
         return {
           select: () => ({
-            eq: () => ({
-              order: () => ({
-                limit: () => Promise.resolve({ data: agentRuns }),
-              }),
+            eq: result,
+            in: result,
+            order: () => ({
+              limit: () => Promise.resolve({ data: agentRuns }),
             }),
           }),
         };
@@ -86,12 +91,53 @@ describe('Admin Discovery prompt handoff', () => {
     });
   });
 
+  it('forces the quota-free official Fayat discovery path past the manual cooldown', async () => {
+    invokeMock.mockResolvedValue({ error: null });
+    const prompt =
+      'Find all laureates of Fayatbeurzen (Fayat Scholarships) who studied in the United States.';
+    render(
+      <AddContactPanel
+        sectors={[]}
+        onContactAdded={vi.fn()}
+        initialDiscoveryPrompt={prompt}
+      />
+    );
+
+    await screen.findByDisplayValue(prompt);
+    fireEvent.click(screen.getByRole('button', { name: 'Run Discovery' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('agent-scheduler', {
+        body: {
+          action: 'trigger',
+          agent_type: 'discovery',
+          force: true,
+          params: { query: prompt },
+        },
+      });
+    });
+  });
+
   it('keeps quota and summary cards out of Discovery history', async () => {
     render(<AgentDashboard />);
 
     expect(await screen.findByText('Discovery History')).toBeTruthy();
     expect(screen.queryByText('API Quotas')).toBeNull();
     expect(screen.queryByText('Summary')).toBeNull();
+  });
+
+  it('renders a focused active-runs view', async () => {
+    render(<AgentDashboard activeOnly />);
+
+    expect(await screen.findByText('Ongoing runs')).toBeTruthy();
+    expect(screen.getByText('Nothing is running right now.')).toBeTruthy();
+  });
+
+  it('renders the combined run history view', async () => {
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('Run History')).toBeTruthy();
+    expect(screen.getByText('No runs yet.')).toBeTruthy();
   });
 
   it('summarizes discovery run results for people and organizations', async () => {
@@ -109,6 +155,15 @@ describe('Admin Discovery prompt handoff', () => {
         organizations_merged: 1,
         duplicates_skipped: 3,
         organization_duplicates_skipped: 2,
+        steps: [
+          {
+            step: 'frontier_claim',
+            timestamp: '2026-05-07T12:00:10.000Z',
+            elapsed: '10s',
+            status: 'ok',
+            detail: { claimed_count: 6 },
+          },
+        ],
       },
       error_message: null,
       error_kind: null,
@@ -121,10 +176,14 @@ describe('Admin Discovery prompt handoff', () => {
 
     render(<AgentDashboard />);
 
-    expect(
-      await screen.findByText(
-        '4 people created, 1 person merged, 2 organizations created, 1 organization merged, 3 duplicate people, 2 duplicate organizations'
-      )
-    ).toBeTruthy();
+    expect(await screen.findByText('6 new records')).toBeTruthy();
+    expect(screen.getByText('4 people · 2 organizations')).toBeTruthy();
+    expect(screen.getByText('2 records merged · 5 duplicates skipped')).toBeTruthy();
+
+    const detailsButton = screen.getByRole('button', { name: 'View details' });
+    expect(detailsButton.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(detailsButton);
+    expect(screen.getByRole('button', { name: 'Hide details' })).toBeTruthy();
+    expect(screen.getByText('Claim Frontier')).toBeTruthy();
   });
 });

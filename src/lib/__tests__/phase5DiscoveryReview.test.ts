@@ -27,6 +27,26 @@ const approvedPeopleSourceBackfill = readFileSync(
   'utf8'
 );
 
+const scheduler = readFileSync(
+  resolve(process.cwd(), 'supabase/functions/agent-scheduler/index.ts'),
+  'utf8'
+);
+
+const discoveryAgent = readFileSync(
+  resolve(process.cwd(), 'supabase/functions/agent-discovery/index.ts'),
+  'utf8'
+);
+
+const discoveryCrawler = readFileSync(
+  resolve(process.cwd(), 'supabase/functions/_shared/discovery.ts'),
+  'utf8'
+);
+
+const discoveredPhotoMigration = readFileSync(
+  resolve(process.cwd(), 'supabase/migrations/20260915130000_discovered_contact_profile_photo.sql'),
+  'utf8'
+);
+
 describe('Phase 5D discovery review contract', () => {
   it('keeps manual and import organization intake pending-only', () => {
     expect(manualIntake).toContain(".from('discovered_organizations')");
@@ -69,5 +89,43 @@ describe('Phase 5D discovery review contract', () => {
     expect(approvedPeopleSourceBackfill).toContain("WHEN 'manual' THEN 'manual'");
     expect(approvedPeopleSourceBackfill).toContain("WHEN 'import' THEN 'csv_import'");
     expect(approvedPeopleSourceBackfill).toContain('discovered.approved_person_id = person.id');
+  });
+
+  it('starts queued discovery verification explicitly and only enables approval for ready rows', () => {
+    expect(reviewPanel).toContain('handleVerifyQueued');
+    expect(reviewPanel).toContain("body: { action: 'housekeeping' }");
+    expect(reviewPanel).toContain('Verify Queued ({queuedContactCount})');
+    expect(reviewPanel).toContain('`Approve Ready (${readyContactCount})`');
+    expect(reviewPanel).toContain('readyContactCount === 0');
+    expect(reviewPanel).toContain(".is('approved_person_id', null)");
+    expect(reviewPanel).toContain(".is('approved_organization_id', null)");
+  });
+
+  it('does not mistake a US study connection for an abroad current location and surfaces approval errors', () => {
+    expect(reviewPanel).toContain('? contact.current_location_city || null');
+    expect(reviewPanel).toContain('The contact remains in Verification. No approval status was changed.');
+    expect(reviewPanel).not.toContain('contact.current_location_city || contact.location_city');
+  });
+
+  it('keeps bulk approval visibly active until every ready contact is processed', () => {
+    expect(reviewPanel).toContain("setActionId('all')");
+    expect(reviewPanel).toContain('setBulkApprovalProgress({ completed, total: nonDupes.length, failed })');
+    expect(reviewPanel).toContain('Approving ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}');
+    expect(reviewPanel).toContain('Failed contacts remain in Verification so you can retry them.');
+  });
+
+  it('crawls reviewable person photos and preserves them on approval', () => {
+    expect(discoveryCrawler).toContain('extractProfileImageCandidates');
+    expect(discoveryCrawler).toContain('meta[property="og:image"]');
+    expect(discoveryAgent).toContain('Image candidates found on this page:');
+    expect(discoveryAgent).toContain('profile_photo_url: mergedContact.profile_photo_url || null');
+    expect(reviewPanel).toContain('profile_photo_url: contact.profile_photo_url || null');
+    expect(discoveredPhotoMigration).toContain('ADD COLUMN IF NOT EXISTS profile_photo_url text');
+  });
+
+  it('automatically drains discovered verification after discovery completes', () => {
+    expect(scheduler).toContain('onSuccess?: (response: Response) => Promise<void>');
+    expect(scheduler).toContain('await autoEnqueueDiscoveredVerification(supabase, supabaseUrl, req)');
+    expect(scheduler).toContain('Drain the queue serially in bounded batches');
   });
 });

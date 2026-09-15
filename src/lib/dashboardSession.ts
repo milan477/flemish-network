@@ -1,4 +1,6 @@
 import type { Organization, Person } from './supabase';
+import type { SearchRefinementGroup } from './searchRefinements';
+import type { SmartSearchKeywords } from './aiService';
 
 const SEARCH_CACHE_KEY = 'dashboard-search-cache-v1';
 const LAST_DASHBOARD_LOCATION_KEY = 'last-dashboard-location-v1';
@@ -10,6 +12,10 @@ export interface CachedDashboardSearch {
   nameMatches: Person[];
   aiResults: Person[];
   organizationResults?: Organization[];
+  refinementGroups?: SearchRefinementGroup[];
+  refinementVersion?: number;
+  aiKeywords?: SmartSearchKeywords;
+  aiConcepts?: string[];
   snippets: Array<[string, string]>;
   updatedAt: number;
 }

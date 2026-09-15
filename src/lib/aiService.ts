@@ -156,6 +156,7 @@ export interface SmartSearchKeywords {
 
 export interface SmartSearchResult {
   message: string;
+  concepts: string[];
   keywords: SmartSearchKeywords;
 }
 
@@ -169,6 +170,7 @@ export async function smartSearch(
   } catch {
     return {
       message: 'Using deterministic fallback query parsing.',
+      concepts: query.trim() ? [query.trim()] : [],
       keywords: buildFallbackKeywords(query),
     };
   }
@@ -176,6 +178,12 @@ export async function smartSearch(
   if (!result.message || !result.keywords) {
     throw new Error('Invalid smart_search response');
   }
+
+  result.concepts = Array.isArray(result.concepts)
+    ? result.concepts
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter(Boolean)
+    : [];
 
   const kw = result.keywords;
   for (const key of Object.keys(kw) as (keyof SmartSearchKeywords)[]) {
@@ -546,6 +554,10 @@ export interface HybridPersonSearchResultItem {
   available_for_lectures: boolean | null;
   location_id: string | null;
   locations: { city: string; state: string } | null;
+  us_network_status?: Person['us_network_status'];
+  current_location_city?: string | null;
+  current_location_country?: string | null;
+  person_us_connections?: Person['person_us_connections'];
   score: number;
   snippet: string;
   rationale?: string;
@@ -578,6 +590,7 @@ export interface HybridSearchResponse {
   people?: HybridPersonSearchResultItem[];
   organizations?: HybridOrganizationSearchResultItem[];
   keywords: SmartSearchKeywords;
+  concepts?: string[];
   message: string;
   total_with_embeddings: number;
   route?: 'direct_lookup' | 'faceted' | 'exploratory';
@@ -636,6 +649,7 @@ export async function hybridSearch(
     if (!people) {
       return {
         results: [],
+        concepts: res.concepts,
         keywords: res.keywords,
         message: 'Search is running in degraded fallback mode and returned no matches.',
         total_with_embeddings: 0,
@@ -684,6 +698,7 @@ export async function hybridSearch(
       results,
       people: results,
       organizations: [],
+      concepts: res.concepts,
       keywords: res.keywords,
       message: 'Search is running in degraded fallback mode; results are limited to the first 200 profiles.',
       total_with_embeddings: 0,

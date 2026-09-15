@@ -409,7 +409,7 @@ export default function PersonChangesGroup({
                 <button
                   disabled={anyProcessing}
                   onClick={() => void handleApproveMultiple(group.items, group.personId, group.items)}
-                  className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-lg bg-yellow-50 px-2.5 py-1.5 text-xs font-medium text-yellow-800 hover:bg-yellow-100 disabled:opacity-50"
                 >
                   {anyProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
                   Approve all ({group.items.length})
@@ -432,7 +432,7 @@ export default function PersonChangesGroup({
                     type="checkbox"
                     checked={groupKeys.length > 0 && groupKeys.every((k) => selectedKeys.has(k))}
                     onChange={() => toggleAllForPerson(group)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400"
                   />
                   <span className="text-[11px] text-gray-500">Select all</span>
                 </div>
@@ -451,13 +451,13 @@ export default function PersonChangesGroup({
                       return (
                         <div
                           key={key}
-                          className={`flex items-start gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-teal-50/30' : 'hover:bg-gray-50/50'}`}
+                          className={`flex items-start gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-yellow-50/50' : 'hover:bg-gray-50/50'}`}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleItem(key)}
-                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-1.5">
@@ -524,13 +524,13 @@ export default function PersonChangesGroup({
                     return (
                       <div
                         key={key}
-                        className={`flex items-start gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-teal-50/30' : 'hover:bg-gray-50/50'}`}
+                        className={`flex items-start gap-3 px-4 py-3 transition-colors ${isSelected ? 'bg-yellow-50/50' : 'hover:bg-gray-50/50'}`}
                       >
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleItem(key)}
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { Map as MapIcon, List, X, Search as SearchIcon, MapPin } from 'lucide-react';
+import { BarChart3, Map as MapIcon, List, X, Search as SearchIcon, MapPin } from 'lucide-react';
 import {
   supabase,
   type Person,
@@ -50,8 +50,20 @@ import {
   personMatchesLocation,
 } from '../lib/networkScope';
 import { countUniqueClusterCities } from '../hooks/useCityCount';
+import {
+  buildSearchRefinementSuggestions,
+  exactSearchPhrase,
+  organizationExactSearchScore,
+  organizationMatchesExactSearch,
+  personExactSearchScore,
+  personMatchesExactSearch,
+  resultMatchesRefinement,
+  type SearchRefinementGroup,
+  type SearchRefinementSuggestion,
+} from '../lib/searchRefinements';
 
 const MapVisualization = lazy(() => import('../components/MapVisualization'));
+const NetworkStats = lazy(() => import('../components/NetworkStats'));
 
 const PEOPLE_SELECT = '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))';
 const ORG_SELECT = '*, locations(*), organization_us_locations(*, locations(*)), organization_flemish_connections(flemish_connection_id, flemish_connections(id, name, type, entity_type, is_filterable))';
@@ -64,6 +76,58 @@ interface DashboardProps {
 
 function toSearchParams(state: DashboardRouteState): URLSearchParams {
   return buildDashboardSearchParams(state);
+}
+
+async function fetchExactKeywordMatches(
+  query: string,
+  filters: MapFilters,
+  matchMode: SearchMatchMode
+): Promise<{ people: Person[]; organizations: Organization[] }> {
+  const exactPhrase = exactSearchPhrase(query);
+  if (!exactPhrase) return { people: [], organizations: [] };
+
+  let peopleQuery = supabase.from('people').select(PEOPLE_SELECT);
+  let organizationQuery = supabase.from('organizations').select(ORG_SELECT);
+
+  const peopleFields = ['name', 'first_name', 'last_name', 'current_position', 'occupation', 'bio'];
+  const organizationFields = ['name', 'type', 'description'];
+  peopleQuery = peopleQuery.or(
+    peopleFields.map((field) => `${field}.ilike.%${exactPhrase}%`).join(',')
+  );
+  organizationQuery = organizationQuery.or(
+    organizationFields.map((field) => `${field}.ilike.%${exactPhrase}%`).join(',')
+  );
+
+  const [peopleResponse, organizationResponse] = await Promise.all([
+    peopleQuery.limit(100),
+    organizationQuery.limit(100),
+  ]);
+
+  const people = peopleResponse.error ? [] : (peopleResponse.data || []) as Person[];
+  const organizations = organizationResponse.error
+    ? []
+    : (organizationResponse.data || []) as Organization[];
+
+  return {
+    people: applyPeopleMatchCriteria(people, filters, matchMode)
+      .map((person, index) => ({
+        person,
+        index,
+        score: personExactSearchScore(person, query),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map(({ person }) => person),
+    organizations: applyOrganizationMatchCriteria(organizations, filters, matchMode)
+      .map((organization, index) => ({
+        organization,
+        index,
+        score: organizationExactSearchScore(organization, query),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map(({ organization }) => organization),
+  };
 }
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
@@ -104,6 +168,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [activeFilters, setActiveFilters] = useState<ActiveAiFilter[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [refinementGroups, setRefinementGroups] = useState<SearchRefinementGroup[]>([]);
+  const [aiConcepts, setAiConcepts] = useState<string[]>([]);
 
   const loadIdRef = useRef(0);
   const fullDataReadyRef = useRef(false);
@@ -131,6 +197,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     setNameMatches([]);
     setAiResults([]);
     setSnippets(new Map());
+    setRefinementGroups([]);
+    setAiConcepts([]);
   }, []);
 
   const handleClearSearchQuery = useCallback(() => {
@@ -152,12 +220,27 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       const cacheScope = dashboardSearchCacheScope(currentFilters, currentMatchMode);
       const cached = getCachedDashboardSearch(query, cacheScope);
 
-      if (cached) {
+      if (cached?.refinementVersion === 5 && cached.refinementGroups) {
+        const cachedSnippets = new Map(cached.snippets);
+        const cachedPeople = [...cached.nameMatches, ...cached.aiResults].filter(
+          (person, index, rows) =>
+            rows.findIndex((candidate) => candidate.id === person.id) === index &&
+            personMatchesExactSearch(person, query, cachedSnippets.get(person.id))
+        );
+        const cachedOrganizations = (cached.organizationResults || []).filter((organization) =>
+          organizationMatchesExactSearch(
+            organization,
+            query,
+            cachedSnippets.get(organization.id)
+          )
+        );
         setNameMatches(cached.nameMatches);
         setAiResults(cached.aiResults);
         setPeople([...cached.nameMatches, ...cached.aiResults]);
         setOrganizations(cached.organizationResults || []);
-        setSnippets(new Map(cached.snippets));
+        setRefinementGroups(cached.refinementGroups || []);
+        setAiConcepts(cached.aiConcepts || []);
+        setSnippets(cachedSnippets);
         const cachedClusters = buildNetworkClusters(
           [...cached.nameMatches, ...cached.aiResults],
           cached.organizationResults || [],
@@ -165,8 +248,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         );
         setClusters(cachedClusters);
         setStats({
-          people: cached.nameMatches.length + cached.aiResults.length,
-          organizations: (cached.organizationResults || []).length,
+          people: cachedPeople.length,
+          organizations: cachedOrganizations.length,
           cities: countUniqueClusterCities(cachedClusters),
         });
         setAiLoading(false);
@@ -176,48 +259,56 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       clearSearchResults();
       setSearchError(null);
 
-      const words = query.trim().split(/\s+/);
-      const isDirectSearch = words.length <= 4;
-
       setAiLoading(true);
 
       try {
-        const nameMatchPromise = isDirectSearch
-          ? (async () => {
-              const searchTerms = query
-                .toLowerCase()
-                .replace(/^dr\.?\s+/, '')
-                .split(' ');
-              const mainTerm = searchTerms[searchTerms.length - 1];
-              const { data } = await supabase
-                .from('people')
-                .select(
-                  '*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type)), person_sectors(sectors(name))'
-                )
-                .or(
-                  `name.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%,name.ilike.%${mainTerm}%`
-                )
-                .limit(20);
-              return applyPeopleMatchCriteria(
-                (data as Person[]) || [],
-                currentFilters,
-                currentMatchMode
-              );
-            })()
-          : Promise.resolve([]);
-
+        const exactMatchPromise = fetchExactKeywordMatches(
+          query,
+          currentFilters,
+          currentMatchMode
+        );
         const hybridPromise = networkSearch(
           query,
           30,
           currentMatchMode,
           currentFilters
         );
-        const [nameResults, hybridResult] = await Promise.all([
-          nameMatchPromise,
-          hybridPromise,
-        ]);
+        const exactMatches = await exactMatchPromise;
 
         if (requestId !== searchRequestIdRef.current) return;
+
+        const nameResults = exactMatches.people;
+        setNameMatches(nameResults);
+        setAiResults([]);
+        setPeople(nameResults);
+        setOrganizations(exactMatches.organizations);
+        const exactClusters = buildNetworkClusters(
+          nameResults,
+          exactMatches.organizations,
+          currentFilters
+        );
+        setClusters(exactClusters);
+        setStats({
+          people: nameResults.length,
+          organizations: exactMatches.organizations.length,
+          cities: countUniqueClusterCities(exactClusters),
+        });
+
+        let hybridResult;
+        try {
+          hybridResult = await hybridPromise;
+        } catch (error) {
+          if (requestId !== searchRequestIdRef.current) return;
+          setSearchError(
+            error instanceof Error
+              ? `AI enhancement unavailable: ${error.message}`
+              : 'AI enhancement is currently unavailable.'
+          );
+          return;
+        }
+
+        if (requestId !== searchRequestIdRef.current) return;
+        setAiConcepts(hybridResult.concepts || []);
 
         const nameResultIds = new Set(nameResults.map((person) => person.id));
         const fusedResults = hybridResult.results.filter(
@@ -235,8 +326,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         const aiPeople = fusedPeopleResults.map(
           (result) => result as unknown as Person
         );
-        const searchOrganizations = organizationResults.map(
+        const semanticOrganizations = organizationResults.map(
           (result) => result as unknown as Organization
+        );
+        const searchOrganizations = [
+          ...exactMatches.organizations,
+          ...semanticOrganizations,
+        ].filter(
+          (organization, index, rows) =>
+            rows.findIndex((candidate) => candidate.id === organization.id) === index
         );
         const nextSnippets = new Map<string, string>();
 
@@ -255,11 +353,92 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           currentFilters
         );
         setClusters(searchClusters);
+        const exactPeople = [...nameResults, ...aiPeople].filter(
+          (person, index, rows) =>
+            rows.findIndex((candidate) => candidate.id === person.id) === index &&
+            personMatchesExactSearch(person, query, nextSnippets.get(person.id))
+        );
+        const exactOrganizations = searchOrganizations.filter((organization) =>
+          organizationMatchesExactSearch(
+            organization,
+            query,
+            nextSnippets.get(organization.id)
+          )
+        );
         setStats({
-          people: nameResults.length + aiPeople.length,
-          organizations: searchOrganizations.length,
+          people: exactPeople.length,
+          organizations: exactOrganizations.length,
           cities: countUniqueClusterCities(searchClusters),
         });
+
+        const suggestions = buildSearchRefinementSuggestions(
+          query,
+          hybridResult.keywords,
+          hybridResult.results
+        );
+        setRefinementGroups(suggestions.map((suggestion) => {
+          const immediateMatches = hybridResult.results.filter((result) =>
+            resultMatchesRefinement(result, suggestion)
+          );
+          return {
+            ...suggestion,
+            people: immediateMatches
+              .filter((result) => result.entity_type === 'person')
+              .map((result) => result as unknown as Person),
+            organizations: immediateMatches
+              .filter((result) => result.entity_type === 'organization')
+              .map((result) => result as unknown as Organization),
+            snippets: immediateMatches
+              .filter((result) => Boolean(result.snippet))
+              .map((result) => [result.id, result.snippet] as [string, string]),
+            loading: true,
+          };
+        }));
+        setAiLoading(false);
+
+        const nextRefinementGroups = await Promise.all(
+          suggestions.map(async (suggestion: SearchRefinementSuggestion) => {
+            let refinedResults = hybridResult.results;
+            try {
+              const refined = await networkSearch(
+                suggestion.searchQuery,
+                30,
+                currentMatchMode,
+                currentFilters
+              );
+              const combined = [...hybridResult.results, ...refined.results];
+              const seen = new Set<string>();
+              refinedResults = combined.filter((result) => {
+                const key = `${result.entity_type}:${result.id}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+            } catch {
+              // The general search remains useful when a refinement request fails.
+            }
+
+            const matches = refinedResults.filter((result) =>
+              resultMatchesRefinement(result, suggestion)
+            );
+            return {
+              ...suggestion,
+              people: matches
+                .filter((result) => result.entity_type === 'person')
+                .map((result) => result as unknown as Person),
+              organizations: matches
+                .filter((result) => result.entity_type === 'organization')
+                .map((result) => result as unknown as Organization),
+              snippets: matches
+                .filter((result) => Boolean(result.snippet))
+                .map((result) => [result.id, result.snippet] as [string, string]),
+              loading: false,
+            };
+          })
+        );
+
+        if (requestId !== searchRequestIdRef.current) return;
+        setRefinementGroups(nextRefinementGroups);
 
         setCachedDashboardSearch({
           query,
@@ -267,6 +446,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           nameMatches: nameResults,
           aiResults: aiPeople,
           organizationResults: searchOrganizations,
+          refinementGroups: nextRefinementGroups,
+          refinementVersion: 5,
+          aiKeywords: hybridResult.keywords,
+          aiConcepts: hybridResult.concepts || [],
           snippets: Array.from(nextSnippets.entries()),
         });
       } catch (error) {
@@ -629,7 +812,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               }`}
             >
               <MapIcon className="w-4 h-4" />
-              <span>Network Map</span>
+              <span>Map</span>
             </button>
             <button
               onClick={() => handleViewModeChange('list')}
@@ -640,7 +823,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               }`}
             >
               <List className="w-4 h-4" />
-              <span>Network List</span>
+              <span>List</span>
+            </button>
+            <button
+              onClick={() => handleViewModeChange('stats')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                viewMode === 'stats'
+                  ? 'bg-yellow-400 text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Stats</span>
             </button>
           </div>
 
@@ -785,7 +979,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center bg-gray-100">
-                <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-teal-600" />
+                <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
               </div>
             }
           >
@@ -800,7 +994,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               totalOrganizations={organizations.length}
             />
           </Suspense>
-        ) : (
+        ) : viewMode === 'list' ? (
           <div className="h-full overflow-y-auto bg-gray-50">
             <div className="max-w-6xl mx-auto px-6 pt-24 pb-8">
               {isSearchActive ? (
@@ -816,6 +1010,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   onClearFocus={clearFocusedCity}
                   onClearSearch={handleClearSearchQuery}
                   snippets={snippets}
+                  refinementGroups={refinementGroups}
+                  aiConcepts={aiConcepts}
                   searchError={searchError}
                 />
               ) : (
@@ -839,10 +1035,24 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               )}
             </div>
           </div>
+        ) : (
+          <div className="h-full overflow-y-auto bg-gray-50">
+            <div className="mx-auto max-w-7xl px-6 pb-8 pt-24">
+              <Suspense
+                fallback={
+                  <div className="flex h-64 items-center justify-center">
+                    <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
+                  </div>
+                }
+              >
+                <NetworkStats onNavigate={onNavigate} />
+              </Suspense>
+            </div>
+          </div>
         )}
       </div>
 
-      <FilterPanel
+      {viewMode !== 'stats' && <FilterPanel
         filters={filters}
         onFiltersChange={handleFiltersChange}
         showPanel={showFilters}
@@ -853,7 +1063,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         activeSearchQuery={activeQuery}
         onRemoveSearchQuery={handleRemoveSearchQueryFilter}
         flemishOptions={flemishOptions}
-      />
+      />}
     </div>
   );
 }

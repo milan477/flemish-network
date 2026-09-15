@@ -666,9 +666,19 @@ function dispatchAgentFunction(options: {
   headers: Record<string, string>;
   body: Record<string, unknown>;
   label: string;
+  onSuccess?: (response: Response) => Promise<void>;
   onFailure?: () => Promise<void>;
 }): void {
-  const { supabase, runId, url, headers, body, label, onFailure } = options;
+  const {
+    supabase,
+    runId,
+    url,
+    headers,
+    body,
+    label,
+    onSuccess,
+    onFailure,
+  } = options;
   const runLog = log.withRun(runId);
   const task = (async () => {
     let response: Response;
@@ -685,7 +695,10 @@ function dispatchAgentFunction(options: {
       if (onFailure) await onFailure();
       return;
     }
-    if (response.ok) return;
+    if (response.ok) {
+      if (onSuccess) await onSuccess(response);
+      return;
+    }
     const failure = await describeDispatchFailure(response);
     runLog.warn(`${label}_dispatch_rejected`, { status: response.status, message: failure.message });
     await markDispatchFailure(supabase, runId, failure.message, failure.kind);
@@ -737,6 +750,13 @@ async function triggerAgentRunInternal(
     },
     body: { ...params, run_id: runId },
     label: "scheduled_run",
+    ...(agentType === "discovery"
+      ? {
+        onSuccess: async () => {
+          await autoEnqueueDiscoveredVerification(supabase, supabaseUrl);
+        },
+      }
+      : {}),
   });
 
   return runId;
@@ -893,7 +913,7 @@ async function autoEnqueueDiscoveredVerification(
   let contactsEnqueued = 0;
   let orgsEnqueued = 0;
 
-  if (supabaseUrl && req) {
+  if (supabaseUrl) {
     contactsEnqueued = await enqueueVerificationBatch(
       supabase,
       supabaseUrl,
@@ -921,7 +941,7 @@ async function autoEnqueueDiscoveredVerification(
 async function enqueueVerificationBatch(
   supabase: SupabaseAdminClient,
   supabaseUrl: string,
-  req: Request,
+  req: Request | undefined,
   recordKind: "discovered_contact" | "discovered_organization",
   tableName: "discovered_contacts" | "discovered_organizations",
 ): Promise<number> {
@@ -964,8 +984,8 @@ async function enqueueVerificationBatch(
     .update({ verification_status: "verifying", verification_run_id: run.id })
     .in("id", recordIds);
 
-  const forwardedAuth = req.headers.get("Authorization") || req.headers.get("authorization");
-  const forwardedApiKey = req.headers.get("apikey") || req.headers.get("Apikey");
+  const forwardedAuth = req?.headers.get("Authorization") || req?.headers.get("authorization");
+  const forwardedApiKey = req?.headers.get("apikey") || req?.headers.get("Apikey");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   // Verification dispatch does not require user context — fall back to the
@@ -1014,6 +1034,29 @@ async function enqueueVerificationBatch(
       run_id: run.id,
     },
     label: "auto_verify",
+    onSuccess: async (response) => {
+      const result = await response.clone().json().catch(() => ({})) as {
+        records_processed?: number;
+        errors?: number;
+        quota_exhausted?: boolean;
+      };
+      // Drain the queue serially in bounded batches. Stop on quota/error so a
+      // failing record cannot create an automatic retry loop.
+      if (
+        result.quota_exhausted ||
+        Number(result.errors || 0) > 0 ||
+        Number(result.records_processed || 0) === 0
+      ) {
+        return;
+      }
+      await enqueueVerificationBatch(
+        supabase,
+        supabaseUrl,
+        req,
+        recordKind,
+        tableName,
+      );
+    },
     // Increment attempts so a chronically-failing row escalates to 'failed'
     // rather than silently re-queueing forever.
     onFailure: () => incrementVerificationAttempts(supabase, tableName, recordIds),
@@ -1492,6 +1535,13 @@ async function triggerAgentRun(
     headers: dispatchHeaders,
     body: { ...params, run_id: runId },
     label: "manual_run",
+    ...(agentType === "discovery"
+      ? {
+        onSuccess: async () => {
+          await autoEnqueueDiscoveredVerification(supabase, supabaseUrl, req);
+        },
+      }
+      : {}),
   });
 
   return runId;

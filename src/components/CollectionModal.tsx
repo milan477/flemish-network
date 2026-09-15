@@ -144,7 +144,7 @@ export default function CollectionModal({
 
   const handleDiscoveryHandoff = () => {
     const prompt = suggestionGap.suggested_prompt?.trim() || `${name} ${description}`.trim();
-    navigate(`/admin/discovery?prompt=${encodeURIComponent(prompt)}`);
+    navigate(`/expand/discovery?prompt=${encodeURIComponent(prompt)}`);
     onClose();
   };
 

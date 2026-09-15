@@ -22,3 +22,5 @@ docs/commands.txt
 # links
 googlespend.webloc
 supabase.webloc
+.vercel
+.env*

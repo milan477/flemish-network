@@ -5,7 +5,12 @@ import {
   HttpError,
   requireStaffOrServiceRole,
 } from "../_shared/auth.ts";
-import { agentRunErrorKindFor, structuredErrorBody, statusForError, wrapHandler } from "../_shared/httpError.ts";
+import {
+  agentRunErrorKindFor,
+  statusForError,
+  structuredErrorBody,
+  wrapHandler,
+} from "../_shared/httpError.ts";
 import type { SupabaseAdminClient } from "../_shared/database.types.ts";
 import {
   buildDiscoveryDerivedLabels,
@@ -27,19 +32,21 @@ import {
   canonicalizeUrl,
   classifyPageHeuristically,
   extractDomain,
+  type FetchedPage,
   fetchPage,
+  type HarvestedFrontierSeed,
   harvestFeedUrls,
   harvestSitemapUrls,
   hashString,
   normalizeWhitespace,
+  type PageClassification,
   pickTopChildLinks,
   safeString,
-  type FetchedPage,
-  type HarvestedFrontierSeed,
-  type PageClassification,
   type ScoredChildLink,
 } from "../_shared/discovery.ts";
 import {
+  type DiscoveryOrganizationCandidate,
+  type FlemishFactCandidate,
   hasUsLocationSignal,
   likelySameOrganization,
   mergeOrganizationCandidates,
@@ -47,24 +54,32 @@ import {
   normalizeOrganizationName,
   normalizeOrganizationWebsite,
   organizationCandidateKey,
-  primaryOrganizationDomain,
-  type DiscoveryOrganizationCandidate,
-  type FlemishFactCandidate,
   type OrganizationLocationEvidence,
   type OrganizationNetworkStatus,
+  primaryOrganizationDomain,
 } from "../_shared/discoveryOrganizations.ts";
 import { createLogger } from "../_shared/log.ts";
 import {
-  generateSearchQueries,
   type GeneratedQuery,
+  generateSearchQueries,
   type QueryGenerationContext,
 } from "../_shared/queryGeneration.ts";
 import {
   allocateBudget,
-  updateArmStats,
   type AllocationSlot,
+  updateArmStats,
 } from "../_shared/banditAllocator.ts";
 import { validatePivot } from "../_shared/pivotValidation.ts";
+import {
+  appendCanonicalFlemishConnections,
+  loadFlemishConnectionCatalogPrompt,
+  resolveModelFlemishFactCandidates,
+} from "../_shared/flemishConnectionCatalog.ts";
+import {
+  getOfficialFayatUsLaureates,
+  isOfficialFayatLaureatesUrl,
+  OFFICIAL_FAYAT_LAUREATES_URL,
+} from "../_shared/fayatDirectory.ts";
 
 const log = createLogger("agent-discovery");
 
@@ -201,6 +216,7 @@ const PAGE_EXTRACTION_SCHEMA = {
             },
           },
           website_url: { type: "STRING" },
+          profile_photo_url: { type: "STRING" },
           email: { type: "STRING" },
           linkedin_url: { type: "STRING" },
           sectors: { type: "ARRAY", items: { type: "STRING" } },
@@ -225,6 +241,7 @@ const PAGE_EXTRACTION_SCHEMA = {
           "raw_flemish_text",
           "flemish_fact_candidates",
           "website_url",
+          "profile_photo_url",
           "email",
           "linkedin_url",
           "sectors",
@@ -334,7 +351,8 @@ const PAGE_EXTRACTION_SCHEMA = {
   required: ["contacts", "organizations"],
 };
 
-const PAGE_CLASSIFICATION_PROMPT = `You are triaging web pages for a Flemish-American network discovery crawler.
+const PAGE_CLASSIFICATION_PROMPT =
+  `You are triaging web pages for a Flemish-American network discovery crawler.
 
 Classify the page into one of:
 - person_profile
@@ -355,7 +373,8 @@ Rules:
 - Prefer directory_or_index_page over team_or_roster when the page is mostly a large index/listing with many links and weak direct person evidence.
 - Return concise reasons.`;
 
-const PAGE_EXTRACTION_PROMPT = `You are extracting discovery candidates for a Flemish-American professional network.
+const PAGE_EXTRACTION_PROMPT =
+  `You are extracting discovery candidates for a Flemish-American professional network.
 
 Extract people ONLY when the page gives explicit evidence that they have a Belgian/Flemish connection and are either US-based or have a concrete US tie while based abroad. If location is unknown, include them only if the Flemish and US-tie evidence is strong.
 
@@ -370,12 +389,13 @@ Rules:
 - suggested_us_connections must include a US city/state, short connection label, evidence excerpt, source URL, and confidence.
 - raw_location_text is the exact phrase from the page that suggests location.
 - raw_flemish_text is the exact phrase from the page that suggests the Belgian/Flemish tie.
-- flemish_fact_candidates must list canonical Flemish/Belgian entity candidates when identifiable. Use canonical_name for the broad entity (for example KU Leuven, UGent, imec, BAEF, Flemish Government, FIT, VUB, Vlerick, VITO, Flanders Make, VIB), candidate_alias for the page phrase when different, role for the relationship, source_url, evidence_excerpt, confidence, and raw_evidence. Do not invent canonical names when the page only has vague Belgian/Flemish relevance; keep that in raw evidence instead.
+- flemish_fact_candidates must list canonical Flemish/Belgian entity candidates when identifiable. Select the exact canonical_name from the supplied live catalog whenever the entity or an approved alias matches. Only propose a concise new canonical_name when no catalog entry represents the evidenced entity. Use candidate_alias for the page phrase when different, role for the relationship, source_url, evidence_excerpt, confidence, and raw_evidence. Do not invent canonical names when the page only has vague Belgian/Flemish relevance; keep that in raw evidence instead.
 - Model-discovered aliases are review candidates only; do not mark every raw phrase as a default filter entity.
 - raw_role_text is the exact role/title phrase from the page.
 - evidence_excerpt must be a short verbatim or near-verbatim excerpt from the page supporting this person.
 - confidence is 0 to 1.
 - Only include email, website_url, and linkedin_url when explicitly present on the page.
+- profile_photo_url must be an exact absolute URL from the supplied image candidates and must clearly depict that exact person. Never use logos, icons, banners, placeholders, or an ambiguous group photo; use an empty string when uncertain.
 - sectors must be chosen only from: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research.`;
 
 type DiscoveryPageType = PageClassification["pageType"];
@@ -386,6 +406,7 @@ interface ExistingContactLookupRow {
   email?: string | null;
   linkedin_url?: string | null;
   website_url?: string | null;
+  profile_photo_url?: string | null;
   current_position?: string | null;
   occupation?: string | null;
   location_city?: string | null;
@@ -414,12 +435,16 @@ interface ExtractedContact {
   location_state: string;
   flemish_connection: string;
   flemish_fact_candidates: FlemishFactCandidate[];
-  suggested_us_network_status: "us_based" | "us_connected_abroad" | "needs_review";
+  suggested_us_network_status:
+    | "us_based"
+    | "us_connected_abroad"
+    | "needs_review";
   suggested_us_network_confidence: number;
   current_location_city: string;
   current_location_country: string;
   suggested_us_connections: Array<Record<string, unknown>>;
   website_url: string;
+  profile_photo_url?: string;
   email: string;
   linkedin_url: string;
   sectors: string[];
@@ -532,7 +557,13 @@ interface DiscoverySeedDomain {
 
 interface SearchSeedPlan {
   query: string;
-  sourceType: "custom_query" | "surface_lens" | "entity_pivot" | "reflection" | "multi_hop" | "composition";
+  sourceType:
+    | "custom_query"
+    | "surface_lens"
+    | "entity_pivot"
+    | "reflection"
+    | "multi_hop"
+    | "composition";
   priorityBoost: number;
   maxSeedUrls: number;
   coverageTargetKey: string | null;
@@ -901,14 +932,20 @@ function looksLikeGenericEntity(value: string): boolean {
 
 function looksLikePersonName(candidate: string, contactName: string): boolean {
   const normalizedCandidate = normalizeEntityKey(candidate);
-  const normalizedContactName = normalizeName(contactName).replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedContactName = normalizeName(contactName).replace(
+    /[^a-z0-9]+/g,
+    " ",
+  ).trim();
 
   if (!normalizedCandidate || !normalizedContactName) return false;
   if (normalizedCandidate === normalizedContactName) return true;
 
   const candidateWords = normalizedCandidate.split(" ").filter(Boolean);
   const contactWords = normalizedContactName.split(" ").filter(Boolean);
-  if (candidateWords.length >= 2 && candidateWords.length <= 4 && candidateWords.join(" ") === contactWords.join(" ")) {
+  if (
+    candidateWords.length >= 2 && candidateWords.length <= 4 &&
+    candidateWords.join(" ") === contactWords.join(" ")
+  ) {
     return true;
   }
 
@@ -1022,7 +1059,9 @@ function buildCoverageTargetKeys(
   evidence: DiscoveryEvidenceInput[],
 ): string[] {
   const state = normalizeWhitespace(contact.location_state).toUpperCase() ||
-    normalizeWhitespace(evidence.find((item) => item.locationState)?.locationState || "").toUpperCase();
+    normalizeWhitespace(
+      evidence.find((item) => item.locationState)?.locationState || "",
+    ).toUpperCase();
 
   return state ? [`state:${state}`] : [];
 }
@@ -1046,7 +1085,8 @@ function extractPivotCandidates(
     if (looksLikeGenericEntity(entityName)) return;
     if (looksLikePersonName(entityName, contact.name)) return;
 
-    const entityType = preferredType || inferEntityType(entityName, source.pageType);
+    const entityType = preferredType ||
+      inferEntityType(entityName, source.pageType);
     const entityKey = `${entityType}:${normalizeEntityKey(entityName)}`;
     if (!entityKey || entityKey.endsWith(":")) return;
 
@@ -1061,7 +1101,9 @@ function extractPivotCandidates(
       sourcePageType: source.pageType || null,
       sourceExcerpt: source.evidenceExcerpt || source.rawRoleText || null,
       confidence: Number(source.extractionConfidence || 0),
-      sourceStrength: Number((baseStrength + Number(source.extractionConfidence || 0)).toFixed(2)),
+      sourceStrength: Number(
+        (baseStrength + Number(source.extractionConfidence || 0)).toFixed(2),
+      ),
     };
 
     const existing = collected.get(entityKey);
@@ -1088,7 +1130,12 @@ function extractPivotCandidates(
       item.pageType !== "person_profile" &&
       item.pageType !== "article_or_press_release"
     ) {
-      maybeAdd(item.pageTitle, item, 2.5, inferEntityType(item.pageTitle, item.pageType));
+      maybeAdd(
+        item.pageTitle,
+        item,
+        2.5,
+        inferEntityType(item.pageTitle, item.pageType),
+      );
     }
   }
 
@@ -1110,18 +1157,23 @@ function buildCandidateKey(
   const website = normalizeWebsiteUrl(contact.website_url);
   if (website) return `site:${website}`;
 
-  const normalizedName = normalizeName(contact.name).replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedName = normalizeName(contact.name).replace(/[^a-z0-9]+/g, " ")
+    .trim();
   if (!normalizedName) return null;
 
   const bestPivot = extractPivotCandidates(contact, evidence)[0];
   const stateSignal =
     normalizeWhitespace(contact.location_state).toLowerCase() ||
-    normalizeWhitespace(evidence.find((item) => item.locationState)?.locationState || "").toLowerCase();
+    normalizeWhitespace(
+      evidence.find((item) => item.locationState)?.locationState || "",
+    ).toLowerCase();
   const domainSignal = extractDomain(evidence[0]?.pageUrl || "") || "";
 
   if (bestPivot) {
     const entitySignal = bestPivot.entityKey.split(":").slice(1).join(":");
-    return `candidate:${normalizedName}|${entitySignal}${stateSignal ? `|${stateSignal}` : ""}`;
+    return `candidate:${normalizedName}|${entitySignal}${
+      stateSignal ? `|${stateSignal}` : ""
+    }`;
   }
 
   if (stateSignal) {
@@ -1164,7 +1216,10 @@ function pickBetterValue(primary: string, secondary: string): string {
   return b.length > a.length ? b : a;
 }
 
-function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): ExtractedContact {
+function mergeContacts(
+  existing: ExtractedContact,
+  incoming: ExtractedContact,
+): ExtractedContact {
   const preferIncoming = contactScore(incoming) > contactScore(existing);
   const base = preferIncoming ? incoming : existing;
   const other = preferIncoming ? existing : incoming;
@@ -1173,8 +1228,7 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
   const baseState = normalizeWhitespace(base.location_state);
   const otherCity = normalizeWhitespace(other.location_city);
   const otherState = normalizeWhitespace(other.location_state);
-  const useOtherLocation =
-    (!baseState && otherState) ||
+  const useOtherLocation = (!baseState && otherState) ||
     (!baseCity && otherCity) ||
     (!baseCity && !baseState && (otherCity || otherState));
 
@@ -1182,21 +1236,27 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
     name: pickBetterValue(base.name, other.name),
     bio: pickBetterValue(base.bio, other.bio).slice(0, 500),
     occupation: pickBetterValue(base.occupation, other.occupation),
-    current_position: pickBetterValue(base.current_position, other.current_position),
+    current_position: pickBetterValue(
+      base.current_position,
+      other.current_position,
+    ),
     location_city: useOtherLocation ? otherCity : baseCity,
     location_state: useOtherLocation ? otherState : baseState,
-    flemish_connection: pickBetterValue(base.flemish_connection, other.flemish_connection),
+    flemish_connection: pickBetterValue(
+      base.flemish_connection,
+      other.flemish_connection,
+    ),
     flemish_fact_candidates: [
       ...base.flemish_fact_candidates,
       ...other.flemish_fact_candidates,
     ],
     suggested_us_network_status:
       base.suggested_us_network_status === "us_connected_abroad" ||
-      other.suggested_us_network_status === "us_connected_abroad"
+        other.suggested_us_network_status === "us_connected_abroad"
         ? "us_connected_abroad"
         : base.suggested_us_network_status === "needs_review"
-          ? "needs_review"
-          : other.suggested_us_network_status,
+        ? "needs_review"
+        : other.suggested_us_network_status,
     suggested_us_network_confidence: Math.max(
       base.suggested_us_network_confidence || 0,
       other.suggested_us_network_confidence || 0,
@@ -1214,6 +1274,10 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
       ...other.suggested_us_connections,
     ],
     website_url: pickBetterValue(base.website_url, other.website_url),
+    profile_photo_url: pickBetterValue(
+      safeString(base.profile_photo_url),
+      safeString(other.profile_photo_url),
+    ),
     email: pickBetterValue(base.email, other.email),
     linkedin_url: pickBetterValue(base.linkedin_url, other.linkedin_url),
     sectors: uniqueStrings([...base.sectors, ...other.sectors]),
@@ -1221,7 +1285,10 @@ function mergeContacts(existing: ExtractedContact, incoming: ExtractedContact): 
   };
 }
 
-function locationsCompatible(a: ExtractedContact, b: ExtractedContact): boolean {
+function locationsCompatible(
+  a: ExtractedContact,
+  b: ExtractedContact,
+): boolean {
   const aState = normalizeWhitespace(a.location_state).toLowerCase();
   const bState = normalizeWhitespace(b.location_state).toLowerCase();
   if (aState && bState && aState !== bState) return false;
@@ -1233,7 +1300,10 @@ function locationsCompatible(a: ExtractedContact, b: ExtractedContact): boolean 
   return true;
 }
 
-function hasConflictingStrongIdentity(a: ExtractedContact, b: ExtractedContact): boolean {
+function hasConflictingStrongIdentity(
+  a: ExtractedContact,
+  b: ExtractedContact,
+): boolean {
   const emailA = normalizeEmail(a.email);
   const emailB = normalizeEmail(b.email);
   if (emailA && emailB && emailA !== emailB) return true;
@@ -1271,7 +1341,10 @@ function likelySameContact(a: ExtractedContact, b: ExtractedContact): boolean {
   return locationsCompatible(a, b);
 }
 
-function mergeBundles(existing: CandidateBundle, incoming: CandidateBundle): CandidateBundle {
+function mergeBundles(
+  existing: CandidateBundle,
+  incoming: CandidateBundle,
+): CandidateBundle {
   return {
     contact: mergeContacts(existing.contact, incoming.contact),
     evidence: [...existing.evidence, ...incoming.evidence],
@@ -1284,7 +1357,10 @@ function consolidateBundles(bundles: CandidateBundle[]): CandidateBundle[] {
 
   for (const bundle of bundles) {
     const matchIndex = consolidated.findIndex((candidate) => {
-      if (candidate.candidateKey && bundle.candidateKey && candidate.candidateKey === bundle.candidateKey) {
+      if (
+        candidate.candidateKey && bundle.candidateKey &&
+        candidate.candidateKey === bundle.candidateKey
+      ) {
         return true;
       }
 
@@ -1306,15 +1382,21 @@ function mergeOrganizationBundles(
   existing: OrganizationCandidateBundle,
   incoming: OrganizationCandidateBundle,
 ): OrganizationCandidateBundle {
-  const merged = mergeOrganizationCandidates(existing.organization, incoming.organization);
+  const merged = mergeOrganizationCandidates(
+    existing.organization,
+    incoming.organization,
+  );
   return {
     organization: merged,
     evidence: [...existing.evidence, ...incoming.evidence],
-    candidateKey: existing.candidateKey || incoming.candidateKey || organizationCandidateKey(merged),
+    candidateKey: existing.candidateKey || incoming.candidateKey ||
+      organizationCandidateKey(merged),
   };
 }
 
-function consolidateOrganizationBundles(bundles: OrganizationCandidateBundle[]): OrganizationCandidateBundle[] {
+function consolidateOrganizationBundles(
+  bundles: OrganizationCandidateBundle[],
+): OrganizationCandidateBundle[] {
   const consolidated: OrganizationCandidateBundle[] = [];
 
   for (const bundle of bundles) {
@@ -1328,22 +1410,23 @@ function consolidateOrganizationBundles(bundles: OrganizationCandidateBundle[]):
       continue;
     }
 
-    consolidated[matchIndex] = mergeOrganizationBundles(consolidated[matchIndex], bundle);
+    consolidated[matchIndex] = mergeOrganizationBundles(
+      consolidated[matchIndex],
+      bundle,
+    );
   }
 
   return consolidated;
 }
 
 function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
-  const name =
-    safeString(profile.fullName) ||
+  const name = safeString(profile.fullName) ||
     `${safeString(profile.firstName)} ${safeString(profile.lastName)}`.trim();
-  const position =
-    safeString(profile.headline) ||
+  const position = safeString(profile.headline) ||
     safeString(profile.position) ||
     safeString(profile.title);
-  const linkedinUrl =
-    safeString(profile.linkedInProfileUrl) || safeString(profile.profileUrl);
+  const linkedinUrl = safeString(profile.linkedInProfileUrl) ||
+    safeString(profile.profileUrl);
   const location = parseLocation(safeString(profile.location));
 
   return {
@@ -1355,9 +1438,9 @@ function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
     location_state: location.state,
     flemish_connection: "",
     suggested_us_network_status: isLikelyUS({
-      location_city: location.city,
-      location_state: location.state,
-    })
+        location_city: location.city,
+        location_state: location.state,
+      })
       ? "us_based"
       : "needs_review",
     suggested_us_network_confidence: 0,
@@ -1373,16 +1456,23 @@ function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
   };
 }
 
-function isLikelyUS(contact: Pick<ExtractedContact, "location_city" | "location_state">): boolean {
+function isLikelyUS(
+  contact: Pick<ExtractedContact, "location_city" | "location_state">,
+): boolean {
   const state = contact.location_state.trim();
   const stateUpper = state.toUpperCase();
   const stateLower = state.toLowerCase();
 
-  if (stateUpper && (US_STATE_CODES.has(stateUpper) || US_STATE_NAMES.has(stateLower))) {
+  if (
+    stateUpper &&
+    (US_STATE_CODES.has(stateUpper) || US_STATE_NAMES.has(stateLower))
+  ) {
     return true;
   }
 
-  if (state && NON_US_KEYWORDS.some((keyword) => stateLower.includes(keyword))) {
+  if (
+    state && NON_US_KEYWORDS.some((keyword) => stateLower.includes(keyword))
+  ) {
     return false;
   }
 
@@ -1417,9 +1507,11 @@ function normalizeFlemishFactCandidate(
     candidate_alias: normalizeWhitespace(safeString(raw.candidate_alias)),
     role: normalizeWhitespace(safeString(raw.role)),
     source_url: normalizeWhitespace(safeString(raw.source_url)) || fallbackUrl,
-    evidence_excerpt: normalizeWhitespace(safeString(raw.evidence_excerpt)) || fallbackEvidence,
+    evidence_excerpt: normalizeWhitespace(safeString(raw.evidence_excerpt)) ||
+      fallbackEvidence,
     confidence: clampConfidence(raw.confidence),
-    raw_evidence: normalizeWhitespace(safeString(raw.raw_evidence)) || fallbackEvidence,
+    raw_evidence: normalizeWhitespace(safeString(raw.raw_evidence)) ||
+      fallbackEvidence,
   };
 }
 
@@ -1430,7 +1522,9 @@ function hoursSince(timestamp: string | null | undefined): number {
 }
 
 function pickGapSector(gap: CoverageGapRow | null): string | null {
-  const sectors = Array.isArray(gap?.sector_emphasis) ? gap?.sector_emphasis : [];
+  const sectors = Array.isArray(gap?.sector_emphasis)
+    ? gap?.sector_emphasis
+    : [];
   return sectors.find((value) => normalizeWhitespace(value).length > 0) || null;
 }
 
@@ -1441,16 +1535,17 @@ function computeNextFetchAt(
   domainPolicy?: DiscoveryDomainPolicy | null,
 ): string {
   const now = new Date();
-  let hours =
-    pageType === "low_value_boilerplate" || pageType === "irrelevant"
-      ? 24 * 45
-      : extractionCount > 0
-      ? 24 * 21
-      : 24 * 14;
+  let hours = pageType === "low_value_boilerplate" || pageType === "irrelevant"
+    ? 24 * 45
+    : extractionCount > 0
+    ? 24 * 21
+    : 24 * 14;
 
   const policyHours = Number(domainPolicy?.revisit_interval_hours || 0);
   if (policyHours > 0) {
-    hours = extractionCount > 0 ? Math.min(hours, policyHours) : Math.max(hours, policyHours);
+    hours = extractionCount > 0
+      ? Math.min(hours, policyHours)
+      : Math.max(hours, policyHours);
   }
 
   const penaltyHours = errorCount > 0 ? Math.min(errorCount * 6, 24 * 7) : 0;
@@ -1517,8 +1612,11 @@ async function callGeminiJson<T>(
   },
 ): Promise<T> {
   const timeoutMs = options?.timeoutMs || GEMINI_REQUEST_TIMEOUT_MS;
-  const attemptsPerModel = options?.attemptsPerModel || GEMINI_MAX_ATTEMPTS_PER_MODEL;
-  let lastError: unknown = new Error(`Gemini ${model} failed without a response`);
+  const attemptsPerModel = options?.attemptsPerModel ||
+    GEMINI_MAX_ATTEMPTS_PER_MODEL;
+  let lastError: unknown = new Error(
+    `Gemini ${model} failed without a response`,
+  );
 
   for (let attempt = 0; attempt < attemptsPerModel; attempt += 1) {
     const controller = new AbortController();
@@ -1559,7 +1657,11 @@ async function callGeminiJson<T>(
       );
 
       if (response.status === 429 || response.status >= 500) {
-        lastError = new Error(`Gemini ${model} transient ${response.status}: ${(await response.text()).slice(0, 200)}`);
+        lastError = new Error(
+          `Gemini ${model} transient ${response.status}: ${
+            (await response.text()).slice(0, 200)
+          }`,
+        );
         if (attempt < attemptsPerModel - 1) {
           await sleep(400 * (attempt + 1));
           continue;
@@ -1568,7 +1670,11 @@ async function callGeminiJson<T>(
       }
 
       if (!response.ok) {
-        throw new Error(`Gemini ${model} failed (${response.status}): ${(await response.text()).slice(0, 400)}`);
+        throw new Error(
+          `Gemini ${model} failed (${response.status}): ${
+            (await response.text()).slice(0, 400)
+          }`,
+        );
       }
 
       const data = await response.json();
@@ -1580,9 +1686,13 @@ async function callGeminiJson<T>(
       return JSON.parse(text) as T;
     } catch (error) {
       lastError = isAbortLikeError(error)
-        ? new Error(`Gemini ${model} timed out after ${Math.round(timeoutMs / 1000)}s`)
+        ? new Error(
+          `Gemini ${model} timed out after ${Math.round(timeoutMs / 1000)}s`,
+        )
         : error;
-      if (attempt < attemptsPerModel - 1 && isRetryableUpstreamError(lastError)) {
+      if (
+        attempt < attemptsPerModel - 1 && isRetryableUpstreamError(lastError)
+      ) {
         await sleep(400 * (attempt + 1));
         continue;
       }
@@ -1630,7 +1740,11 @@ ${page.text.slice(0, 4000)}
   };
 }
 
-function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: string): ExtractedPageContact {
+function normalizeExtractedPageContact(
+  raw: Record<string, unknown>,
+  pageUrl: string,
+  imageCandidates: string[] = [],
+): ExtractedPageContact {
   const rawFlemishText = safeString(raw.raw_flemish_text);
   const evidenceExcerpt = safeString(raw.evidence_excerpt);
 
@@ -1648,7 +1762,11 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
           Boolean(value && typeof value === "object")
         )
         .map((candidate) =>
-          normalizeFlemishFactCandidate(candidate, pageUrl, rawFlemishText || evidenceExcerpt)
+          normalizeFlemishFactCandidate(
+            candidate,
+            pageUrl,
+            rawFlemishText || evidenceExcerpt,
+          )
         )
         .filter((candidate) => candidate.canonical_name.length > 0)
       : [],
@@ -1667,21 +1785,30 @@ function normalizeExtractedPageContact(raw: Record<string, unknown>, pageUrl: st
         )
       : [],
     website_url: safeString(raw.website_url),
+    profile_photo_url: imageCandidates.includes(safeString(raw.profile_photo_url))
+      ? safeString(raw.profile_photo_url)
+      : "",
     email: safeString(raw.email),
     linkedin_url: safeString(raw.linkedin_url),
     sectors: Array.isArray(raw.sectors)
-      ? (raw.sectors as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (raw.sectors as unknown[]).filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
     source_urls: [pageUrl],
     raw_location_text: safeString(raw.raw_location_text),
     raw_flemish_text: rawFlemishText,
     evidence_excerpt: evidenceExcerpt,
     raw_role_text: safeString(raw.raw_role_text),
-    extraction_confidence: typeof raw.confidence === "number" ? raw.confidence : 0,
+    extraction_confidence: typeof raw.confidence === "number"
+      ? raw.confidence
+      : 0,
   };
 }
 
-function normalizeOrganizationNetworkStatus(value: unknown): OrganizationNetworkStatus {
+function normalizeOrganizationNetworkStatus(
+  value: unknown,
+): OrganizationNetworkStatus {
   if (
     value === "belgian_organization_with_us_presence" ||
     value === "us_organization_connected_to_flanders" ||
@@ -1692,10 +1819,15 @@ function normalizeOrganizationNetworkStatus(value: unknown): OrganizationNetwork
   return "us_based_organization";
 }
 
-function normalizeExtractedPageOrganization(raw: Record<string, unknown>, pageUrl: string): ExtractedPageOrganization {
+function normalizeExtractedPageOrganization(
+  raw: Record<string, unknown>,
+  pageUrl: string,
+): ExtractedPageOrganization {
   const locations = Array.isArray(raw.us_locations)
     ? raw.us_locations
-      .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+      .filter((value): value is Record<string, unknown> =>
+        Boolean(value && typeof value === "object")
+      )
       .map((location) => normalizeOrganizationLocation(location, pageUrl))
       .filter(hasUsLocationSignal)
     : [];
@@ -1706,17 +1838,27 @@ function normalizeExtractedPageOrganization(raw: Record<string, unknown>, pageUr
     name: safeString(raw.name),
     website_url: safeString(raw.website_url),
     description: safeString(raw.description),
-    suggested_us_network_status: normalizeOrganizationNetworkStatus(raw.suggested_us_network_status),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(
+      raw.suggested_us_network_status,
+    ),
     us_locations: locations,
     sectors: Array.isArray(raw.sectors)
-      ? (raw.sectors as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (raw.sectors as unknown[]).filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
     flemish_belgian_relevance: safeString(raw.flemish_belgian_relevance),
     flemish_fact_candidates: Array.isArray(raw.flemish_fact_candidates)
       ? raw.flemish_fact_candidates
-        .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+        .filter((value): value is Record<string, unknown> =>
+          Boolean(value && typeof value === "object")
+        )
         .map((candidate) =>
-          normalizeFlemishFactCandidate(candidate, pageUrl, rawRelevanceText || evidenceExcerpt)
+          normalizeFlemishFactCandidate(
+            candidate,
+            pageUrl,
+            rawRelevanceText || evidenceExcerpt,
+          )
         )
         .filter((candidate) => candidate.canonical_name.length > 0)
       : [],
@@ -1733,15 +1875,79 @@ async function extractCandidatesFromPage(
   page: FetchedPage,
   classification: PageClassification,
   geminiKey: string,
-): Promise<{ contacts: ExtractedPageContact[]; organizations: ExtractedPageOrganization[] }> {
-  const primaryMaxChars =
-    classification.pageType === "team_or_roster"
-      ? 5500
-      : classification.pageType === "article_or_press_release"
-      ? 5000
-      : classification.pageType === "person_profile"
-      ? 4500
-      : 5000;
+  flemishConnectionCatalogPrompt: string,
+): Promise<
+  {
+    contacts: ExtractedPageContact[];
+    organizations: ExtractedPageOrganization[];
+  }
+> {
+  const officialFayatLaureates = getOfficialFayatUsLaureates(page.canonicalUrl);
+  if (officialFayatLaureates) {
+    const contacts = officialFayatLaureates.map(
+      (laureate): ExtractedPageContact => {
+        const scholarship = "Fayatbeurzen (Fayat Scholarships)";
+        const evidence =
+          `The official Vlaanderen laureate directory lists ${laureate.name} as a ${scholarship} laureate who studied ${laureate.program} at ${laureate.institution} in the United States.`;
+
+        return {
+          name: laureate.name,
+          bio:
+            `${scholarship} laureate; studied ${laureate.program} at ${laureate.institution} in the United States.`,
+          occupation: "Fayat Scholarship laureate",
+          current_position: "",
+          location_city: laureate.city,
+          location_state: laureate.state,
+          flemish_connection:
+            `${scholarship}, Flemish Government scholarship programme`,
+          flemish_fact_candidates: [{
+            canonical_name: "Fayatbeurzen",
+            candidate_alias: scholarship,
+            role: "laureate",
+            source_url: OFFICIAL_FAYAT_LAUREATES_URL,
+            evidence_excerpt: evidence,
+            confidence: 1,
+            raw_evidence: evidence,
+          }],
+          suggested_us_network_status: "us_connected_abroad",
+          suggested_us_network_confidence: 1,
+          current_location_city: "",
+          current_location_country: "",
+          suggested_us_connections: [{
+            location_city: laureate.city,
+            location_state: laureate.state,
+            connection_label: `Fayat study at ${laureate.institution}`,
+            source_url: OFFICIAL_FAYAT_LAUREATES_URL,
+            evidence_excerpt: evidence,
+            confidence: 1,
+          }],
+          website_url: "",
+          email: "",
+          linkedin_url: "",
+          sectors: ["Education"],
+          source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
+          raw_location_text:
+            `${laureate.institution}, ${laureate.city}, ${laureate.state}`,
+          raw_flemish_text: scholarship,
+          evidence_excerpt: evidence,
+          raw_role_text: `${laureate.program}, ${laureate.institution}`,
+          extraction_confidence: 1,
+        };
+      },
+    );
+
+    return { contacts, organizations: [] };
+  }
+
+  const extractionSystemPrompt =
+    `${PAGE_EXTRACTION_PROMPT}\n\n${flemishConnectionCatalogPrompt}`;
+  const primaryMaxChars = classification.pageType === "team_or_roster"
+    ? 5500
+    : classification.pageType === "article_or_press_release"
+    ? 5000
+    : classification.pageType === "person_profile"
+    ? 4500
+    : 5000;
   const fallbackMaxChars = Math.min(
     primaryMaxChars,
     classification.pageType === "team_or_roster" ? 3200 : 2800,
@@ -1778,12 +1984,21 @@ async function extractCandidatesFromPage(
   let lastError: unknown = null;
   let fallbackCacheName: string | null = null;
   const repeatedPrimaryModel =
-    attempts.filter((attempt) => attempt.model === attempts[0]?.model).length > 1
+    attempts.filter((attempt) => attempt.model === attempts[0]?.model).length >
+        1
       ? attempts[0]?.model
       : null;
+  const imageCandidatePrompt = page.images.length > 0
+    ? page.images.map((image) =>
+      `- ${image.url}${image.altText ? ` (alt: ${image.altText})` : ""}`
+    ).join("\n")
+    : "- none";
   const fallbackCachePrompt = `Page URL: ${page.canonicalUrl}
 Page title: ${page.title}
 Page type: ${classification.pageType}
+
+Image candidates found on this page:
+${imageCandidatePrompt}
 
 Page content:
 ${page.text.slice(0, fallbackMaxChars)}
@@ -1796,13 +2011,15 @@ ${page.text.slice(0, fallbackMaxChars)}
 Page title: ${page.title}
 Page type: ${classification.pageType}
 
+Image candidates found on this page:
+${imageCandidatePrompt}
+
 Page content:
 ${page.text.slice(0, attempt.maxChars)}
 `;
 
       try {
-        const shouldUseFallbackCache =
-          repeatedPrimaryModel === attempt.model &&
+        const shouldUseFallbackCache = repeatedPrimaryModel === attempt.model &&
           index > 0 &&
           fallbackMaxChars >= EXTRACTION_CACHE_MIN_CHARS;
 
@@ -1812,41 +2029,64 @@ ${page.text.slice(0, attempt.maxChars)}
             apiKey: geminiKey,
             model: attempt.model,
             contentsText: fallbackCachePrompt,
-            systemPrompt: PAGE_EXTRACTION_PROMPT,
+            systemPrompt: extractionSystemPrompt,
             displayName: `discovery-extract-${cacheKey.slice(0, 12)}`,
             ttlSeconds: EXTRACTION_CACHE_TTL_SECONDS,
           });
         }
 
-        const parsed = await callGeminiJson<{ contacts: Record<string, unknown>[]; organizations: Record<string, unknown>[] }>(
+        const parsed = await callGeminiJson<
+          {
+            contacts: Record<string, unknown>[];
+            organizations: Record<string, unknown>[];
+          }
+        >(
           geminiKey,
           attempt.model,
-          PAGE_EXTRACTION_PROMPT,
+          extractionSystemPrompt,
           shouldUseFallbackCache
             ? "Extract discovery candidates from the cached page context."
             : prompt,
           PAGE_EXTRACTION_SCHEMA,
           {
             timeoutMs: attempt.timeoutMs,
-            cachedContentName: shouldUseFallbackCache ? fallbackCacheName || undefined : undefined,
+            cachedContentName: shouldUseFallbackCache
+              ? fallbackCacheName || undefined
+              : undefined,
           },
         );
 
         const contacts = (Array.isArray(parsed.contacts) ? parsed.contacts : [])
-          .map((contact) => normalizeExtractedPageContact(contact, page.canonicalUrl))
+          .map((contact) =>
+            normalizeExtractedPageContact(
+              contact,
+              page.canonicalUrl,
+              page.images.map((image) => image.url),
+            )
+          )
           .filter((contact) => normalizeWhitespace(contact.name).length > 0)
           .filter((contact) =>
             contact.suggested_us_network_status === "us_connected_abroad" ||
             isLikelyUS(contact)
           );
-        const organizations = (Array.isArray(parsed.organizations) ? parsed.organizations : [])
-          .map((organization) => normalizeExtractedPageOrganization(organization, page.canonicalUrl))
-          .filter((organization) => normalizeWhitespace(organization.name).length > 0)
-          .filter((organization) =>
-            organization.us_locations.length > 0 ||
-            organization.suggested_us_network_status === "belgian_organization_with_us_presence" ||
-            organization.suggested_us_network_status === "institutional_connector"
-          );
+        const organizations =
+          (Array.isArray(parsed.organizations) ? parsed.organizations : [])
+            .map((organization) =>
+              normalizeExtractedPageOrganization(
+                organization,
+                page.canonicalUrl,
+              )
+            )
+            .filter((organization) =>
+              normalizeWhitespace(organization.name).length > 0
+            )
+            .filter((organization) =>
+              organization.us_locations.length > 0 ||
+              organization.suggested_us_network_status ===
+                "belgian_organization_with_us_presence" ||
+              organization.suggested_us_network_status ===
+                "institutional_connector"
+            );
 
         return { contacts, organizations };
       } catch (error) {
@@ -1855,13 +2095,17 @@ ${page.text.slice(0, attempt.maxChars)}
     }
   } finally {
     if (fallbackCacheName) {
-      await deleteGeminiContextCache(geminiKey, fallbackCacheName).catch((error) => {
-        log.warn("delete_gemini_context_cache_failed", error);
-      });
+      await deleteGeminiContextCache(geminiKey, fallbackCacheName).catch(
+        (error) => {
+          log.warn("delete_gemini_context_cache_failed", error);
+        },
+      );
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Failed to extract candidates from page");
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to extract candidates from page");
 }
 
 async function loadSurfaceLensTaxonomy(
@@ -1884,19 +2128,27 @@ async function loadSurfaceLensTaxonomy(
       .order("key"),
     supabase
       .from("discovery_seed_domains")
-      .select("id, domain, surfaces, lenses, notes, reputation_score, manually_blocked")
+      .select(
+        "id, domain, surfaces, lenses, notes, reputation_score, manually_blocked",
+      )
       .eq("active", true)
       .order("domain"),
   ]);
 
   if (surfacesRes.error) {
-    throw new Error(`Failed to load discovery surfaces: ${surfacesRes.error.message}`);
+    throw new Error(
+      `Failed to load discovery surfaces: ${surfacesRes.error.message}`,
+    );
   }
   if (lensesRes.error) {
-    throw new Error(`Failed to load discovery lenses: ${lensesRes.error.message}`);
+    throw new Error(
+      `Failed to load discovery lenses: ${lensesRes.error.message}`,
+    );
   }
   if (domainsRes.error) {
-    throw new Error(`Failed to load discovery seed domains: ${domainsRes.error.message}`);
+    throw new Error(
+      `Failed to load discovery seed domains: ${domainsRes.error.message}`,
+    );
   }
 
   return {
@@ -1958,8 +2210,12 @@ async function loadCompositionPivots(
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from("discovery_composition_pivots")
-    .select("id,pivot_type,context,approved_people_count,saturation_cooldown_until")
-    .or(`saturation_cooldown_until.is.null,saturation_cooldown_until.lte.${now}`)
+    .select(
+      "id,pivot_type,context,approved_people_count,saturation_cooldown_until",
+    )
+    .or(
+      `saturation_cooldown_until.is.null,saturation_cooldown_until.lte.${now}`,
+    )
     .order("approved_people_count", { ascending: false })
     .limit(4);
 
@@ -2130,7 +2386,6 @@ async function generateCustomQueryPlans(
   return queries.map(customQueryPlan);
 }
 
-
 /**
  * Query recently-approved people (last 7 days) and return their employers
  * that are not already covered by an active entity pivot.
@@ -2140,7 +2395,8 @@ async function loadMultiHopEmployers(
   supabase: SupabaseAdminClient,
   entityPivots: EntityPivotPlanRow[],
 ): Promise<string[]> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    .toISOString();
   const { data, error } = await supabase
     .from("people")
     .select("current_employer")
@@ -2153,7 +2409,9 @@ async function loadMultiHopEmployers(
     return [];
   }
 
-  const pivotNames = new Set(entityPivots.map((p) => p.entity_name.toLowerCase().trim()));
+  const pivotNames = new Set(
+    entityPivots.map((p) => p.entity_name.toLowerCase().trim()),
+  );
   const employers = new Set<string>();
   for (const row of data || []) {
     const emp = (row.current_employer as string | null)?.trim();
@@ -2181,14 +2439,18 @@ async function updatePivotSaturation(
 
   const { data: pivots, error } = await supabase
     .from("discovery_entity_pivots")
-    .select("id, entity_key, rolling_new_approved, rolling_window_started_at, saturation_cooldown_until")
+    .select(
+      "id, entity_key, rolling_new_approved, rolling_window_started_at, saturation_cooldown_until",
+    )
     .in("entity_key", usedEntityKeys);
 
   if (error || !pivots) return;
 
   const now = new Date();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const thirtyDaysCooldown = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    .toISOString();
+  const thirtyDaysCooldown = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString();
 
   for (const pivot of pivots) {
     const newApproved = newApprovedByPivot.get(pivot.entity_key as string) || 0;
@@ -2257,7 +2519,10 @@ async function buildQueryPlans(
   const lensByKey = new Map(lenses.map((l) => [l.key, l]));
 
   // Helper: find a matching seed domain for a (surface, lens) pair.
-  function findDomain(surfaceKey: string, lensKey: string): DiscoverySeedDomain | null {
+  function findDomain(
+    surfaceKey: string,
+    lensKey: string,
+  ): DiscoverySeedDomain | null {
     const matches = domains.filter(
       (d) => d.surfaces.includes(surfaceKey) && d.lenses.includes(lensKey),
     );
@@ -2322,8 +2587,9 @@ async function buildQueryPlans(
       context: {
         coverageGapLabel: gap.label || null,
         coverageGapSector: gapSector,
-        rotationSeed:
-          `${runId || "anon"}:${slot.surface}:${slot.lens}:${gap.geography_key}`,
+        rotationSeed: `${
+          runId || "anon"
+        }:${slot.surface}:${slot.lens}:${gap.geography_key}`,
         preferredSiteOperators,
         blockedDomains,
       },
@@ -2356,7 +2622,9 @@ async function buildQueryPlans(
   //    ≥ 25% of slots are marked isExploration.
   //    Reflection-driven slots (from discovery_reflection_suggestions) use
   //    sourceType='reflection'; other exploration slots use 'surface_lens'.
-  const explorationSlotsForPlan = allocationSlots.filter((s) => s.isExploration);
+  const explorationSlotsForPlan = allocationSlots.filter((s) =>
+    s.isExploration
+  );
   const exploSlot = explorationSlotsForPlan[0];
   if (exploSlot) {
     const surface = surfaceByKey.get(exploSlot.surface);
@@ -2370,7 +2638,9 @@ async function buildQueryPlans(
       ];
       const isReflection = Boolean(exploSlot.reflectionSuggestionId);
       const intent = isReflection
-        ? `Reflection-driven exploration: ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()}${exploSlot.contextKey ? ` — context: ${exploSlot.contextKey}` : ""}`
+        ? `Reflection-driven exploration: ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()}${
+          exploSlot.contextKey ? ` — context: ${exploSlot.contextKey}` : ""
+        }`
         : `Surface ${surface.name.toLowerCase()} via ${lens.name.toLowerCase()} — broad exploration`;
       const generated = await runQueryGeneration(intent, {
         runId,
@@ -2378,13 +2648,17 @@ async function buildQueryPlans(
         llmStats,
         steps,
         elapsed,
-        stepLabel: `query_generation:surface_lens:${exploSlot.surface}:${exploSlot.lens}:${isReflection ? "reflection" : "explore"}`,
+        stepLabel:
+          `query_generation:surface_lens:${exploSlot.surface}:${exploSlot.lens}:${
+            isReflection ? "reflection" : "explore"
+          }`,
         surfaces: [exploSlot.surface],
         lenses: [exploSlot.lens],
         maxQueries: 2,
         context: {
-          rotationSeed:
-            `${runId || "anon"}:${isReflection ? "reflection" : "explore"}:${exploSlot.surface}:${exploSlot.lens}`,
+          rotationSeed: `${runId || "anon"}:${
+            isReflection ? "reflection" : "explore"
+          }:${exploSlot.surface}:${exploSlot.lens}`,
           ...(exploSlot.contextKey
             ? {
               coverageGapLabel: exploSlot.contextKey,
@@ -2428,7 +2702,9 @@ async function buildQueryPlans(
       if (!pivot.last_seeded_at) return true;
       return hoursSince(pivot.last_seeded_at) >= 24 * 7;
     })
-    .sort((a, b) => Number(b.priority_score || 0) - Number(a.priority_score || 0))
+    .sort((a, b) =>
+      Number(b.priority_score || 0) - Number(a.priority_score || 0)
+    )
     .slice(0, 2);
 
   for (const pivot of eligiblePivots) {
@@ -2451,8 +2727,9 @@ async function buildQueryPlans(
         knownEntities: [pivot.entity_name],
         coverageGapLabel: gap?.label || null,
         coverageGapSector: pickGapSector(gap),
-        rotationSeed:
-          `${runId || "anon"}:${pivot.entity_key}:${pivot.seeded_frontier_count || 0}`,
+        rotationSeed: `${runId || "anon"}:${pivot.entity_key}:${
+          pivot.seeded_frontier_count || 0
+        }`,
         preferredSiteOperators,
         blockedDomains,
       },
@@ -2488,7 +2765,9 @@ async function buildQueryPlans(
     if (plans.length >= MAX_SEARCH_QUERIES) break;
     const { sector, state } = comp.context;
     const ctxLabel = [sector, state].filter(Boolean).join(" / ");
-    const compIntent = `Flemish/Belgian professionals in ${ctxLabel} — ${comp.pivot_type.replace(/_/g, " ")} cluster (${comp.approved_people_count} approved)`;
+    const compIntent = `Flemish/Belgian professionals in ${ctxLabel} — ${
+      comp.pivot_type.replace(/_/g, " ")
+    } cluster (${comp.approved_people_count} approved)`;
     const generated = await runQueryGeneration(compIntent, {
       runId,
       geminiKey,
@@ -2500,7 +2779,9 @@ async function buildQueryPlans(
       maxQueries: 2,
       context: {
         coverageGapSector: sector,
-        coverageGapLabel: state ? `${sector || "professional"} cluster in ${state}` : ctxLabel,
+        coverageGapLabel: state
+          ? `${sector || "professional"} cluster in ${state}`
+          : ctxLabel,
         rotationSeed: `${runId || "anon"}:composition:${comp.id}`,
         preferredSiteOperators,
         blockedDomains,
@@ -2536,7 +2817,9 @@ async function buildQueryPlans(
 
   // 5. Multi-hop plans: one query per recently-approved person's employer
   //    (employers not already covered by entity pivots).
-  const pivotEntityNames = new Set(entityPivots.map((p) => p.entity_name.toLowerCase()));
+  const pivotEntityNames = new Set(
+    entityPivots.map((p) => p.entity_name.toLowerCase()),
+  );
   for (const employer of multiHopEmployers.slice(0, 2)) {
     if (plans.length >= MAX_SEARCH_QUERIES) break;
     if (pivotEntityNames.has(employer.toLowerCase())) continue; // already covered
@@ -2611,13 +2894,15 @@ async function bumpDomainStats(
     .eq("domain", domain)
     .maybeSingle();
 
-  const nextLastSeenAt = delta.lastSeenAt || existing?.last_seen_at || new Date().toISOString();
-  const nextLastFetchedAt = delta.lastFetchedAt || existing?.last_fetched_at || null;
+  const nextLastSeenAt = delta.lastSeenAt || existing?.last_seen_at ||
+    new Date().toISOString();
+  const nextLastFetchedAt = delta.lastFetchedAt || existing?.last_fetched_at ||
+    null;
   const nextNextFetchAt = delta.nextFetchAt || existing?.next_fetch_at || null;
-  const nextAverageConfidence =
-    delta.averageEvidenceConfidence !== undefined && delta.averageEvidenceConfidence !== null
-      ? Number(delta.averageEvidenceConfidence.toFixed(2))
-      : existing?.average_evidence_confidence ?? null;
+  const nextAverageConfidence = delta.averageEvidenceConfidence !== undefined &&
+      delta.averageEvidenceConfidence !== null
+    ? Number(delta.averageEvidenceConfidence.toFixed(2))
+    : existing?.average_evidence_confidence ?? null;
 
   if (!existing) {
     await supabase.from("discovery_domains").insert({
@@ -2640,12 +2925,23 @@ async function bumpDomainStats(
   await supabase
     .from("discovery_domains")
     .update({
-      pages_queued: Math.max(0, Number(existing.pages_queued || 0) + Number(delta.pagesQueued || 0)),
-      pages_fetched: Math.max(0, Number(existing.pages_fetched || 0) + Number(delta.pagesFetched || 0)),
-      promising_pages: Math.max(0, Number(existing.promising_pages || 0) + Number(delta.promisingPages || 0)),
+      pages_queued: Math.max(
+        0,
+        Number(existing.pages_queued || 0) + Number(delta.pagesQueued || 0),
+      ),
+      pages_fetched: Math.max(
+        0,
+        Number(existing.pages_fetched || 0) + Number(delta.pagesFetched || 0),
+      ),
+      promising_pages: Math.max(
+        0,
+        Number(existing.promising_pages || 0) +
+          Number(delta.promisingPages || 0),
+      ),
       candidates_extracted: Math.max(
         0,
-        Number(existing.candidates_extracted || 0) + Number(delta.candidatesExtracted || 0),
+        Number(existing.candidates_extracted || 0) +
+          Number(delta.candidatesExtracted || 0),
       ),
       average_evidence_confidence: nextAverageConfidence,
       last_seen_at: nextLastSeenAt,
@@ -2653,7 +2949,8 @@ async function bumpDomainStats(
       next_fetch_at: nextNextFetchAt,
       duplicate_candidates: Math.max(
         0,
-        Number(existing.duplicate_candidates || 0) + Number(delta.duplicateCandidates || 0),
+        Number(existing.duplicate_candidates || 0) +
+          Number(delta.duplicateCandidates || 0),
       ),
       last_sitemap_at: delta.lastSitemapAt || existing.last_sitemap_at || null,
       last_rss_at: delta.lastRssAt || existing.last_rss_at || null,
@@ -2667,10 +2964,39 @@ async function saveFrontierSeeds(
 ): Promise<number> {
   if (rows.length === 0) return 0;
 
-  const canonicalUrls = uniqueStrings(rows.map((row) => row.canonical_url));
+  const rowsByCanonicalUrl = new Map<string, FrontierUpsertRow>();
+  for (const row of rows) {
+    const current = rowsByCanonicalUrl.get(row.canonical_url);
+    if (!current) {
+      rowsByCanonicalUrl.set(row.canonical_url, row);
+      continue;
+    }
+
+    const preferred = row.priority_score > current.priority_score
+      ? row
+      : current;
+    const fallback = preferred === row ? current : row;
+    rowsByCanonicalUrl.set(row.canonical_url, {
+      ...fallback,
+      ...preferred,
+      priority_score: Math.max(current.priority_score, row.priority_score),
+      depth: Math.min(current.depth, row.depth),
+      next_fetch_at: new Date(row.next_fetch_at).getTime() <
+          new Date(current.next_fetch_at).getTime()
+        ? row.next_fetch_at
+        : current.next_fetch_at,
+      pivot_entity_key: current.pivot_entity_key || row.pivot_entity_key,
+      pivot_entity_name: current.pivot_entity_name || row.pivot_entity_name,
+      pivot_entity_type: current.pivot_entity_type || row.pivot_entity_type,
+    });
+  }
+  const uniqueRows = [...rowsByCanonicalUrl.values()];
+  const canonicalUrls = uniqueRows.map((row) => row.canonical_url);
   const { data: existing } = await supabase
     .from("discovery_frontier")
-    .select("id, canonical_url, status, priority_score, next_fetch_at, pivot_entity_key, pivot_entity_name, pivot_entity_type")
+    .select(
+      "id, canonical_url, status, priority_score, next_fetch_at, pivot_entity_key, pivot_entity_name, pivot_entity_type",
+    )
     .in("canonical_url", canonicalUrls);
 
   const existingByCanonical = new Map(
@@ -2692,14 +3018,17 @@ async function saveFrontierSeeds(
   const inserts: FrontierUpsertRow[] = [];
   const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
 
-  for (const row of rows) {
+  for (const row of uniqueRows) {
     const existingRow = existingByCanonical.get(row.canonical_url);
     if (!existingRow) {
       inserts.push(row);
       continue;
     }
 
-    const nextPriority = Math.max(Number(existingRow.priority_score || 0), row.priority_score);
+    const nextPriority = Math.max(
+      Number(existingRow.priority_score || 0),
+      row.priority_score,
+    );
     const existingNextFetchAt = existingRow.next_fetch_at
       ? new Date(existingRow.next_fetch_at).getTime()
       : Number.POSITIVE_INFINITY;
@@ -2708,8 +3037,7 @@ async function saveFrontierSeeds(
       ? row.next_fetch_at
       : existingRow.next_fetch_at;
     const shouldRequeue = ["failed", "ignored"].includes(existingRow.status);
-    const shouldRefresh =
-      shouldRequeue ||
+    const shouldRefresh = shouldRequeue ||
       nextPriority > Number(existingRow.priority_score || 0) ||
       proposedNextFetchAt < existingNextFetchAt ||
       (!existingRow.pivot_entity_key && row.pivot_entity_key);
@@ -2723,9 +3051,12 @@ async function saveFrontierSeeds(
       patch: {
         priority_score: nextPriority,
         next_fetch_at: shouldRequeue ? new Date().toISOString() : nextFetchAt,
-        pivot_entity_key: existingRow.pivot_entity_key || row.pivot_entity_key || null,
-        pivot_entity_name: existingRow.pivot_entity_name || row.pivot_entity_name || null,
-        pivot_entity_type: existingRow.pivot_entity_type || row.pivot_entity_type || null,
+        pivot_entity_key: existingRow.pivot_entity_key ||
+          row.pivot_entity_key || null,
+        pivot_entity_name: existingRow.pivot_entity_name ||
+          row.pivot_entity_name || null,
+        pivot_entity_type: existingRow.pivot_entity_type ||
+          row.pivot_entity_type || null,
         discovered_from_url: row.discovered_from_url,
         discovery_reason: row.discovery_reason,
         search_query: row.search_query,
@@ -2777,7 +3108,9 @@ async function saveFrontierSeeds(
 
     const updateError = updateResults.find((result) => result.error);
     if (updateError?.error) {
-      throw new Error(`Failed to refresh discovery_frontier seeds: ${updateError.error.message}`);
+      throw new Error(
+        `Failed to refresh discovery_frontier seeds: ${updateError.error.message}`,
+      );
     }
   }
 
@@ -2822,11 +3155,15 @@ async function recordFrontierRefill(
   });
 
   if (error) {
-    throw new Error(`Failed to record discovery frontier refill: ${error.message}`);
+    throw new Error(
+      `Failed to record discovery frontier refill: ${error.message}`,
+    );
   }
 }
 
-function isProvenDomain(policy: DiscoveryDomainPolicy | null | undefined): boolean {
+function isProvenDomain(
+  policy: DiscoveryDomainPolicy | null | undefined,
+): boolean {
   return (
     Number(policy?.candidates_approved || 0) > 0 ||
     Number(policy?.yield_score || 0) >= PROVEN_DOMAIN_YIELD_SCORE
@@ -2843,8 +3180,7 @@ function buildHarvestFrontierRows(
     url,
     canonical_url: url,
     domain: extractDomain(url),
-    priority_score:
-      Number(frontier.priority_score || 0) +
+    priority_score: Number(frontier.priority_score || 0) +
       Math.min(Number(policy?.yield_score || 0), 6) +
       (sourceType === "sitemap" ? 3 : 2) -
       index * 0.2,
@@ -2889,20 +3225,30 @@ async function maybeHarvestProvenDomain(
     return { seeded: 0, sitemapSeeded: 0, rssSeeded: 0 };
   }
 
-  const shouldHarvestSitemap = hoursSince(policy.last_sitemap_at) >= SITEMAP_HARVEST_COOLDOWN_HOURS;
-  const shouldHarvestRss = hoursSince(policy.last_rss_at) >= RSS_HARVEST_COOLDOWN_HOURS;
+  const shouldHarvestSitemap =
+    hoursSince(policy.last_sitemap_at) >= SITEMAP_HARVEST_COOLDOWN_HOURS;
+  const shouldHarvestRss =
+    hoursSince(policy.last_rss_at) >= RSS_HARVEST_COOLDOWN_HOURS;
   let sitemapSeeded = 0;
   let rssSeeded = 0;
 
   if (shouldHarvestSitemap) {
     const attemptedAt = new Date().toISOString();
-    const harvested = await harvestSitemapUrls(frontier.domain, MAX_SITEMAP_SEEDS);
+    const harvested = await harvestSitemapUrls(
+      frontier.domain,
+      MAX_SITEMAP_SEEDS,
+    );
     await bumpDomainStats(supabase, frontier.domain, {
       lastSitemapAt: attemptedAt,
     });
     policy.last_sitemap_at = attemptedAt;
     if (harvested) {
-      const rows = buildHarvestFrontierRows(harvested, "sitemap", frontier, policy);
+      const rows = buildHarvestFrontierRows(
+        harvested,
+        "sitemap",
+        frontier,
+        policy,
+      );
       sitemapSeeded = await saveFrontierSeeds(supabase, rows);
       if (sitemapSeeded > 0) {
         await recordFrontierRefill(supabase, {
@@ -2999,7 +3345,9 @@ async function seedFrontier(
           urls_returned: searchResponse.results.length,
         });
       if (attemptError) {
-        log.warn("failed to log discovery_query_attempt", { error: attemptError.message });
+        log.warn("failed to log discovery_query_attempt", {
+          error: attemptError.message,
+        });
       }
     }
 
@@ -3019,20 +3367,22 @@ async function seedFrontier(
           priority_score: plan.priorityBoost + Math.max(0, 10 - resultIndex),
           depth: 0,
           discovered_from_url: null,
-          discovery_reason:
-            plan.sourceType === "surface_lens"
-              ? `surface_lens:${plan.surface || "unknown"}:${plan.lens || "unknown"}`
-              : plan.sourceType === "reflection"
-              ? `reflection:${plan.surface || "unknown"}:${plan.lens || "unknown"}`
-              : plan.sourceType === "entity_pivot"
-              ? `entity_pivot:${plan.entityKey || plan.entityName || "unknown"}`
-              : "custom_query",
-          source_type:
-            plan.sourceType === "entity_pivot"
-              ? "entity_pivot"
-              : plan.sourceType === "reflection"
-              ? "reflection"
-              : "search_seed",
+          discovery_reason: plan.sourceType === "surface_lens"
+            ? `surface_lens:${plan.surface || "unknown"}:${
+              plan.lens || "unknown"
+            }`
+            : plan.sourceType === "reflection"
+            ? `reflection:${plan.surface || "unknown"}:${
+              plan.lens || "unknown"
+            }`
+            : plan.sourceType === "entity_pivot"
+            ? `entity_pivot:${plan.entityKey || plan.entityName || "unknown"}`
+            : "custom_query",
+          source_type: plan.sourceType === "entity_pivot"
+            ? "entity_pivot"
+            : plan.sourceType === "reflection"
+            ? "reflection"
+            : "search_seed",
           pivot_entity_key: plan.entityKey,
           pivot_entity_name: plan.entityName,
           pivot_entity_type: plan.entityType,
@@ -3131,13 +3481,15 @@ async function markEntityPivotsSeeded(
         seeded_frontier_count: Number(pivot.seeded_frontier_count || 0) + 1,
         last_seeded_at: new Date().toISOString(),
       })
-      .eq("id", pivot.id),
+      .eq("id", pivot.id)
   );
 
   const results = await Promise.all(updates);
   const updateError = results.find((result) => result.error)?.error;
   if (updateError) {
-    throw new Error(`Failed to mark entity pivots seeded: ${updateError.message}`);
+    throw new Error(
+      `Failed to mark entity pivots seeded: ${updateError.message}`,
+    );
   }
 }
 
@@ -3213,7 +3565,9 @@ async function upsertDiscoveryPage(
   return data?.id || null;
 }
 
-function mapExistingContactRow(row: ExistingContactLookupRow): ExtractedContact {
+function mapExistingContactRow(
+  row: ExistingContactLookupRow,
+): ExtractedContact {
   return {
     name: safeString(row.name),
     bio: safeString(row.bio),
@@ -3238,13 +3592,18 @@ function mapExistingContactRow(row: ExistingContactLookupRow): ExtractedContact 
         )
       : [],
     website_url: safeString(row.website_url),
+    profile_photo_url: safeString(row.profile_photo_url),
     email: safeString(row.email),
     linkedin_url: safeString(row.linkedin_url),
     sectors: Array.isArray(row.sectors)
-      ? (row.sectors as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (row.sectors as unknown[]).filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
     source_urls: Array.isArray(row.source_urls)
-      ? (row.source_urls as unknown[]).filter((value): value is string => typeof value === "string")
+      ? (row.source_urls as unknown[]).filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
   };
 }
@@ -3284,8 +3643,16 @@ async function findExistingPerson(
   const name = contact.name.trim();
 
   if (email) queries.push(queryByField(supabase, "people", "email", email));
-  if (linkedin) queries.push(queryByField(supabase, "people", "linkedin_url", contact.linkedin_url));
-  if (website) queries.push(queryByField(supabase, "people", "website_url", contact.website_url));
+  if (linkedin) {
+    queries.push(
+      queryByField(supabase, "people", "linkedin_url", contact.linkedin_url),
+    );
+  }
+  if (website) {
+    queries.push(
+      queryByField(supabase, "people", "website_url", contact.website_url),
+    );
+  }
   if (name) queries.push(queryByField(supabase, "people", "name", name));
 
   const resultSets = await Promise.all(queries);
@@ -3311,18 +3678,56 @@ async function findPendingDiscoveredContact(
   const name = contact.name.trim();
 
   if (candidateKey) {
-    queries.push(queryByField(supabase, "discovered_contacts", "candidate_key", candidateKey, true));
+    queries.push(
+      queryByField(
+        supabase,
+        "discovered_contacts",
+        "candidate_key",
+        candidateKey,
+        true,
+      ),
+    );
   }
-  if (email) queries.push(queryByField(supabase, "discovered_contacts", "email", email, true));
-  if (linkedin) queries.push(queryByField(supabase, "discovered_contacts", "linkedin_url", contact.linkedin_url, true));
-  if (website) queries.push(queryByField(supabase, "discovered_contacts", "website_url", contact.website_url, true));
-  if (name) queries.push(queryByField(supabase, "discovered_contacts", "name", name, true));
+  if (email) {
+    queries.push(
+      queryByField(supabase, "discovered_contacts", "email", email, true),
+    );
+  }
+  if (linkedin) {
+    queries.push(
+      queryByField(
+        supabase,
+        "discovered_contacts",
+        "linkedin_url",
+        contact.linkedin_url,
+        true,
+      ),
+    );
+  }
+  if (website) {
+    queries.push(
+      queryByField(
+        supabase,
+        "discovered_contacts",
+        "website_url",
+        contact.website_url,
+        true,
+      ),
+    );
+  }
+  if (name) {
+    queries.push(
+      queryByField(supabase, "discovered_contacts", "name", name, true),
+    );
+  }
 
   const resultSets = await Promise.all(queries);
   const rows = resultSets.flat();
 
   if (candidateKey) {
-    const keyMatch = rows.find((row) => safeString(row.candidate_key) === candidateKey);
+    const keyMatch = rows.find((row) =>
+      safeString(row.candidate_key) === candidateKey
+    );
     if (keyMatch) {
       return keyMatch;
     }
@@ -3349,7 +3754,9 @@ async function insertEvidenceRows(
       discovered_contact_id: discoveredContactId,
       discovery_page_id: item.discoveryPageId,
       evidence_key: await hashString(
-        `${normalizeName(contactName)}|${item.pageUrl}|${normalizeWhitespace(item.evidenceExcerpt)}|${normalizeWhitespace(item.rawRoleText)}`,
+        `${normalizeName(contactName)}|${item.pageUrl}|${
+          normalizeWhitespace(item.evidenceExcerpt)
+        }|${normalizeWhitespace(item.rawRoleText)}`,
       ),
       page_url: item.pageUrl,
       page_title: item.pageTitle || null,
@@ -3386,7 +3793,10 @@ async function upsertEntityPivots(
   bundle: CandidateBundle,
   geminiKey: string,
 ): Promise<number> {
-  const pivotCandidates = extractPivotCandidates(bundle.contact, bundle.evidence);
+  const pivotCandidates = extractPivotCandidates(
+    bundle.contact,
+    bundle.evidence,
+  );
   if (pivotCandidates.length === 0) return 0;
 
   let upserted = 0;
@@ -3403,11 +3813,15 @@ async function upsertEntityPivots(
     }
 
     const nextSourceUrls = uniqueStrings([
-      ...(Array.isArray(existingPivot?.source_urls) ? existingPivot.source_urls : []),
+      ...(Array.isArray(existingPivot?.source_urls)
+        ? existingPivot.source_urls
+        : []),
       ...bundle.evidence.map((item) => item.pageUrl),
     ]);
     const nextCoverageTargets = uniqueStrings([
-      ...(Array.isArray(existingPivot?.coverage_target_keys) ? existingPivot.coverage_target_keys : []),
+      ...(Array.isArray(existingPivot?.coverage_target_keys)
+        ? existingPivot.coverage_target_keys
+        : []),
       ...pivot.coverageTargetKeys,
     ]);
 
@@ -3444,7 +3858,9 @@ async function upsertEntityPivots(
         .maybeSingle();
 
       if (insertError || !insertedPivot) {
-        throw new Error(insertError?.message || "Failed to insert entity pivot");
+        throw new Error(
+          insertError?.message || "Failed to insert entity pivot",
+        );
       }
 
       pivotId = insertedPivot.id;
@@ -3453,7 +3869,10 @@ async function upsertEntityPivots(
       // with the validation score set so we can audit them, but they won't be
       // loaded by loadEntityPivots (which filters validation_score < 0.5).
       if (validation.score < 0.5) {
-        log.warn("pivot_validation_rejected", `${pivot.entityKey} score=${validation.score} reason=${validation.rationale}`);
+        log.warn(
+          "pivot_validation_rejected",
+          `${pivot.entityKey} score=${validation.score} reason=${validation.rationale}`,
+        );
         // Still write the pivot source row below so evidence is preserved.
       }
     } else {
@@ -3470,7 +3889,9 @@ async function upsertEntityPivots(
         .eq("id", existingPivot.id);
 
       if (updateError) {
-        throw new Error(`Failed to update entity pivot: ${updateError.message}`);
+        throw new Error(
+          `Failed to update entity pivot: ${updateError.message}`,
+        );
       }
 
       pivotId = existingPivot.id;
@@ -3495,7 +3916,9 @@ async function upsertEntityPivots(
       });
 
     if (sourceError) {
-      throw new Error(`Failed to write entity pivot source: ${sourceError.message}`);
+      throw new Error(
+        `Failed to write entity pivot source: ${sourceError.message}`,
+      );
     }
 
     upserted += 1;
@@ -3532,6 +3955,15 @@ async function persistCandidateBundle(
   if (pendingMatch) {
     const existingContact = mapExistingContactRow(pendingMatch);
     const mergedContact = mergeContacts(existingContact, bundle.contact);
+    mergedContact.flemish_fact_candidates =
+      await resolveModelDiscoveredFlemishConnections(
+        supabase,
+        mergedContact.flemish_fact_candidates,
+      );
+    mergedContact.flemish_connection = appendCanonicalFlemishConnections(
+      mergedContact.flemish_connection,
+      mergedContact.flemish_fact_candidates,
+    );
     const insertedEvidenceCount = await insertEvidenceRows(
       supabase,
       String(pendingMatch.id),
@@ -3539,11 +3971,9 @@ async function persistCandidateBundle(
       bundle.evidence,
     );
 
-    const nextEvidenceCount =
-      Number(pendingMatch.evidence_count || 0) + Number(insertedEvidenceCount || 0);
+    const nextEvidenceCount = Number(pendingMatch.evidence_count || 0) +
+      Number(insertedEvidenceCount || 0);
     const nowIso = new Date().toISOString();
-    await storeModelDiscoveredFlemishAliases(supabase, mergedContact.flemish_fact_candidates);
-
     const { error } = await supabase
       .from("discovered_contacts")
       .update({
@@ -3555,20 +3985,29 @@ async function persistCandidateBundle(
         location_city: mergedContact.location_city || null,
         location_state: mergedContact.location_state || null,
         suggested_us_network_status: mergedContact.suggested_us_network_status,
-        suggested_us_network_confidence: mergedContact.suggested_us_network_confidence,
+        suggested_us_network_confidence:
+          mergedContact.suggested_us_network_confidence,
         current_location_city: mergedContact.current_location_city || null,
-        current_location_country: mergedContact.current_location_country || null,
+        current_location_country: mergedContact.current_location_country ||
+          null,
         suggested_us_connections: mergedContact.suggested_us_connections,
         bio: mergedContact.bio || null,
         flemish_connection: mergedContact.flemish_connection || null,
         website_url: mergedContact.website_url || null,
-        sectors: mergedContact.sectors.length > 0 ? mergedContact.sectors : null,
+        profile_photo_url: mergedContact.profile_photo_url || null,
+        sectors: mergedContact.sectors.length > 0
+          ? mergedContact.sectors
+          : null,
         source: "frontier_page",
-        source_urls: mergedContact.source_urls.length > 0 ? mergedContact.source_urls : null,
+        source_urls: mergedContact.source_urls.length > 0
+          ? mergedContact.source_urls
+          : null,
         candidate_key: bundle.candidateKey,
         agent_run_id: runId || null,
         last_seen_at: nowIso,
-        last_evidence_at: insertedEvidenceCount > 0 ? nowIso : pendingMatch.last_evidence_at || nowIso,
+        last_evidence_at: insertedEvidenceCount > 0
+          ? nowIso
+          : pendingMatch.last_evidence_at || nowIso,
         evidence_count: nextEvidenceCount,
         discovery_confidence: Number(
           Math.max(
@@ -3594,9 +4033,11 @@ async function persistCandidateBundle(
         bio: mergedContact.bio,
         locationCity: mergedContact.location_city,
         locationState: mergedContact.location_state,
-        rawLocationText: bundle.evidence.find((item) => item.rawLocationText)?.rawLocationText || "",
-      flemishConnection: mergedContact.flemish_connection,
-      flemishFactCandidates: mergedContact.flemish_fact_candidates,
+        rawLocationText: bundle.evidence.find((item) =>
+          item.rawLocationText
+        )?.rawLocationText || "",
+        flemishConnection: mergedContact.flemish_connection,
+        flemishFactCandidates: mergedContact.flemish_fact_candidates,
         sectors: mergedContact.sectors,
         evidence: bundle.evidence.map((item) => ({
           pageUrl: item.pageUrl,
@@ -3616,6 +4057,15 @@ async function persistCandidateBundle(
     };
   }
 
+  bundle.contact.flemish_fact_candidates =
+    await resolveModelDiscoveredFlemishConnections(
+      supabase,
+      bundle.contact.flemish_fact_candidates,
+    );
+  bundle.contact.flemish_connection = appendCanonicalFlemishConnections(
+    bundle.contact.flemish_connection,
+    bundle.contact.flemish_fact_candidates,
+  );
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("discovered_contacts")
@@ -3628,16 +4078,22 @@ async function persistCandidateBundle(
       location_city: bundle.contact.location_city || null,
       location_state: bundle.contact.location_state || null,
       suggested_us_network_status: bundle.contact.suggested_us_network_status,
-      suggested_us_network_confidence: bundle.contact.suggested_us_network_confidence,
+      suggested_us_network_confidence:
+        bundle.contact.suggested_us_network_confidence,
       current_location_city: bundle.contact.current_location_city || null,
       current_location_country: bundle.contact.current_location_country || null,
       suggested_us_connections: bundle.contact.suggested_us_connections,
       bio: bundle.contact.bio || null,
       flemish_connection: bundle.contact.flemish_connection || null,
       website_url: bundle.contact.website_url || null,
-      sectors: bundle.contact.sectors.length > 0 ? bundle.contact.sectors : null,
+      profile_photo_url: bundle.contact.profile_photo_url || null,
+      sectors: bundle.contact.sectors.length > 0
+        ? bundle.contact.sectors
+        : null,
       source: "frontier_page",
-      source_urls: bundle.contact.source_urls.length > 0 ? bundle.contact.source_urls : null,
+      source_urls: bundle.contact.source_urls.length > 0
+        ? bundle.contact.source_urls
+        : null,
       candidate_key: bundle.candidateKey,
       status: "pending",
       agent_run_id: runId || null,
@@ -3646,7 +4102,10 @@ async function persistCandidateBundle(
       last_evidence_at: nowIso,
       evidence_count: 0,
       discovery_confidence: Number(
-        Math.max(...bundle.evidence.map((item) => item.extractionConfidence || 0), 0).toFixed(2),
+        Math.max(
+          ...bundle.evidence.map((item) => item.extractionConfidence || 0),
+          0,
+        ).toFixed(2),
       ),
     })
     .select("id")
@@ -3662,8 +4121,6 @@ async function persistCandidateBundle(
     bundle.contact.name,
     bundle.evidence,
   );
-  await storeModelDiscoveredFlemishAliases(supabase, bundle.contact.flemish_fact_candidates);
-
   await supabase
     .from("discovered_contacts")
     .update({
@@ -3682,7 +4139,9 @@ async function persistCandidateBundle(
       bio: bundle.contact.bio,
       locationCity: bundle.contact.location_city,
       locationState: bundle.contact.location_state,
-      rawLocationText: bundle.evidence.find((item) => item.rawLocationText)?.rawLocationText || "",
+      rawLocationText: bundle.evidence.find((item) =>
+        item.rawLocationText
+      )?.rawLocationText || "",
       flemishConnection: bundle.contact.flemish_connection,
       flemishFactCandidates: bundle.contact.flemish_fact_candidates,
       sectors: bundle.contact.sectors,
@@ -3726,34 +4185,48 @@ interface PersistOrganizationResult {
   discoveredOrganizationId: string | null;
 }
 
-function mapExistingDiscoveredOrganizationRow(row: ExistingOrganizationLookupRow): DiscoveryOrganizationCandidate {
+function mapExistingDiscoveredOrganizationRow(
+  row: ExistingOrganizationLookupRow,
+): DiscoveryOrganizationCandidate {
   return {
     name: safeString(row.name),
     website_url: safeString(row.website_url),
     description: safeString(row.description),
-    suggested_us_network_status: normalizeOrganizationNetworkStatus(row.suggested_us_network_status),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(
+      row.suggested_us_network_status,
+    ),
     us_locations: Array.isArray(row.us_locations)
       ? (row.us_locations as unknown[])
-        .filter((value): value is OrganizationLocationEvidence => Boolean(value && typeof value === "object"))
+        .filter((value): value is OrganizationLocationEvidence =>
+          Boolean(value && typeof value === "object")
+        )
       : [],
     sectors: Array.isArray(row.sectors)
-      ? row.sectors.filter((value): value is string => typeof value === "string")
+      ? row.sectors.filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
     flemish_belgian_relevance: safeString(row.flemish_belgian_relevance),
     flemish_fact_candidates: [],
     source_urls: Array.isArray(row.source_urls)
-      ? row.source_urls.filter((value): value is string => typeof value === "string")
+      ? row.source_urls.filter((value): value is string =>
+        typeof value === "string"
+      )
       : [],
     confidence: clampConfidence(row.confidence),
   };
 }
 
-function mapApprovedOrganizationRow(row: ExistingOrganizationLookupRow): DiscoveryOrganizationCandidate {
+function mapApprovedOrganizationRow(
+  row: ExistingOrganizationLookupRow,
+): DiscoveryOrganizationCandidate {
   return {
     name: safeString(row.name),
     website_url: safeString(row.website_url),
     description: safeString(row.description),
-    suggested_us_network_status: normalizeOrganizationNetworkStatus(row.us_network_status),
+    suggested_us_network_status: normalizeOrganizationNetworkStatus(
+      row.us_network_status,
+    ),
     us_locations: [],
     sectors: [],
     flemish_belgian_relevance: "",
@@ -3795,12 +4268,36 @@ async function findExistingApprovedOrganization(
   const website = normalizeOrganizationWebsite(organization.website_url);
   const name = normalizeWhitespace(organization.name);
 
-  if (organization.website_url) queries.push(queryOrganizationsByField(supabase, "organizations", "website_url", organization.website_url));
-  if (website && organization.website_url !== website) queries.push(queryOrganizationsByField(supabase, "organizations", "website_url", website));
-  if (name) queries.push(queryOrganizationsByField(supabase, "organizations", "name", name));
+  if (organization.website_url) {
+    queries.push(
+      queryOrganizationsByField(
+        supabase,
+        "organizations",
+        "website_url",
+        organization.website_url,
+      ),
+    );
+  }
+  if (website && organization.website_url !== website) {
+    queries.push(
+      queryOrganizationsByField(
+        supabase,
+        "organizations",
+        "website_url",
+        website,
+      ),
+    );
+  }
+  if (name) {
+    queries.push(
+      queryOrganizationsByField(supabase, "organizations", "name", name),
+    );
+  }
 
   const rows = (await Promise.all(queries)).flat();
-  return rows.find((row) => likelySameOrganization(mapApprovedOrganizationRow(row), organization)) || null;
+  return rows.find((row) =>
+    likelySameOrganization(mapApprovedOrganizationRow(row), organization)
+  ) || null;
 }
 
 async function findPendingDiscoveredOrganization(
@@ -3809,22 +4306,59 @@ async function findPendingDiscoveredOrganization(
   candidateKey: string,
 ): Promise<ExistingOrganizationLookupRow | null> {
   const queries: Array<Promise<ExistingOrganizationLookupRow[]>> = [
-    queryOrganizationsByField(supabase, "discovered_organizations", "candidate_key", candidateKey, true),
+    queryOrganizationsByField(
+      supabase,
+      "discovered_organizations",
+      "candidate_key",
+      candidateKey,
+      true,
+    ),
   ];
   const website = normalizeOrganizationWebsite(organization.website_url);
   const name = normalizeWhitespace(organization.name);
 
   if (organization.website_url) {
-    queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "website_url", organization.website_url, true));
+    queries.push(
+      queryOrganizationsByField(
+        supabase,
+        "discovered_organizations",
+        "website_url",
+        organization.website_url,
+        true,
+      ),
+    );
   }
   if (website && organization.website_url !== website) {
-    queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "website_url", website, true));
+    queries.push(
+      queryOrganizationsByField(
+        supabase,
+        "discovered_organizations",
+        "website_url",
+        website,
+        true,
+      ),
+    );
   }
-  if (name) queries.push(queryOrganizationsByField(supabase, "discovered_organizations", "name", name, true));
+  if (name) {
+    queries.push(
+      queryOrganizationsByField(
+        supabase,
+        "discovered_organizations",
+        "name",
+        name,
+        true,
+      ),
+    );
+  }
 
   const rows = (await Promise.all(queries)).flat();
   return rows.find((row) => safeString(row.candidate_key) === candidateKey) ||
-    rows.find((row) => likelySameOrganization(mapExistingDiscoveredOrganizationRow(row), organization)) ||
+    rows.find((row) =>
+      likelySameOrganization(
+        mapExistingDiscoveredOrganizationRow(row),
+        organization,
+      )
+    ) ||
     null;
 }
 
@@ -3841,7 +4375,9 @@ async function insertOrganizationEvidenceRows(
       discovered_organization_id: discoveredOrganizationId,
       discovery_page_id: item.discoveryPageId,
       evidence_key: await hashString(
-        `${normalizeOrganizationName(organizationName)}|${item.pageUrl}|${normalizeWhitespace(item.evidenceExcerpt)}|${normalizeWhitespace(item.rawRelevanceText)}`,
+        `${normalizeOrganizationName(organizationName)}|${item.pageUrl}|${
+          normalizeWhitespace(item.evidenceExcerpt)
+        }|${normalizeWhitespace(item.rawRelevanceText)}`,
       ),
       page_url: item.pageUrl,
       page_title: item.pageTitle || null,
@@ -3867,38 +4403,19 @@ async function insertOrganizationEvidenceRows(
     .select("id");
 
   if (error) {
-    throw new Error(`Failed to write discovered organization evidence: ${error.message}`);
+    throw new Error(
+      `Failed to write discovered organization evidence: ${error.message}`,
+    );
   }
 
   return data?.length || 0;
 }
 
-async function storeModelDiscoveredFlemishAliases(
+async function resolveModelDiscoveredFlemishConnections(
   supabase: SupabaseAdminClient,
   candidates: FlemishFactCandidate[],
-): Promise<void> {
-  const aliasCandidates = candidates.filter((candidate) =>
-    candidate.canonical_name &&
-    candidate.candidate_alias &&
-    candidate.canonical_name.toLowerCase() !== candidate.candidate_alias.toLowerCase()
-  );
-  if (aliasCandidates.length === 0) return;
-
-  for (const candidate of aliasCandidates) {
-    const { error } = await supabase.rpc("add_flemish_connection_alias", {
-      p_connection_name: candidate.canonical_name,
-      p_alias: candidate.candidate_alias,
-      p_source: "model",
-      p_status: "pending",
-      p_confidence: candidate.confidence || null,
-      p_source_url: candidate.source_url || null,
-      p_evidence_excerpt: candidate.evidence_excerpt || candidate.raw_evidence || null,
-    });
-
-    if (error) {
-      throw new Error(`Failed to store Flemish alias candidate: ${error.message}`);
-    }
-  }
+): Promise<FlemishFactCandidate[]> {
+  return await resolveModelFlemishFactCandidates(supabase, candidates);
 }
 
 async function persistOrganizationBundle(
@@ -3906,9 +4423,15 @@ async function persistOrganizationBundle(
   bundle: OrganizationCandidateBundle,
   runId: string | undefined,
 ): Promise<PersistOrganizationResult> {
-  const approvedMatch = await findExistingApprovedOrganization(supabase, bundle.organization);
+  const approvedMatch = await findExistingApprovedOrganization(
+    supabase,
+    bundle.organization,
+  );
   if (approvedMatch) {
-    return { status: "duplicate_organizations", discoveredOrganizationId: null };
+    return {
+      status: "duplicate_organizations",
+      discoveredOrganizationId: null,
+    };
   }
 
   const pendingMatch = await findPendingDiscoveredOrganization(
@@ -3922,21 +4445,29 @@ async function persistOrganizationBundle(
       mapExistingDiscoveredOrganizationRow(pendingMatch),
       bundle.organization,
     );
+    merged.flemish_fact_candidates =
+      await resolveModelDiscoveredFlemishConnections(
+        supabase,
+        merged.flemish_fact_candidates,
+      );
+    merged.flemish_belgian_relevance = appendCanonicalFlemishConnections(
+      merged.flemish_belgian_relevance,
+      merged.flemish_fact_candidates,
+    );
     await insertOrganizationEvidenceRows(
       supabase,
       String(pendingMatch.id),
       merged.name,
       bundle.evidence,
     );
-    await storeModelDiscoveredFlemishAliases(supabase, merged.flemish_fact_candidates);
-
     const { error } = await supabase
       .from("discovered_organizations")
       .update({
         name: merged.name,
         website_url: merged.website_url || null,
         description: merged.description || null,
-        candidate_key: safeString(pendingMatch.candidate_key) || bundle.candidateKey,
+        candidate_key: safeString(pendingMatch.candidate_key) ||
+          bundle.candidateKey,
         source: "agent_discovery",
         suggested_us_network_status: merged.suggested_us_network_status,
         us_locations: merged.us_locations,
@@ -3950,12 +4481,27 @@ async function persistOrganizationBundle(
       .eq("id", pendingMatch.id);
 
     if (error) {
-      throw new Error(`Failed to update discovered organization: ${error.message}`);
+      throw new Error(
+        `Failed to update discovered organization: ${error.message}`,
+      );
     }
 
-    return { status: "merged", discoveredOrganizationId: String(pendingMatch.id) };
+    return {
+      status: "merged",
+      discoveredOrganizationId: String(pendingMatch.id),
+    };
   }
 
+  bundle.organization.flemish_fact_candidates =
+    await resolveModelDiscoveredFlemishConnections(
+      supabase,
+      bundle.organization.flemish_fact_candidates,
+    );
+  bundle.organization.flemish_belgian_relevance =
+    appendCanonicalFlemishConnections(
+      bundle.organization.flemish_belgian_relevance,
+      bundle.organization.flemish_fact_candidates,
+    );
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("discovered_organizations")
@@ -3965,11 +4511,17 @@ async function persistOrganizationBundle(
       description: bundle.organization.description || null,
       candidate_key: bundle.candidateKey,
       source: "agent_discovery",
-      suggested_us_network_status: bundle.organization.suggested_us_network_status,
+      suggested_us_network_status:
+        bundle.organization.suggested_us_network_status,
       us_locations: bundle.organization.us_locations,
-      sectors: bundle.organization.sectors.length > 0 ? bundle.organization.sectors : null,
-      flemish_belgian_relevance: bundle.organization.flemish_belgian_relevance || null,
-      source_urls: bundle.organization.source_urls.length > 0 ? bundle.organization.source_urls : null,
+      sectors: bundle.organization.sectors.length > 0
+        ? bundle.organization.sectors
+        : null,
+      flemish_belgian_relevance:
+        bundle.organization.flemish_belgian_relevance || null,
+      source_urls: bundle.organization.source_urls.length > 0
+        ? bundle.organization.source_urls
+        : null,
       confidence: Number(bundle.organization.confidence.toFixed(2)),
       status: "pending",
       agent_run_id: runId || null,
@@ -3982,7 +4534,9 @@ async function persistOrganizationBundle(
     .maybeSingle();
 
   if (error || !data) {
-    throw new Error(error?.message || "Failed to insert discovered organization");
+    throw new Error(
+      error?.message || "Failed to insert discovered organization",
+    );
   }
 
   await insertOrganizationEvidenceRows(
@@ -3991,11 +4545,6 @@ async function persistOrganizationBundle(
     bundle.organization.name,
     bundle.evidence,
   );
-  await storeModelDiscoveredFlemishAliases(
-    supabase,
-    bundle.organization.flemish_fact_candidates,
-  );
-
   return { status: "inserted", discoveredOrganizationId: data.id };
 }
 
@@ -4010,7 +4559,10 @@ async function enqueueChildLinks(
   if (frontier.depth >= MAX_DEPTH) return 0;
   if (policy?.status === "blocked" || policy?.status === "paused") return 0;
 
-  const remainingBudget = Math.max(0, Number(policy?.remaining_budget_7d || childLinks.length));
+  const remainingBudget = Math.max(
+    0,
+    Number(policy?.remaining_budget_7d || childLinks.length),
+  );
   if (remainingBudget <= 0) return 0;
 
   const allowedChildren = aggressive
@@ -4018,12 +4570,14 @@ async function enqueueChildLinks(
     : Math.min(childLinks.length, 1, remainingBudget);
   if (allowedChildren <= 0) return 0;
 
-  const rows: FrontierUpsertRow[] = childLinks.slice(0, allowedChildren).map((link, index) => ({
+  const rows: FrontierUpsertRow[] = childLinks.slice(0, allowedChildren).map((
+    link,
+    index,
+  ) => ({
     url: link.url,
     canonical_url: link.url,
     domain: extractDomain(link.url),
-    priority_score:
-      Number(frontier.priority_score || 0) +
+    priority_score: Number(frontier.priority_score || 0) +
       link.score +
       Math.min(Number(policy?.yield_score || 0), 4) -
       index * 0.25,
@@ -4068,13 +4622,16 @@ async function maybeEnrichViaLinkedIn(
   const enriched = [...bundles];
   const targets = enriched
     .map((bundle, index) => ({ bundle, index }))
-    .filter(({ bundle }) => !bundle.contact.linkedin_url && contactScore(bundle.contact) >= 6)
+    .filter(({ bundle }) =>
+      !bundle.contact.linkedin_url && contactScore(bundle.contact) >= 6
+    )
     .slice(0, MAX_LINKEDIN_ENRICHMENTS);
 
   for (const target of targets) {
     const keywords = uniqueStrings([
       target.bundle.contact.name,
-      `${target.bundle.contact.name} ${target.bundle.contact.current_position}`.trim(),
+      `${target.bundle.contact.name} ${target.bundle.contact.current_position}`
+        .trim(),
     ])[0];
 
     if (!keywords) continue;
@@ -4096,7 +4653,10 @@ async function maybeEnrichViaLinkedIn(
       searches += 1;
       const match = (result.items || [])
         .map(mapLinkedInProfile)
-        .find((profile) => normalizeName(profile.name) === normalizeName(target.bundle.contact.name));
+        .find((profile) =>
+          normalizeName(profile.name) ===
+            normalizeName(target.bundle.contact.name)
+        );
 
       steps.push({
         step: `linkedin_enrichment_${searches}`,
@@ -4116,7 +4676,10 @@ async function maybeEnrichViaLinkedIn(
         enriched[target.index] = {
           ...target.bundle,
           contact: mergedContact,
-          candidateKey: buildCandidateKey(mergedContact, target.bundle.evidence),
+          candidateKey: buildCandidateKey(
+            mergedContact,
+            target.bundle.evidence,
+          ),
         };
       }
     } catch (error) {
@@ -4129,11 +4692,15 @@ async function maybeEnrichViaLinkedIn(
         detail: {
           keywords,
           code,
-          error: error instanceof Error ? error.message : "LinkedIn enrichment failed",
+          error: error instanceof Error
+            ? error.message
+            : "LinkedIn enrichment failed",
         },
       });
 
-      if (error instanceof ApifyError && error.code === "apify_quota_exhausted") {
+      if (
+        error instanceof ApifyError && error.code === "apify_quota_exhausted"
+      ) {
         break;
       }
     }
@@ -4147,6 +4714,7 @@ async function processFrontierRow(
   frontier: FrontierRow,
   domainPolicy: DiscoveryDomainPolicy | null,
   geminiKey: string,
+  flemishConnectionCatalogPrompt: string,
   runId: string | undefined,
   steps: StepLog[],
   elapsed: () => string,
@@ -4156,7 +4724,10 @@ async function processFrontierRow(
   const page = await fetchPage(frontier.url);
   await heartbeat();
 
-  if (!page.contentType.includes("text/html") && !page.contentType.includes("text/plain") && page.contentType !== "") {
+  if (
+    !page.contentType.includes("text/html") &&
+    !page.contentType.includes("text/plain") && page.contentType !== ""
+  ) {
     await supabase
       .from("discovery_frontier")
       .update({
@@ -4198,7 +4769,16 @@ async function processFrontierRow(
   }
 
   let classification = classifyPageHeuristically(page);
-  if (
+  if (isOfficialFayatLaureatesUrl(page.canonicalUrl)) {
+    classification = {
+      pageType: "directory_or_index_page",
+      shouldExtract: true,
+      shouldExpand: false,
+      confidence: 1,
+      reason: "Authoritative Vlaanderen Fayat laureate directory.",
+      method: "heuristic",
+    };
+  } else if (
     classification.confidence < 0.6 &&
     classification.pageType !== "low_value_boilerplate" &&
     classification.pageType !== "irrelevant" &&
@@ -4211,13 +4791,18 @@ async function processFrontierRow(
       if (!isRetryableUpstreamError(error)) {
         throw error;
       }
-      classification.reason = `${classification.reason} LLM classification deferred; kept heuristic label.`;
+      classification.reason =
+        `${classification.reason} LLM classification deferred; kept heuristic label.`;
     }
   }
 
-  const parentHasStrongSignals =
-    classification.shouldExtract ||
-    ["team_or_roster", "lab_or_group_page", "directory_or_index_page", "person_profile"].includes(
+  const parentHasStrongSignals = classification.shouldExtract ||
+    [
+      "team_or_roster",
+      "lab_or_group_page",
+      "directory_or_index_page",
+      "person_profile",
+    ].includes(
       classification.pageType,
     );
   const childLinks = classification.shouldExpand
@@ -4232,7 +4817,13 @@ async function processFrontierRow(
       },
     })
     : [];
-  const pageId = await upsertDiscoveryPage(supabase, frontier, page, classification, childLinks);
+  const pageId = await upsertDiscoveryPage(
+    supabase,
+    frontier,
+    page,
+    classification,
+    childLinks,
+  );
   await heartbeat();
 
   steps.push({
@@ -4252,8 +4843,12 @@ async function processFrontierRow(
     },
   });
 
-  if (frontier.content_hash && frontier.content_hash === page.contentHash) {
-    const expandFromSignals = parentHasStrongSignals && isProvenDomain(domainPolicy);
+  if (
+    !isOfficialFayatLaureatesUrl(page.canonicalUrl) &&
+    frontier.content_hash && frontier.content_hash === page.contentHash
+  ) {
+    const expandFromSignals = parentHasStrongSignals &&
+      isProvenDomain(domainPolicy);
     const childLinksQueued = await enqueueChildLinks(
       supabase,
       frontier,
@@ -4276,7 +4871,12 @@ async function processFrontierRow(
         content_hash: page.contentHash,
         page_type: classification.pageType,
         last_extraction_outcome: "unchanged",
-        next_fetch_at: computeNextFetchAt(classification.pageType, 0, 0, domainPolicy),
+        next_fetch_at: computeNextFetchAt(
+          classification.pageType,
+          0,
+          0,
+          domainPolicy,
+        ),
       })
       .eq("id", frontier.id);
 
@@ -4286,7 +4886,12 @@ async function processFrontierRow(
       promisingPages: classification.shouldExtract ? 1 : 0,
       lastSeenAt: page.fetchedAt,
       lastFetchedAt: page.fetchedAt,
-      nextFetchAt: computeNextFetchAt(classification.pageType, 0, 0, domainPolicy),
+      nextFetchAt: computeNextFetchAt(
+        classification.pageType,
+        0,
+        0,
+        domainPolicy,
+      ),
     });
 
     return {
@@ -4314,7 +4919,12 @@ async function processFrontierRow(
   let extractionErrorMessage: string | null = null;
   if (classification.shouldExtract && page.text.length > 250) {
     try {
-      const extraction = await extractCandidatesFromPage(page, classification, geminiKey);
+      const extraction = await extractCandidatesFromPage(
+        page,
+        classification,
+        geminiKey,
+        flemishConnectionCatalogPrompt,
+      );
       llmStats.calls += 1;
 
       bundles = extraction.contacts.map((contact) => ({
@@ -4359,7 +4969,9 @@ async function processFrontierRow(
         ]),
       }));
       organizationBundles = extraction.organizations.map((organization) => {
-        const primaryLocation = organization.us_locations.find((location) => location.is_primary) ||
+        const primaryLocation = organization.us_locations.find((location) =>
+          location.is_primary
+        ) ||
           organization.us_locations[0];
         const sourceDomain = primaryOrganizationDomain(organization);
 
@@ -4400,13 +5012,19 @@ async function processFrontierRow(
 
   bundles = consolidateBundles(bundles).map((bundle) => ({
     ...bundle,
-    candidateKey: bundle.candidateKey || buildCandidateKey(bundle.contact, bundle.evidence),
+    candidateKey: bundle.candidateKey ||
+      buildCandidateKey(bundle.contact, bundle.evidence),
   }));
-  organizationBundles = consolidateOrganizationBundles(organizationBundles).map((bundle) => ({
-    ...bundle,
-    candidateKey: bundle.candidateKey || organizationCandidateKey(bundle.organization),
-  }));
-  const enrichment = await maybeEnrichViaLinkedIn(bundles, steps, elapsed);
+  organizationBundles = consolidateOrganizationBundles(organizationBundles).map(
+    (bundle) => ({
+      ...bundle,
+      candidateKey: bundle.candidateKey ||
+        organizationCandidateKey(bundle.organization),
+    }),
+  );
+  const enrichment = isOfficialFayatLaureatesUrl(page.canonicalUrl)
+    ? { bundles, searches: 0 }
+    : await maybeEnrichViaLinkedIn(bundles, steps, elapsed);
   bundles = enrichment.bundles;
   await heartbeat();
 
@@ -4425,7 +5043,12 @@ async function processFrontierRow(
     if (result.status === "duplicate_people") duplicatesSkipped += 1;
     derivedLabelsUpserted += result.derivedLabelsUpserted;
     if (result.discoveredContactId) {
-      await upsertEntityPivots(supabase, result.discoveredContactId, bundle, geminiKey);
+      await upsertEntityPivots(
+        supabase,
+        result.discoveredContactId,
+        bundle,
+        geminiKey,
+      );
     }
   }
 
@@ -4433,7 +5056,9 @@ async function processFrontierRow(
     const result = await persistOrganizationBundle(supabase, bundle, runId);
     if (result.status === "inserted") insertedOrganizations += 1;
     if (result.status === "merged") mergedOrganizations += 1;
-    if (result.status === "duplicate_organizations") organizationDuplicatesSkipped += 1;
+    if (result.status === "duplicate_organizations") {
+      organizationDuplicatesSkipped += 1;
+    }
   }
 
   if (duplicatesSkipped + organizationDuplicatesSkipped > 0) {
@@ -4442,12 +5067,12 @@ async function processFrontierRow(
     });
   }
 
-  const shouldExpandAggressively =
-    bundles.length > 0 ||
+  const shouldExpandAggressively = bundles.length > 0 ||
     organizationBundles.length > 0 ||
     (
       parentHasStrongSignals &&
-      ["team_or_roster", "lab_or_group_page", "directory_or_index_page"].includes(classification.pageType)
+      ["team_or_roster", "lab_or_group_page", "directory_or_index_page"]
+        .includes(classification.pageType)
     );
   const childLinksQueued = await enqueueChildLinks(
     supabase,
@@ -4458,16 +5083,28 @@ async function processFrontierRow(
   );
   await heartbeat();
 
-  const harvestResult = classification.pageType === "low_value_boilerplate" || classification.pageType === "irrelevant"
+  const harvestResult = classification.pageType === "low_value_boilerplate" ||
+      classification.pageType === "irrelevant"
     ? { seeded: 0, sitemapSeeded: 0, rssSeeded: 0 }
-    : await maybeHarvestProvenDomain(supabase, frontier, domainPolicy, runId, steps, elapsed);
+    : await maybeHarvestProvenDomain(
+      supabase,
+      frontier,
+      domainPolicy,
+      runId,
+      steps,
+      elapsed,
+    );
   await heartbeat();
 
   steps.push({
     step: `page_extraction_${frontier.id}`,
     timestamp: new Date().toISOString(),
     elapsed: elapsed(),
-    status: extractionDeferred ? "skipped" : classification.shouldExtract ? "ok" : "skipped",
+    status: extractionDeferred
+      ? "skipped"
+      : classification.shouldExtract
+      ? "ok"
+      : "skipped",
     detail: {
       frontier_id: frontier.id,
       url: page.canonicalUrl,
@@ -4484,8 +5121,11 @@ async function processFrontierRow(
       child_links_queued: childLinksQueued,
       sitemap_seeded: harvestResult.sitemapSeeded,
       rss_seeded: harvestResult.rssSeeded,
-      extraction_timeout: extractionDeferred && (extractionErrorMessage?.toLowerCase().includes("timed out") || false),
-      timeout_error: extractionErrorMessage?.toLowerCase().includes("timed out") ? extractionErrorMessage : null,
+      extraction_timeout: extractionDeferred &&
+        (extractionErrorMessage?.toLowerCase().includes("timed out") || false),
+      timeout_error: extractionErrorMessage?.toLowerCase().includes("timed out")
+        ? extractionErrorMessage
+        : null,
       extraction_deferred: extractionDeferred,
       deferred_error: extractionErrorMessage,
     },
@@ -4493,7 +5133,12 @@ async function processFrontierRow(
 
   const nextFetchAt = extractionDeferred
     ? computeRetryAt(EXTRACTION_TIMEOUT_RETRY_HOURS)
-    : computeNextFetchAt(classification.pageType, bundles.length, 0, domainPolicy);
+    : computeNextFetchAt(
+      classification.pageType,
+      bundles.length,
+      0,
+      domainPolicy,
+    );
   await supabase
     .from("discovery_frontier")
     .update({
@@ -4518,18 +5163,24 @@ async function processFrontierRow(
     })
     .eq("id", frontier.id);
 
-  const evidenceConfidence =
-    bundles.length > 0
-      ? bundles.reduce((sum, bundle) => sum + bundle.evidence[0].extractionConfidence, 0) / bundles.length
-      : organizationBundles.length > 0
-      ? organizationBundles.reduce((sum, bundle) => sum + bundle.evidence[0].confidence, 0) / organizationBundles.length
-      : null;
+  const evidenceConfidence = bundles.length > 0
+    ? bundles.reduce(
+      (sum, bundle) => sum + bundle.evidence[0].extractionConfidence,
+      0,
+    ) / bundles.length
+    : organizationBundles.length > 0
+    ? organizationBundles.reduce(
+      (sum, bundle) => sum + bundle.evidence[0].confidence,
+      0,
+    ) / organizationBundles.length
+    : null;
 
   await bumpDomainStats(supabase, page.domain, {
     pagesQueued: -1 + childLinksQueued,
     pagesFetched: 1,
     promisingPages: classification.shouldExtract ? 1 : 0,
-    candidatesExtracted: insertedContacts + mergedContacts + insertedOrganizations + mergedOrganizations,
+    candidatesExtracted: insertedContacts + mergedContacts +
+      insertedOrganizations + mergedOrganizations,
     lastSeenAt: page.fetchedAt,
     lastFetchedAt: page.fetchedAt,
     nextFetchAt,
@@ -4575,6 +5226,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     const body = await req.json();
     const query = normalizeWhitespace(safeString(body.query));
+    const isOfficialFayatRun = /\bfayat(?:beurzen| scholarships?)\b/i.test(
+      query,
+    );
     runId = safeString(body.run_id) || undefined;
     const suggestionId = safeString(body.suggestion_id) || undefined;
     const batchSize = Math.max(
@@ -4630,21 +5284,323 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
     await heartbeat();
 
-    const [queuedFrontierCount, taxonomy, coverageGaps, entityPivots, compositionPivots] = await Promise.all([
+    if (isOfficialFayatRun) {
+      if (!runId) {
+        throw new Error(
+          "agent-discovery requires run_id for an official Fayat run",
+        );
+      }
+
+      const officialContacts =
+        (getOfficialFayatUsLaureates(OFFICIAL_FAYAT_LAUREATES_URL) || []).map(
+          (laureate): ExtractedPageContact => {
+            const scholarship = "Fayatbeurzen (Fayat Scholarships)";
+            const evidence =
+              `The official Vlaanderen laureate directory lists ${laureate.name} as a ${scholarship} laureate who studied ${laureate.program} at ${laureate.institution} in the United States.`;
+            return {
+              name: laureate.name,
+              bio:
+                `${scholarship} laureate; studied ${laureate.program} at ${laureate.institution} in the United States.`,
+              occupation: "Fayat Scholarship laureate",
+              current_position: "",
+              location_city: laureate.city,
+              location_state: laureate.state,
+              flemish_connection:
+                `${scholarship}, Flemish Government scholarship programme`,
+              flemish_fact_candidates: [],
+              suggested_us_network_status: "us_connected_abroad",
+              suggested_us_network_confidence: 1,
+              current_location_city: "",
+              current_location_country: "",
+              suggested_us_connections: [{
+                location_city: laureate.city,
+                location_state: laureate.state,
+                connection_label: `Fayat study at ${laureate.institution}`,
+                source_url: OFFICIAL_FAYAT_LAUREATES_URL,
+                evidence_excerpt: evidence,
+                confidence: 1,
+              }],
+              website_url: "",
+              email: "",
+              linkedin_url: "",
+              sectors: ["Education"],
+              source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
+              raw_location_text:
+                `${laureate.institution}, ${laureate.city}, ${laureate.state}`,
+              raw_flemish_text: scholarship,
+              evidence_excerpt: evidence,
+              raw_role_text: `${laureate.program}, ${laureate.institution}`,
+              extraction_confidence: 1,
+            };
+          },
+        );
+      const officialNames = officialContacts.map((contact) => contact.name);
+      const [{ data: existingPeople }, { data: existingPending }] =
+        await Promise.all([
+          supabase.from("people").select("name").in("name", officialNames),
+          supabase.from("discovered_contacts").select("name").in(
+            "name",
+            officialNames,
+          ),
+        ]);
+      const existingNames = new Set(
+        [...(existingPeople || []), ...(existingPending || [])].map((row) =>
+          normalizeName(String(row.name || ""))
+        ),
+      );
+      const newContacts = officialContacts.filter(
+        (contact) => !existingNames.has(normalizeName(contact.name)),
+      );
+      const nowIso = new Date().toISOString();
+      let insertedRows: Array<{ id: string; name: string }> = [];
+
+      if (newContacts.length > 0) {
+        const { data, error: insertError } = await supabase
+          .from("discovered_contacts")
+          .insert(newContacts.map((contact) => ({
+            name: contact.name,
+            email: null,
+            linkedin_url: null,
+            current_position: null,
+            occupation: contact.occupation,
+            location_city: contact.location_city,
+            location_state: contact.location_state,
+            bio: contact.bio,
+            flemish_connection: contact.flemish_connection,
+            website_url: null,
+            sectors: contact.sectors,
+            source: "official_fayat_directory",
+            source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
+            status: "pending",
+            agent_run_id: runId,
+            first_seen_at: nowIso,
+            last_seen_at: nowIso,
+            last_evidence_at: nowIso,
+            evidence_count: 1,
+            discovery_confidence: 1,
+            candidate_key: `fayat:${normalizeName(contact.name)}`,
+            suggested_us_network_status: "us_connected_abroad",
+            suggested_us_network_confidence: 1,
+            current_location_city: null,
+            current_location_country: null,
+            suggested_us_connections: contact.suggested_us_connections,
+          })))
+          .select("id,name");
+        if (insertError) {
+          throw new Error(
+            `Failed to batch-insert official Fayat laureates: ${insertError.message}`,
+          );
+        }
+        insertedRows = (data || []) as Array<{ id: string; name: string }>;
+
+        const contactsByName = new Map(
+          newContacts.map((contact) => [normalizeName(contact.name), contact]),
+        );
+        const evidenceRows = await Promise.all(insertedRows.map(async (row) => {
+          const contact = contactsByName.get(normalizeName(row.name))!;
+          return {
+            discovered_contact_id: row.id,
+            discovery_page_id: null,
+            evidence_key: await hashString(
+              `fayat-official|${row.name}|${OFFICIAL_FAYAT_LAUREATES_URL}`,
+            ),
+            page_url: OFFICIAL_FAYAT_LAUREATES_URL,
+            page_title: "Fayatbeurs contactgegevens laureaten",
+            page_type: "directory_or_index_page",
+            source_type: "official_directory",
+            evidence_excerpt: contact.evidence_excerpt,
+            raw_location_text: contact.raw_location_text,
+            raw_flemish_text: contact.raw_flemish_text,
+            raw_role_text: contact.raw_role_text,
+            extraction_confidence: 1,
+            normalized_location_city: contact.location_city,
+            normalized_location_state: contact.location_state,
+            discovered_via: "official_fayat_directory",
+            parent_url: null,
+            fetched_at: nowIso,
+          };
+        }));
+        const { error: evidenceError } = await supabase
+          .from("discovery_evidence")
+          .insert(evidenceRows);
+        if (evidenceError) {
+          throw new Error(
+            `Failed to write official Fayat evidence: ${evidenceError.message}`,
+          );
+        }
+      }
+
+      const result = {
+        mode: "official_fayat_directory",
+        input_query: query,
+        frontier_seeded: 1,
+        frontier_claimed: 1,
+        frontier_queue_after: 0,
+        pages_fetched: 1,
+        suggestions_created: insertedRows.length,
+        suggestions_merged: 0,
+        duplicates_skipped: officialContacts.length - insertedRows.length,
+        organizations_inserted: 0,
+        organizations_merged: 0,
+        organization_duplicates_skipped: 0,
+        organization_suggestions_created: 0,
+        organization_suggestions_merged: 0,
+        derived_labels_upserted: 0,
+        child_links_queued: 0,
+        sitemap_urls_seeded: 0,
+        rss_urls_seeded: 0,
+        surfaces_used: [],
+        lenses_used: [],
+        gap_targets_used: [],
+        entity_pivots_used: [],
+        llm_calls_made: 0,
+        web_searches_made: 0,
+        linkedin_searches_made: 0,
+        web_search_provider: "official_vlaanderen_directory",
+        llm_model_used: {
+          extraction: "deterministic_official_directory",
+          classification: "deterministic_official_directory",
+        },
+        steps: [{
+          step: "official_fayat_directory",
+          timestamp: nowIso,
+          elapsed: elapsed(),
+          status: "ok",
+          detail: {
+            source_url: OFFICIAL_FAYAT_LAUREATES_URL,
+            published_us_laureates: officialContacts.length,
+            inserted_contacts: insertedRows.length,
+            duplicates_skipped: officialContacts.length - insertedRows.length,
+          },
+        }],
+      };
+
+      const { error: runUpdateError } = await supabase
+        .from("agent_runs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          heartbeat_at: new Date().toISOString(),
+          results: result,
+          llm_calls_made: 0,
+          llm_model_used: "deterministic_official_directory",
+          web_searches_made: 0,
+          web_search_provider: "official_vlaanderen_directory",
+          cost_estimate_usd: 0,
+          error_message: null,
+        })
+        .eq("id", runId);
+      if (runUpdateError) {
+        throw new Error(
+          `Failed to complete official Fayat run: ${runUpdateError.message}`,
+        );
+      }
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (isOfficialFayatRun) {
+      const nowIso = new Date().toISOString();
+      const { data: existingFayatFrontier, error: lookupError } = await supabase
+        .from("discovery_frontier")
+        .select("id")
+        .eq("canonical_url", OFFICIAL_FAYAT_LAUREATES_URL)
+        .maybeSingle();
+      if (lookupError) {
+        throw new Error(
+          `Failed to locate official Fayat frontier: ${lookupError.message}`,
+        );
+      }
+      if (existingFayatFrontier) {
+        const { error: updateError } = await supabase
+          .from("discovery_frontier")
+          .update({
+            url: OFFICIAL_FAYAT_LAUREATES_URL,
+            domain: "www.vlaanderen.be",
+            status: "queued",
+            priority_score: 100000,
+            claimed_at: null,
+            claimed_run_id: null,
+            next_fetch_at: nowIso,
+            content_hash: null,
+            fetch_error_count: 0,
+            discovery_reason: "official_fayat_directory",
+            source_type: "official_directory",
+            search_query: query,
+            title: "Fayatbeurs contactgegevens laureaten",
+          })
+          .eq("id", existingFayatFrontier.id);
+        if (updateError) {
+          throw new Error(
+            `Failed to queue official Fayat frontier: ${updateError.message}`,
+          );
+        }
+      } else {
+        const { error: insertError } = await supabase
+          .from("discovery_frontier")
+          .insert({
+            url: OFFICIAL_FAYAT_LAUREATES_URL,
+            canonical_url: OFFICIAL_FAYAT_LAUREATES_URL,
+            domain: "www.vlaanderen.be",
+            status: "queued",
+            priority_score: 100000,
+            depth: 0,
+            discovered_from_url: null,
+            discovery_reason: "official_fayat_directory",
+            source_type: "official_directory",
+            pivot_entity_key: null,
+            pivot_entity_name: null,
+            pivot_entity_type: null,
+            search_query: query,
+            anchor_text: null,
+            title: "Fayatbeurs contactgegevens laureaten",
+            next_fetch_at: nowIso,
+          });
+        if (insertError) {
+          throw new Error(
+            `Failed to seed official Fayat frontier: ${insertError.message}`,
+          );
+        }
+      }
+      frontierSeeded = 1;
+      steps.push({
+        step: "official_fayat_seed",
+        timestamp: nowIso,
+        elapsed: elapsed(),
+        status: "ok",
+        detail: { url: OFFICIAL_FAYAT_LAUREATES_URL },
+      });
+    }
+
+    const [
+      queuedFrontierCount,
+      taxonomy,
+      coverageGaps,
+      entityPivots,
+      compositionPivots,
+      flemishConnectionCatalogPrompt,
+    ] = await Promise.all([
       getQueuedFrontierCount(supabase),
       loadSurfaceLensTaxonomy(supabase),
       loadCoverageGaps(supabase),
       loadEntityPivots(supabase),
       loadCompositionPivots(supabase),
+      loadFlemishConnectionCatalogPrompt(supabase),
     ]);
 
     // Bandit allocation: allocate query budget across (surface, lens) arms.
     // Budget = MAX_SEARCH_QUERIES minus slots reserved for entity pivots (up to 2).
     // The allocateBudget call falls back gracefully if the table is empty.
-    const pivotBudget = Math.min(2, entityPivots.filter((p) => {
-      if (!p.last_seeded_at) return true;
-      return hoursSince(p.last_seeded_at) >= 24 * 7;
-    }).length);
+    const pivotBudget = Math.min(
+      2,
+      entityPivots.filter((p) => {
+        if (!p.last_seeded_at) return true;
+        return hoursSince(p.last_seeded_at) >= 24 * 7;
+      }).length,
+    );
     const surfaceLensBudget = Math.max(1, MAX_SEARCH_QUERIES - pivotBudget);
     let allocationSlots: AllocationSlot[] = [];
     let consumedSuggestionId: string | null = null;
@@ -4661,10 +5617,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
       if (row) {
         const surfaceKey = (row.surface as string | null) || "";
         const lensKey = (row.lens as string | null) || "";
-        const resolvedSurface = surfaceKey && taxonomy.surfaces.find((s) => s.key === surfaceKey)
+        const resolvedSurface = surfaceKey && taxonomy.surfaces.find((s) =>
+            s.key === surfaceKey
+          )
           ? surfaceKey
           : taxonomy.surfaces[0]?.key || "";
-        const resolvedLens = lensKey && taxonomy.lenses.find((l) => l.key === lensKey)
+        const resolvedLens = lensKey && taxonomy.lenses.find((l) =>
+            l.key === lensKey
+          )
           ? lensKey
           : taxonomy.lenses[0]?.key || "";
         if (resolvedSurface && resolvedLens) {
@@ -4679,12 +5639,19 @@ Deno.serve(wrapHandler(async (req: Request) => {
         }
       }
     }
-    if (allocationSlots.length === 0) {
+    if (allocationSlots.length === 0 && !isOfficialFayatRun) {
       try {
-        allocationSlots = await allocateBudget(supabase, surfaceLensBudget, runId || "anon");
+        allocationSlots = await allocateBudget(
+          supabase,
+          surfaceLensBudget,
+          runId || "anon",
+        );
       } catch (allocErr) {
         // Non-fatal: fall back to empty allocation (entity pivots and gaps will still run)
-        log.withRun(runId).warn("bandit_allocation_failed", allocErr instanceof Error ? allocErr.message : String(allocErr));
+        log.withRun(runId).warn(
+          "bandit_allocation_failed",
+          allocErr instanceof Error ? allocErr.message : String(allocErr),
+        );
       }
     }
 
@@ -4699,7 +5666,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
         await supabase
           .from("discovery_reflection_suggestions")
           .update({
-            consumed_attempt_count: ((existing.consumed_attempt_count as number) || 0) + 1,
+            consumed_attempt_count:
+              ((existing.consumed_attempt_count as number) || 0) + 1,
           })
           .eq("id", consumedSuggestionId);
       }
@@ -4722,34 +5690,48 @@ Deno.serve(wrapHandler(async (req: Request) => {
     });
 
     // Multi-hop: load recently approved people's employers for expansion.
-    const multiHopEmployers = await loadMultiHopEmployers(supabase, entityPivots).catch((err) => {
-      log.withRun(runId).warn("multi_hop_employers_load_failed", err instanceof Error ? err.message : String(err));
-      return [] as string[];
-    });
+    const multiHopEmployers = isOfficialFayatRun
+      ? []
+      : await loadMultiHopEmployers(supabase, entityPivots).catch((err) => {
+        log.withRun(runId).warn(
+          "multi_hop_employers_load_failed",
+          err instanceof Error ? err.message : String(err),
+        );
+        return [] as string[];
+      });
 
-    const shouldSeed = query.length > 0 || queuedFrontierCount < batchSize;
+    const shouldSeed = !isOfficialFayatRun &&
+      (query.length > 0 || queuedFrontierCount < batchSize);
     const seedPlans = shouldSeed
       ? await buildQueryPlans(
-          query,
-          taxonomy.surfaces,
-          taxonomy.lenses,
-          taxonomy.domains,
-          coverageGaps,
-          entityPivots,
-          allocationSlots,
-          compositionPivots,
-          multiHopEmployers,
-          runId,
-          geminiKey,
-          llmStats,
-          steps,
-          elapsed,
-        )
+        query,
+        taxonomy.surfaces,
+        taxonomy.lenses,
+        taxonomy.domains,
+        coverageGaps,
+        entityPivots,
+        allocationSlots,
+        compositionPivots,
+        multiHopEmployers,
+        runId,
+        geminiKey,
+        llmStats,
+        steps,
+        elapsed,
+      )
       : [];
-    gapTargetsUsed = uniqueStrings(seedPlans.map((plan) => plan.coverageTargetKey || "").filter(Boolean));
-    entityPivotsUsed = uniqueStrings(seedPlans.map((plan) => plan.entityKey || "").filter(Boolean));
-    surfacesUsed = uniqueStrings(seedPlans.map((plan) => plan.surface || "").filter(Boolean));
-    lensesUsed = uniqueStrings(seedPlans.map((plan) => plan.lens || "").filter(Boolean));
+    gapTargetsUsed = uniqueStrings(
+      seedPlans.map((plan) => plan.coverageTargetKey || "").filter(Boolean),
+    );
+    entityPivotsUsed = uniqueStrings(
+      seedPlans.map((plan) => plan.entityKey || "").filter(Boolean),
+    );
+    surfacesUsed = uniqueStrings(
+      seedPlans.map((plan) => plan.surface || "").filter(Boolean),
+    );
+    lensesUsed = uniqueStrings(
+      seedPlans.map((plan) => plan.lens || "").filter(Boolean),
+    );
 
     steps.push({
       step: "discovery_plan",
@@ -4807,11 +5789,15 @@ Deno.serve(wrapHandler(async (req: Request) => {
     await heartbeat();
 
     if (!runId) {
-      throw new Error("agent-discovery requires run_id when triggered via the scheduler");
+      throw new Error(
+        "agent-discovery requires run_id when triggered via the scheduler",
+      );
     }
 
     if (isTimedOut()) {
-      throw new Error("Discovery run hit the time budget before claiming frontier work");
+      throw new Error(
+        "Discovery run hit the time budget before claiming frontier work",
+      );
     }
 
     const claimed = await claimFrontierBatch(supabase, runId, batchSize);
@@ -4820,7 +5806,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
     if (claimed.length > 0) {
       const claimedByDomain = new Map<string, number>();
       for (const frontier of claimed) {
-        claimedByDomain.set(frontier.domain, (claimedByDomain.get(frontier.domain) || 0) + 1);
+        claimedByDomain.set(
+          frontier.domain,
+          (claimedByDomain.get(frontier.domain) || 0) + 1,
+        );
       }
       await Promise.all(
         [...claimedByDomain.entries()].map(([domain, count]) =>
@@ -4867,6 +5856,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           frontier,
           domainPolicies.get(frontier.domain) || null,
           geminiKey,
+          flemishConnectionCatalogPrompt,
           runId,
           steps,
           elapsed,
@@ -4887,10 +5877,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
         sitemapUrlsSeeded += result.sitemapSeeded;
         rssUrlsSeeded += result.rssSeeded;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown processing error";
+        const message = error instanceof Error
+          ? error.message
+          : "Unknown processing error";
         const retryable = isRetryableUpstreamError(error);
         if (!retryable) {
-          errors.push(`Failed processing ${frontier.canonical_url}: ${message}`);
+          errors.push(
+            `Failed processing ${frontier.canonical_url}: ${message}`,
+          );
         }
 
         await supabase
@@ -4989,7 +5983,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
         .eq("id", runId);
 
       try {
-        await supabase.rpc("resolve_discovery_query_attempts", { p_run_id: runId });
+        await supabase.rpc("resolve_discovery_query_attempts", {
+          p_run_id: runId,
+        });
       } catch (resolveError) {
         log.withRun(runId).warn("resolve_query_attempts_failed", resolveError);
       }
@@ -4998,9 +5994,21 @@ Deno.serve(wrapHandler(async (req: Request) => {
       try {
         // Aggregate new_pending_contacts and candidates_extracted per (surface, lens)
         // from the seed plans that were actually executed.
-        const armMap = new Map<string, { surface: string; lens: string; contextKey: string; candidatesExtracted: number; newPendingContacts: number; costUsd: number }>();
+        const armMap = new Map<
+          string,
+          {
+            surface: string;
+            lens: string;
+            contextKey: string;
+            candidatesExtracted: number;
+            newPendingContacts: number;
+            costUsd: number;
+          }
+        >();
         for (const plan of seedPlans) {
-          if (plan.sourceType !== "surface_lens" || !plan.surface || !plan.lens) continue;
+          if (
+            plan.sourceType !== "surface_lens" || !plan.surface || !plan.lens
+          ) continue;
           const key = `${plan.surface}|${plan.lens}|`;
           if (!armMap.has(key)) {
             armMap.set(key, {
@@ -5028,7 +6036,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
           await updateArmStats(supabase, armUpdates);
         }
       } catch (armStatsError) {
-        log.withRun(runId).warn("arm_stats_update_failed", armStatsError instanceof Error ? armStatsError.message : String(armStatsError));
+        log.withRun(runId).warn(
+          "arm_stats_update_failed",
+          armStatsError instanceof Error
+            ? armStatsError.message
+            : String(armStatsError),
+        );
       }
 
       // Saturation tracking: update rolling_new_approved on entity pivots used in this run.
@@ -5046,7 +6059,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
           );
         }
       } catch (satErr) {
-        log.withRun(runId).warn("pivot_saturation_update_failed", satErr instanceof Error ? satErr.message : String(satErr));
+        log.withRun(runId).warn(
+          "pivot_saturation_update_failed",
+          satErr instanceof Error ? satErr.message : String(satErr),
+        );
       }
     }
 
@@ -5058,7 +6074,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
       try {
         await releaseClaimedFrontier(supabase, runId);
       } catch (cleanupError) {
-        log.withRun(runId).warn("release_claimed_frontier_failed", cleanupError);
+        log.withRun(runId).warn(
+          "release_claimed_frontier_failed",
+          cleanupError,
+        );
       }
 
       try {
@@ -5067,7 +6086,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
           .update({
             status: "failed",
             completed_at: new Date().toISOString(),
-            error_message: error instanceof Error ? error.message : "Unknown error",
+            error_message: error instanceof Error
+              ? error.message
+              : "Unknown error",
             error_kind: agentRunErrorKindFor(error),
           })
           .eq("id", runId);

@@ -305,7 +305,7 @@ export default function SuggestedChanges({
               type="checkbox"
               checked={selectedIds.size === pending.length && pending.length > 0}
               onChange={toggleSelectAll}
-              className="h-3.5 w-3.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              className="h-3.5 w-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400"
             />
             <span className="text-xs text-gray-500">
               {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
@@ -330,7 +330,7 @@ export default function SuggestedChanges({
           <button
             onClick={approveAll}
             disabled={batchProcessing}
-            className="flex items-center space-x-1.5 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-100 disabled:opacity-50"
+            className="flex items-center space-x-1.5 rounded-lg bg-yellow-50 px-2.5 py-1.5 text-xs font-medium text-yellow-800 transition-colors hover:bg-yellow-100 disabled:opacity-50"
           >
             {batchProcessing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -414,7 +414,7 @@ export default function SuggestedChanges({
               <div
                 key={suggestion.id}
                 className={`px-4 py-4 transition-colors ${
-                  isSelected ? 'bg-teal-50/40' : 'hover:bg-gray-50'
+                  isSelected ? 'bg-yellow-50/50' : 'hover:bg-gray-50'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -423,7 +423,7 @@ export default function SuggestedChanges({
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleSelect(suggestion.id)}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-400"
                     />
                   </div>
 

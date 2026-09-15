@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  ExternalLink,
   Loader2,
   Play,
   RefreshCw,
@@ -102,18 +103,48 @@ const PRESET_LABELS: Record<CadencePreset, string> = {
   high: 'Aggressive',
 };
 
+type ConfigurableCadencePreset = Exclude<CadencePreset, 'off'>;
+const CONFIGURABLE_CADENCE_PRESETS: ConfigurableCadencePreset[] = ['low', 'normal', 'high'];
+
+interface MaintenancePresetDefinition {
+  discoveryRunsPerDay: number;
+  discoverySchedule: string;
+  verificationContactsPerDay: number;
+}
+
+const MAINTENANCE_PRESET_DEFINITIONS: Record<
+  ConfigurableCadencePreset,
+  MaintenancePresetDefinition
+> = {
+  low: {
+    discoveryRunsPerDay: 1,
+    discoverySchedule: '09:00 UTC',
+    verificationContactsPerDay: 5,
+  },
+  normal: {
+    discoveryRunsPerDay: 2,
+    discoverySchedule: '09:00 and 21:00 UTC',
+    verificationContactsPerDay: 15,
+  },
+  high: {
+    discoveryRunsPerDay: 4,
+    discoverySchedule: 'Every 6 hours',
+    verificationContactsPerDay: 40,
+  },
+};
+
 const PRESET_DESCRIPTIONS: Record<JobKind, Record<CadencePreset, string>> = {
   discovery: {
     off: 'No automatic runs',
-    low: 'Once daily (09:00 UTC)',
-    normal: 'Twice daily (09:00 + 21:00 UTC)',
-    high: 'Every 6 hours',
+    low: `${MAINTENANCE_PRESET_DEFINITIONS.low.discoveryRunsPerDay} run/day (${MAINTENANCE_PRESET_DEFINITIONS.low.discoverySchedule})`,
+    normal: `${MAINTENANCE_PRESET_DEFINITIONS.normal.discoveryRunsPerDay} runs/day (${MAINTENANCE_PRESET_DEFINITIONS.normal.discoverySchedule})`,
+    high: `${MAINTENANCE_PRESET_DEFINITIONS.high.discoveryRunsPerDay} runs/day (${MAINTENANCE_PRESET_DEFINITIONS.high.discoverySchedule})`,
   },
   verify_stale: {
     off: 'No automatic refreshes',
-    low: 'Up to 5 contacts/day',
-    normal: 'Up to 15 contacts/day',
-    high: 'Up to 40 contacts/day',
+    low: `Up to ${MAINTENANCE_PRESET_DEFINITIONS.low.verificationContactsPerDay} contacts/day`,
+    normal: `Up to ${MAINTENANCE_PRESET_DEFINITIONS.normal.verificationContactsPerDay} contacts/day`,
+    high: `Up to ${MAINTENANCE_PRESET_DEFINITIONS.high.verificationContactsPerDay} contacts/day`,
   },
   embeddings_drain: {
     off: 'Manual only',
@@ -225,8 +256,13 @@ function statusClass(status: string): string {
   return 'bg-gray-100 text-gray-600';
 }
 
-export default function SystemHealthPanel() {
+export default function SystemHealthPanel({
+  mode = 'all',
+}: {
+  mode?: 'maintenance' | 'settings' | 'all';
+}) {
   const { isAdmin } = useAuth();
+  const isSettings = mode === 'settings';
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [embeddingBatches, setEmbeddingBatches] = useState<EmbeddingBatchRun[]>([]);
   const [queueHealth, setQueueHealth] = useState<QueueHealth>({
@@ -268,8 +304,9 @@ export default function SystemHealthPanel() {
         supabase
           .from('agent_runs')
           .select('*')
+          .gte('created_at', thirtyDaysAgo)
           .order('created_at', { ascending: false })
-          .limit(80),
+          .limit(1000),
         supabase
           .from('agent_runs')
           .select('*')
@@ -390,6 +427,21 @@ export default function SystemHealthPanel() {
     });
   }, [runs]);
 
+  const usageByDay = useMemo(() => {
+    return Array.from({ length: 14 }, (_, index) => {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - (13 - index));
+      const dayKey = date.toISOString().slice(0, 10);
+      const dayRuns = runs.filter((run) => run.created_at.slice(0, 10) === dayKey);
+      return {
+        dayKey,
+        label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        ...totalUsage(dayRuns),
+      };
+    });
+  }, [runs]);
+
   const runNow = useCallback(
     async (kind: HealthAgentKind) => {
       setActionLoading(`run:${kind}`);
@@ -497,7 +549,11 @@ export default function SystemHealthPanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+        <Loader2
+          className={`w-6 h-6 animate-spin ${
+            isSettings ? 'text-teal-600' : 'text-yellow-600'
+          }`}
+        />
       </div>
     );
   }
@@ -506,10 +562,19 @@ export default function SystemHealthPanel() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">System Health</h2>
-          <p className="text-sm text-gray-600">Service status, queue health, usage, and operator actions.</p>
+          <h2 className="text-xl font-semibold text-gray-900">
+            {mode === 'maintenance' ? 'Maintenance Runs' : mode === 'settings' ? 'System' : 'System Health'}
+          </h2>
+          <p className="text-sm text-gray-600">
+            {mode === 'maintenance'
+              ? 'Automatic discovery and verification runs, queues, and recovery actions.'
+              : mode === 'settings'
+                ? 'Connected services, API usage, credentials, and connectivity checks.'
+                : 'Service status, queue health, usage, and operator actions.'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {mode !== 'maintenance' && (
           <button
             type="button"
             onClick={testConnectivity}
@@ -521,6 +586,8 @@ export default function SystemHealthPanel() {
             {actionLoading === 'connectivity' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Test Supabase
           </button>
+          )}
+          {mode !== 'settings' && (
           <button
             type="button"
             onClick={runHousekeeping}
@@ -532,10 +599,15 @@ export default function SystemHealthPanel() {
             {actionLoading === 'housekeeping' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Run Housekeeping
           </button>
+          )}
           <button
             type="button"
             onClick={loadData}
-            className="inline-flex items-center gap-2 rounded-md bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+            className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              isSettings
+                ? 'bg-teal-600 text-white hover:bg-teal-700'
+                : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
+            }`}
           >
             <RefreshCw className="h-4 w-4" />
             Refresh
@@ -543,20 +615,20 @@ export default function SystemHealthPanel() {
         </div>
       </div>
 
-      {connectivity === 'ok' && (
+      {mode !== 'maintenance' && connectivity === 'ok' && (
         <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
           <CheckCircle2 className="h-4 w-4" />
           Supabase connectivity is healthy.
         </div>
       )}
-      {connectivity === 'failed' && (
+      {mode !== 'maintenance' && connectivity === 'failed' && (
         <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4" />
           Supabase connectivity failed. See the toast details and RUNBOOK [auth_failed] or [network].
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      {mode !== 'settings' && <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {summaries
           .filter((s) => s.kind !== 'embeddings')
           .map((summary) => {
@@ -578,20 +650,20 @@ export default function SystemHealthPanel() {
               />
             );
           })}
-      </div>
+      </div>}
 
-      <SearchIndexFooter
+      {mode !== 'settings' && <SearchIndexFooter
         queueHealth={queueHealth}
         embeddingBatches={embeddingBatches}
         schedule={schedules.find((s) => s.job_kind === 'embeddings_drain') ?? null}
         actionLoading={actionLoading}
         onRunNow={() => runNow('embeddings')}
-      />
+      />}
 
-      <div className="rounded-md border border-gray-200 bg-white p-5">
+      {mode !== 'maintenance' && <div className="rounded-md border border-gray-200 bg-white p-5">
         <div className="mb-4 flex items-center gap-2">
           <Zap className="h-5 w-5 text-amber-600" />
-          <h3 className="font-semibold text-gray-900">Today&apos;s API Usage</h3>
+          <h3 className="font-semibold text-gray-900">API Usage</h3>
         </div>
         {(() => {
           const showApify =
@@ -619,9 +691,57 @@ export default function SystemHealthPanel() {
             </div>
           );
         })()}
+        <UsageChart days={usageByDay} settings={isSettings} />
       </div>
+      }
 
-      <div className="rounded-md border border-gray-200 bg-white">
+      {mode === 'settings' && <MaintenancePresetDefinitions />}
+
+      {mode !== 'maintenance' && (
+        <div className="rounded-md border border-gray-200 bg-white p-5">
+          <div className="mb-4">
+            <h3 className="font-semibold text-gray-900">Connected Services</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Manage ongoing integrations and add credentials in their secure dashboards.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <ServiceCard name="Supabase" detail="Database, authentication, and server functions" active />
+            <ServiceCard name="Gemini" detail="Discovery and verification reasoning" active={todayUsage.geminiCalls > 0} />
+            <ServiceCard name="Tavily" detail="Web discovery and evidence search" active={todayUsage.tavilyCalls > 0} />
+            <ServiceCard name="Vercel" detail="Production hosting and frontend variables" active />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <a
+              href="https://supabase.com/dashboard/project/ofzuhajxwxggybkuzefq/settings/functions"
+              target="_blank"
+              rel="noreferrer"
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                isSettings
+                  ? 'bg-teal-600 text-white hover:bg-teal-700'
+                  : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
+              }`}
+            >
+              Add backend API key
+              <ExternalLink className="h-4 w-4" />
+            </a>
+            <a
+              href="https://vercel.com/milan477s-projects/flemish-network/settings/environment-variables"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Manage frontend variables
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            Secret values are stored by Supabase or Vercel and are never displayed in this app.
+          </p>
+        </div>
+      )}
+
+      {mode !== 'settings' && <div className="rounded-md border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-4">
           <h3 className="font-semibold text-gray-900">Stuck Runs</h3>
         </div>
@@ -650,7 +770,124 @@ export default function SystemHealthPanel() {
             ))}
           </div>
         )}
+      </div>}
+    </div>
+  );
+}
+
+function MaintenancePresetDefinitions() {
+  return (
+    <section className="rounded-md border border-gray-200 bg-white p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-gray-900">Run Intensity Variables</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          These values define Light, Normal, and Aggressive wherever a maintenance schedule is selected.
+        </p>
       </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {CONFIGURABLE_CADENCE_PRESETS.map((preset) => {
+          const definition = MAINTENANCE_PRESET_DEFINITIONS[preset];
+          return (
+            <div
+              key={preset}
+              className={`rounded-lg border p-4 ${
+                preset === 'normal'
+                  ? 'border-teal-200 bg-teal-50/50'
+                  : 'border-gray-200 bg-gray-50/50'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-gray-900">{PRESET_LABELS[preset]}</h4>
+                {preset === 'normal' && (
+                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                    Default
+                  </span>
+                )}
+              </div>
+              <dl className="mt-4 space-y-3">
+                <div>
+                  <dt className="text-xs text-gray-500">Discovery runs/day</dt>
+                  <dd className="mt-0.5 text-lg font-semibold text-gray-900">
+                    {definition.discoveryRunsPerDay}
+                  </dd>
+                  <dd className="text-xs text-gray-500">{definition.discoverySchedule}</dd>
+                </div>
+                <div className="border-t border-gray-200 pt-3">
+                  <dt className="text-xs text-gray-500">Contacts verified/day</dt>
+                  <dd className="mt-0.5 text-lg font-semibold text-gray-900">
+                    {definition.verificationContactsPerDay}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-4 text-xs text-gray-500">
+        Schedule times use UTC. Change the active preset from Grow → Runs or Grow → Maintenance.
+      </p>
+    </section>
+  );
+}
+
+function UsageChart({
+  days,
+  settings,
+}: {
+  days: Array<UsageTotals & { dayKey: string; label: string }>;
+  settings: boolean;
+}) {
+  const maxCalls = Math.max(1, ...days.map((day) => day.geminiCalls + day.tavilyCalls));
+
+  return (
+    <div className="mt-6 border-t border-gray-100 pt-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h4 className="text-sm font-medium text-gray-700">Last 14 days</h4>
+        <div className="flex gap-3 text-xs text-gray-500">
+          <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-indigo-500" />Gemini</span>
+          <span>
+            <span
+              className={`mr-1 inline-block h-2 w-2 rounded-full ${
+                settings ? 'bg-teal-500' : 'bg-yellow-500'
+              }`}
+            />
+            Tavily
+          </span>
+        </div>
+      </div>
+      <div className="flex h-32 items-end gap-1.5" aria-label="API calls over the last 14 days">
+        {days.map((day) => {
+          const geminiHeight = (day.geminiCalls / maxCalls) * 100;
+          const tavilyHeight = (day.tavilyCalls / maxCalls) * 100;
+          return (
+            <div key={day.dayKey} className="group relative flex h-full flex-1 items-end justify-center gap-px" title={`${day.label}: ${day.geminiCalls} Gemini, ${day.tavilyCalls} Tavily`}>
+              <div className="w-1/2 rounded-t bg-indigo-500" style={{ height: `${Math.max(geminiHeight, day.geminiCalls ? 3 : 0)}%` }} />
+              <div
+                className={`w-1/2 rounded-t ${settings ? 'bg-teal-500' : 'bg-yellow-500'}`}
+                style={{ height: `${Math.max(tavilyHeight, day.tavilyCalls ? 3 : 0)}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] text-gray-400">
+        <span>{days[0]?.label}</span>
+        <span>{days[days.length - 1]?.label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ServiceCard({ name, detail, active }: { name: string; detail: string; active: boolean }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-gray-900">{name}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+          {active ? 'Connected' : 'No recent usage'}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-gray-500">{detail}</p>
     </div>
   );
 }
@@ -716,7 +953,7 @@ function AgentScheduleCard({
           type="button"
           onClick={() => onRunNow(summary.kind)}
           disabled={actionLoading === `run:${summary.kind}`}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-yellow-400 text-gray-900 hover:bg-yellow-500 disabled:opacity-50"
           title={`Run ${summary.label}`}
           aria-label={`Run ${summary.label}`}
         >
@@ -767,7 +1004,7 @@ function AgentScheduleCard({
                   onClick={() => onPresetChange(schedule.job_kind, preset)}
                   className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                     active
-                      ? 'bg-teal-600 text-white'
+                      ? 'bg-yellow-400 text-gray-900'
                       : 'bg-gray-50 text-gray-700 hover:bg-gray-100 disabled:hover:bg-gray-50'
                   } disabled:opacity-60 disabled:cursor-not-allowed`}
                   title={PRESET_DESCRIPTIONS[schedule.job_kind][preset]}
@@ -830,9 +1067,9 @@ function AgentScheduleCard({
 }
 
 function verifyPerDay(preset: CadencePreset): number {
-  if (preset === 'low') return 5;
-  if (preset === 'normal') return 15;
-  if (preset === 'high') return 40;
+  if (preset !== 'off') {
+    return MAINTENANCE_PRESET_DEFINITIONS[preset].verificationContactsPerDay;
+  }
   return 1;
 }
 
@@ -871,7 +1108,7 @@ function SearchIndexFooter({
   let icon = <CheckCircle2 className="h-4 w-4 text-green-600" />;
   if (pending > 0 && !stuck) {
     statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — draining`;
-    icon = <Loader2 className="h-4 w-4 animate-spin text-teal-600" />;
+    icon = <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />;
   } else if (stuck) {
     statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — last drain ${
       lastDrainAt ? formatAge(lastDrainAt) + ' ago' : 'never'

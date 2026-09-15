@@ -12,6 +12,7 @@ import {
 Deno.test("normalizeSmartSearchResult: lowercases + filters empty + handles missing keys", () => {
   const r = normalizeSmartSearchResult({
     message: "  Searching  ",
+    concepts: [" New York University ", ""],
     keywords: {
       name: ["Jan", "", "JANSSENS"],
       sector: ["AI"],
@@ -19,6 +20,7 @@ Deno.test("normalizeSmartSearchResult: lowercases + filters empty + handles miss
     },
   });
   assertEquals(r.message, "Searching");
+  assertEquals(r.concepts, ["New York University"]);
   assertEquals(r.keywords.name, ["jan", "janssens"]);
   assertEquals(r.keywords.sector, ["ai"]);
   assertEquals(r.keywords.location_city, []);
@@ -29,6 +31,7 @@ Deno.test("normalizeSmartSearchResult: malformed payload yields empty keywords",
   const r = normalizeSmartSearchResult(null);
   assertEquals(r.keywords, getEmptySmartSearchKeywords());
   assertEquals(r.message, "");
+  assertEquals(r.concepts, []);
 });
 
 Deno.test("normalizeProfileCheckResult: drops invalid field_name and missing suggested_value", () => {

@@ -60,3 +60,53 @@ export function useActiveAgentRun(agentType: string): boolean {
 
   return isActive;
 }
+
+/**
+ * Reports the total number of agent runs that are still pending or running.
+ * Used by the Expand navigation badge and the Runs tab.
+ */
+export function useActiveAgentRunCount(): number {
+  const [activeCount, setActiveCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = async () => {
+      const { count } = await supabase
+        .from('agent_runs')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ACTIVE_STATUSES as unknown as string[]);
+      if (cancelled) return;
+      setActiveCount(count ?? 0);
+    };
+
+    void refresh();
+
+    const channel = supabase
+      .channel('agent_runs:active-count')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'agent_runs',
+        },
+        () => {
+          void refresh();
+        }
+      )
+      .subscribe();
+
+    const poll = window.setInterval(() => {
+      void refresh();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  return activeCount;
+}

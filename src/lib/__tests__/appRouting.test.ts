@@ -6,9 +6,13 @@ import {
   buildDashboardStateFromPreset,
   buildDashboardLocation,
   isCanonicalAdminTab,
+  isCanonicalExpandTab,
+  isCanonicalSettingsTab,
   normalizePage,
   getCurrentPageFromPathname,
   normalizeAdminTab,
+  normalizeExpandTab,
+  normalizeSettingsTab,
   parseAdminDiscoveryPrompt,
   parseAddContactMode,
   type DashboardRouteState,
@@ -41,6 +45,18 @@ describe('appRouting - dashboard URL roundtrip', () => {
       filters: { ...DEFAULT_MAP_FILTERS },
       focusedCity: null,
     };
+    expect(roundtrip(state)).toEqual(state);
+  });
+
+  it('roundtrips the network stats view', () => {
+    const state: DashboardRouteState = {
+      view: 'stats',
+      query: '',
+      matchMode: 'all',
+      filters: { ...DEFAULT_MAP_FILTERS },
+      focusedCity: null,
+    };
+    expect(buildDashboardSearchParams(state).get('view')).toBe('stats');
     expect(roundtrip(state)).toEqual(state);
   });
 
@@ -227,6 +243,32 @@ describe('appRouting - admin tabs', () => {
   });
 });
 
+describe('appRouting - current navigation tabs', () => {
+  it('normalizes Expand tabs', () => {
+    expect(normalizeExpandTab('import')).toBe('import');
+    expect(normalizeExpandTab('discovery')).toBe('discovery');
+    expect(normalizeExpandTab('runs')).toBe('runs');
+    expect(normalizeExpandTab('running')).toBe('runs');
+    expect(normalizeExpandTab('verification')).toBe('verification');
+    expect(normalizeExpandTab('maintenance')).toBe('maintenance');
+    expect(normalizeExpandTab('growth')).toBe('discovery');
+    expect(isCanonicalExpandTab('maintenance')).toBe(true);
+    expect(isCanonicalExpandTab('runs')).toBe(true);
+    expect(isCanonicalExpandTab('running')).toBe(false);
+    expect(isCanonicalExpandTab('system')).toBe(false);
+  });
+
+  it('keeps role-specific Settings tabs inaccessible', () => {
+    expect(normalizeSettingsTab('account')).toBe('account');
+    expect(normalizeSettingsTab('system')).toBe('account');
+    expect(normalizeSettingsTab('system', true)).toBe('system');
+    expect(normalizeSettingsTab('access', true, false)).toBe('system');
+    expect(normalizeSettingsTab('access', true, true)).toBe('access');
+    expect(isCanonicalSettingsTab('account')).toBe(true);
+    expect(isCanonicalSettingsTab('profile')).toBe(false);
+  });
+});
+
 describe('appRouting - admin discovery prompt', () => {
   it('decodes prompt route state for discovery prefill', () => {
     const params = new URLSearchParams(
@@ -285,11 +327,14 @@ describe('appRouting - normalizePage / getCurrentPageFromPathname', () => {
   });
 
   it('routes pathnames to their page', () => {
-    expect(getCurrentPageFromPathname('/admin')).toBe('admin');
-    expect(getCurrentPageFromPathname('/admin/system')).toBe('admin');
+    expect(getCurrentPageFromPathname('/expand')).toBe('expand');
+    expect(getCurrentPageFromPathname('/expand/maintenance')).toBe('expand');
+    expect(getCurrentPageFromPathname('/admin')).toBe('expand');
+    expect(getCurrentPageFromPathname('/admin/system')).toBe('expand');
     expect(getCurrentPageFromPathname('/collections')).toBe('collections');
     expect(getCurrentPageFromPathname('/collections/abc')).toBe('collections');
-    expect(getCurrentPageFromPathname('/account')).toBe('account');
+    expect(getCurrentPageFromPathname('/settings/system')).toBe('settings');
+    expect(getCurrentPageFromPathname('/account')).toBe('settings');
     expect(getCurrentPageFromPathname('/people/123')).toBe('dashboard');
     expect(getCurrentPageFromPathname('/organizations/abc')).toBe('dashboard');
     expect(getCurrentPageFromPathname('/')).toBe('dashboard');

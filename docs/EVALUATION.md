@@ -68,6 +68,7 @@ Quality gates before autonomy:
 - Manual intake and imports never auto-promote to `people` or `organizations`; row-level validation blocks malformed contact fields, malformed URLs, organization rows without evidence, and partial US location evidence before pending candidates are created.
 - Import preview shows the mapped row columns in a horizontally scrollable table, truncating long bios, and successful imports refresh the pending review queues immediately.
 - Organization candidates are promoted only through explicit reviewer approval or merge, with source URLs and evidence excerpts visible in review.
+- AI-extracted Flemish/Belgian entities reuse an existing canonical catalog row when the proposed name or approved alias matches; a genuinely new entity creates exactly one non-filterable canonical row, and reviewer approval makes the relationship searchable through the normalized junction.
 - Active UI source must not call retired Discovery endpoints or retired `ai-agent` Discovery tasks; prompted Discovery runs only through `agent-scheduler`.
 
 ### Reject-reason taxonomy

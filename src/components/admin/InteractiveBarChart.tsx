@@ -58,7 +58,7 @@ export default function InteractiveBarChart({
                   onClick={() => onBarClick(item.key)}
                   className={`min-w-0 flex-1 overflow-hidden rounded-xl border px-3 py-3 text-left transition-all ${
                     isActive
-                      ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
+                      ? 'border-yellow-400 ring-2 ring-yellow-100 bg-yellow-50/60'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                   title={`${item.label}: ${item.count}`}
@@ -99,7 +99,7 @@ export default function InteractiveBarChart({
                   <button
                     type="button"
                     onClick={() => onViewInNetwork(item.key)}
-                    className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-yellow-700 hover:border-yellow-300 hover:bg-yellow-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
                     title={`View ${item.label} in network`}
                     aria-label={`View ${item.label} in network`}
                   >

@@ -47,6 +47,7 @@ interface AddContactPanelProps {
   initialDiscoveryPrompt?: string;
   /** True while a discovery agent_run is pending or running. */
   discoveryRunActive?: boolean;
+  availableModes?: Tab[];
 }
 
 type Tab = 'discovery' | 'manual' | 'import';
@@ -190,6 +191,7 @@ export default function AddContactPanel({
   onModeChange,
   initialDiscoveryPrompt = '',
   discoveryRunActive = false,
+  availableModes = ['discovery', 'manual', 'import'],
 }: AddContactPanelProps) {
   // Internal fallback when the parent does not pass a controlled `mode`.
   const [internalTab, setInternalTab] = useState<Tab>(mode ?? 'discovery');
@@ -217,16 +219,27 @@ export default function AddContactPanel({
   }, [initialDiscoveryPrompt, setTab]);
 
   const runButtonDisabled = discoveryRunning || discoveryRunActive;
+  const visibleTabs = TABS.filter((item) => availableModes.includes(item.key));
+  const panelTitle =
+    availableModes.length === 1 && availableModes[0] === 'discovery'
+      ? 'Launch Discovery'
+      : availableModes.every((item) => item !== 'discovery')
+        ? 'Import Records'
+        : 'Discovery Intake';
 
   const handleRunDiscovery = async () => {
     setDiscoveryRunning(true);
     const trimmedPrompt = discoveryPrompt.trim();
+    const isOfficialFayatPrompt = /\bfayat(?:beurzen| scholarships?)\b/i.test(
+      trimmedPrompt
+    );
 
     try {
       const { data, error } = await supabase.functions.invoke('agent-scheduler', {
         body: {
           action: 'trigger',
           agent_type: 'discovery',
+          ...(isOfficialFayatPrompt ? { force: true } : {}),
           params: trimmedPrompt ? { query: trimmedPrompt } : {},
         },
       });
@@ -276,11 +289,12 @@ export default function AddContactPanel({
             <UserPlus className="w-4.5 h-4.5 text-yellow-700" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900">
-            Discovery Intake
+            {panelTitle}
           </h2>
         </div>
+        {visibleTabs.length > 1 && (
         <div className="flex space-x-1 border-b border-gray-100">
-          {TABS.map((t) => {
+          {visibleTabs.map((t) => {
             const Icon = t.icon;
             return (
               <button
@@ -301,6 +315,7 @@ export default function AddContactPanel({
             );
           })}
         </div>
+        )}
       </div>
 
       <div className="p-6">
@@ -326,7 +341,7 @@ export default function AddContactPanel({
                     ? 'A discovery run is already in flight — wait for it to finish.'
                     : undefined
                 }
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-yellow-400 px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-yellow-500 disabled:opacity-50"
               >
                 {runButtonDisabled ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

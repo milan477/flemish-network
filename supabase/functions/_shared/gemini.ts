@@ -8,13 +8,20 @@ export type GeminiModelRoute =
   | "offline_evaluation"
   | "search_rerank";
 
-const FLASH_DEFAULT =
-  Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-2.5-flash";
+const FLASH_DEFAULT = Deno.env.get("GEMINI_FLASH_MODEL") || "gemini-3.5-flash";
+const FLASH_FALLBACK_DEFAULT = Deno.env.get("GEMINI_FLASH_FALLBACK_MODEL") ||
+  "gemini-2.5-flash";
 const FLASH_LITE_DEFAULT =
   Deno.env.get("GEMINI_FLASH_LITE_MODEL") ||
   Deno.env.get("GEMINI_LITE_MODEL") || "gemini-2.5-flash-lite";
 const PRO_DEFAULT =
   Deno.env.get("GEMINI_PRO_MODEL") || "gemini-2.5-pro";
+const PROFILE_FLASH_DEFAULT = "gemini-3.5-flash";
+
+function flashModel(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized?.toLowerCase().includes("flash") ? normalized : null;
+}
 
 function unique(values: Array<string | null | undefined>): string[] {
   return Array.from(
@@ -31,23 +38,26 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
     case "query_parsing":
       return unique([
         Deno.env.get("GEMINI_QUERY_MODEL"),
+        FLASH_DEFAULT,
         FLASH_LITE_DEFAULT,
         Deno.env.get("GEMINI_QUERY_FALLBACK_MODEL"),
-        FLASH_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "query_generation":
       return unique([
         Deno.env.get("GEMINI_QUERY_GENERATION_MODEL"),
+        FLASH_DEFAULT,
         FLASH_LITE_DEFAULT,
         Deno.env.get("GEMINI_QUERY_GENERATION_FALLBACK_MODEL"),
-        FLASH_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "page_classification":
       return unique([
         Deno.env.get("GEMINI_CLASSIFICATION_MODEL"),
+        FLASH_DEFAULT,
         FLASH_LITE_DEFAULT,
         Deno.env.get("GEMINI_CLASSIFICATION_FALLBACK_MODEL"),
-        FLASH_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "contact_extraction":
       return unique([
@@ -55,37 +65,45 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
         FLASH_DEFAULT,
         Deno.env.get("GEMINI_EXTRACTION_FALLBACK_MODEL"),
         FLASH_LITE_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "profile_verification":
+      // Verification is latency-sensitive and high-volume. Keep this route on
+      // Flash even when an old project secret still points GEMINI_PROFILE_MODEL
+      // at a Pro model.
       return unique([
-        Deno.env.get("GEMINI_PROFILE_MODEL"),
-        FLASH_DEFAULT,
-        Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL"),
-        PRO_DEFAULT,
+        PROFILE_FLASH_DEFAULT,
+        flashModel(Deno.env.get("GEMINI_PROFILE_MODEL")),
+        flashModel(FLASH_DEFAULT),
+        flashModel(Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL")),
+        flashModel(FLASH_LITE_DEFAULT),
+        flashModel(FLASH_FALLBACK_DEFAULT),
       ]);
     case "lightweight_text_merge":
       return unique([
         Deno.env.get("GEMINI_MERGE_MODEL"),
-        PRO_DEFAULT,
-        Deno.env.get("GEMINI_MERGE_FALLBACK_MODEL"),
         FLASH_DEFAULT,
+        Deno.env.get("GEMINI_MERGE_FALLBACK_MODEL"),
+        PRO_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "offline_evaluation":
       return unique([
         Deno.env.get("GEMINI_EVAL_MODEL"),
-        PRO_DEFAULT,
-        Deno.env.get("GEMINI_EVAL_FALLBACK_MODEL"),
         FLASH_DEFAULT,
+        Deno.env.get("GEMINI_EVAL_FALLBACK_MODEL"),
+        PRO_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
     case "search_rerank":
-      // Owner decision (UX_REMEDIATION Phase 1A): default to gemini-2.5-flash.
-      // Override via GEMINI_SEARCH_RERANK_MODEL (e.g. flash-lite if latency
-      // becomes the dominant constraint at scale).
+      // Default to Gemini 3.5 Flash, with the 2.5 Flash family retained as
+      // fallbacks for transient availability or compatibility issues.
       return unique([
         Deno.env.get("GEMINI_SEARCH_RERANK_MODEL"),
         FLASH_DEFAULT,
         Deno.env.get("GEMINI_SEARCH_RERANK_FALLBACK_MODEL"),
         FLASH_LITE_DEFAULT,
+        FLASH_FALLBACK_DEFAULT,
       ]);
   }
 }

@@ -12,7 +12,6 @@ import Navigation from './components/Navigation';
 import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
-import Account from './pages/Account';
 import type { FilterPreset } from './lib/supabase';
 import {
   buildDashboardLocation,
@@ -28,11 +27,16 @@ const PersonProfile = lazy(() => import('./pages/PersonProfile'));
 const OrganizationProfile = lazy(() => import('./pages/OrganizationProfile'));
 const Collections = lazy(() => import('./pages/Collections'));
 const Admin = lazy(() => import('./pages/Admin'));
+const Settings = lazy(() => import('./pages/Settings'));
 
-function PageLoader() {
+function PageLoader({ settings = false }: { settings?: boolean }) {
   return (
     <div className="flex h-96 items-center justify-center">
-      <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-teal-600" />
+      <div
+        className={`h-10 w-10 animate-spin rounded-full border-b-2 ${
+          settings ? 'border-teal-600' : 'border-yellow-500'
+        }`}
+      />
     </div>
   );
 }
@@ -102,7 +106,6 @@ function ProtectedLayout({
         onOpenSearch={onOpenSearch}
         staffUser={staffUser}
         canEdit={canEdit}
-        canAccessAdmin={canEdit}
         onSignOut={signOut}
       />
       <Outlet />
@@ -142,20 +145,25 @@ export default function App() {
         return;
       }
 
-      if (normalizedPage === 'admin') {
-        navigate('/admin/discovery');
+      if (normalizedPage === 'expand' || normalizedPage === 'admin') {
+        navigate('/expand/discovery');
+        return;
+      }
+
+      if (normalizedPage === 'settings') {
+        navigate('/settings/system');
         return;
       }
 
       if (normalizedPage === 'add-contact') {
-        navigate('/admin/discovery?mode=manual', {
+        navigate('/expand/import?mode=manual', {
           state: { from: currentLocation },
         });
         return;
       }
 
       if (normalizedPage === 'account') {
-        navigate('/account');
+        navigate('/settings/account');
         return;
       }
 
@@ -183,7 +191,7 @@ export default function App() {
 
   const wrap = (scope: string, node: ReactNode) => (
     <ErrorBoundary scope={scope}>
-      <Suspense fallback={<PageLoader />}>{node}</Suspense>
+      <Suspense fallback={<PageLoader settings={scope === 'settings'} />}>{node}</Suspense>
     </ErrorBoundary>
   );
 
@@ -193,10 +201,10 @@ export default function App() {
       <Route path="/auth/callback" element={wrap('auth-callback', <AuthCallback />)} />
       {/* Legacy admin slugs — short-circuit before RequireAuth so they cannot
           fail an auth race and trigger a global signOut. */}
-      <Route path="/admin/overview" element={<Navigate to="/admin/discovery" replace />} />
-      <Route path="/admin/discovered" element={<Navigate to="/admin/discovery" replace />} />
-      <Route path="/admin/agents" element={<Navigate to="/admin/discovery" replace />} />
-      <Route path="/contacts/new" element={<Navigate to="/admin/discovery?mode=manual" replace />} />
+      <Route path="/admin/overview" element={<Navigate to="/expand/discovery" replace />} />
+      <Route path="/admin/discovered" element={<Navigate to="/expand/discovery" replace />} />
+      <Route path="/admin/agents" element={<Navigate to="/expand/discovery" replace />} />
+      <Route path="/contacts/new" element={<Navigate to="/expand/import?mode=manual" replace />} />
       <Route element={<RequireAuth />}>
         <Route
           element={
@@ -236,16 +244,32 @@ export default function App() {
               <CollectionDetailRoute onNavigate={handleNavigate} />
             )}
           />
-          <Route path="/account" element={wrap('account', <Account />)} />
+          <Route path="/account" element={<Navigate to={`/settings/account${location.search}`} replace />} />
+          <Route
+            path="/settings"
+            element={<Navigate to="/settings/system" replace />}
+          />
+          <Route
+            path="/settings/:tab"
+            element={wrap('settings', <Settings />)}
+          />
           <Route element={<RequireRole role="editor" />}>
             <Route
-              path="/admin"
-              element={<Navigate to="/admin/discovery" replace />}
+              path="/expand"
+              element={<Navigate to="/expand/discovery" replace />}
             />
             <Route
-              path="/admin/:tab"
-              element={wrap('admin', <Admin onNavigate={handleNavigate} />)}
+              path="/expand/:tab"
+              element={wrap('expand', <Admin />)}
             />
+            <Route path="/admin" element={<Navigate to="/expand/discovery" replace />} />
+            <Route path="/admin/discovery" element={<Navigate to="/expand/discovery" replace />} />
+            <Route path="/admin/verification" element={<Navigate to="/expand/verification" replace />} />
+            <Route path="/admin/growth" element={<Navigate to="/expand/discovery" replace />} />
+            <Route path="/admin/coverage" element={<Navigate to="/?view=stats" replace />} />
+            <Route path="/admin/system" element={<Navigate to="/expand/maintenance" replace />} />
+            <Route path="/admin/access" element={<Navigate to="/settings/access" replace />} />
+            <Route path="/admin/:tab" element={<Navigate to="/expand/discovery" replace />} />
           </Route>
         </Route>
       </Route>

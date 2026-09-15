@@ -108,7 +108,7 @@ export default function StaleContactsBar({
               <button
                 onClick={handleCheckAll}
                 disabled={aiLoading}
-                className="flex items-center space-x-1.5 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center space-x-1.5 text-xs font-medium text-yellow-800 bg-yellow-50 hover:bg-yellow-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
               >
                 {aiLoading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -232,7 +232,7 @@ export default function StaleContactsBar({
                         <button
                           onClick={() => onAskAI([person.id])}
                           disabled={aiLoading}
-                          className="flex items-center space-x-1 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
+                          className="flex items-center space-x-1 text-xs font-medium text-yellow-800 bg-yellow-50 hover:bg-yellow-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
                         >
                           {isChecking ? (
                             <Loader2 className="w-3 h-3 animate-spin" />

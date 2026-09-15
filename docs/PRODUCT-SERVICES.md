@@ -8,14 +8,23 @@ This document describes the target user-facing service structure for the webapp.
 
 ```text
 Flemish Network App
-├── 1. Search The Network
-├── 2. Build A Collection
-├── 3. Expand The Database
-├── 4. Verify And Enrich Records
-└── 5. Understand And Grow The Network
+├── 1. Network
+│   ├── Map
+│   ├── List
+│   └── Stats
+├── 2. Collections
+├── 3. Expand
+│   ├── Import
+│   ├── Discovery
+│   ├── Verification
+│   └── Maintenance
+└── 4. Settings
+    ├── System
+    ├── Access
+    └── My Account
 ```
 
-The product should feel like five clear services, not a collection of overlapping agents.
+The navigation exposes four clear areas. The existing five service responsibilities remain underneath them: Search and Growth statistics are Network views; intake, Discovery, Verification, and automated maintenance live under Expand; account and operational configuration live under Settings.
 
 Staff access is an administrative support workflow, not a sixth product service. Viewers can search/read the network, editors can maintain pending and approved records, and admins can manage staff access plus destructive approved-record deletion. Admins invite approved staff from Access; invited staff set their own
 Supabase Auth password before using the workspace.
@@ -145,6 +154,7 @@ Scope:
 - Extract people and organizations
 - Detect US-based vs US-connected-abroad status
 - Normalize Flemish/Belgian ties, sectors, roles, organizations, and locations
+- Reuse canonical Flemish/Belgian connections when the AI recognizes a catalog name or approved alias; create a non-filterable canonical connection only when the evidenced entity is new
 - Dedupe against existing people, organizations, and pending candidates
 - Store evidence
 - Put candidates in review queues
@@ -295,7 +305,7 @@ Target concept:
 
 ```text
 Raw evidence text
-  -> normalize entity
+  -> select an existing canonical entity or create a non-filterable one
   -> classify connection type
   -> attach to person or organization
   -> store evidence/confidence
@@ -377,11 +387,17 @@ Understand And Grow The Network
 
 Use these names in UI and planning:
 
-- Search
+- Network
 - Collections
+- Expand
+- Import
 - Discovery
 - Verification
-- Network Growth
+- Maintenance
+- Settings
+- System
+- Access
+- My Account
 
 Avoid exposing implementation names as product concepts:
 
@@ -414,9 +430,9 @@ Discovery run telemetry uses internal step IDs (often suffixed with a UUID or nu
 
 Run-summary counters in the same panel use plain-language synonyms in place of internal jargon. The `claimed` / `sitemap` / `rss` / `merged` shorthand stays in row summaries because each token appears next to a count in a list of metrics; do not introduce them as standalone navigation labels or filter chips. Where they appear with a count, the singular/plural form is normalised through `formatCount` (e.g. `1 page` vs `7 pages`).
 
-### System Health operator vocabulary
+### Maintenance and System vocabulary
 
-The `/admin/system` panel is staff-facing operations tooling. Its controls and labels follow a fixed shape so admins can scan them at a glance:
+The former System Health surface is split across `/expand/maintenance` (automated runs, queues, recovery) and `/settings/system` (integrations, API usage, run-intensity variable definitions, credentials, connectivity). Their controls and labels follow a fixed shape so staff can scan them at a glance:
 
 - **Drain now** flushes the embedding queue: it processes any pending `search-index records` immediately instead of waiting for the next scheduled drain. The pending counter in the search-index footer is always rendered as `N search-index records pending` (singular `1 search-index record pending`).
 - **Run Housekeeping** marks stuck (zombie) agent runs as failed and frees their slots so new runs can start. Its `title`/`aria-label` describe that effect verbatim.

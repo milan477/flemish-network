@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Loader2,
   CheckCircle2,
@@ -32,40 +32,134 @@ interface AgentRun {
 
 const AGENT_LABELS: Record<string, { label: string; icon: typeof Search }> = {
   discovery: { label: 'Discovery', icon: Search },
+  verification: { label: 'Verification', icon: Search },
 };
 
 function serviceLabelForRun(agentType: string): string {
   return AGENT_LABELS[agentType]?.label || 'Service run';
 }
 
-const STATUS_STYLES: Record<string, { bg: string; text: string; icon: typeof Clock }> = {
-  pending: { bg: 'bg-gray-100', text: 'text-gray-600', icon: Clock },
-  running: { bg: 'bg-blue-100', text: 'text-blue-700', icon: Loader2 },
-  completed: { bg: 'bg-green-100', text: 'text-green-700', icon: CheckCircle2 },
-  failed: { bg: 'bg-red-100', text: 'text-red-700', icon: XCircle },
+const STATUS_STYLES: Record<string, { className: string; icon: typeof Clock }> = {
+  pending: { className: 'bg-gray-50 text-gray-600 ring-gray-200', icon: Clock },
+  running: { className: 'bg-yellow-50 text-yellow-800 ring-yellow-200', icon: Loader2 },
+  completed: { className: 'bg-yellow-50 text-yellow-800 ring-yellow-200', icon: CheckCircle2 },
+  failed: { className: 'bg-rose-50 text-rose-700 ring-rose-200', icon: XCircle },
 };
+
+const formatCount = (count: number, singular: string, plural = `${singular}s`) =>
+  `${count} ${count === 1 ? singular : plural}`;
+
+function numericResult(results: Record<string, unknown>, key: string): number | null {
+  return typeof results[key] === 'number' ? results[key] : null;
+}
+
+interface RunOutcome {
+  headline: string;
+  records: string | null;
+  activity: string | null;
+}
+
+function summarizeOutcome(run: AgentRun): RunOutcome {
+  if (run.status === 'failed') {
+    return {
+      headline: 'Run failed',
+      records: run.error_message || 'The run stopped before producing results.',
+      activity: null,
+    };
+  }
+
+  if (!run.results) {
+    return {
+      headline: run.status === 'running' ? 'Discovery in progress' : 'Waiting to start',
+      records: null,
+      activity: null,
+    };
+  }
+
+  const results = run.results;
+  const peopleCreated = numericResult(results, 'suggestions_created');
+  const organizationsCreated =
+    numericResult(results, 'organizations_inserted') ??
+    numericResult(results, 'organization_suggestions_created');
+  const createdTotal = (peopleCreated || 0) + (organizationsCreated || 0);
+  const peopleMerged = numericResult(results, 'suggestions_merged') || 0;
+  const organizationsMerged =
+    numericResult(results, 'organizations_merged') ??
+    numericResult(results, 'organization_suggestions_merged') ??
+    0;
+  const duplicatesSkipped =
+    (numericResult(results, 'duplicates_skipped') || 0) +
+    (numericResult(results, 'organization_duplicates_skipped') || 0);
+
+  const recordParts: string[] = [];
+  if (peopleCreated !== null) recordParts.push(formatCount(peopleCreated, 'person', 'people'));
+  if (organizationsCreated !== null) {
+    recordParts.push(formatCount(organizationsCreated, 'organization'));
+  }
+
+  const activityParts: string[] = [];
+  const mergedTotal = peopleMerged + organizationsMerged;
+  if (mergedTotal > 0) activityParts.push(`${formatCount(mergedTotal, 'record')} merged`);
+  if (duplicatesSkipped > 0) {
+    activityParts.push(`${formatCount(duplicatesSkipped, 'duplicate')} skipped`);
+  }
+  const pagesFetched = numericResult(results, 'pages_fetched');
+  if (pagesFetched !== null) activityParts.push(`${formatCount(pagesFetched, 'page')} reviewed`);
+  const frontierClaimed = numericResult(results, 'frontier_claimed');
+  if (frontierClaimed !== null) {
+    activityParts.push(`${formatCount(frontierClaimed, 'source')} selected`);
+  }
+  const profilesFound = numericResult(results, 'profiles_found');
+  if (profilesFound !== null) {
+    activityParts.push(`${formatCount(profilesFound, 'candidate')} found`);
+  }
+
+  return {
+    headline: createdTotal > 0
+      ? `${formatCount(createdTotal, 'new record')}`
+      : 'No new records',
+    records: recordParts.length > 0 ? recordParts.join(' · ') : null,
+    activity: activityParts.length > 0 ? activityParts.join(' · ') : null,
+  };
+}
 
 interface AgentDashboardProps {
   refreshKey?: number;
+  activeOnly?: boolean;
+  historyScope?: 'discovery' | 'all';
 }
 
-export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) {
+export default function AgentDashboard({
+  refreshKey = 0,
+  activeOnly = false,
+  historyScope = 'discovery',
+}: AgentDashboardProps) {
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   const loadData = useCallback(async () => {
-    const runsRes = await supabase
+    const query = supabase
       .from('agent_runs')
-      .select('*')
-      .eq('agent_type', 'discovery')
-      .order('created_at', { ascending: false })
-      .limit(20);
+      .select('*');
+    const runsRes = activeOnly
+      ? await query
+          .in('status', ['pending', 'running'])
+          .order('created_at', { ascending: false })
+          .limit(50)
+      : historyScope === 'all'
+        ? await query
+            .order('created_at', { ascending: false })
+            .limit(50)
+        : await query
+            .eq('agent_type', 'discovery')
+            .order('created_at', { ascending: false })
+            .limit(20);
 
     setRuns((runsRes.data || []) as AgentRun[]);
     setLoading(false);
-  }, []);
+  }, [activeOnly, historyScope]);
 
   useEffect(() => {
     loadData();
@@ -95,7 +189,7 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
         if (error) throw error;
         await loadData();
       } catch (err) {
-        notifyError(err, { hint: 'Could not cancel this discovery run.' });
+        notifyError(err, { hint: 'Could not cancel this run.' });
       }
     },
     [loadData]
@@ -128,204 +222,186 @@ export default function AgentDashboard({ refreshKey = 0 }: AgentDashboardProps) 
     return `${minutes}m ${seconds}s`;
   };
 
-  const formatCount = (count: number, singular: string, plural = `${singular}s`) =>
-    `${count} ${count === 1 ? singular : plural}`;
-
-  const summarizeResults = (run: AgentRun): string => {
-    if (!run.results) return '—';
-    const r = run.results;
-    const parts: string[] = [];
-    if (typeof r.frontier_claimed === 'number') parts.push(`${r.frontier_claimed} claimed`);
-    if (typeof r.pages_fetched === 'number') parts.push(formatCount(r.pages_fetched, 'page', 'pages'));
-    if (typeof r.profiles_found === 'number') parts.push(`${r.profiles_found} found`);
-    if (typeof r.suggestions_created === 'number') parts.push(`${formatCount(r.suggestions_created, 'person', 'people')} created`);
-    if (typeof r.suggestions_merged === 'number' && r.suggestions_merged > 0) {
-      parts.push(`${formatCount(r.suggestions_merged, 'person', 'people')} merged`);
-    }
-    const organizationsCreated =
-      typeof r.organizations_inserted === 'number'
-        ? r.organizations_inserted
-        : typeof r.organization_suggestions_created === 'number'
-        ? r.organization_suggestions_created
-        : null;
-    const organizationsMerged =
-      typeof r.organizations_merged === 'number'
-        ? r.organizations_merged
-        : typeof r.organization_suggestions_merged === 'number'
-        ? r.organization_suggestions_merged
-        : null;
-    if (typeof organizationsCreated === 'number') parts.push(`${formatCount(organizationsCreated, 'organization')} created`);
-    if (typeof organizationsMerged === 'number' && organizationsMerged > 0) {
-      parts.push(`${formatCount(organizationsMerged, 'organization')} merged`);
-    }
-    if (typeof r.profiles_checked === 'number') parts.push(`${r.profiles_checked} checked`);
-    if (typeof r.profiles_verified === 'number') parts.push(`${r.profiles_verified} verified`);
-    if (typeof r.child_links_queued === 'number' && r.child_links_queued > 0) parts.push(`${r.child_links_queued} queued`);
-    if (typeof r.sitemap_urls_seeded === 'number' && r.sitemap_urls_seeded > 0) parts.push(`${r.sitemap_urls_seeded} sitemap`);
-    if (typeof r.rss_urls_seeded === 'number' && r.rss_urls_seeded > 0) parts.push(`${r.rss_urls_seeded} rss`);
-    if (Array.isArray(r.entity_pivots_used) && r.entity_pivots_used.length > 0) parts.push(`${r.entity_pivots_used.length} pivots`);
-    if (typeof r.duplicates_skipped === 'number' && r.duplicates_skipped > 0) {
-      parts.push(`${r.duplicates_skipped} duplicate ${r.duplicates_skipped === 1 ? 'person' : 'people'}`);
-    }
-    if (typeof r.organization_duplicates_skipped === 'number' && r.organization_duplicates_skipped > 0) {
-      parts.push(`${r.organization_duplicates_skipped} duplicate organization${r.organization_duplicates_skipped === 1 ? '' : 's'}`);
-    }
-    return parts.length > 0 ? parts.join(', ') : '—';
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+        <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="flex items-center justify-between p-6 pb-3">
-          <h3 className="text-base font-semibold text-gray-900">Discovery History</h3>
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="flex items-start justify-between gap-4 px-5 py-5 sm:px-6">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              {activeOnly
+                ? 'Ongoing runs'
+                : historyScope === 'all'
+                  ? 'Run History'
+                  : 'Discovery History'}
+            </h3>
+            <p className="mt-1 text-sm text-gray-500">
+              {activeOnly
+                ? 'Discovery and verification work that is currently queued or running.'
+                : historyScope === 'all'
+                  ? 'Discovery and verification runs, including their outcomes and operational details.'
+                  : 'See what each discovery run added and how much work it performed.'}
+            </p>
+          </div>
           <button
             onClick={loadData}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-y border-gray-100">
-              <tr>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Service</th>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Status</th>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Started</th>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Duration</th>
-                <th className="text-left py-2.5 px-4 font-medium text-gray-500">Results</th>
-                <th className="text-right py-2.5 px-4 font-medium text-gray-500">Cost</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {runs.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-400">
-                    No discovery runs yet. Use the button above to start one.
-                  </td>
-                </tr>
-              ) : (
-                runs.map((run) => {
-                  const style = STATUS_STYLES[run.status] || STATUS_STYLES.pending;
-                  const StatusIcon = style.icon;
-                  const isExpanded = expandedRunId === run.id;
-                  const hasSteps = run.results && Array.isArray(run.results.steps);
-                  const runRef = run.completed_at || run.started_at;
-                  const supersededBySuccess = run.status === 'failed' && !!runRef && runs.some(
-                    (other) =>
-                      other.id !== run.id &&
-                      other.agent_type === run.agent_type &&
-                      other.status === 'completed' &&
-                      !!(other.completed_at || other.started_at) &&
-                      new Date(other.completed_at || other.started_at!).getTime() >
-                        new Date(runRef).getTime()
-                  );
-
-                  return (
-                    <React.Fragment key={run.id}>
-                    <tr
-                      className={`hover:bg-gray-50/50 ${hasSteps ? 'cursor-pointer' : ''}`}
-                      onClick={() => hasSteps && setExpandedRunId(isExpanded ? null : run.id)}
-                    >
-                      <td className="py-2.5 px-4">
-                        <span className="font-medium text-gray-900 flex items-center gap-1.5">
-                          {hasSteps && (
-                            isExpanded
-                              ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-                              : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                          )}
-                          {serviceLabelForRun(run.agent_type)}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}
-                        >
-                          <StatusIcon
-                            className={`w-3 h-3 ${run.status === 'running' ? 'animate-spin' : ''}`}
-                          />
-                          {run.status}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4 text-gray-500">
-                        {formatDate(run.started_at)}
-                      </td>
-                      <td className="py-2.5 px-4 text-gray-500">
-                        <span className="flex items-center gap-1.5">
-                          {formatDuration(run.started_at, run.completed_at, run.status === 'running' || run.status === 'pending')}
-                          {(run.status === 'running' || run.status === 'pending') && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                cancelRun(run.id);
-                              }}
-                              className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 font-medium"
-                              title="Cancel this run"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-4 text-gray-600">
-                        {run.error_message ? (
-                          <span className="text-red-500 text-xs" title={run.error_message}>
-                            {run.error_message.slice(0, 60)}
-                            {run.error_message.length > 60 ? '...' : ''}
-                          </span>
-                        ) : (
-                          summarizeResults(run)
-                        )}
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-gray-500">
-                        {run.cost_estimate_usd > 0 ? `$${run.cost_estimate_usd.toFixed(4)}` : '—'}
-                      </td>
-                    </tr>
-                    {isExpanded && hasSteps && (
-                      <tr>
-                        <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
-                          <RunStepsDetail
-                            steps={run.results!.steps as StepLog[]}
-                            params={run.params}
-                            errors={run.results!.errors as string[] | undefined}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                    {run.status === 'failed' && run.error_message && !supersededBySuccess && (
-                      <tr>
-                        <td colSpan={6} className="px-4 pb-4 bg-gray-50/80">
-                          <StructuredErrorBanner
-                            title="Discovery run failed"
-                            error={{
-                              name: 'AgentRunError',
-                              message: run.error_message,
-                              code: run.error_kind || 'unknown',
-                              hint: run.error_kind
-                                ? `See docs/RUNBOOK.md [${run.error_kind}] for fix steps.`
-                                : undefined,
-                            }}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div className="hidden border-y border-gray-100 bg-gray-50/70 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 lg:grid lg:grid-cols-[minmax(140px,0.8fr)_minmax(150px,0.8fr)_minmax(320px,2fr)_80px_112px] lg:gap-5 sm:px-6">
+          <span>Run</span>
+          <span>Started</span>
+          <span>Outcome</span>
+          <span className="text-right">Cost</span>
+          <span className="sr-only">Actions</span>
         </div>
-      </div>
+        {runs.length === 0 ? (
+          <div className="border-t border-gray-100 px-6 py-12 text-center text-sm text-gray-400 lg:border-t-0">
+            {activeOnly
+              ? 'Nothing is running right now.'
+              : historyScope === 'all'
+                ? 'No runs yet.'
+                : 'No discovery runs yet. Use the button above to start one.'}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {runs.map((run) => {
+              const style = STATUS_STYLES[run.status] || STATUS_STYLES.pending;
+              const StatusIcon = style.icon;
+              const isExpanded = expandedRunId === run.id;
+              const hasSteps = Boolean(run.results && Array.isArray(run.results.steps));
+              const outcome = summarizeOutcome(run);
+              const runRef = run.completed_at || run.started_at;
+              const supersededBySuccess = run.status === 'failed' && !!runRef && runs.some(
+                (other) =>
+                  other.id !== run.id &&
+                  other.agent_type === run.agent_type &&
+                  other.status === 'completed' &&
+                  !!(other.completed_at || other.started_at) &&
+                  new Date(other.completed_at || other.started_at!).getTime() >
+                    new Date(runRef).getTime()
+              );
+
+              return (
+                <article key={run.id} className="px-5 py-4 transition-colors hover:bg-gray-50/40 sm:px-6">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(140px,0.8fr)_minmax(150px,0.8fr)_minmax(320px,2fr)_80px_112px] lg:items-center lg:gap-5">
+                    <div className="min-w-0">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${style.className}`}
+                      >
+                        <StatusIcon
+                          className={`h-3.5 w-3.5 ${run.status === 'running' ? 'animate-spin' : ''}`}
+                        />
+                        {run.status}
+                      </span>
+                      <p className="mt-1.5 truncate text-xs text-gray-500">
+                        {serviceLabelForRun(run.agent_type)}
+                      </p>
+                    </div>
+
+                    <div className="text-sm text-gray-700">
+                      <span className="mr-1 text-xs font-medium text-gray-400 lg:hidden">Started</span>
+                      <p className="inline font-medium lg:block">{formatDate(run.started_at)}</p>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                        <span>
+                          {formatDuration(
+                            run.started_at,
+                            run.completed_at,
+                            run.status === 'running' || run.status === 'pending'
+                          )}
+                        </span>
+                        {(run.status === 'running' || run.status === 'pending') && (
+                          <button
+                            onClick={() => void cancelRun(run.id)}
+                            className="rounded-md border border-rose-200 px-2 py-0.5 font-medium text-rose-700 transition-colors hover:bg-rose-50"
+                            title="Cancel this run"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className={`text-sm font-semibold ${run.status === 'failed' ? 'text-rose-700' : 'text-gray-900'}`}>
+                        {outcome.headline}
+                      </p>
+                      {outcome.records && (
+                        <p
+                          className={`mt-0.5 truncate text-xs ${run.status === 'failed' ? 'text-rose-600' : 'text-gray-600'}`}
+                          title={outcome.records}
+                        >
+                          {outcome.records}
+                        </p>
+                      )}
+                      {outcome.activity && (
+                        <p className="mt-1 text-xs text-gray-400">{outcome.activity}</p>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-500 lg:text-right">
+                      <span className="mr-1 text-xs font-medium text-gray-400 lg:hidden">Cost</span>
+                      {run.cost_estimate_usd > 0 ? `$${run.cost_estimate_usd.toFixed(4)}` : '—'}
+                    </div>
+
+                    <div className="flex lg:justify-end">
+                      {hasSteps ? (
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-controls={`run-details-${run.id}`}
+                          onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
+                          className="inline-flex w-28 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+                        >
+                          {isExpanded ? 'Hide details' : 'View details'}
+                        </button>
+                      ) : (
+                        <span className="hidden w-28 lg:block" aria-hidden="true" />
+                      )}
+                    </div>
+                  </div>
+
+                  {isExpanded && hasSteps && (
+                    <div id={`run-details-${run.id}`} className="mt-4 border-t border-gray-100 pt-1">
+                      <RunStepsDetail
+                        steps={run.results!.steps as StepLog[]}
+                        params={run.params}
+                        errors={run.results!.errors as string[] | undefined}
+                      />
+                    </div>
+                  )}
+
+                  {run.status === 'failed' && run.error_message && !supersededBySuccess && (
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <StructuredErrorBanner
+                        title="Discovery run failed"
+                        error={{
+                          name: 'AgentRunError',
+                          message: run.error_message,
+                          code: run.error_kind || 'unknown',
+                          hint: run.error_kind
+                            ? `See docs/RUNBOOK.md [${run.error_kind}] for fix steps.`
+                            : undefined,
+                        }}
+                      />
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

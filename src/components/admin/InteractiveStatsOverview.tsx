@@ -39,7 +39,7 @@ const SECTOR_COLORS: Record<string, string> = {
   Finance: 'bg-amber-500',
   Education: 'bg-yellow-500',
   'Culture & Arts': 'bg-pink-500',
-  Research: 'bg-cyan-500',
+  Research: 'bg-yellow-500',
 };
 
 function buildCityKey(city: string, state: string) {
@@ -143,7 +143,7 @@ function LocationExplorer({
                   onClick={() => onRankedCityClick(item.key)}
                   className={`flex-1 rounded-xl border px-3 py-3 text-left transition-all ${
                     isActive
-                      ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
+                      ? 'border-yellow-400 ring-2 ring-yellow-100 bg-yellow-50/60'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
@@ -172,7 +172,7 @@ function LocationExplorer({
                 <button
                   type="button"
                   onClick={() => onViewCity(item.key)}
-                  className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-teal-700 hover:border-teal-200 hover:bg-teal-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  className="w-10 rounded-xl border border-gray-200 text-gray-500 hover:text-yellow-700 hover:border-yellow-300 hover:bg-yellow-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
                   title={`View ${item.label} in network`}
                   aria-label={`View ${item.label} in network`}
                 >
@@ -491,8 +491,8 @@ export default function InteractiveStatsOverview({
         />
         <StatCard
           icon={MapPin}
-          iconBg="bg-cyan-100"
-          iconColor="text-cyan-600"
+          iconBg="bg-yellow-100"
+          iconColor="text-yellow-700"
           value={filteredCities}
           total={totalCities}
           label="Cities"

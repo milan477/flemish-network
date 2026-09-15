@@ -43,7 +43,8 @@ Defined in `supabase/functions/_shared/gemini.ts`.
 | Route | Default Model | Env Override |
 |---|---|---|
 | `query_parsing`, `query_generation`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_QUERY_GENERATION_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
-| `contact_extraction`, `profile_verification` | `gemini-2.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL`, `GEMINI_PROFILE_MODEL` |
+| `contact_extraction` | `gemini-3.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL` |
+| `profile_verification` | `gemini-3.5-flash` (Flash-only) | Flash-valued `GEMINI_PROFILE_MODEL` and `GEMINI_PROFILE_FALLBACK_MODEL` entries may be used only as fallbacks |
 | `lightweight_text_merge`, `offline_evaluation` | `gemini-2.5-pro` | `GEMINI_PRO_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` |
 | `search_rerank` | `gemini-2.5-flash` (thinking budget = 0) | `GEMINI_SEARCH_RERANK_MODEL`, `GEMINI_SEARCH_RERANK_FALLBACK_MODEL` |
 | embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |
@@ -169,7 +170,7 @@ Organization discovery writes one pending row per candidate to `discovered_organ
 - `us_locations`: JSON items with city/state, role, label, description, source URL, evidence excerpt, confidence, and `is_primary`.
 - `sectors`, `flemish_belgian_relevance`, canonical `flemish_fact_candidates` for identifiable entities, `source_urls`, `confidence`, `status = pending`, and `agent_run_id`.
 
-`agent-discovery` extraction emits canonical Flemish/Belgian entity candidates with candidate aliases, role, source URL, evidence excerpt, confidence, and raw evidence when the page supports a specific entity. Vague relevance stays in raw evidence. Model-discovered aliases are stored as pending aliases for review and do not create broad filter chips.
+`agent-discovery` loads the live canonical Flemish/Belgian connection catalog (including approved aliases) into each extraction prompt. The model must select the exact existing canonical name when the evidence matches a catalog name or approved alias. After extraction, the server resolves the returned name and alias again against the authoritative catalog; if neither matches, it creates a new non-filterable canonical connection. The canonical name is retained alongside the raw evidence text so reviewer approval links the person or organization through the normalized junction and refreshes its searchable document. Model-discovered aliases remain pending review candidates, and neither aliases nor newly created canonical rows become broad filter chips automatically.
 
 Organization page evidence is stored separately in `discovered_organization_evidence` with the pending organization FK, optional `discovery_page_id`, a unique `evidence_key`, page/source metadata, excerpts, raw relevance/location/sector text, normalized location fields, confidence, and timestamps. Repeated evidence updates the pending organization's `evidence_count`, `last_evidence_at`, and `last_seen_at`; it does not promote the organization.
 

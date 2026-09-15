@@ -93,7 +93,7 @@ export default function AvailabilityOverview({
               onClick={() => onToggle(item.key)}
               className={`rounded-xl border p-4 text-left transition-all ${
                 isActive
-                  ? 'border-teal-300 ring-2 ring-teal-100 bg-teal-50/60'
+                  ? 'border-yellow-400 ring-2 ring-yellow-100 bg-yellow-50/60'
                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
               }`}
             >

@@ -14,7 +14,7 @@ import type { Person } from '../../lib/supabase';
 export const CATEGORIES = [
   { label: 'Professors', icon: GraduationCap, color: 'bg-blue-500', light: 'bg-blue-50 text-blue-700', keywords: ['professor', 'prof.', 'faculty', 'lecturer'] },
   { label: 'Researchers', icon: Microscope, color: 'bg-emerald-500', light: 'bg-emerald-50 text-emerald-700', keywords: ['researcher', 'scientist', 'postdoc', 'neuroscientist'] },
-  { label: 'Engineers', icon: Wrench, color: 'bg-cyan-500', light: 'bg-cyan-50 text-cyan-700', keywords: ['engineer', 'developer', 'architect'] },
+  { label: 'Engineers', icon: Wrench, color: 'bg-yellow-500', light: 'bg-yellow-50 text-yellow-800', keywords: ['engineer', 'developer', 'architect'] },
   { label: 'Executives', icon: Briefcase, color: 'bg-orange-500', light: 'bg-orange-50 text-orange-700', keywords: ['director', 'vp', 'president', 'head of', 'partner', 'manager'] },
   { label: 'Government', icon: Landmark, color: 'bg-red-500', light: 'bg-red-50 text-red-700', keywords: ['diplomat', 'advisor', 'policy'] },
   { label: 'Creatives', icon: Palette, color: 'bg-pink-500', light: 'bg-pink-50 text-pink-700', keywords: ['artist', 'filmmaker', 'film director', 'gallery', 'curator', 'designer'] },

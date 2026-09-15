@@ -183,7 +183,7 @@ export default function ContactCard({
               {contact.name}
             </p>
             {contact.occupation && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-teal-50 text-teal-700 rounded font-medium">
+              <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-yellow-50 text-yellow-800 rounded font-medium">
                 <Tag className="w-2.5 h-2.5" />
                 {contact.occupation}
               </span>

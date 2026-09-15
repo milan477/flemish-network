@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { PASSWORD_MIN_LENGTH, validateStaffPassword } from '../lib/passwordPolicy';
 
-export default function Account() {
+export default function Account({ embedded = false }: { embedded?: boolean }) {
   const { staffUser, refreshStaffUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -109,7 +109,7 @@ export default function Account() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className={embedded ? 'w-full' : 'max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8'}>
       <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>

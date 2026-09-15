@@ -35,12 +35,17 @@ The platform combines a React frontend with Supabase (Postgres + Edge Functions)
 - Admin operations panels for discovery planning and model/ops metrics
 - CSV import pipeline with dedup and rollback-aware cancellation
 
+## User Guides
+
+- [English user guide](docs/USER-GUIDE-EN.md)
+- [Nederlandse gebruikershandleiding](docs/USER-GUIDE-NL.md)
+
 ## Tech Stack
 
 - Frontend: React 18, TypeScript, Vite, Tailwind CSS
 - Backend: Supabase Postgres + Deno Edge Functions
 - Map: Leaflet + react-leaflet + marker clustering
-- AI: Gemini 2.5 family + `gemini-embedding-001`
+- AI: Gemini 3.5 Flash with Gemini 2.5 fallbacks + `gemini-embedding-001`
 - Web search: Tavily (primary), Brave (fallback)
 
 ## Repository Structure
@@ -111,6 +116,7 @@ Set in Supabase secrets (not in frontend `.env`):
 
 Optional model overrides:
 - `GEMINI_FLASH_MODEL`
+- `GEMINI_FLASH_FALLBACK_MODEL`
 - `GEMINI_FLASH_LITE_MODEL`
 - `GEMINI_PRO_MODEL`
 - route-specific overrides such as `GEMINI_QUERY_MODEL`, `GEMINI_PROFILE_MODEL`, `GEMINI_EXTRACTION_MODEL`, etc.

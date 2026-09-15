@@ -5,6 +5,7 @@ import {
   SMART_SEARCH_SCHEMA,
   SMART_SEARCH_SYSTEM_PROMPT,
   type SmartSearchKeywords,
+  type SmartSearchResult,
 } from "../_shared/aiContracts.ts";
 import {
   createAdminClient,
@@ -235,10 +236,10 @@ function normalizeOrganizationLocationRelation(
   return value ?? null;
 }
 
-async function extractKeywords(
+async function extractSearchInterpretation(
   apiKey: string,
   query: string
-): Promise<SmartSearchKeywords> {
+): Promise<SmartSearchResult> {
   const { data } = await callGeminiStructured({
     apiKey,
     route: "query_parsing",
@@ -249,7 +250,7 @@ async function extractKeywords(
     attemptsPerModel: 2,
   });
 
-  return data.keywords;
+  return data;
 }
 
 async function getEmbedding(apiKey: string, text: string): Promise<number[]> {
@@ -432,12 +433,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
       return jsonError(400, "invalid_input", "query is required");
     }
 
-    const [keywords, queryEmbedding] = geminiKey
+    const [searchInterpretation, queryEmbedding] = geminiKey
       ? await timer.span("gemini_parse_and_embed_parallel", () =>
           Promise.all([
-            extractKeywords(geminiKey, query).catch((error) => {
+            extractSearchInterpretation(geminiKey, query).catch((error) => {
               console.warn("[search-people] keyword extraction failed; using empty keywords", error);
-              return EMPTY_KEYWORDS;
+              return { message: "", concepts: [], keywords: EMPTY_KEYWORDS };
             }),
             getEmbedding(geminiKey, query).catch((error) => {
               console.warn("[search-people] query embedding failed; running lexical-only", error);
@@ -445,7 +446,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
             }),
           ])
         )
-      : [EMPTY_KEYWORDS, null];
+      : [{ message: "", concepts: [], keywords: EMPTY_KEYWORDS }, null];
+
+    const keywords = searchInterpretation.keywords;
 
     const filters: Record<string, unknown> | null =
       body?.filters && typeof body.filters === "object"
@@ -654,6 +657,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
           people: [],
           organizations: [],
           keywords: criteriaKeywords,
+          concepts: searchInterpretation.concepts,
           match_mode: matchMode,
           route,
           degraded: !queryEmbedding,
@@ -969,7 +973,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
       rationale: rationaleFromMatch("organization", matchField, fusedScore),
     }));
 
-    let stage1: MixedSearchResultItem[] = [
+    const stage1: MixedSearchResultItem[] = [
       ...peopleResults,
       ...organizationResults,
     ]
@@ -1061,6 +1065,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         people: visiblePeople,
         organizations: visibleOrganizations,
         keywords: criteriaKeywords,
+        concepts: searchInterpretation.concepts,
         match_mode: matchMode,
         route,
         degraded: !queryEmbedding,

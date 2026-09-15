@@ -62,6 +62,15 @@ interface PersonSector {
   sectors: { name: string } | null;
 }
 
+const PROFILE_ACTION_BUTTON =
+  'inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3.5 text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+const PROFILE_ACTION_PRIMARY =
+  `${PROFILE_ACTION_BUTTON} border-yellow-400 bg-yellow-400 text-gray-950 shadow-sm hover:border-yellow-500 hover:bg-yellow-500`;
+const PROFILE_ACTION_SECONDARY =
+  `${PROFILE_ACTION_BUTTON} border-gray-200 bg-white text-gray-700 shadow-sm hover:border-yellow-300 hover:bg-yellow-50 hover:text-gray-950`;
+const PROFILE_ACTION_DANGER =
+  `${PROFILE_ACTION_BUTTON} border-gray-200 bg-white text-gray-600 shadow-sm hover:border-red-200 hover:bg-red-50 hover:text-red-700`;
+
 function normalizeUrl(url: string): { ok: true; value: string } | { ok: false; reason: string } {
   if (!url || !url.trim()) return { ok: true, value: '' };
   const trimmed = url.trim();
@@ -538,35 +547,26 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                   <ViewHeader person={person} onNavigate={onNavigate} />
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 mt-4" data-print-hide>
+                <div
+                  className="mt-5 flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50/80 p-1.5"
+                  role="group"
+                  aria-label="Profile actions"
+                  data-print-hide
+                >
                   {!editing && (
                     <>
                       {canEdit && (
                         <>
                           <button
                             onClick={startEditing}
-                            className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                            className={PROFILE_ACTION_PRIMARY}
                           >
                             <Pencil className="w-4 h-4" />
                             <span>Edit</span>
                           </button>
-                          {isAdmin && (
-                            <button
-                              onClick={deletePerson}
-                              disabled={deleting}
-                              className="px-5 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg transition-colors flex items-center space-x-2 border border-red-100 disabled:opacity-50"
-                            >
-                              {deleting ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-4 h-4" />
-                              )}
-                              <span>Delete</span>
-                            </button>
-                          )}
                           <button
                             onClick={() => setShowUpdateModal(true)}
-                            className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                            className={PROFILE_ACTION_SECONDARY}
                           >
                             <RotateCw className="w-4 h-4" />
                             <span>Verify</span>
@@ -574,11 +574,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           <div className="relative">
                             <button
                               onClick={() => setShowCollections(!showCollections)}
-                              className={`px-5 py-2 font-medium rounded-lg transition-colors flex items-center space-x-2 ${
+                              className={`${PROFILE_ACTION_BUTTON} ${
                                 showCollections
-                                  ? 'bg-yellow-100 text-yellow-700'
-                                  : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+                                  ? 'border-yellow-300 bg-yellow-50 text-yellow-800 shadow-sm'
+                                  : 'border-gray-200 bg-white text-gray-700 shadow-sm hover:border-yellow-300 hover:bg-yellow-50 hover:text-gray-950'
                               }`}
+                              aria-expanded={showCollections}
                             >
                               <Library className="w-4 h-4" />
                               <span>Add to Collection</span>
@@ -594,31 +595,45 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                       )}
                       <button
                         onClick={() => window.print()}
-                        className="px-5 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium rounded-lg transition-colors flex items-center space-x-2 border border-gray-200"
+                        className={PROFILE_ACTION_SECONDARY}
                       >
                         <Printer className="w-4 h-4" />
                         <span>Print</span>
                       </button>
+                      {canEdit && isAdmin && (
+                        <button
+                          onClick={deletePerson}
+                          disabled={deleting}
+                          className={PROFILE_ACTION_DANGER}
+                        >
+                          {deleting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                          <span>Delete</span>
+                        </button>
+                      )}
                     </>
                   )}
                   {editing && (
-                    <div className="flex items-center gap-2">
+                    <>
                       <button
                         onClick={saveEdits}
                         disabled={saving}
-                        className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
+                        className={PROFILE_ACTION_PRIMARY}
                       >
                         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         <span>Save</span>
                       </button>
                       <button
                         onClick={cancelEditing}
-                        className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors flex items-center space-x-2"
+                        className={PROFILE_ACTION_SECONDARY}
                       >
                         <X className="w-4 h-4" />
                         <span>Cancel</span>
                       </button>
-                    </div>
+                    </>
                   )}
                 </div>
                 {saveError && (
@@ -1090,7 +1105,7 @@ function SocialLinks({ person }: { person: Person }) {
           href={person.website_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-teal-600 hover:border-teal-600 transition-colors"
+          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-yellow-700 hover:border-yellow-500 transition-colors"
         >
           <Globe className="w-5 h-5" />
         </a>
@@ -1174,7 +1189,7 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Finance: { bg: 'bg-amber-50', text: 'text-amber-700' },
   Education: { bg: 'bg-yellow-50', text: 'text-yellow-700' },
   'Culture & Arts': { bg: 'bg-pink-50', text: 'text-pink-700' },
-  Research: { bg: 'bg-cyan-50', text: 'text-cyan-700' },
+  Research: { bg: 'bg-yellow-50', text: 'text-yellow-800' },
 };
 
 function ViewBody({

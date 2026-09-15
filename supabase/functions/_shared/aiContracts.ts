@@ -21,6 +21,7 @@ export interface SmartSearchKeywords {
 
 export interface SmartSearchResult {
   message: string;
+  concepts: string[];
   keywords: SmartSearchKeywords;
 }
 
@@ -87,6 +88,11 @@ function toLowercaseStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => safeString(item)).filter(Boolean);
+}
+
 const EMPTY_SMART_SEARCH_KEYWORDS: SmartSearchKeywords = {
   name: [],
   occupation: [],
@@ -110,6 +116,7 @@ export function normalizeSmartSearchResult(payload: unknown): SmartSearchResult 
 
   return {
     message: safeString(obj.message),
+    concepts: toStringArray(obj.concepts),
     keywords: {
       name: toLowercaseStringArray(keywords.name),
       occupation: toLowercaseStringArray(keywords.occupation),
@@ -221,7 +228,10 @@ Available profile fields:
 
 Rules:
 - Return an array of lowercase keywords for each relevant field
+- Return 1-3 concise canonical concepts representing what the query means. Expand well-known acronyms from general knowledge instead of merely repeating the acronym.
 - Only populate fields that the query implies; leave others as empty arrays
+- Resolve shorthand, abbreviations, and incomplete phrases into canonical concepts you know before assigning fields (for example, "uni" or "univ" means "university"). Keep useful original terms alongside canonical concepts when they improve recall.
+- Treat the query as concepts rather than requiring its literal wording; infer likely entity types such as a university, city, profession, or sector without inventing a specific named entity unsupported by the query.
 - For location, expand abbreviations (e.g. "SF" -> "san francisco", "NYC" -> "new york")
 - For sector, use the exact sector names in lowercase
 - Generate synonyms and related terms to improve matching (e.g. "Artificial Intelligence" -> ["machine learning", "neural networks"])
@@ -314,6 +324,11 @@ export const SMART_SEARCH_SCHEMA: JsonSchema = {
       type: "STRING",
       description: "Brief description of the search being performed",
     },
+    concepts: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      description: "One to three canonical concepts inferred from the query",
+    },
     keywords: {
       type: "OBJECT",
       properties: {
@@ -338,7 +353,7 @@ export const SMART_SEARCH_SCHEMA: JsonSchema = {
       ],
     },
   },
-  required: ["message", "keywords"],
+  required: ["message", "concepts", "keywords"],
 };
 
 const MERGE_TEXT_SCHEMA: JsonSchema = {

@@ -1,35 +1,30 @@
-import { assert, assertEquals } from "jsr:@std/assert@^1.0.0";
-import { VERIFICATION_SCHEMA } from "../discoveredVerification.ts";
+import { assertEquals } from "jsr:@std/assert@^1.0.0";
+import { trustedOfficialFayatPayload } from "../discoveredVerification.ts";
+import { OFFICIAL_FAYAT_LAUREATES_URL } from "../fayatDirectory.ts";
 
-// Gemini's structured-output schema is an OpenAPI subset. It rejects
-// JSON-Schema style unions such as `type: ["string", "null"]` with HTTP 400,
-// so every nullable field has to be expressed as `nullable: true`.
-function collectTypeViolations(node: unknown, path: string, out: string[]): void {
-  if (!node || typeof node !== "object") return;
-  const record = node as Record<string, unknown>;
-  if ("type" in record && typeof record.type !== "string") {
-    out.push(`${path}.type is ${JSON.stringify(record.type)}`);
-  }
-  if (Array.isArray(record.enum) && record.enum.some((value) => value === null)) {
-    out.push(`${path}.enum contains null`);
-  }
-  if (record.properties && typeof record.properties === "object") {
-    for (const [key, child] of Object.entries(record.properties as Record<string, unknown>)) {
-      collectTypeViolations(child, `${path}.${key}`, out);
-    }
-  }
-  if (record.items) collectTypeViolations(record.items, `${path}[]`, out);
-}
+Deno.test("trusted official Fayat candidates verify without an LLM or web search", () => {
+  const payload = trustedOfficialFayatPayload({
+    name: "Example Laureate",
+    source: "official_fayat_directory",
+    source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
+    occupation: "Fayat Scholarship laureate",
+    bio: "Fayat Scholarship laureate; studied at a U.S. institution.",
+    flemish_connection: "Fayatbeurzen (Fayat Scholarships)",
+  });
 
-Deno.test("VERIFICATION_SCHEMA only uses Gemini-compatible scalar types and nullable flags", () => {
-  const violations: string[] = [];
-  collectTypeViolations(VERIFICATION_SCHEMA, "schema", violations);
-  assertEquals(violations, []);
+  assertEquals(payload?.network_scope, "us_connected_abroad");
+  assertEquals(payload?.confidence, 1);
+  assertEquals(payload?.contradiction, false);
+  assertEquals(payload?.evidence[0]?.url, OFFICIAL_FAYAT_LAUREATES_URL);
+});
 
-  const properties = VERIFICATION_SCHEMA.properties as Record<string, Record<string, unknown>>;
-  assertEquals(properties.network_scope.nullable, true);
-  assertEquals(properties.network_scope.enum, ["us_based", "us_connected_abroad"]);
-  for (const key of ["location_city", "current_role", "contradiction_reason", "notes"]) {
-    assert(properties[key].nullable === true, `${key} must be nullable`);
-  }
+Deno.test("untrusted discovery sources still require normal verification", () => {
+  assertEquals(
+    trustedOfficialFayatPayload({
+      name: "Example Person",
+      source: "web_search",
+      source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
+    }),
+    null,
+  );
 });

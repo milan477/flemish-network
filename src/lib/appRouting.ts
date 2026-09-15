@@ -7,11 +7,56 @@ export type AppPage =
   | 'organization'
   | 'collections'
   | 'collection-detail'
+  | 'expand'
+  | 'settings'
   | 'admin'
   | 'add-contact'
   | 'account';
 
 export type AdminTab = 'discovery' | 'verification' | 'growth' | 'coverage' | 'system' | 'access';
+
+export type ExpandTab = 'import' | 'discovery' | 'runs' | 'verification' | 'maintenance';
+
+export function normalizeExpandTab(tab?: string | null): ExpandTab {
+  if (
+    tab === 'import' ||
+    tab === 'discovery' ||
+    tab === 'runs' ||
+    tab === 'verification' ||
+    tab === 'maintenance'
+  ) {
+    return tab;
+  }
+  if (tab === 'running') return 'runs';
+  return 'discovery';
+}
+
+export function isCanonicalExpandTab(tab?: string | null): tab is ExpandTab {
+  return (
+    tab === 'import' ||
+    tab === 'discovery' ||
+    tab === 'runs' ||
+    tab === 'verification' ||
+    tab === 'maintenance'
+  );
+}
+
+export type SettingsTab = 'system' | 'access' | 'account';
+
+export function normalizeSettingsTab(
+  tab?: string | null,
+  canEdit = false,
+  isAdmin = false
+): SettingsTab {
+  if (tab === 'account') return 'account';
+  if (tab === 'access' && isAdmin) return 'access';
+  if (tab === 'system' && canEdit) return 'system';
+  return canEdit ? 'system' : 'account';
+}
+
+export function isCanonicalSettingsTab(tab?: string | null): tab is SettingsTab {
+  return tab === 'system' || tab === 'access' || tab === 'account';
+}
 
 export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = false): AdminTab {
   if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'coverage' || tab === 'system') {
@@ -48,7 +93,7 @@ export function parseAddContactMode(
   return 'discovery';
 }
 
-export type DashboardViewMode = 'map' | 'list';
+export type DashboardViewMode = 'map' | 'list' | 'stats';
 
 export interface DashboardRouteState {
   view: DashboardViewMode;
@@ -120,7 +165,11 @@ export function parseDashboardRouteState(
 
   return {
     view:
-      viewParam === 'list' || (!viewParam && query.length > 0) ? 'list' : 'map',
+      viewParam === 'stats'
+        ? 'stats'
+        : viewParam === 'list' || (!viewParam && query.length > 0)
+          ? 'list'
+          : 'map',
     query,
     matchMode: searchParams.get('match') === 'any' ? 'any' : 'all',
     filters: {
@@ -156,8 +205,8 @@ export function buildDashboardSearchParams(
 
   if (state.query) params.set('q', state.query);
   if (state.matchMode === 'any') params.set('match', 'any');
-  if (state.view === 'list') {
-    params.set('view', 'list');
+  if (state.view === 'list' || state.view === 'stats') {
+    params.set('view', state.view);
   } else if (state.query) {
     params.set('view', 'map');
   }
@@ -201,8 +250,8 @@ export function buildDashboardLocation(state: DashboardRouteState): {
 
 export function getCurrentPageFromPathname(pathname: string): AppPage {
   if (pathname.startsWith('/collections')) return 'collections';
-  if (pathname.startsWith('/admin')) return 'admin';
-  if (pathname.startsWith('/account')) return 'account';
+  if (pathname.startsWith('/expand') || pathname.startsWith('/admin')) return 'expand';
+  if (pathname.startsWith('/settings') || pathname.startsWith('/account')) return 'settings';
   if (pathname.startsWith('/people')) return 'dashboard';
   if (pathname.startsWith('/organizations')) return 'dashboard';
   return 'dashboard';

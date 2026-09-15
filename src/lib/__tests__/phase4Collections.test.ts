@@ -123,7 +123,7 @@ describe('suggest-people collection suggestion contract', () => {
 
   it('uses Gemini routing for parsing and reranking without accepting unknown rerank IDs', () => {
     expect(suggestPeopleFunction).toContain('route: "query_parsing"');
-    expect(suggestPeopleFunction).toContain('route: "offline_evaluation"');
+    expect(suggestPeopleFunction).toContain('route: "search_rerank"');
     expect(suggestPeopleFunction).toContain('applyRerankAndBackfill');
     expect(suggestPeopleFunction).toContain('Never invent IDs');
   });
@@ -287,7 +287,7 @@ describe('collection creation suggestion UI contract', () => {
   it('keeps collection suggestion and Discovery vocabulary in the creation flow', () => {
     expect(collectionModalSource).toContain('Collection Suggestions');
     expect(collectionModalSource).toContain('Review collection suggestions before they are saved.');
-    expect(collectionModalSource).toContain('/admin/discovery?prompt=');
+    expect(collectionModalSource).toContain('/expand/discovery?prompt=');
     expect(collectionModalSource).toContain('Open Discovery');
     expect(collectionModalSource).not.toContain('Suggested People');
     expect(collectionModalSource).not.toContain('agent-');
@@ -319,6 +319,10 @@ describe('collection detail mixed member UI contract', () => {
     expect(collectionDetailSource).toContain('person_id: candidate.id');
     expect(collectionDetailSource).toContain('organization_id: candidate.id');
     expect(collectionDetailSource).toContain('Open Discovery');
+    expect(collectionDetailSource).toContain('Launch Discovery');
+    expect(collectionDetailSource).toContain('buildCollectionDiscoveryPrompt');
+    expect(collectionDetailSource).toContain('response.searches');
+    expect(collectionDetailSource).toContain('/expand/discovery?prompt=');
     expect(collectionDetailSource).toContain('Find Collection Suggestions');
     expect(collectionDetailSource).toContain('collectionSuggestionCacheKey');
     expect(collectionDetailSource).toContain('readCachedCollectionSuggestions');

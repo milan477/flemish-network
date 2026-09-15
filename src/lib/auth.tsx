@@ -69,8 +69,13 @@ function readCache(): StaffUser | null {
 }
 
 function writeCache(user: StaffUser | null) {
-  if (user) localStorage.setItem(STAFF_CACHE_KEY, JSON.stringify(user));
-  else localStorage.removeItem(STAFF_CACHE_KEY);
+  try {
+    if (user) localStorage.setItem(STAFF_CACHE_KEY, JSON.stringify(user));
+    else localStorage.removeItem(STAFF_CACHE_KEY);
+  } catch {
+    // Storage can be unavailable in privacy-restricted browsers and test
+    // environments. Authentication must continue without the optional cache.
+  }
 }
 
 async function loadStaffUser(session: Session): Promise<StaffUser> {

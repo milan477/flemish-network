@@ -94,7 +94,7 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string; ring: string }> 
   Finance: { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'hover:ring-amber-300' },
   Education: { bg: 'bg-yellow-50', text: 'text-yellow-700', ring: 'hover:ring-yellow-300' },
   'Culture & Arts': { bg: 'bg-pink-50', text: 'text-pink-700', ring: 'hover:ring-pink-300' },
-  Research: { bg: 'bg-cyan-50', text: 'text-cyan-700', ring: 'hover:ring-cyan-300' },
+  Research: { bg: 'bg-yellow-50', text: 'text-yellow-800', ring: 'hover:ring-yellow-300' },
 };
 
 export default function OrganizationProfile({ organizationId, onNavigate }: OrganizationProfileProps) {
@@ -651,7 +651,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                       <button
                         onClick={handleVerify}
                         disabled={verifying}
-                        className="px-6 py-2 bg-teal-50 text-teal-700 hover:bg-teal-100 font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
+                        className="px-6 py-2 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
                       >
                         {verifying ? (
                           <Loader2 className="w-4 h-4 animate-spin" />

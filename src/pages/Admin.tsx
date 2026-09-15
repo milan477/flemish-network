@@ -1,55 +1,45 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useActiveAgentRun } from '../hooks/useActiveAgentRun';
-import { Activity, BarChart3, ChevronDown, ChevronRight, Globe, Search, ShieldCheck, Users } from 'lucide-react';
+import { useActiveAgentRun, useActiveAgentRunCount } from '../hooks/useActiveAgentRun';
+import { Activity, ChevronDown, ChevronRight, FileUp, Loader2, Search, ShieldCheck } from 'lucide-react';
 import {
   supabase,
-  type FilterPreset,
   type Person,
   type Sector,
 } from '../lib/supabase';
-import InteractiveStatsOverview from '../components/admin/InteractiveStatsOverview';
 import PersonChangesGroup, { type ProfileSuggestion } from '../components/admin/PersonChangesGroup';
 import OrganizationSuggestedChanges, {
   type OrganizationProfileSuggestion,
 } from '../components/admin/OrganizationSuggestedChanges';
 import AgentDashboard from '../components/admin/AgentDashboard';
 import DiscoveredContactsPanel from '../components/admin/DiscoveredContactsPanel';
-import AccessManagementPanel from '../components/admin/AccessManagementPanel';
 import SystemHealthPanel from '../components/admin/SystemHealthPanel';
 import AddContactPanel from '../components/admin/AddContactPanel';
 import StaleContactsBar from '../components/admin/StaleContactsBar';
 import DiscoveryPlanningPanel, { type RecommendedAction } from '../components/admin/DiscoveryPlanningPanel';
-import {
-  type PersonSectorRow,
-} from '../components/admin/interactiveStatsShared';
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
 import { normalizeVerificationSuggestions } from '../lib/verification';
-import { useAuth } from '../lib/auth';
 import { notifyError, notifySuccess, notifyInfo } from '../lib/toast';
 import {
-  isCanonicalAdminTab,
-  normalizeAdminTab,
+  isCanonicalExpandTab,
+  normalizeExpandTab,
   parseAdminDiscoveryPrompt,
   parseAddContactMode,
-  type AdminTab,
+  type ExpandTab,
   type AddContactMode,
 } from '../lib/appRouting';
 const VERIFY_BATCH_SIZE = 5;
 
-interface AdminProps {
-  onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
-}
-
-export default function Admin({ onNavigate }: AdminProps) {
-  const { isAdmin } = useAuth();
+export default function Admin() {
   const navigate = useNavigate();
   const { tab } = useParams<{ tab?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = normalizeAdminTab(tab, isAdmin);
+  const activeTab = normalizeExpandTab(tab);
   const discoveryPrompt = parseAdminDiscoveryPrompt(searchParams);
   const addContactMode = parseAddContactMode(searchParams);
+  const importMode: AddContactMode = addContactMode === 'import' ? 'import' : 'manual';
   const discoveryRunActive = useActiveAgentRun('discovery');
+  const activeRunCount = useActiveAgentRunCount();
 
   const setAddContactMode = useCallback(
     (next: AddContactMode) => {
@@ -69,10 +59,7 @@ export default function Admin({ onNavigate }: AdminProps) {
     [searchParams, setSearchParams]
   );
   const [people, setPeople] = useState<Person[]>([]);
-  const [orgCount, setOrgCount] = useState(0);
-  const [orgLocations, setOrgLocations] = useState<{ locations: { city: string | null; state: string | null } | null }[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
-  const [personSectors, setPersonSectors] = useState<PersonSectorRow[]>([]);
   const [suggestions, setSuggestions] = useState<ProfileSuggestion[]>([]);
   const [orgSuggestions, setOrgSuggestions] = useState<OrganizationProfileSuggestion[]>([]);
   const [derivedLabels, setDerivedLabels] = useState<DerivedLabelSuggestion[]>([]);
@@ -221,28 +208,14 @@ export default function Admin({ onNavigate }: AdminProps) {
     }
 
     try {
-      const [
-        peopleRes,
-        orgsRes,
-        personSectorsRes,
-        sectorsRes,
-      ] = await Promise.all([
+      const [peopleRes, sectorsRes] = await Promise.all([
         supabase
           .from('people')
           .select('*, locations(*), person_flemish_connections(flemish_connection_id, flemish_connections(id, name, type))'),
-        supabase
-          .from('organizations')
-          .select('id, locations(city, state)', { count: 'exact' }),
-        supabase
-          .from('person_sectors')
-          .select('person_id, sector_id, sectors(name)'),
         supabase.from('sectors').select('*').order('name'),
       ]);
 
       setPeople((peopleRes.data || []) as Person[]);
-      setOrgCount(orgsRes.count || 0);
-      setOrgLocations(((orgsRes.data || []) as unknown) as { locations: { city: string | null; state: string | null } | null }[]);
-      setPersonSectors((personSectorsRes.data || []) as unknown as PersonSectorRow[]);
       setSectors((sectorsRes.data || []) as Sector[]);
     } finally {
       if (showSpinner) {
@@ -259,14 +232,10 @@ export default function Admin({ onNavigate }: AdminProps) {
   }, [loadData, loadSuggestions, loadOrgSuggestions, loadDerivedLabels]);
 
   useEffect(() => {
-    if (tab === 'access' && !isAdmin) {
-      navigate('/admin/discovery', { replace: true });
-    }
-  }, [isAdmin, navigate, tab]);
-
-  useEffect(() => {
-    if (tab && !isCanonicalAdminTab(tab)) {
-      navigate('/admin/discovery', { replace: true });
+    if (tab === 'running') {
+      navigate('/expand/runs', { replace: true });
+    } else if (tab && !isCanonicalExpandTab(tab)) {
+      navigate('/expand/discovery', { replace: true });
     }
   }, [navigate, tab]);
 
@@ -357,8 +326,8 @@ export default function Admin({ onNavigate }: AdminProps) {
   }, [loadData, loadSuggestions, loadOrgSuggestions, loadDerivedLabels]);
 
   const handleTabChange = useCallback(
-    (nextTab: AdminTab) => {
-      navigate(`/admin/${nextTab}`);
+    (nextTab: ExpandTab) => {
+      navigate(`/expand/${nextTab}`);
     },
     [navigate]
   );
@@ -460,7 +429,7 @@ export default function Admin({ onNavigate }: AdminProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-600" />
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-500" />
       </div>
     );
   }
@@ -470,16 +439,27 @@ export default function Admin({ onNavigate }: AdminProps) {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-3xl font-semibold text-gray-900">
-            Staff Workspace
+            Grow
           </h1>
         </div>
 
         <div className="flex gap-1 border-b border-gray-200">
           <button
+            onClick={() => handleTabChange('import')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'import'
+                ? 'border-yellow-500 text-yellow-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FileUp className="w-4 h-4" />
+            Import
+          </button>
+          <button
             onClick={() => handleTabChange('discovery')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'discovery'
-                ? 'border-teal-600 text-teal-700'
+                ? 'border-yellow-500 text-yellow-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -487,10 +467,30 @@ export default function Admin({ onNavigate }: AdminProps) {
             Discovery
           </button>
           <button
+            onClick={() => handleTabChange('runs')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'runs'
+                ? 'border-yellow-500 text-yellow-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Loader2 className={`w-4 h-4 ${activeRunCount > 0 ? 'animate-spin' : ''}`} />
+            Runs
+            {activeRunCount > 0 && (
+              <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                activeTab === 'runs'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : 'bg-gray-100 text-gray-700'
+              }`}>
+                {activeRunCount}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => handleTabChange('verification')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'verification'
-                ? 'border-teal-600 text-teal-700'
+                ? 'border-yellow-500 text-yellow-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -498,53 +498,28 @@ export default function Admin({ onNavigate }: AdminProps) {
             Verification
           </button>
           <button
-            onClick={() => handleTabChange('growth')}
+            onClick={() => handleTabChange('maintenance')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'growth'
-                ? 'border-teal-600 text-teal-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            Network Growth
-          </button>
-          <button
-            onClick={() => handleTabChange('coverage')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'coverage'
-                ? 'border-teal-600 text-teal-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-            Coverage
-          </button>
-          <button
-            onClick={() => handleTabChange('system')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'system'
-                ? 'border-teal-600 text-teal-700'
+              activeTab === 'maintenance'
+                ? 'border-yellow-500 text-yellow-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             <Activity className="w-4 h-4" />
-            System
+            Maintenance
           </button>
-          {isAdmin && (
-            <button
-              onClick={() => handleTabChange('access')}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'access'
-                  ? 'border-teal-600 text-teal-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Access
-            </button>
-          )}
         </div>
       </div>
+
+      {activeTab === 'import' && (
+        <AddContactPanel
+          sectors={sectors}
+          onContactAdded={() => void loadData({ showSpinner: false })}
+          mode={importMode}
+          onModeChange={setAddContactMode}
+          availableModes={['manual', 'import']}
+        />
+      )}
 
       {activeTab === 'discovery' && (
         <div className="space-y-6">
@@ -554,18 +529,30 @@ export default function Admin({ onNavigate }: AdminProps) {
               loadData({ showSpinner: false });
               setDiscoveryRefreshKey((current) => current + 1);
             }}
-            mode={addContactMode}
-            onModeChange={setAddContactMode}
+            mode="discovery"
+            availableModes={['discovery']}
             initialDiscoveryPrompt={discoveryPrompt}
             discoveryRunActive={discoveryRunActive}
           />
-          <AgentDashboard refreshKey={discoveryRefreshKey} />
+          <DiscoveryPlanningPanel
+            onRunDiscovery={(action) => void triggerDiscovery(action)}
+            onStartDiscovery={() => void startDiscoveryRun()}
+            onExploreSuggestion={(id, surface, lens) => void exploreSuggestion(id, surface, lens)}
+            isRunning={discoveryRunActive}
+          />
         </div>
       )}
 
+      {activeTab === 'runs' && (
+        <AgentDashboard historyScope="all" refreshKey={activeRunCount} />
+      )}
+
       {activeTab === 'verification' && (
+        <DiscoveredContactsPanel refreshKey={discoveryRefreshKey} />
+      )}
+
+      {activeTab === 'maintenance' && (
         <div className="space-y-6">
-          <DiscoveredContactsPanel refreshKey={discoveryRefreshKey} />
           <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-lg font-semibold text-gray-900">Records Freshness</h2>
             <StaleContactsBar
@@ -578,6 +565,7 @@ export default function Admin({ onNavigate }: AdminProps) {
               noUpdateIds={noUpdateIds}
             />
           </div>
+          <SystemHealthPanel mode="maintenance" />
           <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
             <button
               onClick={() => setProfileSectionOpen((v) => !v)}
@@ -620,29 +608,6 @@ export default function Admin({ onNavigate }: AdminProps) {
             )}
           </div>
         </div>
-      )}
-
-      {activeTab === 'system' && <SystemHealthPanel />}
-
-      {activeTab === 'access' && isAdmin && <AccessManagementPanel />}
-
-      {activeTab === 'coverage' && (
-        <InteractiveStatsOverview
-          people={people}
-          orgCount={orgCount}
-          organizations={orgLocations}
-          personSectors={personSectors}
-          onNavigate={onNavigate}
-        />
-      )}
-
-      {activeTab === 'growth' && (
-        <DiscoveryPlanningPanel
-          onRunDiscovery={(action) => void triggerDiscovery(action)}
-          onStartDiscovery={() => void startDiscoveryRun()}
-          onExploreSuggestion={(id, surface, lens) => void exploreSuggestion(id, surface, lens)}
-          isRunning={discoveryRunActive}
-        />
       )}
     </div>
   );

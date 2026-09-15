@@ -120,6 +120,59 @@ function readCachedCollectionSuggestions(key: string): CachedCollectionSuggestio
   }
 }
 
+function buildCollectionSearchContext(
+  collection: Collection,
+  members: CollectionMember[]
+): string {
+  const queryParts = [collection.name];
+  if (collection.description) queryParts.push(collection.description);
+
+  members.slice(0, 5).forEach((member) => {
+    if (member.person?.current_position) queryParts.push(member.person.current_position);
+    if (member.person?.occupation) queryParts.push(member.person.occupation);
+    if (member.person?.bio) queryParts.push(member.person.bio);
+    const flemishText = getPersonFlemishConnectionText(member.person);
+    if (flemishText) queryParts.push(flemishText);
+    if (member.organization?.type) queryParts.push(member.organization.type);
+    if (member.organization?.description) queryParts.push(member.organization.description);
+    const organizationFlemishText = getOrganizationFlemishConnectionText(member.organization);
+    if (organizationFlemishText) queryParts.push(organizationFlemishText);
+  });
+
+  return queryParts.join('. ');
+}
+
+function extractDiscoveryDirections(searches: unknown[]): string[] {
+  return searches
+    .flatMap((search) => {
+      if (!search || typeof search !== 'object') return [];
+      const query = (search as { query?: unknown }).query;
+      return typeof query === 'string' && query.trim() ? [query.trim()] : [];
+    })
+    .slice(0, 3);
+}
+
+function buildCollectionDiscoveryPrompt(
+  collection: Collection,
+  searches: unknown[],
+  suggestedPrompt?: string
+): string {
+  const aiDirections = extractDiscoveryDirections(searches);
+  const direction = suggestedPrompt?.trim() || aiDirections.join('; ');
+  const parts = [
+    `Expand the collection "${collection.name}" with new Flemish or Belgian people and organizations connected to the United States.`,
+  ];
+  if (collection.description) {
+    parts.push(`Collection goal: ${collection.description}.`);
+  }
+  if (direction) {
+    const punctuatedDirection = /[.!?]$/.test(direction) ? direction : `${direction}.`;
+    parts.push(`Discovery direction: ${punctuatedDirection}`);
+  }
+  parts.push('Exclude people and organizations already in this collection.');
+  return parts.join(' ');
+}
+
 export default function CollectionDetail({
   collectionId,
   onNavigate,
@@ -140,6 +193,7 @@ export default function CollectionDetail({
     EMPTY_COLLECTION_SUGGESTION_DRAFT
   );
   const [suggestLoading, setSuggestLoading] = useState(false);
+  const [discoveryPromptLoading, setDiscoveryPromptLoading] = useState(false);
   const [savingDraftMembers, setSavingDraftMembers] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestMessage, setSuggestMessage] = useState('');
@@ -158,6 +212,10 @@ export default function CollectionDetail({
   const suggestionCacheKey = useMemo(
     () => collectionSuggestionCacheKey(collectionId),
     [collectionId]
+  );
+  const collectionSearchContext = useMemo(
+    () => collection ? buildCollectionSearchContext(collection, members) : '',
+    [collection, members]
   );
 
   const fetchCollectionData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -366,25 +424,9 @@ export default function CollectionDetail({
       setSuggestionGap({ should_offer: false });
     }
 
-    // Build query from collection description + top member bios
-    const queryParts: string[] = [];
-    if (collection.description) queryParts.push(collection.description);
-    members.slice(0, 5).forEach((m) => {
-      if (m.person?.current_position) queryParts.push(m.person.current_position);
-      if (m.person?.occupation) queryParts.push(m.person.occupation);
-      if (m.person?.bio) queryParts.push(m.person.bio);
-      const flemishText = getPersonFlemishConnectionText(m.person);
-      if (flemishText) queryParts.push(flemishText);
-      if (m.organization?.type) queryParts.push(m.organization.type);
-      if (m.organization?.description) queryParts.push(m.organization.description);
-      const organizationFlemishText = getOrganizationFlemishConnectionText(m.organization);
-      if (organizationFlemishText) queryParts.push(organizationFlemishText);
-    });
-    const query = queryParts.join('. ') || collection.name;
-
     try {
       const exclusions = getDraftExclusionsWithCurrentMembers(draftForExclusions);
-      const response = await suggestPeopleEmbedding(query, {
+      const response = await suggestPeopleEmbedding(collectionSearchContext, {
         collection_id: collectionId,
         ...exclusions,
         max_results: 10,
@@ -421,7 +463,33 @@ export default function CollectionDetail({
     if (!collection) return;
     const prompt = suggestionGap.suggested_prompt?.trim() ||
       [collection.name, collection.description].filter(Boolean).join(' ');
-    navigate(`/admin/discovery?prompt=${encodeURIComponent(prompt)}`);
+    navigate(`/expand/discovery?prompt=${encodeURIComponent(prompt)}`);
+  };
+
+  const handleLaunchCollectionDiscovery = async () => {
+    if (!collection || discoveryPromptLoading) return;
+    setDiscoveryPromptLoading(true);
+
+    try {
+      const exclusions = getDraftExclusionsWithCurrentMembers(draft);
+      const response = await suggestPeopleEmbedding(collectionSearchContext, {
+        collection_id: collectionId,
+        ...exclusions,
+        max_results: 5,
+      });
+      const prompt = buildCollectionDiscoveryPrompt(
+        collection,
+        response.searches,
+        response.gap.suggested_prompt
+      );
+      navigate(`/expand/discovery?prompt=${encodeURIComponent(prompt)}`);
+    } catch (error) {
+      notifyError(error, {
+        hint: 'Could not create a Discovery prompt for this collection. Please try again.',
+      });
+    } finally {
+      setDiscoveryPromptLoading(false);
+    }
   };
 
   const handleSaveAcceptedSuggestions = async () => {
@@ -751,12 +819,25 @@ export default function CollectionDetail({
                 ? 'Search the network and add members to this collection.'
                 : 'This collection does not have any members yet.'}
             </p>
-            <button
-              onClick={() => onNavigate('dashboard')}
-              className="px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold rounded-lg transition-colors shadow-sm"
-            >
-              Browse Network
-            </button>
+            <div className="mx-auto flex w-full max-w-xs flex-col gap-2">
+              <button
+                onClick={() => onNavigate('dashboard')}
+                className="w-full rounded-lg bg-yellow-400 px-6 py-2 font-semibold text-gray-900 shadow-sm transition-colors hover:bg-yellow-500"
+              >
+                Browse Network
+              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => void handleLaunchCollectionDiscovery()}
+                  disabled={discoveryPromptLoading}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-6 py-2 font-semibold text-gray-900 shadow-sm transition-colors hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {discoveryPromptLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {discoveryPromptLoading ? 'Creating prompt…' : 'Launch Discovery'}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="divide-y divide-gray-100">

@@ -4,7 +4,11 @@
 
 import type { JsonSchema } from "./aiContracts.ts";
 import { callGeminiStructured } from "./gemini.ts";
-import type { SupabaseAdminClient } from "./database.types.ts";
+import type { Json, SupabaseAdminClient } from "./database.types.ts";
+import {
+  isOfficialFayatLaureatesUrl,
+  OFFICIAL_FAYAT_LAUREATES_URL,
+} from "./fayatDirectory.ts";
 import { formatResultsForLLM, searchWeb } from "./webSearch.ts";
 
 export type DiscoveredRecordKind = "discovered_contact" | "discovered_organization";
@@ -155,6 +159,40 @@ function normalizePayload(raw: unknown): VerificationPayload {
   };
 }
 
+export function trustedOfficialFayatPayload(
+  raw: Record<string, unknown>,
+): VerificationPayload | null {
+  if (safeStr(raw.source) !== "official_fayat_directory") return null;
+
+  const sourceUrls = Array.isArray(raw.source_urls)
+    ? raw.source_urls.map((value) => safeStr(value)).filter(Boolean)
+    : [];
+  const officialUrl = sourceUrls.find(isOfficialFayatLaureatesUrl);
+  if (!officialUrl) return null;
+
+  const flemishConnection = safeStr(raw.flemish_connection);
+  const evidenceExcerpt = safeStr(raw.bio) ||
+    `${safeStr(raw.name)} is listed in the official Fayat laureate directory.`;
+
+  return {
+    network_scope: "us_connected_abroad",
+    location_city: null,
+    location_state: null,
+    location_country: null,
+    current_role: safeStr(raw.current_position) || safeStr(raw.occupation) || null,
+    current_employer: null,
+    flemish_ties: flemishConnection ? [flemishConnection] : ["Fayatbeurzen laureate"],
+    evidence: [{
+      url: officialUrl || OFFICIAL_FAYAT_LAUREATES_URL,
+      excerpt: evidenceExcerpt,
+    }],
+    confidence: 1,
+    contradiction: false,
+    contradiction_reason: null,
+    notes: "Verified from the official Vlaanderen Fayat laureate directory.",
+  };
+}
+
 function buildContactQuery(row: Record<string, unknown>): string {
   const parts: string[] = [];
   parts.push(`"${safeStr(row.name)}"`);
@@ -215,6 +253,44 @@ export async function verifyDiscoveredRecord(
   }
 
   const recordName = safeStr((row as Record<string, unknown>).name) || recordId;
+
+  const officialFayatPayload = recordKind === "discovered_contact"
+    ? trustedOfficialFayatPayload(row as Record<string, unknown>)
+    : null;
+  if (officialFayatPayload) {
+    const { error: updateError } = await supabase
+      .from(tableName)
+      .update({
+        verification_status: "verified",
+        verified_at: new Date().toISOString(),
+        verification_payload: officialFayatPayload as unknown as Json,
+        verification_run_id: runId ?? null,
+        suggested_us_network_status: officialFayatPayload.network_scope,
+      })
+      .eq("id", recordId);
+
+    if (updateError) {
+      return {
+        record_kind: recordKind,
+        record_id: recordId,
+        record_name: recordName,
+        outcome: "error",
+        detail: updateError.message,
+        llm_calls_made: 0,
+        web_searches_made: 0,
+      };
+    }
+
+    return {
+      record_kind: recordKind,
+      record_id: recordId,
+      record_name: recordName,
+      outcome: "verified",
+      detail: "trusted_source=official_fayat_directory confidence=1.00",
+      llm_calls_made: 0,
+      web_searches_made: 0,
+    };
+  }
 
   if (!geminiApiKey) {
     return {

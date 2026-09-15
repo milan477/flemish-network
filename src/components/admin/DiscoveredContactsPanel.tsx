@@ -38,7 +38,7 @@ import {
 } from '../../lib/derivedLabels';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
-import { notifyError } from '../../lib/toast';
+import { notifyError, notifySuccess } from '../../lib/toast';
 import { resolveLocationId as resolveOrCreateLocationId } from '../../lib/locations';
 
 interface DiscoveredContact {
@@ -53,6 +53,7 @@ interface DiscoveredContact {
   bio: string | null;
   flemish_connection: string | null;
   website_url: string | null;
+  profile_photo_url: string | null;
   sectors: string[] | null;
   source: string;
   source_urls: string[] | null;
@@ -174,6 +175,17 @@ interface DuplicateMatch {
   contactId: string;
   existingPerson: Person;
   reason: string;
+}
+
+function isContactReadyForBulkApproval(
+  contact: DiscoveredContact,
+  isDuplicate: boolean,
+): boolean {
+  if (isDuplicate) return false;
+  if ((contact.verification_status ?? 'queued') !== 'verified') return false;
+  const confidence =
+    contact.suggested_us_network_confidence ?? contact.discovery_confidence ?? 0;
+  return confidence >= 0.8;
 }
 
 interface OrganizationDuplicateMatch {
@@ -407,7 +419,7 @@ async function approveContact(
       us_network_status: networkStatus,
       current_location_city:
         networkStatus === 'us_connected_abroad'
-          ? contact.current_location_city || contact.location_city || null
+          ? contact.current_location_city || null
           : null,
       current_location_country:
         networkStatus === 'us_connected_abroad'
@@ -418,12 +430,18 @@ async function approveContact(
       email_verified: contact.email ? false : null,
       linkedin_url: contact.linkedin_url || null,
       website_url: contact.website_url || null,
+      profile_photo_url: contact.profile_photo_url || null,
       data_source: approvedPersonDataSource(contact.source),
     })
     .select('id')
     .maybeSingle();
 
-  if (error || !person) return false;
+  if (error || !person) {
+    notifyError(error || new Error('The approved person was not returned.'), {
+      hint: 'The contact remains in Verification. No approval status was changed.',
+    });
+    return false;
+  }
 
   if (networkStatus === 'us_connected_abroad') {
     const connectionRows = (contact.suggested_us_connections || []).filter(
@@ -1101,6 +1119,12 @@ interface DiscoveredContactsPanelProps {
   refreshKey?: number;
 }
 
+interface BulkApprovalProgress {
+  completed: number;
+  total: number;
+  failed: number;
+}
+
 export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredContactsPanelProps) {
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [orgsOpen, setOrgsOpen] = useState(true);
@@ -1109,6 +1133,8 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [bulkApprovalProgress, setBulkApprovalProgress] =
+    useState<BulkApprovalProgress | null>(null);
   const [expandedSources, setExpandedSources] = useState<Set<string>>(
     new Set()
   );
@@ -1146,11 +1172,13 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         .from('discovered_contacts')
         .select('*')
         .in('verification_status', verificationStates)
+        .is('approved_person_id', null)
         .order('last_seen_at', { ascending: false }),
       supabase
         .from('discovered_organizations')
         .select('*')
         .in('verification_status', verificationStates)
+        .is('approved_organization_id', null)
         .order('last_seen_at', { ascending: false }),
       supabase.from('sectors').select('*'),
     ]);
@@ -1319,26 +1347,93 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
 
   const handleApproveAll = useCallback(async () => {
     // Only approve non-duplicates with high-confidence scope suggestions in bulk.
-    const nonDupes = contacts.filter((c) => {
-      if (duplicates.has(c.id)) return false;
-      if (c.verification_status && c.verification_status !== 'verified') return false;
-      const confidence =
-        c.suggested_us_network_confidence ?? c.discovery_confidence ?? 0;
-      return confidence >= 0.8;
-    });
+    const nonDupes = contacts.filter((contact) =>
+      isContactReadyForBulkApproval(contact, duplicates.has(contact.id))
+    );
+    if (nonDupes.length === 0) return;
+
+    let completed = 0;
+    let failed = 0;
+    setActionId('all');
+    setBulkApprovalProgress({ completed, total: nonDupes.length, failed });
+
     for (const contact of nonDupes) {
-      setActionId(contact.id);
-      await approveContact(
-        contact,
-        sectors,
-        contact.suggested_us_network_status === 'us_connected_abroad'
-          ? 'us_connected_abroad'
-          : 'us_based'
-      );
+      let approved = false;
+      try {
+        approved = await approveContact(
+          contact,
+          sectors,
+          contact.suggested_us_network_status === 'us_connected_abroad'
+            ? 'us_connected_abroad'
+            : 'us_based'
+        );
+      } catch (error) {
+        notifyError(error, {
+          hint: `${contact.name} remains in Verification and the remaining contacts will still be processed.`,
+        });
+      }
+
+      completed += 1;
+      if (!approved) failed += 1;
+      setBulkApprovalProgress({ completed, total: nonDupes.length, failed });
+
+      if (approved) {
+        setContacts((previous) => previous.filter((item) => item.id !== contact.id));
+        setDuplicates((previous) => {
+          const next = new Map(previous);
+          next.delete(contact.id);
+          return next;
+        });
+      }
     }
-    setActionId(null);
+
     await loadData();
+    if (failed === 0) {
+      notifySuccess(
+        `Approved all ${nonDupes.length} ready contact${nonDupes.length === 1 ? '' : 's'}.`,
+      );
+    } else {
+      notifyError(new Error(`${failed} of ${nonDupes.length} contacts could not be approved.`), {
+        hint: 'Failed contacts remain in Verification so you can retry them.',
+      });
+    }
+    setBulkApprovalProgress(null);
+    setActionId(null);
   }, [contacts, sectors, duplicates, loadData]);
+
+  const handleVerifyQueued = useCallback(async () => {
+    const queuedCount = contacts.filter(
+      (contact) => (contact.verification_status ?? 'queued') === 'queued',
+    ).length;
+    if (queuedCount === 0) return;
+
+    setActionId('verify-queued');
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
+        body: { action: 'housekeeping' },
+      });
+      if (error) throw error;
+
+      const started = Number(
+        (data as { housekeeping?: { pending_contacts_enqueued?: number } } | null)
+          ?.housekeeping?.pending_contacts_enqueued ?? 0,
+      );
+      if (started === 0) {
+        throw new Error('The verification queue did not start.');
+      }
+
+      notifySuccess(`Verification started for ${queuedCount} queued contact${queuedCount === 1 ? '' : 's'}.`, {
+        hint: 'The queue will continue automatically in verified batches.',
+      });
+      await loadData();
+    } catch (error) {
+      notifyError(error, {
+        hint: 'Queued contacts were left unchanged. Try again or check Runs for the failed verification batch.',
+      });
+    } finally {
+      setActionId(null);
+    }
+  }, [contacts, loadData]);
 
   const handleRejectAll = useCallback(async () => {
     // Only verified rows are eligible for rejection. Non-verified rows are in
@@ -1521,7 +1616,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+        <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
       </div>
     );
   }
@@ -1543,6 +1638,12 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
 
   const dupeCount = duplicates.size;
   const newCount = contacts.length - dupeCount;
+  const queuedContactCount = contacts.filter(
+    (contact) => (contact.verification_status ?? 'queued') === 'queued',
+  ).length;
+  const readyContactCount = contacts.filter((contact) =>
+    isContactReadyForBulkApproval(contact, duplicates.has(contact.id))
+  ).length;
   const organizationDupeCount = organizationDuplicates.size;
   const organizationNewCount = organizations.length - organizationDupeCount;
 
@@ -1593,13 +1694,33 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {queuedContactCount > 0 && (
+            <button
+              onClick={handleVerifyQueued}
+              disabled={actionId !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {actionId === 'verify-queued' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Verify Queued ({queuedContactCount})
+            </button>
+          )}
           <button
             onClick={handleApproveAll}
-            disabled={actionId !== null}
+            disabled={actionId !== null || readyContactCount === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
           >
-            <Check className="w-3.5 h-3.5" />
-            Approve{dupeCount > 0 ? ` New (${newCount})` : ' All'}
+            {bulkApprovalProgress ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Check className="w-3.5 h-3.5" />
+            )}
+            {bulkApprovalProgress
+              ? `Approving ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}`
+              : `Approve Ready (${readyContactCount})`}
           </button>
           <button
             onClick={handleRejectAll}
@@ -1665,6 +1786,15 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             )}
 
             <div className="flex items-start justify-between gap-4">
+              {contact.profile_photo_url && (
+                <img
+                  src={contact.profile_photo_url}
+                  alt={`${contact.name} profile`}
+                  className="h-12 w-12 flex-shrink-0 rounded-full border border-gray-200 object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              )}
               <div className="min-w-0 flex-1 space-y-1.5">
                 {/* Name + occupation */}
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1672,7 +1802,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     {contact.name}
                   </p>
                   {contact.occupation && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-teal-50 text-teal-700 rounded font-medium">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-yellow-50 text-yellow-800 rounded font-medium">
                       <Tag className="w-2.5 h-2.5" />
                       {contact.occupation}
                     </span>
@@ -1682,7 +1812,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                       contact.source === 'linkedin_search'
                         ? 'bg-blue-50 text-blue-600'
                       : contact.source === 'frontier_page'
-                        ? 'bg-teal-50 text-teal-700'
+                        ? 'bg-yellow-50 text-yellow-800'
                         : 'bg-amber-50 text-amber-600'
                     }`}
                   >
@@ -2120,7 +2250,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-gray-900">{organization.name}</p>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-teal-50 text-teal-700 rounded font-medium">
+                        <span className="text-[10px] px-1.5 py-0.5 bg-yellow-50 text-yellow-800 rounded font-medium">
                           {organizationSourceLabel(organization.source)}
                         </span>
                         {evidenceCount > 0 && (

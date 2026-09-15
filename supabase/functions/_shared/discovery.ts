@@ -18,6 +18,11 @@ export interface ParsedPageLink {
   anchorText: string;
 }
 
+export interface ParsedPageImage {
+  url: string;
+  altText: string;
+}
+
 export interface FetchedPage {
   url: string;
   finalUrl: string;
@@ -30,6 +35,7 @@ export interface FetchedPage {
   text: string;
   contentHash: string;
   links: ParsedPageLink[];
+  images: ParsedPageImage[];
   fetchedAt: string;
 }
 
@@ -300,6 +306,59 @@ function extractLinks(doc: Document | null, baseUrl: string): ParsedPageLink[] {
   return links;
 }
 
+function isUsefulProfileImage(url: string, label: string): boolean {
+  const value = `${url} ${label}`.toLowerCase();
+  if (/logo|icon|favicon|sprite|banner|header|footer|placeholder|default-avatar/.test(value)) {
+    return false;
+  }
+  return !/\.svg(?:$|\?)/i.test(url);
+}
+
+export function extractProfileImageCandidates(
+  doc: Document | null,
+  baseUrl: string,
+): ParsedPageImage[] {
+  if (!doc) return [];
+
+  const ranked: Array<ParsedPageImage & { score: number }> = [];
+  const seen = new Set<string>();
+  const add = (rawUrl: string, altText: string, score: number) => {
+    const url = canonicalizeUrl(rawUrl, baseUrl);
+    const label = normalizeWhitespace(altText);
+    if (!url || seen.has(url) || !isUsefulProfileImage(url, label)) return;
+    seen.add(url);
+    ranked.push({ url, altText: label, score });
+  };
+
+  for (const selector of [
+    'meta[property="og:image"]',
+    'meta[property="og:image:secure_url"]',
+    'meta[name="twitter:image"]',
+    'meta[name="twitter:image:src"]',
+  ]) {
+    const node = doc.querySelector(selector);
+    add(node?.getAttribute('content') || '', doc.title || 'Page profile image', 100);
+  }
+
+  const imageLink = doc.querySelector('link[rel="image_src"]');
+  add(imageLink?.getAttribute('href') || '', doc.title || 'Page profile image', 90);
+
+  for (const image of Array.from(doc.querySelectorAll('img'))) {
+    const rawUrl = image.getAttribute('src') || image.getAttribute('data-src') || '';
+    const altText = image.getAttribute('alt') || image.getAttribute('title') || '';
+    const context = `${altText} ${image.getAttribute('class') || ''}`.toLowerCase();
+    let score = 10;
+    if (/portrait|headshot|profile|avatar|faculty|staff|speaker|member/.test(context)) score += 35;
+    if (altText) score += 10;
+    add(rawUrl, altText, score);
+  }
+
+  return ranked
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 24)
+    .map(({ url, altText }) => ({ url, altText }));
+}
+
 export async function fetchPage(url: string): Promise<FetchedPage> {
   const requestedUrl = canonicalizeUrl(url) || url;
   const controller = new AbortController();
@@ -332,6 +391,7 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
         text: "",
         contentHash: "",
         links: [],
+        images: [],
         fetchedAt,
       };
     }
@@ -346,6 +406,7 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
     const contentHash = text ? await hashString(text) : "";
     const excerpt = text.slice(0, 500);
     const links = extractLinks(doc, finalUrl);
+    const images = extractProfileImageCandidates(doc, finalUrl);
 
     return {
       url: requestedUrl,
@@ -359,6 +420,7 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
       text,
       contentHash,
       links,
+      images,
       fetchedAt,
     };
   } finally {

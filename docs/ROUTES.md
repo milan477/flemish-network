@@ -2,34 +2,38 @@
 
 | Path | Description |
 |---|---|
-| `/` | Search the network. URL state: `view`, `q`, `sector`, `occupation`, `fc×N`, `city`, `state`, `people`, `organizations`, `lectures`, `focusCity`, `focusState`. The `people` and `organizations` toggles are written symmetrically as `=1` or `=0` (never omitted) so that on→off→on round-trips through merged URL state (UX_REMEDIATION Phase 4A). |
+| `/` | **Network** with Map, List, and Stats views. URL state: `view=map\|list\|stats`, `q`, `sector`, `occupation`, `fc×N`, `city`, `state`, `people`, `organizations`, `lectures`, `focusCity`, `focusState`. The `people` and `organizations` toggles are written symmetrically as `=1` or `=0`. |
 | `/people/:id` | Person profile. Editor staff can edit and verify profiles; admin staff can permanently delete approved contacts from this page. |
 | `/organizations/:id` | Organization profile |
 | `/collections` | Collection list |
 | `/collections/:id` | Collection detail |
-| `/admin` | Staff workspace default redirect to `/admin/discovery` |
-| `/admin/discovery` | Discovery intake, people/organization import, prompted discovery, and Discovery history. Pending people and pending organization review have moved to `/admin/verification` (verify-before-promote). URL state: `mode=discovery\|manual\|import` selects the intake sub-tab (default `discovery`; missing/unknown values normalize to `discovery`); optional `prompt` pre-fills the Discovery intake prompt box without starting a run. The header `+` button (aria-label "Add person or organization") deep-links to `/admin/discovery?mode=manual`. The Run Discovery button is disabled while any `discovery` agent_run is `pending` or `running`. |
-| `/admin/verification` | Two top-level collapsible sections — **Pending Discovered People** and **Pending Discovered Organizations** (each with count badge, chevron toggle, both open by default) — followed by Records Freshness, Profile Update Suggestions, and Organization Update Suggestions. Discovered rows display greyed-out while `verification_status IN ('queued', 'verifying')` and gain Approve/Reject only when `verified`; verification contradictions are hard-deleted by `agent-verify` and disappear from the list. UI subscribes to `discovered_contacts` and `discovered_organizations` via Supabase realtime so cards flip from greyed → normal without manual refresh. No user-facing scope picker — Approve uses the scope inferred by `agent-verify`. |
-| `/admin/coverage` | Descriptive coverage overview: people/org/city stat cards, occupation breakdown, data quality, sector distribution, Flemish connection chart, and location explorer. URL state: `?tab=coverage` |
-| `/admin/growth` | Discovery planning and reflection loop status. The "Where to look next" panel's Explore button and the header "Start discovery run" button both trigger `agent-scheduler` with `params.suggestion_id` so the run consumes a specific reflection suggestion (rather than the bandit picking arms independently). _Planned (not yet built): source yield panel, entity pivots panel, geography gaps panel, recommended-next-actions panel. These are tracked in `docs/WEBAPP-MASTERPLAN.md` and will be re-added here when shipped._ |
-| `/admin/system` | Service schedule cards (Discovery, Verification) with cadence presets, per-card Run-now, and a `Schedule: <cadence>` line; search-index footer reads `N search-index records pending` with a `Drain now` button (tooltip describes that it flushes the embedding queue); top toolbar exposes `Test Supabase` and `Run Housekeeping` (both with `title`/`aria-label` describing their effect); today's API usage tile (Apify metrics gated behind `VITE_SHOW_APIFY` or non-zero usage); and stuck-run cancellation. Stale failure banners are suppressed once a newer success lands. Schedules driven by `agent-scheduler-tick` pg_cron job (every 5 min) and persisted in `agent_schedules`; preset changes require admin role. |
-| `/admin/access` | Admin-only staff access management |
+| `/expand` | Editor/admin redirect to `/expand/discovery`. |
+| `/expand/import` | Manual people/organization intake and file import. URL state: `mode=manual\|import`. The header `+` button deep-links to `?mode=manual`. |
+| `/expand/discovery` | Discovery propositions and reflection suggestions followed by prompted discovery. Optional `prompt` pre-fills the prompt without starting a run. |
+| `/expand/runs` | Discovery and Verification run history, active-run status, outcomes, operational details, and maintenance run controls. The tab badge shows the current active-run count. Legacy `/expand/running` redirects here. |
+| `/expand/verification` | Review queues for pending discovered people and organizations. |
+| `/expand/maintenance` | Records Freshness, automatic Discovery/Verification schedules, search-index queue, housekeeping, and stuck-run recovery, followed by profile and organization update suggestions. |
+| `/settings` | Redirect to System for editors/admins; unauthorized System access normalizes to My Account. |
+| `/settings/system` | API usage totals and 14-day usage chart, visible definitions for the Light/Normal/Aggressive maintenance variables, connected services, secure links for adding backend API keys or frontend environment variables, and Supabase connectivity testing. |
+| `/settings/access` | Admin-only staff access management. |
+| `/settings/account` | Staff profile and password update. Clicking the user name in the top navigation opens this route. |
 | `/login` | Staff email/password sign-in and password reset request |
-| `/auth/callback` | Supabase invite/recovery redirect landing; routes password setup to `/account?setPassword=1` |
-| `/account` | Staff profile and password update |
+| `/auth/callback` | Supabase invite/recovery redirect landing; existing `/account?setPassword=1` callbacks are preserved through the compatibility redirect. |
+| `/account` | Compatibility redirect to `/settings/account`, preserving query parameters. |
 
-Unknown `/admin/:tab` values are normalized back to `/admin/discovery`. The legacy slugs `/admin/overview`, `/admin/discovered`, `/admin/agents`, and `/contacts/new` are registered as explicit `<Navigate to="/admin/discovery" replace />` aliases ahead of the `<RequireAuth>` boundary so they short-circuit before any auth race can fire — earlier versions exposed a transient `loadStaffUser` failure on those routes that broadcast a global SIGNED_OUT to every tab.
+Unknown `/expand/:tab` values normalize to `/expand/discovery`; unknown or unauthorized `/settings/:tab` values normalize to the first permitted settings tab. Legacy `/admin/*` paths redirect to their new destination (`growth` merges into Discovery, `coverage` becomes Network Stats, `system` becomes Maintenance, and `access` becomes Settings > Access). `/contacts/new` redirects to `/expand/import?mode=manual`.
 
 Discovery intake defaults to the prompted Discovery option and starts runs only through `agent-scheduler`. Manual intake and file import create pending candidates only. People are written to `discovered_contacts`; organizations are written to `discovered_organizations` plus evidence rows when evidence is supplied. Reviewer approval in the pending queues is the route path that creates or merges approved `people` or `organizations`; intake and import do not create or update approved records.
+
+An empty collection shows **Browse Network** followed by **Launch Discovery**. Launch Discovery asks the collection suggestion planner for collection-specific search directions, navigates to `/expand/discovery`, and pre-fills the generated prompt. It does not start a run until staff select **Run Discovery**.
 
 ## Staff Auth Contract
 
 - Staff sign-in uses Supabase Auth email/password (`signInWithPassword`), not magic links.
 - `AuthProvider` (`src/lib/auth.tsx`) collapses concurrent `loadStaffUser` calls behind a single-flight ref keyed by `user.id` so the `activate_staff_user_session` RPC fires at most once per session change (was 3–5× per page load before 2026-05-10). Transient revalidation failures keep the cached profile and log a `console.warn`; only a confirmed invalid-JWT / disabled / unapproved error clears the session, and the cleanup uses `signOut({ scope: 'local' })` so it does not broadcast to sibling tabs. Explicit user-initiated logout still uses global scope.
-- `/admin/access` invites staff through the `invite-staff-user` edge function. The function requires admin staff auth, writes/updates the approved `staff_users` row, and calls Supabase `auth.admin.inviteUserByEmail`.
-- `/admin/access` removes staff through the `remove-staff-user` edge function. The function requires admin staff auth, refuses self-removal, deletes the `staff_users` row, and deletes the linked `auth.users` record so the user disappears from the access list (re-inviting is required to grant access again).
-- Invite and recovery emails redirect through `/auth/callback` and then to `/account?setPassword=1`.
-- New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to `/account` until Supabase Auth password update succeeds and the flag is cleared.
+- `/settings/access` invites and removes staff through the existing staff-management edge functions and remains admin-only.
+- Invite and recovery emails redirect through `/auth/callback`; the legacy `/account?setPassword=1` destination forwards to `/settings/account?setPassword=1`.
+- New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to account setup until the password update succeeds.
 - Client password setup requires at least 12 characters with uppercase, lowercase, number, and symbol characters. Supabase Auth password policy should match or exceed that rule in project settings.
 - Password reset requests use Supabase Auth `resetPasswordForEmail` after checking `can_request_staff_login`.
 
@@ -70,12 +74,12 @@ Discovery intake defaults to the prompted Discovery option and starts runs only 
 - Search result cards and organization profiles use the shared add-to-collection control; it inserts exactly one member entity per row with either `person_id` or `organization_id`.
 - Response: `{ message, searches, candidates, gap }`
 - Each candidate has `entity_type = "person" | "organization"`, `id`, `name`, `reason`, `score`, optional `snippet`, and `source_search`.
-- `gap.should_offer` may include a `reason` and `suggested_prompt` for navigating to `/admin/discovery?prompt=<encoded prompt>`. The collection suggestion endpoint and route handoff must not start Discovery; staff must explicitly run the prefilled prompt.
+- `gap.should_offer` may include a `reason` and `suggested_prompt` for navigating to `/expand/discovery?prompt=<encoded prompt>`. The collection suggestion endpoint and route handoff must not start Discovery; staff must explicitly run the prefilled prompt.
 - Legacy people-only callers may still read `suggestions`, which mirrors person candidates as `{ id, name, reason, similarity }`.
 
 ## Reflection API Contract
 
-The Reflection section in `DiscoveryPlanningPanel` (shown within `/admin/growth`) uses two data sources:
+The Reflection section in `DiscoveryPlanningPanel` (shown first within `/expand/discovery`) uses two data sources:
 
 1. Direct Supabase query on `discovery_reflection_suggestions` for active suggestions (`expires_at > now()`, ordered `generated_at DESC`).
 2. `supabase.functions.invoke('agent-discovery-reflect', { body: {} })` for the "Run Reflection Now" button.
@@ -85,4 +89,3 @@ The `agent-discovery-reflect` endpoint:
 - Request: `{}` (no parameters).
 - Response: `{ status: "ok", suggestions_written, population_summary, suggestions }` or `{ status: "ok", suggestions_written: 0, message }` when Gemini returned nothing.
 - Side effect: inserts rows into `discovery_reflection_suggestions`; `agent-scheduler` housekeeping calls it daily when no suggestions were generated in the last 24 hours.
-

@@ -9,6 +9,11 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
 import { useAuth } from '../lib/auth';
 import { personCardLocationLabel } from '../lib/networkScope';
+import {
+  organizationExactSearchScore,
+  personExactSearchScore,
+  type SearchRefinementGroup,
+} from '../lib/searchRefinements';
 
 interface DirectoryGridProps {
   nameMatches: Person[];
@@ -24,11 +29,157 @@ interface DirectoryGridProps {
   snippets?: Map<string, string>;
   allPeople?: Person[];
   searchError?: string | null;
+  refinementGroups?: SearchRefinementGroup[];
+  aiConcepts?: string[];
   hasMorePeople?: boolean;
   hasMoreOrgs?: boolean;
   loadingMore?: boolean;
   onLoadMorePeople?: () => void;
   onLoadMoreOrgs?: () => void;
+}
+
+function formatConcept(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^[A-Z0-9&.-]{2,}$/.test(trimmed)) return trimmed;
+
+  return trimmed
+    .split(/\s+/)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && ['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'the', 'to'].includes(lower)) {
+        return lower;
+      }
+      return `${word[0].toUpperCase()}${word.slice(1)}`;
+    })
+    .join(' ');
+}
+
+function conceptsTried(
+  concepts: string[] | undefined,
+  refinements: SearchRefinementGroup[],
+  query: string
+): string[] {
+  const candidates = refinements.length > 0
+    ? refinements.map((refinement) => refinement.value)
+    : concepts?.length
+      ? concepts
+      : [query];
+  const seen = new Set<string>();
+
+  return candidates
+    .map(formatConcept)
+    .filter((concept) => {
+      const key = concept.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 3);
+}
+
+function SearchResultGroup({
+  title,
+  people,
+  organizations,
+  onNavigate,
+  snippets,
+  searchQuery,
+  suggested = false,
+  loading = false,
+}: {
+  title: string;
+  people: Person[];
+  organizations: Organization[];
+  onNavigate: (page: string, id?: string) => void;
+  snippets?: Map<string, string>;
+  searchQuery?: string;
+  suggested?: boolean;
+  loading?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const items = [
+    ...people.map((person) => ({ kind: 'person' as const, value: person })),
+    ...organizations.map((organization) => ({ kind: 'organization' as const, value: organization })),
+  ];
+  const visibleItems = expanded ? items : items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {suggested ? (
+            <Sparkles className="h-4 w-4 flex-shrink-0 text-yellow-600" />
+          ) : (
+            <Search className="h-4 w-4 flex-shrink-0 text-gray-500" />
+          )}
+          <h2 className="truncate text-base font-semibold text-gray-900">{title}</h2>
+          <span className="text-sm text-gray-400">({items.length})</span>
+          {suggested && (
+            <span className="hidden rounded-full bg-yellow-50 px-2 py-0.5 text-[11px] font-medium text-yellow-700 sm:inline">
+              AI enhancement
+            </span>
+          )}
+        </div>
+        {people.length > 0 && (
+          <div className="flex items-center gap-2">
+            <PeopleExportMenu people={people} />
+            <BulkAddButton people={people} />
+          </div>
+        )}
+      </div>
+
+      {loading && items.length === 0 ? (
+        <div className="flex items-center gap-2 py-5 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+          Finding exact matches for this refinement...
+        </div>
+      ) : items.length === 0 ? (
+        <p className="rounded-xl bg-gray-50 px-4 py-5 text-sm text-gray-500">
+          No exact matches in this category yet.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {visibleItems.map((item) => item.kind === 'person' ? (
+              <PersonCard
+                key={`person:${item.value.id}`}
+                person={item.value}
+                onNavigate={onNavigate}
+                snippet={snippets?.get(item.value.id)}
+                searchQuery={searchQuery}
+              />
+            ) : (
+              <OrganizationCard
+                key={`organization:${item.value.id}`}
+                organization={item.value}
+                onNavigate={onNavigate}
+                snippet={snippets?.get(item.value.id)}
+              />
+            ))}
+          </div>
+          {items.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((current) => !current)}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:border-yellow-400 hover:text-gray-900"
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {expanded ? 'Show fewer' : `Show ${hiddenCount} more`}
+            </button>
+          )}
+          {loading && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />
+              Looking for more exact matches...
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 function PersonCard({
@@ -237,6 +388,8 @@ export default function DirectoryGrid({
   snippets,
   allPeople,
   searchError,
+  refinementGroups = [],
+  aiConcepts,
   hasMorePeople,
   hasMoreOrgs,
   loadingMore,
@@ -256,6 +409,36 @@ export default function DirectoryGrid({
 
   const isSearchMode = !!searchQuery;
   const displayPeople = allPeople || [];
+  const generalPeople = [...nameMatches, ...aiResults]
+    .filter(
+      (person, index, rows) => rows.findIndex((candidate) => candidate.id === person.id) === index
+    )
+    .map((person, index) => ({
+      person,
+      index,
+      score: personExactSearchScore(person, searchQuery || '', snippets?.get(person.id)),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ person }) => person);
+  const generalOrganizations = organizations
+    .map((organization, index) => ({
+      organization,
+      index,
+      score: organizationExactSearchScore(
+        organization,
+        searchQuery || '',
+        snippets?.get(organization.id)
+      ),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ organization }) => organization);
+  const attemptedConcepts = conceptsTried(aiConcepts, refinementGroups, searchQuery || '');
+  const hasSearchResults = generalPeople.length > 0 ||
+    generalOrganizations.length > 0 ||
+    refinementGroups.length > 0 ||
+    attemptedConcepts.length > 0;
 
   return (
     <div className="space-y-8">
@@ -285,30 +468,7 @@ export default function DirectoryGrid({
             </div>
           )}
 
-          {nameMatches.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <Search className="w-4 h-4 text-sky-600" />
-                  <h2 className="text-base font-semibold text-gray-900">
-                    Matching Names
-                  </h2>
-                  <span className="text-sm text-gray-400">({nameMatches.length})</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <PeopleExportMenu people={nameMatches} />
-                  <BulkAddButton people={nameMatches} />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {nameMatches.map((person) => (
-                  <PersonCard key={person.id} person={person} onNavigate={onNavigate} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {aiLoading && (
+          {aiLoading && !hasSearchResults && (
             <div className="flex items-center space-x-3 py-6">
               <Loader2 className="w-5 h-5 text-yellow-600 animate-spin" />
               <span className="text-sm text-gray-600">
@@ -317,54 +477,86 @@ export default function DirectoryGrid({
             </div>
           )}
 
-          {!aiLoading && aiResults.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4 text-yellow-600" />
-                  <h2 className="text-base font-semibold text-gray-900">
-                    AI-Enhanced Results
-                  </h2>
-                  <span className="text-sm text-gray-400">({aiResults.length})</span>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <PeopleExportMenu people={aiResults} />
-                  <BulkAddButton people={aiResults} />
-                  {onClearSearch && (
-                    <button
-                      onClick={onClearSearch}
-                      className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Clear search</span>
-                    </button>
+          {hasSearchResults && (
+            <>
+              <div className="flex justify-end">
+                {onClearSearch && (
+                  <button
+                    onClick={onClearSearch}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear search</span>
+                  </button>
+                )}
+              </div>
+              <SearchResultGroup
+                key={`general:${searchQuery}`}
+                title="General matches"
+                people={generalPeople}
+                organizations={generalOrganizations}
+                onNavigate={onNavigate}
+                snippets={snippets}
+                searchQuery={searchQuery}
+              />
+              {aiLoading && refinementGroups.length === 0 && (
+                <section className="rounded-2xl border border-yellow-200 bg-yellow-50/60 p-5">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin text-yellow-600" />
+                    <div>
+                      <h2 className="text-base font-semibold text-gray-900">AI enhancement</h2>
+                      <p className="text-xs text-gray-500">Finding useful interpretations...</p>
+                    </div>
+                  </div>
+                </section>
+              )}
+              {!aiLoading && (refinementGroups.length > 0 || attemptedConcepts.length > 0) && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 px-1">
+                    <Sparkles className="h-5 w-5 text-yellow-600" />
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900">AI enhancement</h2>
+                      <p className="text-xs text-gray-500">Suggested interpretations of your search</p>
+                    </div>
+                  </div>
+                  {attemptedConcepts.length > 0 && (
+                    <div className="rounded-xl border border-yellow-200 bg-yellow-50/60 px-4 py-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-yellow-800">
+                        {attemptedConcepts.length === 1 ? 'Concept tried' : 'Concepts tried'}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {attemptedConcepts.map((concept) => (
+                          <span
+                            key={concept}
+                            className="rounded-full border border-yellow-200 bg-white px-2.5 py-1 text-xs text-gray-700"
+                          >
+                            {concept}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {refinementGroups.map((group) => (
+                    <SearchResultGroup
+                      key={group.id}
+                      title={group.label}
+                      people={group.people}
+                      organizations={group.organizations}
+                      onNavigate={onNavigate}
+                      snippets={new Map(group.snippets)}
+                      searchQuery={searchQuery}
+                      suggested
+                      loading={group.loading}
+                    />
+                  ))}
+                  {refinementGroups.length === 0 && (
+                    <p className="rounded-xl border border-gray-200 bg-white px-4 py-5 text-sm text-gray-500">
+                      No AI-enhanced matches found for this concept.
+                    </p>
                   )}
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {aiResults.map((person) => (
-                  <PersonCard
-                    key={person.id}
-                    person={person}
-                    onNavigate={onNavigate}
-                    snippet={snippets?.get(person.id)}
-                    searchQuery={searchQuery}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!aiLoading && aiResults.length === 0 && nameMatches.length > 0 && onClearSearch && (
-            <div className="flex justify-end">
-              <button
-                onClick={onClearSearch}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-gray-100 rounded-lg text-sm text-gray-600 border border-gray-200 transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Clear search</span>
-              </button>
-            </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -412,7 +604,7 @@ export default function DirectoryGrid({
         </div>
       )}
 
-      {organizations.length > 0 && (
+      {!isSearchMode && organizations.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <button
@@ -467,7 +659,7 @@ export default function DirectoryGrid({
         </div>
       )}
 
-      {isSearchMode && !aiLoading && nameMatches.length === 0 && aiResults.length === 0 && organizations.length === 0 && (
+      {isSearchMode && !aiLoading && !hasSearchResults && (
         <div className="text-center py-12">
           <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
             <Search className="w-7 h-7 text-gray-300" />

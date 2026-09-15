@@ -644,6 +644,7 @@ export type Database = {
           location_state: string | null
           name: string
           occupation: string | null
+          profile_photo_url: string | null
           reject_reason: string | null
           reject_reason_note: string | null
           review_outcome: string | null
@@ -684,6 +685,7 @@ export type Database = {
           location_state?: string | null
           name: string
           occupation?: string | null
+          profile_photo_url?: string | null
           reject_reason?: string | null
           reject_reason_note?: string | null
           review_outcome?: string | null
@@ -724,6 +726,7 @@ export type Database = {
           location_state?: string | null
           name?: string
           occupation?: string | null
+          profile_photo_url?: string | null
           reject_reason?: string | null
           reject_reason_note?: string | null
           review_outcome?: string | null

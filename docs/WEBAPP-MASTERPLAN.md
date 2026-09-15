@@ -22,22 +22,24 @@ Archived context lives under `docs/archive/` and is not source of truth. Do not 
 
 ## Target Product Shape
 
-The app should feel like five services, not a pile of agents.
+The app exposes four primary navigation areas while preserving the five underlying service responsibilities.
 
 | Product service | Route | Primary UI | Backend owner |
 |---|---|---|---|
-| Search The Network | `/` | Search map/list, filters, ranked people and organizations | `search-people` |
+| Search The Network | `/` | Network Map/List, filters, ranked people and organizations | `search-people` |
 | Build A Collection | `/collections`, `/collections/:id` | Collection list/detail, draft workflow, candidate approval | `suggest-people` collection suggestions over approved people and organizations |
-| Expand The Database | `/admin/discovery` | Manual intake, import, prompted discovery, pending candidate review | `agent-scheduler` -> `agent-discovery` |
-| Verify And Enrich Records | `/admin/verification` | Stale records, suggestions, derived labels, inline verification | `agent-verify`; `update-profile` remains preview mode until consolidated |
-| Understand And Grow The Network | `/admin/growth` | Coverage, source yield, pivots, gaps, recommended discovery actions | `agent-scheduler` planning and metrics |
+| Expand The Database | `/expand/import`, `/expand/discovery` | Manual/file intake, propositions, prompted discovery, and history | `agent-scheduler` -> `agent-discovery` |
+| Verify And Enrich Records | `/expand/verification`, `/expand/maintenance` | Pending-candidate review in Verification; freshness and update suggestions in Maintenance | `agent-verify`; `update-profile` remains preview mode until consolidated |
+| Understand And Grow The Network | `/?view=stats`, `/expand/discovery` | Descriptive network stats plus discovery propositions and reflection | `agent-scheduler` planning and metrics |
 
-`/admin/system` is the operator health surface. `/admin/access` is admin-only staff access management.
+`/expand/maintenance` owns automatic-run health. `/settings/system` owns API usage, integrations, credentials, and connectivity. `/settings/access` is admin-only access management; `/settings/account` is available to every authenticated staff user.
 
 ## Product Decisions
 
-- Search and Collections stay primary in the navigation.
-- `/admin` is a staff workspace with Discovery, Verification, Network Growth, System, and Access tabs.
+- Primary navigation is Network, Collections, Expand, and Settings.
+- Network has Map, List, and Stats views.
+- Expand has Import, Discovery, Runs, Verification, and Maintenance tabs. Runs centralizes run history and maintenance controls and shows a live count badge for pending and active agent runs.
+- Settings has System, Access, and My Account tabs; role checks still apply.
 - Person-to-person connections are removed from the product. Flemish/Belgian ties remain profile and organization facts, not social edges.
 - Discovery is evidence-first. New people and organizations stay pending until reviewed.
 - Collections search existing records only. Database expansion requires an explicit handoff to Discovery.
@@ -433,6 +435,7 @@ Todos:
 - `[done]` Phase 6D updates Discovery extraction to emit canonical fact candidates, candidate aliases, role, source URL, evidence excerpt, confidence, and raw evidence without auto-promoting model aliases to filter chips.
 - `[done]` Phase 6D removes the deprecated approved-organization raw relevance column from active schema, generated types, edge functions, frontend source, and source-of-truth docs.
 - `[done]` Phase 6D keeps durable organization verification suggestions deferred to Phase 7 while allowing normalized organization facts from approved Discovery/manual/import/profile workflows.
+- `[done]` Discovery extraction receives the live Flemish connection catalog, resolves model candidates against canonical names and approved aliases, and creates missing entities as non-filterable catalog rows so approved relationships remain searchable without polluting default filter chips.
 - `[done]` Search filters and chips query `is_filterable = true`; non-filterable facts stay searchable through evidence/snippets but are not default chips.
 - `[done]` Search documents and embeddings are refreshed from approved canonical fact changes and alias changes.
 
@@ -769,13 +772,24 @@ Goal: make the platform usable by Flemish government staff for a feedback round,
 - `[done]` Root-caused "agent runs time out": every pg_cron-driven run was rejected by `agent-discovery`/`agent-verify` with `401 auth_failed: invalid claim: missing sub claim` because `requireStaffRole` ran `auth.getUser` on the service-role key. Added `requireStaffOrServiceRole` (exact key equality against `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEYS`) and switched `agent-discovery`, `agent-verify`, `agent-discovery-reflect`, and `generate-embeddings` to it. The scheduler `tick` uses the same equality check instead of decoding an unverified JWT payload. Repo touchpoints: `supabase/functions/_shared/auth.ts`, `supabase/functions/_shared/__tests__/auth_test.ts`, the four function entrypoints, `supabase/config.toml` (`agent-discovery-reflect` now `verify_jwt = false`).
 - `[done]` Scheduler dispatch now records downstream rejections (`dispatchAgentFunction` + `EdgeRuntime.waitUntil`) instead of leaving silent `running` zombies; `markZombieRuns` also fails `pending` rows older than 10 minutes; the tick runs zombie cleanup every 5 minutes and full housekeeping on the first tick of each UTC hour. Repo touchpoints: `supabase/functions/agent-scheduler/index.ts`.
 - `[done]` Cron job re-scheduled with a 30 s pg_net timeout (migration `20260914210000`); vault `service_role_key` rotated to the project's `sb_secret_…` default secret key so the tick matches the key the functions receive. Retired `agent-connections` function deleted from the project.
-- `[done]` Purged the synthetic Phase 3 dataset from the linked project (160 `phase3_synthetic_seed` people, 2 `example.com` CSV test people, 75 synthetic organizations, and all dependent rows). Kept the five real staff collections (memberships were synthetic and are gone), dropped the "UX Review E Test" collection, deleted the two `example.com` import contacts, and reset the 20 real, verified April discoveries from `approved` (dangling `approved_person_id`) back to `pending` so staff can approve them into `people` from `/admin/discovery`.
+- `[done]` Purged the synthetic Phase 3 dataset from the linked project (160 `phase3_synthetic_seed` people, 2 `example.com` CSV test people, 75 synthetic organizations, and all dependent rows). Kept the five real staff collections (memberships were synthetic and are gone), dropped the "UX Review E Test" collection, deleted the two `example.com` import contacts, and reset the 20 real, verified April discoveries from `approved` (dangling `approved_person_id`) back to `pending` so staff can approve them into `people` from `/expand/verification`.
 - `[done]` Verified end to end after deploy: a tick with the project key dispatched a discovery run that completed in 93 s (10 pages, 10 Gemini calls), the legacy JWT and a forged `role=service_role` JWT are rejected with 401, and a manual run from the Discovery intake path completes in about 130 s.
 - `[done]` Fixed verify-before-promote: `VERIFICATION_SCHEMA` used JSON-Schema `type: ["string", "null"]`, which Gemini's `response_schema` rejects with HTTP 400, so every discovered contact/organization verification since May ended in `errors` and nothing ever reached `verified`. Nullable fields now use `nullable: true`; `discoveredVerification_test.ts` guards it. Repo touchpoints: `supabase/functions/_shared/discoveredVerification.ts`.
 - `[done]` Tightened the discovery time budget for the free-plan 150 s wall clock (`DEADLINE_MS` 110 s → 80 s, no new page with < 30 s left) after the first unattended 21:00 UTC run was killed mid-wrap-up and surfaced as a zombie. Repo touchpoints: `supabase/functions/agent-discovery/index.ts`.
-- `[done]` Invited hilde.platinck@flanders.eu and veerle.cnudde@flanders.eu as admins through `invite-staff-user`. The invite for paul.hegge@flanders.eu hit the Supabase built-in email rate limit and must be re-sent from `/admin/access`; flore.depauw@flanders.eu is still `invited` without an auth user from May and also needs a re-send.
+- `[done]` Invited hilde.platinck@flanders.eu and veerle.cnudde@flanders.eu as admins through `invite-staff-user`. The invite for paul.hegge@flanders.eu hit the Supabase built-in email rate limit and must be re-sent from `/settings/access`; flore.depauw@flanders.eu is still `invited` without an auth user from May and also needs a re-send.
 - `[next]` Regenerate `supabase/functions/_shared/database.types.ts` from the linked schema: `deno check` on the edge functions reports about 100 pre-existing type errors from tables/columns added after the last generation (`discovery_reflection_suggestions`, `verification_attempts`, `manifest` JSON, ...). `npm run test:deno` is the gate that passes today.
-- `[next]` Watch the first unattended discovery ticks (09:00 and 21:00 UTC) and the hourly housekeeping in `/admin/system`; the pending queue in `/admin/discovery` is where staff feedback starts.
+- `[next]` Watch the first unattended discovery ticks (09:00 and 21:00 UTC) and the hourly housekeeping in `/expand/maintenance`; the pending queue in `/expand/verification` is where staff feedback starts.
+
+## Navigation IA Refresh — Completed 2026-09-14
+
+- `[done]` Replaced the primary Search label with Network and added URL-addressable Map, List, and Stats views.
+- `[done]` Kept Collections as a primary area.
+- `[done]` Replaced the monolithic Staff Workspace with Expand: Import, Discovery, Runs, Verification, and Maintenance; Runs carries a live badge and centralizes run history with maintenance controls.
+- `[done]` Merged Network Growth proposals into Discovery, ordered as the discovery launcher followed by categorized, collapsible suggestions/propositions and run history.
+- `[done]` Moved automatic Discovery/Verification schedules and recovery tooling into Maintenance.
+- `[done]` Added Settings with System, Access, and My Account. System contains API usage over time, integration status, secure credential-management links, and Supabase connectivity testing.
+- `[done]` Made the top-bar user name open My Account directly and kept `/account` as a query-preserving compatibility redirect for Supabase recovery links.
+- `[done]` Added redirects from the former `/admin/*` routes to their new destinations.
 
 ## Handoff Rules For Future Agents
 

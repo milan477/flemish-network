@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Moon, Sun, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
 import type { MapCluster } from '../lib/supabase';
 import ClusterPopover from './ClusterPopover';
 import L from 'leaflet';
@@ -9,6 +10,7 @@ import L from 'leaflet';
 // Leaflet styles for clustering (not included in default leaflet.css)
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Fix for default Leaflet icons in Vite
 delete (L.Icon.Default.prototype as L.Icon.Default & { _getIconUrl?: unknown })._getIconUrl;
@@ -32,13 +34,139 @@ interface MapVisualizationProps {
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
 const MAX_CIRCLE_SCALE_COUNT = 25;
+const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+const MAP_THEME_STORAGE_KEY = 'flemish-network-map-theme';
+const LIGHT_WATER_COLOR = '#e4e7e9';
+const DARK_THEME_SOURCE_WATER_COLOR = '#adadad';
+const MAP_LABEL_FONT = ['Noto Sans Regular'];
 
-function MapController({ onMapClick }: { onMapClick: () => void }) {
+type BasemapProvider = 'openfreemap' | 'osm';
+type MapTheme = 'light' | 'dark';
+
+function getInitialMapTheme(): MapTheme {
+  if (typeof window === 'undefined') return 'light';
+
+  try {
+    return window.localStorage.getItem(MAP_THEME_STORAGE_KEY) === 'dark'
+      ? 'dark'
+      : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+function ApiFreeBasemap({
+  provider,
+  theme,
+  onFallback,
+}: {
+  provider: BasemapProvider;
+  theme: MapTheme;
+  onFallback: () => void;
+}) {
+  const map = useMap();
+  const layerRef = useRef<L.MaplibreGL | null>(null);
+
+  useEffect(() => {
+    if (provider !== 'openfreemap') return;
+
+    let isActive = true;
+    let hasFailed = false;
+    let layer: L.MaplibreGL | null = null;
+
+    try {
+      layer = maplibreGL({
+        style: OPENFREEMAP_STYLE,
+        attributionControl: false,
+      });
+      layer.addTo(map);
+      layerRef.current = layer;
+
+      const maplibreMap = layer.getMaplibreMap();
+      const handleError = (event: unknown) => {
+        if (!isActive || hasFailed) return;
+        hasFailed = true;
+        console.warn('[map] OpenFreeMap failed; using the raster fallback', event);
+        onFallback();
+      };
+
+      maplibreMap.on('error', handleError);
+
+      return () => {
+        isActive = false;
+        maplibreMap.off('error', handleError);
+        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+        if (layerRef.current === layer) layerRef.current = null;
+      };
+    } catch (error) {
+      console.warn('[map] OpenFreeMap is unavailable; using the raster fallback', error);
+      onFallback();
+    }
+  }, [map, onFallback, provider]);
+
+  useEffect(() => {
+    if (provider !== 'openfreemap' || !layerRef.current) return;
+
+    const maplibreMap = layerRef.current.getMaplibreMap();
+    const applyMapStyle = () => {
+      if (maplibreMap.getLayer('water')) {
+        maplibreMap.setPaintProperty(
+          'water',
+          'fill-color',
+          theme === 'light' ? LIGHT_WATER_COLOR : DARK_THEME_SOURCE_WATER_COLOR
+        );
+      }
+
+      maplibreMap.getStyle().layers?.forEach((layer) => {
+        if (layer.type !== 'symbol' || !layer.layout?.['text-field']) return;
+
+        const configuredFont = layer.layout['text-font'];
+        if (JSON.stringify(configuredFont).includes('Italic')) {
+          maplibreMap.setLayoutProperty(layer.id, 'text-font', MAP_LABEL_FONT);
+        }
+      });
+    };
+
+    if (maplibreMap.isStyleLoaded()) {
+      applyMapStyle();
+      return;
+    }
+
+    maplibreMap.on('load', applyMapStyle);
+    return () => { maplibreMap.off('load', applyMapStyle); };
+  }, [provider, theme]);
+
+  if (provider === 'osm') {
+    return (
+      <TileLayer
+        maxZoom={19}
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
+    );
+  }
+
+  return null;
+}
+
+function MapController({
+  onMapClick,
+  onZoomChange,
+}: {
+  onMapClick: () => void;
+  onZoomChange: (zoom: number) => void;
+}) {
   const map = useMap();
   useEffect(() => {
+    const handleZoomEnd = () => { onZoomChange(map.getZoom()); };
+
+    onZoomChange(map.getZoom());
     map.on('click', onMapClick);
-    return () => { map.off('click', onMapClick); };
-  }, [map, onMapClick]);
+    map.on('zoomend', handleZoomEnd);
+    return () => {
+      map.off('click', onMapClick);
+      map.off('zoomend', handleZoomEnd);
+    };
+  }, [map, onMapClick, onZoomChange]);
   return null;
 }
 
@@ -53,12 +181,23 @@ export default function MapVisualization({
   totalOrganizations,
 }: MapVisualizationProps) {
   const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
+  const [basemapProvider, setBasemapProvider] = useState<BasemapProvider>('openfreemap');
+  const [mapTheme, setMapTheme] = useState<MapTheme>(getInitialMapTheme);
+  const [currentZoom, setCurrentZoom] = useState(INITIAL_ZOOM);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
     setSelectedCityKey(null);
   }, [clusters]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MAP_THEME_STORAGE_KEY, mapTheme);
+    } catch {
+      // The map still works when storage is unavailable.
+    }
+  }, [mapTheme]);
 
   useEffect(() => {
     if (!focusedCity || !mapRef.current) return;
@@ -80,8 +219,20 @@ export default function MapVisualization({
     setSelectedCityKey(null);
   }, []);
 
+  const handleBasemapFallback = useCallback(() => {
+    setBasemapProvider('osm');
+  }, []);
+
+  const toggleMapTheme = () => {
+    setMapTheme((theme) => theme === 'light' ? 'dark' : 'light');
+  };
+
   const zoomIn = () => { mapRef.current?.zoomIn(); };
-  const zoomOut = () => { mapRef.current?.zoomOut(); };
+  const zoomOut = () => {
+    if ((mapRef.current?.getZoom() ?? INITIAL_ZOOM) > INITIAL_ZOOM) {
+      mapRef.current?.zoomOut();
+    }
+  };
   const resetView = () => { mapRef.current?.setView(INITIAL_CENTER, INITIAL_ZOOM); };
   const totalResults = totalPeople + totalOrganizations;
 
@@ -140,7 +291,10 @@ export default function MapVisualization({
   }, []);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 select-none">
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 select-none basemap-${basemapProvider} map-theme-${mapTheme}`}
+    >
       <style>{`
         @keyframes pulse-slow {
           0%, 100% { transform: scale(1); opacity: 0.9; }
@@ -152,6 +306,14 @@ export default function MapVisualization({
         .custom-city-icon, .custom-merged-icon {
           background: none !important;
           border: none !important;
+        }
+        .map-theme-light.basemap-openfreemap .leaflet-gl-layer,
+        .map-theme-light.basemap-osm .leaflet-tile-pane {
+          filter: grayscale(1);
+        }
+        .map-theme-dark.basemap-openfreemap .leaflet-gl-layer,
+        .map-theme-dark.basemap-osm .leaflet-tile-pane {
+          filter: grayscale(1) invert(1);
         }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -175,18 +337,23 @@ export default function MapVisualization({
         <MapContainer
           center={INITIAL_CENTER}
           zoom={INITIAL_ZOOM}
+          minZoom={INITIAL_ZOOM}
           maxZoom={18}
           style={{ height: '100%', width: '100%', background: '#f8fafc' }}
           zoomControl={false}
           attributionControl={false}
           ref={(map) => { mapRef.current = map; }}
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          <ApiFreeBasemap
+            provider={basemapProvider}
+            theme={mapTheme}
+            onFallback={handleBasemapFallback}
           />
           
-          <MapController onMapClick={handleBackdropClick} />
+          <MapController
+            onMapClick={handleBackdropClick}
+            onZoomChange={setCurrentZoom}
+          />
 
           <MarkerClusterGroup
             chunkedLoading
@@ -228,8 +395,42 @@ export default function MapVisualization({
           </MarkerClusterGroup>
         </MapContainer>
 
+        <div className="absolute bottom-1 left-1 z-[1000] rounded bg-white/85 px-1.5 py-0.5 text-[10px] text-slate-600 shadow-sm backdrop-blur-sm">
+          {basemapProvider === 'openfreemap' ? (
+            <>
+              <a className="hover:underline" href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a>
+              {' · © '}
+              <a className="hover:underline" href="https://www.openmaptiles.org" target="_blank" rel="noreferrer">OpenMapTiles</a>
+              {' · © '}
+              <a className="hover:underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
+            </>
+          ) : (
+            <>
+              {'© '}
+              <a className="hover:underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
+            </>
+          )}
+        </div>
+
         {/* Custom Zoom Controls */}
         <div className="absolute bottom-6 right-6 z-[1000] flex flex-col items-center space-y-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleMapTheme(); }}
+            className={`mb-2 flex h-10 w-10 items-center justify-center rounded-lg border shadow-lg transition-colors active:scale-95 ${
+              mapTheme === 'dark'
+                ? 'border-gray-700 bg-gray-900 hover:bg-gray-800'
+                : 'border-gray-200 bg-white hover:bg-gray-50'
+            }`}
+            title={mapTheme === 'dark' ? 'Use light map' : 'Use dark map'}
+            aria-label={mapTheme === 'dark' ? 'Use light map' : 'Use dark map'}
+          >
+            {mapTheme === 'dark' ? (
+              <Sun className="h-5 w-5 text-white" />
+            ) : (
+              <Moon className="h-5 w-5 text-gray-700" />
+            )}
+          </button>
+
           <button
             onClick={(e) => { e.stopPropagation(); zoomIn(); }}
             className="w-10 h-10 bg-white hover:bg-gray-50 rounded-lg shadow-lg border border-gray-200 flex items-center justify-center transition-colors active:scale-95"
@@ -240,8 +441,10 @@ export default function MapVisualization({
 
           <button
             onClick={(e) => { e.stopPropagation(); zoomOut(); }}
-            className="w-10 h-10 bg-white hover:bg-gray-50 rounded-lg shadow-lg border border-gray-200 flex items-center justify-center transition-colors active:scale-95"
-            title="Zoom Out"
+            disabled={currentZoom <= INITIAL_ZOOM}
+            className="w-10 h-10 bg-white hover:bg-gray-50 rounded-lg shadow-lg border border-gray-200 flex items-center justify-center transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white disabled:active:scale-100"
+            title={currentZoom <= INITIAL_ZOOM ? 'Minimum zoom reached' : 'Zoom Out'}
+            aria-label={currentZoom <= INITIAL_ZOOM ? 'Minimum zoom reached' : 'Zoom Out'}
           >
             <ZoomOut className="w-5 h-5 text-gray-700" />
           </button>

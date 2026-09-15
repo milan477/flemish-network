@@ -125,7 +125,7 @@ export function getDerivedLocationSummary(suggestion: DerivedLabelSuggestion): s
 
 export function getDerivedLabelBadgeClasses(labelType: DerivedLabelType): string {
   if (labelType === 'sector') return 'bg-blue-50 text-blue-700';
-  if (labelType === 'occupation') return 'bg-teal-50 text-teal-700';
+  if (labelType === 'occupation') return 'bg-yellow-50 text-yellow-800';
   if (labelType === 'flemish_entity') return 'bg-amber-50 text-amber-700';
   if (labelType === 'us_location') return 'bg-emerald-50 text-emerald-700';
   if (labelType === 'source_quality') return 'bg-slate-100 text-slate-700';
