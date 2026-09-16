@@ -55,11 +55,18 @@ def normalize_dashes(value: str) -> str:
 
 def inline_markup(value: str) -> str:
     value = html.escape(normalize_dashes(value))
-    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", value)
+    value = re.sub(r"\*\*(.+?)\*\*", r'<font name="GuideSans-Bold">\1</font>', value)
+    return re.sub(
+        r"\[\[(.+?)\]\]",
+        r'<span backColor="#FEF3C7" color="#92400E"><font name="GuideSans-Bold">&nbsp;\1&nbsp;</font></span>',
+        value,
+    )
 
 
 def plain_text(value: str) -> str:
-    return normalize_dashes(re.sub(r"\*\*(.+?)\*\*", r"\1", value)).strip()
+    value = re.sub(r"\*\*(.+?)\*\*", r"\1", value)
+    value = re.sub(r"\[\[(.+?)\]\]", r"\1", value)
+    return normalize_dashes(value).strip()
 
 
 def parse_guide(path: Path) -> Guide:
@@ -173,12 +180,15 @@ def draw_cover(canvas: Canvas, guide: Guide, screenshot: Path, language: str, pa
     canvas.setFillColor(YELLOW_LIGHT)
     canvas.setStrokeColor(YELLOW_BORDER)
     canvas.roundRect(40, 52, width - 80, 48, 7, stroke=1, fill=1)
+    canvas.setFont("GuideSans-Bold", 7.3)
+    canvas.setFillColor(HexColor("#92400E"))
+    canvas.drawString(54, 85, "DEFINITION" if language == "en" else "DEFINITIE")
     note = (
-        "Screenshots were captured from the running application. Empty states reflect the current test workspace."
+        "Network: the main directory of people and organizations, including their locations and retained sources."
         if language == "en"
-        else "De screenshots zijn gemaakt in de actieve toepassing. Lege toestanden weerspiegelen de huidige testomgeving."
+        else "Network: de hoofdlijst van personen en organisaties, met hun locaties en bewaarde bronnen."
     )
-    draw_paragraph(canvas, note, NOTE_STYLE, 54, 84, width - 108)
+    draw_paragraph(canvas, note, NOTE_STYLE, 54, 76, width - 108)
 
 
 def draw_section(canvas: Canvas, section: Section, screenshot: Path, page_number: int, page_count: int, language: str) -> None:
@@ -198,8 +208,12 @@ def draw_section(canvas: Canvas, section: Section, screenshot: Path, page_number
     y -= 20
 
     if section.preface:
-        y -= draw_paragraph(canvas, " ".join(section.preface), BODY_STYLE, 40, y, width - 80)
+        canvas.setFont("GuideSans-Bold", 7.5)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(40, y, "OVERVIEW" if language == "en" else "OVERZICHT")
         y -= 10
+        y -= draw_paragraph(canvas, " ".join(section.preface), BODY_STYLE, 40, y, width - 80)
+        y -= 18
 
     canvas.setFont("GuideSans-Bold", 7.5)
     canvas.setFillColor(MUTED)
@@ -219,11 +233,14 @@ def draw_section(canvas: Canvas, section: Section, screenshot: Path, page_number
         note_text = " &middot; ".join(inline_markup(note) for note in section.notes)
         paragraph = Paragraph(note_text, NOTE_STYLE)
         _, note_height = paragraph.wrap(width - 108, 1000)
-        box_height = note_height + 18
+        box_height = note_height + 31
         box_y = max(38, y - box_height - 1)
         canvas.setFillColor(YELLOW_LIGHT)
         canvas.setStrokeColor(YELLOW_BORDER)
         canvas.roundRect(40, box_y, width - 80, box_height, 7, stroke=1, fill=1)
+        canvas.setFont("GuideSans-Bold", 7.3)
+        canvas.setFillColor(HexColor("#92400E"))
+        canvas.drawString(54, box_y + box_height - 13, "DEFINITION" if language == "en" else "DEFINITIE")
         paragraph.drawOn(canvas, 54, box_y + 9)
 
 

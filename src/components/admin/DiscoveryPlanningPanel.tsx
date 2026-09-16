@@ -135,6 +135,7 @@ export default function DiscoveryPlanningPanel({
   const [reflectionLoading, setReflectionLoading] = useState(true);
   const [reflectionRunning, setReflectionRunning] = useState(false);
   const [reflectionError, setReflectionError] = useState<string | null>(null);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   const loadReflection = useCallback(async () => {
     setReflectionLoading(true);
@@ -177,7 +178,7 @@ export default function DiscoveryPlanningPanel({
   return (
     <div className="space-y-4">
       <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-        <div className="flex flex-col gap-5 border-b border-gray-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className={`flex flex-col gap-5 px-6 py-5 sm:flex-row sm:items-center sm:justify-between ${suggestionsOpen ? 'border-b border-gray-100' : ''}`}>
           <div className="max-w-2xl">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold text-gray-900">Where to look next</h2>
@@ -190,6 +191,18 @@ export default function DiscoveryPlanningPanel({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSuggestionsOpen((open) => !open)}
+              aria-expanded={suggestionsOpen}
+              aria-controls="discovery-suggestions"
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${suggestionsOpen ? 'rotate-180' : ''}`} />
+              {suggestionsOpen ? 'Hide suggestions' : 'Show suggestions'}
+            </button>
+            {suggestionsOpen && (
+              <>
             <button
               onClick={() => void runReflectionNow()}
               disabled={reflectionRunning}
@@ -227,10 +240,13 @@ export default function DiscoveryPlanningPanel({
               )}
               Launch next proposal
             </button>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="bg-gray-50/50 px-6 py-5 sm:px-7">
+        {suggestionsOpen && (
+        <div id="discovery-suggestions" className="bg-gray-50/50 px-6 py-5 sm:px-7">
           {reflectionError && (
             <p className="text-xs text-red-500 mb-3">{reflectionError}</p>
           )}
@@ -315,6 +331,7 @@ export default function DiscoveryPlanningPanel({
             </div>
           )}
         </div>
+        )}
       </section>
     </div>
   );

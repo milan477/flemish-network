@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@^1.0.0";
 import {
   buildContactQuery,
+  buildContactQueries,
   normalizePayload,
   validatePayloadLocation,
 } from "../discoveredVerification.ts";
@@ -21,10 +22,37 @@ Deno.test("official Fayat candidates request current professional facts", () => 
   assertEquals(query.includes("profile photo"), true);
 });
 
+Deno.test("contact verification searches LinkedIn and other professional websites", () => {
+  const queries = buildContactQueries({
+    name: "Example Laureate",
+    flemish_connection: "Fayat Scholarship",
+  });
+
+  assertEquals(queries.length, 3);
+  assertEquals(queries.some((query) => query.includes("site:linkedin.com/in")), true);
+  assertEquals(queries.some((query) => query.includes("official website OR portfolio")), true);
+});
+
 Deno.test("verification payload keeps only canonical sectors and safe photo URLs", () => {
   const payload = normalizePayload({
     network_scope: "us_based",
     profile_photo_url: "https://example.com/people/example.jpg",
+    profile_links: [
+      {
+        type: "linkedin",
+        url: "https://www.linkedin.com/in/example-laureate",
+        label: "LinkedIn",
+        evidence_url: "https://www.linkedin.com/in/example-laureate",
+        evidence_excerpt: "Professional profile for Example Laureate.",
+      },
+      {
+        type: "website",
+        url: "https://example.com/about",
+        label: "Personal website",
+        evidence_url: "https://example.com/about",
+        evidence_excerpt: "Official biography.",
+      },
+    ],
     professional_sectors: ["Research", "Student", "Education"],
     belgian_identity_confirmed: true,
     flemish_ties: [],
@@ -34,6 +62,7 @@ Deno.test("verification payload keeps only canonical sectors and safe photo URLs
   });
 
   assertEquals(payload.profile_photo_url, "https://example.com/people/example.jpg");
+  assertEquals(payload.profile_links.length, 2);
   assertEquals(payload.professional_sectors, ["Research", "Education"]);
   assertEquals(payload.belgian_identity_confirmed, true);
 

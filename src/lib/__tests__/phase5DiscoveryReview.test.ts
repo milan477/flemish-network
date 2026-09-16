@@ -94,9 +94,9 @@ describe('Phase 5D discovery review contract', () => {
 
   it('starts queued discovery verification explicitly and only enables approval for ready rows', () => {
     expect(reviewPanel).toContain('handleVerifyQueued');
-    expect(reviewPanel).toContain("body: { action: 'housekeeping' }");
-    expect(reviewPanel).toContain('Verify Queued ({queuedContactCount})');
-    expect(reviewPanel).toContain('`Approve Ready (${readyContactCount})`');
+    expect(reviewPanel).toContain("action: 'verify_discovered'");
+    expect(reviewPanel).toContain('Verify all ({queuedContactCount})');
+    expect(reviewPanel).toContain('`Add Verified (${readyContactCount})`');
     expect(reviewPanel).toContain('readyContactCount === 0');
     expect(reviewPanel).toContain(".is('approved_person_id', null)");
     expect(reviewPanel).toContain(".is('approved_organization_id', null)");
@@ -105,13 +105,13 @@ describe('Phase 5D discovery review contract', () => {
   it('does not mistake a US study connection for an abroad current location and surfaces approval errors', () => {
     expect(reviewPanel).toContain('? contact.current_location_city || null');
     expect(reviewPanel).toContain('The contact remains in Verification. No approval status was changed.');
-    expect(reviewPanel).not.toContain('contact.current_location_city || contact.location_city');
+    expect(reviewPanel).toContain("contact.suggested_us_network_status === 'us_connected_abroad'");
   });
 
   it('keeps bulk approval visibly active until every ready contact is processed', () => {
     expect(reviewPanel).toContain("setActionId('all')");
     expect(reviewPanel).toContain('setBulkApprovalProgress({ completed, total: nonDupes.length, failed })');
-    expect(reviewPanel).toContain('Approving ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}');
+    expect(reviewPanel).toContain('Adding ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}');
     expect(reviewPanel).toContain('Failed contacts remain in Verification so you can retry them.');
   });
 
@@ -124,9 +124,11 @@ describe('Phase 5D discovery review contract', () => {
     expect(discoveredPhotoMigration).toContain('ADD COLUMN IF NOT EXISTS profile_photo_url text');
   });
 
-  it('automatically drains discovered verification after discovery completes', () => {
+  it('only drains discovered verification after a user starts it', () => {
     expect(scheduler).toContain('onSuccess?: (response: Response) => Promise<void>');
-    expect(scheduler).toContain('await autoEnqueueDiscoveredVerification(supabase, supabaseUrl, req)');
-    expect(scheduler).toContain('Drain the queue serially in bounded batches');
+    expect(scheduler).toContain('if (action === "verify_discovered")');
+    expect(scheduler).not.toContain('autoEnqueueDiscoveredVerification');
+    expect(scheduler).toContain('user_requested: true');
+    expect(scheduler).toContain('Drain queued records serially in bounded batches');
   });
 });

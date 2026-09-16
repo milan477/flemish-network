@@ -246,12 +246,25 @@ Deno.serve(wrapHandler(async (req: Request) => {
         } else if (step.outcome === "error") errors += 1;
       }
 
+      const processedIds = new Set(steps.map((step) => step.record_id));
+      const unprocessedIds = idsRaw.filter((recordId) => !processedIds.has(recordId));
+      if (unprocessedIds.length > 0) {
+        const tableName = recordKind === "discovered_contact"
+          ? "discovered_contacts"
+          : "discovered_organizations";
+        await supabase
+          .from(tableName)
+          .update({ verification_status: "queued", verification_run_id: null })
+          .in("id", unprocessedIds);
+      }
+
       const result = {
         record_type: recordKind,
         records_processed: steps.length,
         verified,
         deleted_contradiction: deletedContradiction,
         errors,
+        returned_to_queue: unprocessedIds.length,
         quota_exhausted: quotaExhausted,
         llm_calls_made: llmCallsMade,
         web_searches_made: webSearchesMade,
@@ -260,12 +273,29 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
       if (runId && supabase) {
         const costEstimate = llmCallsMade * 0.001 + webSearchesMade * 0.0005;
+        const allProcessedRecordsFailed = errors > 0 &&
+          verified === 0 && deletedContradiction === 0;
+        const runFailed = quotaExhausted || allProcessedRecordsFailed;
+        const errorMessages = [...new Set(
+          steps
+            .filter((step) => step.outcome === "error" || step.outcome === "skipped_quota")
+            .map((step) => step.detail)
+            .filter((detail): detail is string => Boolean(detail)),
+        )];
         await supabase
           .from("agent_runs")
           .update({
-            status: "completed",
+            status: runFailed ? "failed" : "completed",
             completed_at: new Date().toISOString(),
             results: result as unknown as Record<string, never>,
+            error_message: runFailed
+              ? errorMessages.join("; ").slice(0, 1000) || "Verification batch failed"
+              : null,
+            error_kind: runFailed
+              ? quotaExhausted || errorMessages.some((message) => message.includes("rate limited"))
+                ? "quota_exhausted"
+                : "agent_failure"
+              : null,
             llm_calls_made: llmCallsMade,
             web_searches_made: webSearchesMade,
             cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,

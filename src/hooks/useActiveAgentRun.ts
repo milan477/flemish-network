@@ -114,8 +114,8 @@ export function useActiveAgentRunCount(): number {
 
 /**
  * Counts discovered people and organizations still present in Verification.
- * This includes records waiting for automated verification, failed records,
- * and verified records awaiting an Approve/Reject/Merge decision.
+ * This includes discovered records awaiting a user-started verification,
+ * active/failed verification, and verified records awaiting Add/Reject/Merge.
  */
 export function useVerificationQueueCount(): number {
   const [queueCount, setQueueCount] = useState(0);

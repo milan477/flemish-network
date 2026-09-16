@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import DiscoveryPlanningPanel from '../DiscoveryPlanningPanel';
@@ -44,6 +44,11 @@ function renderPanel() {
   );
 }
 
+async function openSuggestions() {
+  const toggle = await screen.findByRole('button', { name: /show suggestions/i });
+  fireEvent.click(toggle);
+}
+
 afterEach(() => {
   cleanup();
   mockSuggestions.length = 0;
@@ -57,21 +62,32 @@ describe('DiscoveryPlanningPanel – basic rendering', () => {
 
   it('renders the next-proposal launch button', async () => {
     renderPanel();
+    await openSuggestions();
     expect(await screen.findByRole('button', { name: /launch next proposal/i })).toBeTruthy();
   });
 
   it('renders the Refresh proposals button', async () => {
     renderPanel();
+    await openSuggestions();
     expect(await screen.findByRole('button', { name: /refresh proposals/i })).toBeTruthy();
+  });
+
+  it('keeps suggestions hidden until requested', async () => {
+    renderPanel();
+    const toggle = await screen.findByRole('button', { name: /show suggestions/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: /launch next proposal/i })).toBeNull();
   });
 
   it('shows empty state when no reflection suggestions are available', async () => {
     renderPanel();
+    await openSuggestions();
     expect(await screen.findByText(/no discovery proposals yet/i)).toBeTruthy();
   });
 
   it('shows hint to refresh proposals in empty state', async () => {
     renderPanel();
+    await openSuggestions();
     expect(await screen.findByText(/select "refresh proposals"/i)).toBeTruthy();
   });
 
@@ -88,6 +104,7 @@ describe('DiscoveryPlanningPanel – basic rendering', () => {
     });
 
     renderPanel();
+    await openSuggestions();
 
     expect(await screen.findByRole('heading', { name: 'Finance in Midwest' })).toBeTruthy();
     expect(screen.getByText('Location')).toBeTruthy();

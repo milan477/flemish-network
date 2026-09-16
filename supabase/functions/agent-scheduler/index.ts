@@ -30,6 +30,7 @@ type SchedulerAction =
   | "trigger"
   | "cancel"
   | "housekeeping"
+  | "verify_discovered"
   | "planning"
   | "metrics"
   | "tick"
@@ -40,6 +41,7 @@ const VALID_ACTIONS: SchedulerAction[] = [
   "trigger",
   "cancel",
   "housekeeping",
+  "verify_discovered",
   "planning",
   "metrics",
   "tick",
@@ -107,6 +109,26 @@ Deno.serve(wrapHandler(async (req: Request) => {
       }
       const updated = await setSchedule(supabase, jobKind, preset, staffUser.user_id);
       return jsonResponse({ status: "ok", schedule: updated });
+    }
+
+    if (action === "verify_discovered") {
+      const hasContactSelection = Array.isArray(body.contact_ids);
+      const hasOrganizationSelection = Array.isArray(body.organization_ids);
+      const verification = await enqueueDiscoveredVerification(
+        supabase,
+        supabaseUrl,
+        req,
+        {
+          contactIds: hasContactSelection ? normalizeRecordIds(body.contact_ids) : undefined,
+          organizationIds: hasOrganizationSelection ? normalizeRecordIds(body.organization_ids) : undefined,
+          drainSelected: body.drain_selected === true,
+          initiatedBy: {
+            id: staffUser.id,
+            name: staffUser.full_name?.trim() || staffUser.email,
+          },
+        },
+      );
+      return jsonResponse({ status: "ok", verification });
     }
 
     const housekeeping = await runHousekeeping(supabase, supabaseUrl, req);
@@ -494,7 +516,7 @@ async function runScheduleTick(
     }
   }
 
-  // Full housekeeping (verification enqueue, reflection, pivots, arm stats,
+  // Full housekeeping (reflection, pivots, arm stats,
   // domain reputation) runs on the first tick of every hour so the system
   // keeps moving when nobody is using the admin UI.
   let housekeeping: Awaited<ReturnType<typeof runHousekeeping>> | null = null;
@@ -754,13 +776,6 @@ async function triggerAgentRunInternal(
     },
     body: { ...params, run_id: runId },
     label: "scheduled_run",
-    ...(agentType === "discovery"
-      ? {
-        onSuccess: async () => {
-          await autoEnqueueDiscoveredVerification(supabase, supabaseUrl);
-        },
-      }
-      : {}),
   });
 
   return runId;
@@ -783,12 +798,11 @@ async function runHousekeeping(
   reflection_triggered: boolean;
   domain_reputation_updated: number;
 }> {
-  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, verifyEnqueue, armStatsResult, compositionPivotsUpserted, domainReputationUpdated] =
+  const [zombiesMarked, cacheEntriesPurged, pivotsUpserted, armStatsResult, compositionPivotsUpserted, domainReputationUpdated] =
     await Promise.all([
       markZombieRuns(supabase),
       purgeExpiredCache(supabase),
       rebuildEntityPivots(supabase),
-      autoEnqueueDiscoveredVerification(supabase, supabaseUrl, req),
       refreshArmStats(supabase).catch((err) => {
         log.warn("arm_stats_refresh_failed", err instanceof Error ? err.message : String(err));
         return { arms_refreshed: 0 };
@@ -813,10 +827,10 @@ async function runHousekeeping(
     cache_entries_purged: cacheEntriesPurged,
     pivots_upserted: pivotsUpserted,
     composition_pivots_upserted: compositionPivotsUpserted,
-    pending_contacts_pre_filtered: verifyEnqueue.contacts_pre_filtered,
-    pending_organizations_pre_filtered: verifyEnqueue.organizations_pre_filtered,
-    pending_contacts_enqueued: verifyEnqueue.contacts_enqueued,
-    pending_organizations_enqueued: verifyEnqueue.organizations_enqueued,
+    pending_contacts_pre_filtered: 0,
+    pending_organizations_pre_filtered: 0,
+    pending_contacts_enqueued: 0,
+    pending_organizations_enqueued: 0,
     arm_stats_refreshed: armStatsResult.arms_refreshed,
     reflection_triggered: reflectionTriggered,
     domain_reputation_updated: domainReputationUpdated,
@@ -883,60 +897,88 @@ async function triggerDailyReflection(
   }
 }
 
-const AUTO_VERIFY_BATCH_SIZE = 5;
-const AUTO_VERIFY_MIN_CONFIDENCE = 0.05;
+const VERIFY_BATCH_SIZE = 5;
 
-async function autoEnqueueDiscoveredVerification(
+interface VerificationSelection {
+  contactIds?: string[];
+  organizationIds?: string[];
+  drainSelected?: boolean;
+  initiatedBy?: { id: string; name: string };
+}
+
+function normalizeRecordIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))].slice(0, 100);
+}
+
+async function enqueueDiscoveredVerification(
   supabase: SupabaseAdminClient,
   supabaseUrl?: string,
   req?: Request,
+  selection: VerificationSelection = {},
 ): Promise<{
   contacts_pre_filtered: number;
   organizations_pre_filtered: number;
   contacts_enqueued: number;
   organizations_enqueued: number;
 }> {
-  // Pre-filter: hard-delete atrocious-confidence queued rows.
-  const { data: deletedContacts } = await supabase
-    .from("discovered_contacts")
-    .delete()
-    .eq("verification_status", "queued")
-    .lt("discovery_confidence", AUTO_VERIFY_MIN_CONFIDENCE)
-    .select("id");
-
-  const { data: deletedOrgs } = await supabase
-    .from("discovered_organizations")
-    .delete()
-    .eq("verification_status", "queued")
-    .lt("confidence", AUTO_VERIFY_MIN_CONFIDENCE)
-    .select("id");
-
-  const contactsPreFiltered = (deletedContacts ?? []).length;
-  const orgsPreFiltered = (deletedOrgs ?? []).length;
-
   let contactsEnqueued = 0;
   let orgsEnqueued = 0;
 
   if (supabaseUrl) {
-    contactsEnqueued = await enqueueVerificationBatch(
-      supabase,
-      supabaseUrl,
-      req,
-      "discovered_contact",
-      "discovered_contacts",
-    );
-    orgsEnqueued = await enqueueVerificationBatch(
-      supabase,
-      supabaseUrl,
-      req,
-      "discovered_organization",
-      "discovered_organizations",
-    );
+    // A user-requested bulk retry should cover every selected failed row once.
+    // Only reset the explicitly supplied IDs; unrelated discoveries remain
+    // untouched. Subsequent batches exclude records that fail again.
+    if (selection.drainSelected && selection.contactIds?.length) {
+      await supabase
+        .from("discovered_contacts")
+        .update({ verification_status: "queued", verification_run_id: null })
+        .eq("verification_status", "failed")
+        .in("id", selection.contactIds);
+    }
+    if (selection.drainSelected && selection.organizationIds?.length) {
+      await supabase
+        .from("discovered_organizations")
+        .update({ verification_status: "queued", verification_run_id: null })
+        .eq("verification_status", "failed")
+        .in("id", selection.organizationIds);
+    }
+
+    const [contactResult, organizationResult] = await Promise.all([
+      selection.contactIds?.length === 0
+        ? Promise.resolve(0)
+        : enqueueVerificationBatch(
+          supabase,
+          supabaseUrl,
+          req,
+          "discovered_contact",
+          "discovered_contacts",
+          selection.contactIds,
+          selection.drainSelected || selection.contactIds === undefined,
+          !selection.drainSelected && selection.contactIds !== undefined,
+          selection.initiatedBy,
+        ),
+      selection.organizationIds?.length === 0
+        ? Promise.resolve(0)
+        : enqueueVerificationBatch(
+          supabase,
+          supabaseUrl,
+          req,
+          "discovered_organization",
+          "discovered_organizations",
+          selection.organizationIds,
+          selection.drainSelected || selection.organizationIds === undefined,
+          !selection.drainSelected && selection.organizationIds !== undefined,
+          selection.initiatedBy,
+        ),
+    ]);
+    contactsEnqueued = contactResult;
+    orgsEnqueued = organizationResult;
   }
 
   return {
-    contacts_pre_filtered: contactsPreFiltered,
-    organizations_pre_filtered: orgsPreFiltered,
+    contacts_pre_filtered: 0,
+    organizations_pre_filtered: 0,
     contacts_enqueued: contactsEnqueued,
     organizations_enqueued: orgsEnqueued,
   };
@@ -948,13 +990,20 @@ async function enqueueVerificationBatch(
   req: Request | undefined,
   recordKind: "discovered_contact" | "discovered_organization",
   tableName: "discovered_contacts" | "discovered_organizations",
+  selectedIds?: string[],
+  drainQueue = true,
+  includeFailed = true,
+  initiatedBy?: { id: string; name: string },
 ): Promise<number> {
-  const { data: queued, error } = await supabase
+  let queuedQuery = supabase
     .from(tableName)
     .select("id")
-    .eq("verification_status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(AUTO_VERIFY_BATCH_SIZE);
+    .order("created_at", { ascending: true });
+  queuedQuery = includeFailed
+    ? queuedQuery.in("verification_status", ["queued", "failed"])
+    : queuedQuery.eq("verification_status", "queued");
+  if (selectedIds) queuedQuery = queuedQuery.in("id", selectedIds);
+  const { data: queued, error } = await queuedQuery.limit(VERIFY_BATCH_SIZE);
 
   if (error || !queued || queued.length === 0) return 0;
 
@@ -971,18 +1020,21 @@ async function enqueueVerificationBatch(
       params: {
         record_type: recordKind,
         record_ids: recordIds,
-        auto_enqueued: true,
+        auto_enqueued: false,
+        user_requested: true,
       },
+      initiated_by_staff_id: initiatedBy?.id ?? null,
+      initiated_by_name: initiatedBy?.name ?? null,
     })
     .select("id")
     .single();
 
   if (runError || !run) {
-    log.warn("auto_verify_run_insert_failed", runError?.message ?? "no run");
+    log.warn("verify_run_insert_failed", runError?.message ?? "no run");
     return 0;
   }
 
-  // Mark rows as 'verifying' immediately so the next housekeeping tick doesn't re-enqueue them.
+  // Mark rows as 'verifying' immediately so repeated user actions cannot enqueue them twice.
   await supabase
     .from(tableName)
     .update({ verification_status: "verifying", verification_run_id: run.id })
@@ -1001,7 +1053,7 @@ async function enqueueVerificationBatch(
   let dispatchApiKey = forwardedApiKey;
   if (!dispatchAuth) {
     if (!serviceKey) {
-      log.withRun(run.id).warn("auto_verify_no_auth_no_service_key");
+      log.withRun(run.id).warn("verify_no_auth_no_service_key");
       await supabase
         .from("agent_runs")
         .update({
@@ -1037,19 +1089,19 @@ async function enqueueVerificationBatch(
       record_ids: recordIds,
       run_id: run.id,
     },
-    label: "auto_verify",
+    label: "user_verify",
     onSuccess: async (response) => {
       const result = await response.clone().json().catch(() => ({})) as {
         records_processed?: number;
         errors?: number;
         quota_exhausted?: boolean;
       };
-      // Drain the queue serially in bounded batches. Stop on quota/error so a
-      // failing record cannot create an automatic retry loop.
-      if (
+      // Drain queued records serially in bounded batches. Failed records stay
+      // visible for an explicit retry and are excluded from automatic draining.
+      if (!drainQueue ||
         result.quota_exhausted ||
-        Number(result.errors || 0) > 0 ||
-        Number(result.records_processed || 0) === 0
+        Number(result.records_processed || 0) === 0 ||
+        Number(result.errors || 0) >= Number(result.records_processed || 0)
       ) {
         return;
       }
@@ -1059,6 +1111,10 @@ async function enqueueVerificationBatch(
         req,
         recordKind,
         tableName,
+        selectedIds,
+        true,
+        false,
+        initiatedBy,
       );
     },
     // Increment attempts so a chronically-failing row escalates to 'failed'
@@ -1542,13 +1598,6 @@ async function triggerAgentRun(
     headers: dispatchHeaders,
     body: { ...params, run_id: runId },
     label: "manual_run",
-    ...(agentType === "discovery"
-      ? {
-        onSuccess: async () => {
-          await autoEnqueueDiscoveredVerification(supabase, supabaseUrl, req);
-        },
-      }
-      : {}),
   });
 
   return runId;

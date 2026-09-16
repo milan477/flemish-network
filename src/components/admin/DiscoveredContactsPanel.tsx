@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   Building2,
   X,
+  Eye,
+  Clock3,
 } from 'lucide-react';
 import {
   supabase,
@@ -88,6 +90,13 @@ export interface VerificationPayload {
   current_role: string | null;
   current_employer: string | null;
   profile_photo_url: string | null;
+  profile_links: Array<{
+    type: 'linkedin' | 'website';
+    url: string;
+    label: string | null;
+    evidence_url: string;
+    evidence_excerpt: string;
+  }>;
   professional_sectors: string[];
   belgian_identity_confirmed: boolean;
   flemish_ties: string[];
@@ -424,28 +433,43 @@ async function retainApprovedPersonSources(
     await supabase.from('person_profile_sources').insert(sourceRows);
   }
 
+  const payloadContacts = (contact.verification_payload?.profile_links || []).map((link) => ({
+    type: link.type,
+    sourceField: link.type === 'linkedin' ? 'linkedin_url' : 'website_url',
+    value: link.url,
+    retainedSourceUrl: link.evidence_url,
+    retainedExcerpt: link.evidence_excerpt,
+  }));
   const contacts = [
-    { type: 'email', sourceField: 'email', value: contact.email },
-    { type: 'linkedin', sourceField: 'linkedin_url', value: contact.linkedin_url },
-    { type: 'website', sourceField: 'website_url', value: contact.website_url },
-  ].filter((item) => item.value && includes(item.sourceField));
-  for (const item of contacts) {
+    { type: 'email', sourceField: 'email', value: contact.email, retainedSourceUrl: sourceUrl, retainedExcerpt: evidenceExcerpt },
+    ...payloadContacts,
+    { type: 'linkedin', sourceField: 'linkedin_url', value: contact.linkedin_url, retainedSourceUrl: sourceUrl, retainedExcerpt: evidenceExcerpt },
+    { type: 'website', sourceField: 'website_url', value: contact.website_url, retainedSourceUrl: sourceUrl, retainedExcerpt: evidenceExcerpt },
+  ].filter((item, index, items) =>
+    item.value &&
+    includes(item.sourceField) &&
+    items.findIndex((candidate) => candidate.type === item.type && candidate.value === item.value) === index
+  );
+  for (const type of new Set(contacts.map((item) => item.type))) {
     await supabase
       .from('person_contact_details')
       .update({ is_primary: false })
       .eq('person_id', personId)
-      .eq('contact_type', item.type)
+      .eq('contact_type', type)
       .eq('is_primary', true);
+  }
+  for (const item of contacts) {
+    const itemSourceUrl = item.retainedSourceUrl || sourceUrl;
     await supabase.from('person_contact_details').upsert({
       person_id: personId,
       contact_type: item.type,
       contact_value: item.value,
       is_primary: true,
-      verification_status: verificationStatus,
-      verification_method: sourceUrl ? 'source_review' : null,
-      source_label: sourceLabel,
-      source_url: sourceUrl,
-      evidence_excerpt: evidenceExcerpt,
+      verification_status: itemSourceUrl ? 'sourced' : 'unverified',
+      verification_method: itemSourceUrl ? 'web_verification' : null,
+      source_label: itemSourceUrl ? 'Web verification' : sourceLabel,
+      source_url: itemSourceUrl,
+      evidence_excerpt: item.retainedExcerpt || evidenceExcerpt,
     }, { onConflict: 'person_id,contact_type,contact_value' });
   }
 
@@ -1296,6 +1320,193 @@ function MergeCompare({
   );
 }
 
+interface ContactPreviewModalProps {
+  contact: DiscoveredContact;
+  evidence: DiscoveryEvidence[];
+  onClose: () => void;
+}
+
+function ContactPreviewModal({ contact, evidence, onClose }: ContactPreviewModalProps) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const payload = contact.verification_payload;
+  const status = contact.verification_status ?? 'queued';
+  const photo = payload?.profile_photo_url || contact.profile_photo_url;
+  const role = payload?.current_role || contact.current_position || contact.occupation;
+  const employer = payload?.current_employer;
+  const city = payload?.location_city || contact.current_location_city || contact.location_city;
+  const state = payload?.location_state || contact.location_state;
+  const country = payload?.location_country || contact.current_location_country;
+  const location = [city, state, country].filter(Boolean).join(', ');
+  const sectors = payload?.professional_sectors?.length
+    ? payload.professional_sectors
+    : contact.sectors || [];
+  const flemishTies = payload?.flemish_ties?.length
+    ? payload.flemish_ties
+    : contact.flemish_connection
+      ? [contact.flemish_connection]
+      : [];
+  const retainedProfileLinks = [
+    ...(contact.linkedin_url ? [{ type: 'linkedin' as const, url: contact.linkedin_url, label: 'LinkedIn', evidence_url: '', evidence_excerpt: '' }] : []),
+    ...(contact.website_url ? [{ type: 'website' as const, url: contact.website_url, label: 'Website', evidence_url: '', evidence_excerpt: '' }] : []),
+    ...(payload?.profile_links || []),
+  ].filter((item, index, items) => items.findIndex((candidate) => candidate.url === item.url) === index);
+  const sources = [
+    ...(payload?.evidence || []).map((item) => ({ url: item.url, excerpt: item.excerpt })),
+    ...(payload?.profile_links || []).map((item) => ({ url: item.evidence_url, excerpt: item.evidence_excerpt })),
+    ...evidence.map((item) => ({ url: item.page_url, excerpt: item.evidence_excerpt || '' })),
+  ].filter((item, index, items) => item.url && items.findIndex((candidate) => candidate.url === item.url) === index);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/45 px-4 py-8 sm:py-12">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="candidate-profile-title"
+        className="w-full max-w-5xl overflow-hidden rounded-2xl bg-gray-50 shadow-2xl"
+      >
+        <header className="border-b border-gray-200 bg-white px-6 py-5 sm:px-8">
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex min-w-0 items-center gap-4">
+              {photo ? (
+                <img
+                  src={photo}
+                  alt={`${contact.name} profile`}
+                  className="h-20 w-20 flex-shrink-0 rounded-full border border-gray-200 object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 text-2xl font-semibold text-yellow-800">
+                  {contact.name.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                    Profile preview
+                  </span>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${status === 'verified' ? 'bg-green-100 text-green-700' : status === 'verifying' ? 'bg-blue-100 text-blue-700' : status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800'}`}>
+                    {status === 'verified' ? 'Verified' : status === 'verifying' ? 'Being verified' : status === 'failed' ? 'Verification failed' : 'Discovered'}
+                  </span>
+                </div>
+                <h2 id="candidate-profile-title" className="truncate text-2xl font-semibold text-gray-950">
+                  {contact.name}
+                </h2>
+                {role && <p className="mt-1 text-sm text-gray-600">{role}{employer ? ` · ${employer}` : ''}</p>}
+                {location && <p className="mt-1 flex items-center gap-1 text-sm text-gray-500"><MapPin className="h-3.5 w-3.5" />{location}</p>}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close profile preview"
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </header>
+
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
+          <div className="space-y-6">
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-base font-semibold text-gray-900">About</h3>
+              <p className="mt-4 text-sm leading-7 text-gray-600">{contact.bio || payload?.notes || 'No biography found yet.'}</p>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-base font-semibold text-gray-900">Education / Occupation</h3>
+              <div className="mt-4 space-y-2 text-sm text-gray-600">
+                <p><span className="font-medium text-gray-900">Role:</span> {role || 'Not found'}</p>
+                <p><span className="font-medium text-gray-900">Organization:</span> {employer || 'Not found'}</p>
+                <p><span className="font-medium text-gray-900">Location:</span> {location || 'Not found'}</p>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-base font-semibold text-gray-900">Flemish Connection</h3>
+              <div className="mt-4 space-y-3">
+                {flemishTies.length > 0 ? flemishTies.map((tie) => (
+                  <div key={tie} className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-gray-800">{tie}</div>
+                )) : <p className="text-sm text-gray-500">No Flemish connection verified yet.</p>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-base font-semibold text-gray-900">US Connection</h3>
+              <div className="mt-4 space-y-3">
+                {contact.suggested_us_connections?.length ? contact.suggested_us_connections.map((connection, index) => (
+                  <div key={`${connection.connection_label}-${index}`} className="rounded-lg border border-gray-200 px-4 py-3">
+                    <p className="text-sm font-medium text-gray-900">{connection.connection_label || 'US connection'}</p>
+                    {(connection.location_city || connection.location_state) && <p className="mt-1 text-xs text-gray-500">{[connection.location_city, connection.location_state].filter(Boolean).join(', ')}</p>}
+                    {connection.evidence_excerpt && <p className="mt-2 text-sm leading-6 text-gray-600">{connection.evidence_excerpt}</p>}
+                    {connection.source_url && <a href={connection.source_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600">Source <ExternalLink className="h-3 w-3" /></a>}
+                  </div>
+                )) : <p className="text-sm text-gray-500">No US connection verified yet.</p>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-base font-semibold text-gray-900">Sources</h3>
+              <div className="mt-4 space-y-3">
+                {sources.length > 0 ? sources.map((source) => (
+                  <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border border-gray-200 px-4 py-3 hover:border-blue-300">
+                    <span className="flex items-center gap-1 text-sm font-medium text-blue-600">Open source <ExternalLink className="h-3.5 w-3.5" /></span>
+                    {source.excerpt && <span className="mt-1 block text-xs leading-5 text-gray-500">{source.excerpt}</span>}
+                  </a>
+                )) : <p className="text-sm text-gray-500">No retained sources yet.</p>}
+              </div>
+            </section>
+          </div>
+
+          <aside className="space-y-6">
+            <section className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-gray-900">Tags</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sectors.length > 0 ? sectors.map((sector) => <span key={sector} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700">{sector}</span>) : <span className="text-sm text-gray-500">No tags</span>}
+                {payload?.belgian_identity_confirmed && <span className="rounded-full bg-yellow-100 px-2.5 py-1 text-xs text-yellow-800">Belgian</span>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-gray-900">Contact details</h3>
+              <div className="mt-3 space-y-3 text-sm">
+                {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-2 text-blue-600"><Mail className="h-4 w-4" />{contact.email}</a>}
+                {retainedProfileLinks.map((link) => (
+                  <div key={link.url}>
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 break-all text-blue-600">
+                      {link.type === 'linkedin' ? <Linkedin className="h-4 w-4 flex-shrink-0" /> : <Globe className="h-4 w-4 flex-shrink-0" />}
+                      {link.label || (link.type === 'linkedin' ? 'LinkedIn' : link.url)}
+                    </a>
+                    {link.evidence_url && <a href={link.evidence_url} target="_blank" rel="noopener noreferrer" className="ml-6 mt-1 inline-flex items-center gap-1 text-xs text-gray-500">Source <ExternalLink className="h-3 w-3" /></a>}
+                  </div>
+                ))}
+                {!contact.email && retainedProfileLinks.length === 0 && <p className="text-gray-500">No verified contact details.</p>}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-sm font-semibold text-gray-900">Record details</h3>
+              <dl className="mt-3 space-y-3 text-xs">
+                <div><dt className="text-gray-400">Added by</dt><dd className="mt-0.5 text-gray-700">{contact.created_by_name || 'Automated discovery'}</dd></div>
+                <div><dt className="text-gray-400">Method</dt><dd className="mt-0.5 text-gray-700">{contactSourceLabel(contact.source)}</dd></div>
+                <div><dt className="text-gray-400">Found</dt><dd className="mt-0.5 text-gray-700">{new Date(contact.created_at).toLocaleString()}</dd></div>
+                <div><dt className="text-gray-400">Last update</dt><dd className="mt-0.5 text-gray-700">{new Date(contact.last_seen_at || contact.verified_at || contact.created_at).toLocaleString()}</dd></div>
+              </dl>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Panel ─────────────────────────────────────────────────────
 
 interface DiscoveredContactsPanelProps {
@@ -1309,6 +1520,7 @@ interface BulkApprovalProgress {
 }
 
 export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredContactsPanelProps) {
+  const [reviewStage, setReviewStage] = useState<'discovered' | 'verified'>('discovered');
   const [peopleOpen, setPeopleOpen] = useState(true);
   const [orgsOpen, setOrgsOpen] = useState(true);
   const [contacts, setContacts] = useState<DiscoveredContact[]>([]);
@@ -1344,6 +1556,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     contact: DiscoveredContact;
     match: DuplicateMatch;
   } | null>(null);
+  const [previewContact, setPreviewContact] = useState<DiscoveredContact | null>(null);
 
   const loadData = useCallback(async () => {
     // Lifecycle is owned by verification_status — NOT the legacy `status`
@@ -1573,10 +1786,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     await loadData();
     if (failed === 0) {
       notifySuccess(
-        `Approved all ${nonDupes.length} ready contact${nonDupes.length === 1 ? '' : 's'}.`,
+        `Added ${nonDupes.length} verified contact${nonDupes.length === 1 ? '' : 's'} to the network.`,
       );
     } else {
-      notifyError(new Error(`${failed} of ${nonDupes.length} contacts could not be approved.`), {
+      notifyError(new Error(`${failed} of ${nonDupes.length} contacts could not be added.`), {
         hint: 'Failed contacts remain in Verification so you can retry them.',
       });
     }
@@ -1585,28 +1798,34 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   }, [contacts, sectors, duplicates, loadData]);
 
   const handleVerifyQueued = useCallback(async () => {
-    const queuedCount = contacts.filter(
-      (contact) => (contact.verification_status ?? 'queued') === 'queued',
-    ).length;
-    if (queuedCount === 0) return;
+    const queued = contacts.filter((contact) => {
+      const status = contact.verification_status ?? 'queued';
+      return status === 'queued' || status === 'failed';
+    });
+    if (queued.length === 0) return;
 
     setActionId('verify-queued');
     try {
       const { data, error } = await supabase.functions.invoke('agent-scheduler', {
-        body: { action: 'housekeeping' },
+        body: {
+          action: 'verify_discovered',
+          contact_ids: queued.map((contact) => contact.id),
+          organization_ids: [],
+          drain_selected: true,
+        },
       });
       if (error) throw error;
 
       const started = Number(
-        (data as { housekeeping?: { pending_contacts_enqueued?: number } } | null)
-          ?.housekeeping?.pending_contacts_enqueued ?? 0,
+        (data as { verification?: { contacts_enqueued?: number } } | null)
+          ?.verification?.contacts_enqueued ?? 0,
       );
       if (started === 0) {
         throw new Error('The verification queue did not start.');
       }
 
-      notifySuccess(`Verification started for ${queuedCount} queued contact${queuedCount === 1 ? '' : 's'}.`, {
-        hint: 'The queue will continue automatically in verified batches.',
+      notifySuccess(`Verification started for all ${queued.length} discovered contact${queued.length === 1 ? '' : 's'}.`, {
+        hint: 'They will be processed in controlled batches and move to Verified when complete.',
       });
       await loadData();
     } catch (error) {
@@ -1617,6 +1836,89 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
       setActionId(null);
     }
   }, [contacts, loadData]);
+
+  const handleVerifyContact = useCallback(async (contact: DiscoveredContact) => {
+    setActionId(`verify-${contact.id}`);
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'verify_discovered',
+          contact_ids: [contact.id],
+          organization_ids: [],
+        },
+      });
+      if (error) throw error;
+      const started = Number(
+        (data as { verification?: { contacts_enqueued?: number } } | null)
+          ?.verification?.contacts_enqueued ?? 0,
+      );
+      if (started !== 1) throw new Error('Verification did not start for this contact.');
+      notifySuccess(`Verification started for ${contact.name}.`);
+      await loadData();
+    } catch (error) {
+      notifyError(error, { hint: `${contact.name} remains in Discovered.` });
+    } finally {
+      setActionId(null);
+    }
+  }, [loadData]);
+
+  const handleVerifyOrganizations = useCallback(async () => {
+    const queued = organizations.filter((organization) => {
+      const status = organization.verification_status ?? 'queued';
+      return status === 'queued' || status === 'failed';
+    });
+    if (queued.length === 0) return;
+    setActionId('verify-organizations');
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'verify_discovered',
+          contact_ids: [],
+          organization_ids: queued.map((organization) => organization.id),
+          drain_selected: true,
+        },
+      });
+      if (error) throw error;
+      const started = Number(
+        (data as { verification?: { organizations_enqueued?: number } } | null)
+          ?.verification?.organizations_enqueued ?? 0,
+      );
+      if (started === 0) throw new Error('Organization verification did not start.');
+      notifySuccess(`Verification started for all ${queued.length} discovered organization${queued.length === 1 ? '' : 's'}.`, {
+        hint: 'They will be processed in controlled batches and move to Verified when complete.',
+      });
+      await loadData();
+    } catch (error) {
+      notifyError(error, { hint: 'The organizations remain in Discovered.' });
+    } finally {
+      setActionId(null);
+    }
+  }, [organizations, loadData]);
+
+  const handleVerifyOrganization = useCallback(async (organization: DiscoveredOrganization) => {
+    setActionId(`verify-${organization.id}`);
+    try {
+      const { data, error } = await supabase.functions.invoke('agent-scheduler', {
+        body: {
+          action: 'verify_discovered',
+          contact_ids: [],
+          organization_ids: [organization.id],
+        },
+      });
+      if (error) throw error;
+      const started = Number(
+        (data as { verification?: { organizations_enqueued?: number } } | null)
+          ?.verification?.organizations_enqueued ?? 0,
+      );
+      if (started !== 1) throw new Error('Verification did not start for this organization.');
+      notifySuccess(`Verification started for ${organization.name}.`);
+      await loadData();
+    } catch (error) {
+      notifyError(error, { hint: `${organization.name} remains in Discovered.` });
+    } finally {
+      setActionId(null);
+    }
+  }, [loadData]);
 
   const handleRejectAll = useCallback(async () => {
     // Only verified rows are eligible for rejection. Non-verified rows are in
@@ -1822,16 +2124,121 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   const dupeCount = duplicates.size;
   const newCount = contacts.length - dupeCount;
   const queuedContactCount = contacts.filter(
-    (contact) => (contact.verification_status ?? 'queued') === 'queued',
+    (contact) => ['queued', 'failed'].includes(contact.verification_status ?? 'queued'),
+  ).length;
+  const discoveredContacts = contacts.filter(
+    (contact) => (contact.verification_status ?? 'queued') !== 'verified',
+  );
+  const verifiedContacts = contacts.filter(
+    (contact) => contact.verification_status === 'verified',
+  );
+  const visibleContacts = reviewStage === 'discovered' ? discoveredContacts : verifiedContacts;
+  const verifyingContactCount = contacts.filter(
+    (contact) => contact.verification_status === 'verifying',
   ).length;
   const readyContactCount = contacts.filter((contact) =>
     isContactReadyForBulkApproval(contact, duplicates.has(contact.id))
   ).length;
   const organizationDupeCount = organizationDuplicates.size;
   const organizationNewCount = organizations.length - organizationDupeCount;
+  const queuedOrganizationCount = organizations.filter(
+    (organization) => ['queued', 'failed'].includes(organization.verification_status ?? 'queued'),
+  ).length;
+  const discoveredOrganizations = organizations.filter(
+    (organization) => (organization.verification_status ?? 'queued') !== 'verified',
+  );
+  const verifiedOrganizations = organizations.filter(
+    (organization) => organization.verification_status === 'verified',
+  );
+  const readyOrganizationCount = verifiedOrganizations.filter(
+    (organization) => !organizationDuplicates.has(organization.id),
+  ).length;
+  const visibleOrganizations = reviewStage === 'discovered'
+    ? discoveredOrganizations
+    : verifiedOrganizations;
+  const verifyingOrganizationCount = organizations.filter(
+    (organization) => organization.verification_status === 'verifying',
+  ).length;
+  const verifyingTotal = verifyingContactCount + verifyingOrganizationCount;
+  const waitingTotal = queuedContactCount + queuedOrganizationCount;
+  const discoveredTotal = discoveredContacts.length + discoveredOrganizations.length;
+  const verifiedTotal = verifiedContacts.length + verifiedOrganizations.length;
+  const candidateTotal = discoveredTotal + verifiedTotal;
 
   return (
     <div className="space-y-6">
+      {previewContact && (
+        <ContactPreviewModal
+          contact={previewContact}
+          evidence={evidenceByContact.get(previewContact.id) || []}
+          onClose={() => setPreviewContact(null)}
+        />
+      )}
+
+      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="max-w-3xl">
+          <h2 className="text-lg font-semibold text-gray-950">Verification workflow</h2>
+          <p className="mt-1 text-sm leading-6 text-gray-500">
+            Discovery only finds candidates. Choose who to verify, review the deeper search, then add verified records to the network.
+          </p>
+        </div>
+        <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <li className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-yellow-800">1 · Discovered</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-950">{candidateTotal}</p>
+            <p className="mt-1 text-xs text-gray-600">Found by discovery</p>
+          </li>
+          <li className="rounded-xl border border-yellow-300 bg-yellow-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-yellow-900">2 · Queued for verification</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-950">{waitingTotal}</p>
+            <p className="mt-1 text-xs text-gray-600">Waiting for deeper search</p>
+          </li>
+          <li className={`rounded-xl border p-4 ${verifyingTotal > 0 ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
+            <p className={`text-xs font-semibold uppercase tracking-wide ${verifyingTotal > 0 ? 'text-blue-700' : 'text-gray-500'}`}>3 · Being verified</p>
+            <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-gray-950">{verifyingTotal}{verifyingTotal > 0 && <Earth className="h-4 w-4 animate-spin text-blue-600" />}</p>
+            <p className="mt-1 text-xs text-gray-600">Deeper source search running</p>
+          </li>
+          <li className="rounded-xl border border-green-200 bg-green-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-green-700">4 · Verified</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-950">{verifiedTotal}</p>
+            <p className="mt-1 text-xs text-gray-600">Ready for review</p>
+          </li>
+          <li className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">5 · Add</p>
+            <p className="mt-2 text-sm font-semibold text-gray-900">Add to network</p>
+            <p className="mt-1 text-xs text-gray-600">Only after verification</p>
+          </li>
+        </ol>
+
+        <div className="mt-6 inline-flex rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Verification stage">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={reviewStage === 'discovered'}
+            onClick={() => setReviewStage('discovered')}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${reviewStage === 'discovered' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            Discovered <span className="ml-1 text-xs">{discoveredTotal}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={reviewStage === 'verified'}
+            onClick={() => setReviewStage('verified')}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${reviewStage === 'verified' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}
+          >
+            Verified <span className="ml-1 text-xs">{verifiedTotal}</span>
+          </button>
+        </div>
+      </section>
+
+      {reviewStage === 'discovered' && verifyingTotal > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-900">
+          <Earth className="h-4 w-4 flex-shrink-0 animate-spin" />
+          <span><strong>{verifyingTotal}</strong> record{verifyingTotal === 1 ? ' is' : 's are'} currently being verified.</span>
+        </div>
+      )}
+
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm">
         <button
           onClick={() => setPeopleOpen((v) => !v)}
@@ -1841,16 +2248,16 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             ? <ChevronDown className="h-4 w-4 text-gray-400" />
             : <ChevronRight className="h-4 w-4 text-gray-400" />}
           <Users className="h-4 w-4 text-gray-400" />
-          <h2 className="text-lg font-semibold text-gray-900">Pending Discovered People</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{reviewStage === 'discovered' ? 'Discovered People' : 'Verified People'}</h2>
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-            {contacts.length}
+            {visibleContacts.length}
           </span>
         </button>
         {peopleOpen && (
           <div className="space-y-4 px-6 pb-6">
-            {contacts.length === 0 ? (
+            {visibleContacts.length === 0 ? (
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-center">
-                <p className="text-sm text-gray-500">No pending people</p>
+                <p className="text-sm text-gray-500">No {reviewStage} people</p>
                 <p className="mt-1 text-xs text-gray-400">
                   Start a Discovery run or add/import people from the Discovery tab.
                 </p>
@@ -1861,15 +2268,15 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
         <div className="text-sm text-gray-700">
           <span className="font-semibold text-gray-900">
-            {contacts.length}
+            {visibleContacts.length}
           </span>{' '}
-          pending contact{contacts.length !== 1 ? 's' : ''}
+          {reviewStage} contact{visibleContacts.length !== 1 ? 's' : ''}
           {checkingDupes ? (
             <span className="ml-2 text-xs text-gray-400">
               <Earth className="w-3 h-3 animate-spin inline mr-1" />
               Checking duplicates...
             </span>
-          ) : dupeCount > 0 ? (
+          ) : reviewStage === 'verified' && dupeCount > 0 ? (
             <span className="ml-2 text-xs text-amber-600">
               ({dupeCount} duplicate{dupeCount !== 1 ? 's' : ''}, {newCount}{' '}
               new)
@@ -1877,7 +2284,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {queuedContactCount > 0 && (
+          {reviewStage === 'discovered' && queuedContactCount > 0 && (
             <button
               onClick={handleVerifyQueued}
               disabled={actionId !== null}
@@ -1888,10 +2295,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
-              Verify Queued ({queuedContactCount})
+              Verify all ({queuedContactCount})
             </button>
           )}
-          <button
+          {reviewStage === 'verified' && <button
             onClick={handleApproveAll}
             disabled={actionId !== null || readyContactCount === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
@@ -1902,23 +2309,25 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               <Check className="w-3.5 h-3.5" />
             )}
             {bulkApprovalProgress
-              ? `Approving ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}`
-              : `Approve Ready (${readyContactCount})`}
+              ? `Adding ${bulkApprovalProgress.completed}/${bulkApprovalProgress.total}`
+              : `Add Verified (${readyContactCount})`}
           </button>
-          <button
+          }
+          {reviewStage === 'verified' && <button
             onClick={handleRejectAll}
-            disabled={actionId !== null || contacts.length === 0}
+            disabled={actionId !== null || verifiedContacts.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
           >
             <X className="w-3.5 h-3.5" />
-            Reject All ({contacts.length})
+            Reject Verified ({verifiedContacts.length})
           </button>
+          }
         </div>
       </div>
 
       {/* Contact cards */}
-      {contacts.map((contact) => {
-        const isActioning = actionId === contact.id || actionId === 'all';
+      {visibleContacts.map((contact) => {
+        const isActioning = actionId === contact.id || actionId === `verify-${contact.id}` || actionId === 'all';
         const dupeMatch = duplicates.get(contact.id);
         const evidenceRows = evidenceByContact.get(contact.id) || [];
         const derivedLabels = labelsByContact.get(contact.id) || [];
@@ -1937,7 +2346,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             key={contact.id}
             className={`bg-white rounded-xl border transition-all px-5 py-4 ${
               !isVerified
-                ? 'border-gray-200 opacity-60'
+                ? verificationStatus === 'verifying'
+                  ? 'border-blue-300 bg-blue-50/30 shadow-sm'
+                  : 'border-gray-200 hover:border-gray-300'
                 : dupeMatch
                   ? 'border-amber-200 bg-amber-50/20'
                   : 'border-gray-200 hover:border-gray-300'
@@ -1947,8 +2358,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               <div className={`flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg ${verificationStatus === 'failed' ? 'bg-red-100' : 'bg-slate-100'}`}>
                 {verificationStatus === 'failed' ? (
                   <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
-                ) : (
+                ) : verificationStatus === 'verifying' ? (
                   <Earth className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                ) : (
+                  <Clock3 className="w-3 h-3 text-slate-500 flex-shrink-0" />
                 )}
                 <span className={`text-[11px] font-medium ${verificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
                   {verificationStatus === 'failed'
@@ -1981,9 +2394,13 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               <div className="min-w-0 flex-1 space-y-1.5">
                 {/* Name + occupation */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold text-gray-900">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewContact(contact)}
+                    className="text-left text-sm font-semibold text-gray-900 underline-offset-2 hover:text-blue-700 hover:underline"
+                  >
                     {contact.name}
-                  </p>
+                  </button>
                   {contact.occupation && (
                     <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 bg-yellow-50 text-yellow-800 rounded font-medium">
                       <Tag className="w-2.5 h-2.5" />
@@ -2238,10 +2655,28 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
 
               {/* Action buttons */}
                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                  {!isVerified ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewContact(contact)}
+                    className="flex items-center gap-1 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[11px] font-medium text-gray-700 transition-colors hover:bg-gray-200"
+                  >
+                    <Eye className="h-3 w-3" />
+                    Preview profile
+                  </button>
+                  {!isVerified && verificationStatus === 'verifying' ? (
                     <span className="text-[11px] text-slate-500 italic">
-                      Awaiting verification
+                      Verification in progress
                     </span>
+                  ) : !isVerified ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleVerifyContact(contact)}
+                      disabled={isActioning}
+                      className="flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {isActioning ? <Earth className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      {verificationStatus === 'failed' ? 'Retry verification' : 'Verify'}
+                    </button>
                   ) : dupeMatch ? (
                     <>
                     <button
@@ -2293,7 +2728,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     ) : (
                       <UserPlus className="w-3 h-3" />
                     )}
-                    Approve
+                    Add
                   </button>
                 )}
                 {isVerified && (
@@ -2326,16 +2761,16 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             ? <ChevronDown className="h-4 w-4 text-gray-400" />
             : <ChevronRight className="h-4 w-4 text-gray-400" />}
           <Building2 className="h-4 w-4 text-gray-400" />
-          <h2 className="text-lg font-semibold text-gray-900">Pending Discovered Organizations</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{reviewStage === 'discovered' ? 'Discovered Organizations' : 'Verified Organizations'}</h2>
           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-            {organizations.length}
+            {visibleOrganizations.length}
           </span>
         </button>
         {orgsOpen && (
           <div className="space-y-4 px-6 pb-6">
-            {organizations.length === 0 ? (
+            {visibleOrganizations.length === 0 ? (
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-6 text-center">
-                <p className="text-sm text-gray-500">No pending organizations</p>
+                <p className="text-sm text-gray-500">No {reviewStage} organizations</p>
                 <p className="mt-1 text-xs text-gray-400">
                   Start a Discovery run or add/import organizations from the Discovery tab.
                 </p>
@@ -2344,14 +2779,14 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               <>
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
             <div className="text-sm text-gray-700">
-              <span className="font-semibold text-gray-900">{organizations.length}</span>{' '}
-              pending organization{organizations.length !== 1 ? 's' : ''}
+              <span className="font-semibold text-gray-900">{visibleOrganizations.length}</span>{' '}
+              {reviewStage} organization{visibleOrganizations.length !== 1 ? 's' : ''}
               {checkingDupes ? (
                 <span className="ml-2 text-xs text-gray-400">
                   <Earth className="w-3 h-3 animate-spin inline mr-1" />
                   Checking duplicates...
                 </span>
-              ) : organizationDupeCount > 0 ? (
+              ) : reviewStage === 'verified' && organizationDupeCount > 0 ? (
                 <span className="ml-2 text-xs text-amber-600">
                   ({organizationDupeCount} duplicate{organizationDupeCount !== 1 ? 's' : ''},{' '}
                   {organizationNewCount} new)
@@ -2359,29 +2794,36 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              <button
+              {reviewStage === 'discovered' && queuedOrganizationCount > 0 && <button
+                type="button"
+                onClick={() => void handleVerifyOrganizations()}
+                disabled={actionId !== null}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+              >
+                {actionId === 'verify-organizations' ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Verify all ({queuedOrganizationCount})
+              </button>}
+              {reviewStage === 'verified' && <button
                 onClick={handleApproveAllOrganizations}
-                disabled={actionId !== null || organizations.length === 0}
+                disabled={actionId !== null || readyOrganizationCount === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
               >
                 <Check className="w-3.5 h-3.5" />
-                Approve{organizationDupeCount > 0
-                  ? ` New (${organizationNewCount})`
-                  : ' All'}
-              </button>
-              <button
+                Add Verified ({readyOrganizationCount})
+              </button>}
+              {reviewStage === 'verified' && <button
                 onClick={handleRejectAllOrganizations}
-                disabled={actionId !== null || organizations.length === 0}
+                disabled={actionId !== null || verifiedOrganizations.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
               >
                 <X className="w-3.5 h-3.5" />
-                Reject All ({organizations.length})
-              </button>
+                Reject Verified ({verifiedOrganizations.length})
+              </button>}
             </div>
           </div>
 
-          {organizations.map((organization) => {
-              const isActioning = actionId === organization.id || actionId === 'all-organizations';
+          {visibleOrganizations.map((organization) => {
+              const isActioning = actionId === organization.id || actionId === `verify-${organization.id}` || actionId === 'all-organizations';
               const dupeMatch = organizationDuplicates.get(organization.id);
               const evidenceRows = evidenceByOrganization.get(organization.id) || [];
               const evidenceCount = organization.evidence_count || evidenceRows.length;
@@ -2398,7 +2840,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                   key={organization.id}
                   className={`bg-white rounded-xl border transition-all px-5 py-4 ${
                     !orgIsVerified
-                      ? 'border-gray-200 opacity-60'
+                      ? orgVerificationStatus === 'verifying'
+                        ? 'border-blue-300 bg-blue-50/30 shadow-sm'
+                        : 'border-gray-200 hover:border-gray-300'
                       : dupeMatch
                         ? 'border-amber-200 bg-amber-50/20'
                         : 'border-gray-200 hover:border-gray-300'
@@ -2408,8 +2852,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     <div className={`flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg ${orgVerificationStatus === 'failed' ? 'bg-red-100' : 'bg-slate-100'}`}>
                       {orgVerificationStatus === 'failed' ? (
                         <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
-                      ) : (
+                      ) : orgVerificationStatus === 'verifying' ? (
                         <Earth className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                      ) : (
+                        <Clock3 className="w-3 h-3 text-slate-500 flex-shrink-0" />
                       )}
                       <span className={`text-[11px] font-medium ${orgVerificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
                         {orgVerificationStatus === 'failed'
@@ -2605,10 +3051,20 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                      {!orgIsVerified ? (
+                      {!orgIsVerified && orgVerificationStatus === 'verifying' ? (
                         <span className="text-[11px] text-slate-500 italic">
-                          Awaiting verification
+                          Verification in progress
                         </span>
+                      ) : !orgIsVerified ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleVerifyOrganization(organization)}
+                          disabled={isActioning}
+                          className="flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          {isActioning ? <Earth className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                          {orgVerificationStatus === 'failed' ? 'Retry verification' : 'Verify'}
+                        </button>
                       ) : dupeMatch ? (
                         <>
                           <button
@@ -2643,7 +3099,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                           ) : (
                             <Building2 className="w-3 h-3" />
                           )}
-                          Approve
+                          Add
                         </button>
                       )}
                       {orgIsVerified && (

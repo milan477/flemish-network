@@ -22,6 +22,8 @@ interface AgentRun {
   results: Record<string, unknown> | null;
   error_message: string | null;
   error_kind: string | null;
+  initiated_by_staff_id: string | null;
+  initiated_by_name: string | null;
   llm_calls_made: number;
   web_searches_made: number;
   web_search_provider: string | null;
@@ -73,6 +75,19 @@ function summarizeOutcome(run: AgentRun): RunOutcome {
   }
 
   if (!run.results) {
+    if (run.agent_type === 'verification') {
+      return {
+        headline: run.status === 'running'
+          ? 'Verification in progress'
+          : run.status === 'pending'
+            ? 'Queued for verification'
+            : 'Verification completed',
+        records: run.status === 'running'
+          ? 'Checking sources and profile details.'
+          : null,
+        activity: null,
+      };
+    }
     return {
       headline: run.status === 'running' ? 'Discovery in progress' : 'Waiting to start',
       records: null,
@@ -81,6 +96,50 @@ function summarizeOutcome(run: AgentRun): RunOutcome {
   }
 
   const results = run.results;
+  if (run.agent_type === 'verification') {
+    const processed = numericResult(results, 'records_processed') ??
+      numericResult(results, 'profiles_checked') ?? 0;
+    const verified = numericResult(results, 'verified') ??
+      numericResult(results, 'profiles_verified') ?? 0;
+    const numericErrors = numericResult(results, 'errors');
+    const errors = numericErrors ??
+      (Array.isArray(results.errors) ? results.errors.length : 0);
+    const findings = (numericResult(results, 'suggestions_created') || 0) +
+      (numericResult(results, 'suggestions_updated') || 0) +
+      (numericResult(results, 'derived_labels_upserted') || 0);
+    const returnedToQueue = numericResult(results, 'returned_to_queue') || 0;
+    const contradictions = numericResult(results, 'deleted_contradiction') || 0;
+
+    const recordParts = [`${formatCount(processed, 'person', 'people')} checked`];
+    if (verified > 0) recordParts.push(`${verified} verified`);
+    if (errors > 0) recordParts.push(`${errors} failed`);
+
+    const activityParts: string[] = [];
+    if (findings > 0) {
+      activityParts.push(`${formatCount(findings, 'profile update')} found`);
+    } else if (verified > 0) {
+      activityParts.push('Profile information and sources updated');
+    }
+    if (returnedToQueue > 0) {
+      activityParts.push(`${formatCount(returnedToQueue, 'person', 'people')} returned to queue`);
+    }
+    if (contradictions > 0) {
+      activityParts.push(`${formatCount(contradictions, 'contradiction')} removed`);
+    }
+
+    return {
+      headline: verified > 0
+        ? `${formatCount(verified, 'person', 'people')} verified`
+        : findings > 0
+          ? `${formatCount(findings, 'profile update')} found`
+          : processed > 0
+            ? `${formatCount(processed, 'person', 'people')} checked`
+            : 'Verification completed',
+      records: recordParts.join(' · '),
+      activity: activityParts.length > 0 ? activityParts.join(' · ') : null,
+    };
+  }
+
   const peopleCreated = numericResult(results, 'suggestions_created');
   const organizationsCreated =
     numericResult(results, 'organizations_inserted') ??
@@ -312,6 +371,10 @@ export default function AgentDashboard({
                       <p className="mt-1.5 truncate text-xs text-gray-500">
                         {serviceLabelForRun(run.agent_type)}
                       </p>
+                      <p className="mt-1 truncate text-xs text-gray-500">
+                        <span className="font-medium">Started by: </span>
+                        {run.initiated_by_name || 'Not recorded'}
+                      </p>
                       {prompt && (
                         <p className="mt-1 line-clamp-2 text-xs leading-4 text-gray-700" title={prompt}>
                           <span className="font-medium text-gray-500">Prompt: </span>
@@ -427,17 +490,38 @@ function normalizeStepLog(value: unknown): StepLog {
   const record = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+  const discoveredVerificationStep = typeof record.record_name === 'string'
+    && typeof record.outcome === 'string';
   const detail = record.detail && typeof record.detail === 'object' && !Array.isArray(record.detail)
     ? record.detail as Record<string, unknown>
-    : {};
+    : discoveredVerificationStep
+      ? {
+          record_id: record.record_id,
+          record_kind: record.record_kind,
+          message: typeof record.detail === 'string' ? record.detail : undefined,
+          llm_calls_made: record.llm_calls_made,
+          web_searches_made: record.web_searches_made,
+        }
+      : {};
   const step = [record.step, record.name, record.label, record.type]
     .find((candidate) => typeof candidate === 'string' && candidate.trim()) as string | undefined;
 
+  const outcome = typeof record.outcome === 'string' ? record.outcome : '';
+  const status = discoveredVerificationStep
+    ? outcome === 'verified' || outcome.startsWith('deleted_')
+      ? 'ok'
+      : outcome === 'skipped_quota'
+        ? 'skipped'
+        : 'error'
+    : typeof record.status === 'string'
+      ? record.status
+      : 'unknown';
+
   return {
-    step: step?.trim() || '',
+    step: step?.trim() || (discoveredVerificationStep ? String(record.record_name).trim() : ''),
     timestamp: typeof record.timestamp === 'string' ? record.timestamp : '',
     elapsed: typeof record.elapsed === 'string' ? record.elapsed : '—',
-    status: typeof record.status === 'string' ? record.status : 'unknown',
+    status,
     detail,
   };
 }

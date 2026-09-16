@@ -16,19 +16,27 @@ const FLASH_LITE_DEFAULT =
   Deno.env.get("GEMINI_LITE_MODEL") || "gemini-2.5-flash-lite";
 const PRO_DEFAULT =
   Deno.env.get("GEMINI_PRO_MODEL") || "gemini-2.5-pro";
-const PROFILE_FLASH_DEFAULT = "gemini-3.5-flash";
+const PROFILE_MODEL_DEFAULT = "gemini-3.8-flash";
+const PROFILE_MODEL_FALLBACKS = [
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.1-pro-preview",
+] as const;
 
 function flashModel(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   return normalized?.toLowerCase().includes("flash") ? normalized : null;
 }
 
-function profileFlashModel(value: string | null | undefined): string | null {
-  const normalized = flashModel(value);
+function profileModel(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
   if (!normalized) return null;
 
   const modelName = normalized.toLowerCase().replace(/^models\//, "");
-  return modelName.startsWith("gemini-2.5-") ? null : normalized;
+  // The 2.5 Flash variants repeatedly exhausted their quota in profile
+  // verification. Keep those exact models out of this route, while allowing
+  // the higher-quality Pro model to act as a separate-quota fallback.
+  return modelName.startsWith("gemini-2.5-flash") ? null : normalized;
 }
 
 function unique(values: Array<string | null | undefined>): string[] {
@@ -76,16 +84,14 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
         FLASH_FALLBACK_DEFAULT,
       ]);
     case "profile_verification":
-      // Profile verification uses Flash, but never the Gemini 2.5 family.
-      // Filter environment overrides as well as built-in fallbacks so an old
-      // project secret cannot silently reintroduce gemini-2.5-flash.
+      // Profile verification uses current stable Gemini 3 models before
+      // falling back to Pro. Never reintroduce a Gemini 2.5 Flash variant.
       return unique([
-        PROFILE_FLASH_DEFAULT,
-        profileFlashModel(Deno.env.get("GEMINI_PROFILE_MODEL")),
-        profileFlashModel(FLASH_DEFAULT),
-        profileFlashModel(Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL")),
-        profileFlashModel(FLASH_LITE_DEFAULT),
-        profileFlashModel(FLASH_FALLBACK_DEFAULT),
+        PROFILE_MODEL_DEFAULT,
+        ...PROFILE_MODEL_FALLBACKS,
+        profileModel(Deno.env.get("GEMINI_PROFILE_MODEL")),
+        profileModel(Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL")),
+        profileModel(PRO_DEFAULT),
       ]);
     case "lightweight_text_merge":
       return unique([

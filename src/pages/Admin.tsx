@@ -479,26 +479,6 @@ export default function Admin() {
             Discovery
           </button>
           <button
-            onClick={() => handleTabChange('runs')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'runs'
-                ? 'border-yellow-500 text-yellow-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Earth className={`w-4 h-4 ${activeRunCount > 0 ? 'animate-spin' : ''}`} />
-            Runs
-            {activeRunCount > 0 && (
-              <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                activeTab === 'runs'
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : 'bg-gray-100 text-gray-700'
-              }`}>
-                {activeRunCount}
-              </span>
-            )}
-          </button>
-          <button
             onClick={() => handleTabChange('verification')}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'verification'
@@ -533,6 +513,26 @@ export default function Admin() {
             <Activity className="w-4 h-4" />
             Maintenance
           </button>
+          <button
+            onClick={() => handleTabChange('runs')}
+            className={`ml-auto flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'runs'
+                ? 'border-yellow-500 text-yellow-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Earth className={`w-4 h-4 ${activeRunCount > 0 ? 'animate-spin' : ''}`} />
+            Runs
+            {activeRunCount > 0 && (
+              <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                activeTab === 'runs'
+                  ? 'bg-yellow-100 text-yellow-800'
+                  : 'bg-gray-100 text-gray-700'
+              }`}>
+                {activeRunCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -554,7 +554,7 @@ export default function Admin() {
               loadData({ showSpinner: false });
               setDiscoveryRefreshKey((current) => current + 1);
             }}
-            onDiscoveryStarted={() => navigate('/expand/runs')}
+            onDiscoveryStarted={() => navigate('/expand/verification')}
             mode="discovery"
             availableModes={['discovery']}
             initialDiscoveryPrompt={discoveryPrompt}

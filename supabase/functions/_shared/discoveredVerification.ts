@@ -39,6 +39,13 @@ export interface VerificationPayload {
   current_role: string | null;
   current_employer: string | null;
   profile_photo_url: string | null;
+  profile_links: Array<{
+    type: "linkedin" | "website";
+    url: string;
+    label: string | null;
+    evidence_url: string;
+    evidence_excerpt: string;
+  }>;
   professional_sectors: string[];
   belgian_identity_confirmed: boolean;
   flemish_ties: string[];
@@ -63,6 +70,8 @@ Use the search results to assess:
 - Is there a Flemish or Belgian connection (study at KU Leuven/UGent/VUB/UAntwerp, work at imec, BAEF fellow, Belgian/Flemish heritage, etc.)?
 - What is their current residence, current employer, current role, and current professional sector?
 - Is there an exact, direct profile-photo URL for this person in the supplied results?
+- What is the exact LinkedIn profile URL for this person, if found?
+- What other official professional or personal websites belong to this person (personal site, portfolio, employer biography, faculty/staff profile, or recognized professional directory)?
 
 Current-fact rules:
 - Treat scholarship, degree, and study-location facts as historical evidence only. Do not use them as the current role, employer, residence, or professional sector.
@@ -70,6 +79,7 @@ Current-fact rules:
 - professional_sectors may contain only: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research.
 - Assign Education only when current professional work is in education, not merely because the person studied at a university.
 - profile_photo_url must be an exact absolute image URL present in the supplied search results and must depict this exact person. Never use a logo, icon, placeholder, or inferred URL; otherwise use null.
+- profile_links may contain LinkedIn plus other professional/personal websites. Every URL must be an exact result URL for this exact person. Do not construct or guess URLs. Do not include search-result pages, generic organization homepages, or unrelated people. Set evidence_url to the result that proves the link and retain a short excerpt.
 - A Fayat award is one connection: "Fayat Scholarship". Do not add "Fayatbeurzen", "Fayat Scholarships", or "Flemish Government" as separate connections.
 - Set belgian_identity_confirmed=true only when a source explicitly identifies the person as Belgian, a Belgian national, or from Belgium. A Fayat award, Belgian institution, name, or Flemish programme alone is not proof of nationality or origin.
 
@@ -115,6 +125,20 @@ export const VERIFICATION_SCHEMA: JsonSchema = {
     current_role: { type: "string", nullable: true },
     current_employer: { type: "string", nullable: true },
     profile_photo_url: { type: "string", nullable: true },
+    profile_links: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["linkedin", "website"] },
+          url: { type: "string" },
+          label: { type: "string", nullable: true },
+          evidence_url: { type: "string" },
+          evidence_excerpt: { type: "string" },
+        },
+        required: ["type", "url", "evidence_url", "evidence_excerpt"],
+      },
+    },
     professional_sectors: {
       type: "array",
       items: {
@@ -194,6 +218,7 @@ export function normalizePayload(raw: unknown): VerificationPayload {
   const sectorRaw = Array.isArray(r.professional_sectors)
     ? r.professional_sectors
     : [];
+  const profileLinksRaw = Array.isArray(r.profile_links) ? r.profile_links : [];
   return {
     network_scope: validScope,
     location_city: safeStr(r.location_city) || null,
@@ -202,6 +227,27 @@ export function normalizePayload(raw: unknown): VerificationPayload {
     current_role: safeStr(r.current_role) || null,
     current_employer: safeStr(r.current_employer) || null,
     profile_photo_url: normalizeHttpUrl(r.profile_photo_url),
+    profile_links: profileLinksRaw
+      .flatMap((item) => {
+        const link = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+        const type: "linkedin" | "website" | null =
+          link.type === "linkedin" || link.type === "website" ? link.type : null;
+        const url = normalizeHttpUrl(link.url);
+        const evidenceUrl = normalizeHttpUrl(link.evidence_url);
+        if (!type || !url || !evidenceUrl) return [];
+        if (type === "linkedin" && !/^(www\.)?linkedin\.com$/i.test(new URL(url).hostname)) return [];
+        return [{
+          type,
+          url,
+          label: safeStr(link.label) || null,
+          evidence_url: evidenceUrl,
+          evidence_excerpt: safeStr(link.evidence_excerpt),
+        }];
+      })
+      .filter((item, index, items) =>
+        items.findIndex((candidate) => candidate.type === item.type && candidate.url === item.url) === index
+      )
+      .slice(0, 8),
     professional_sectors: sectorRaw
       .map((value) => safeStr(value))
       .filter((value) => PROFESSIONAL_SECTORS.has(value)),
@@ -261,8 +307,20 @@ export function buildContactQuery(row: Record<string, unknown>): string {
     "current role",
     "professional sector",
     "profile photo",
+    "official website",
   );
   return parts.join(" ").slice(0, 240);
+}
+
+export function buildContactQueries(row: Record<string, unknown>): string[] {
+  const name = safeStr(row.name);
+  const identityContext = safeStr(row.flemish_connection);
+  const context = identityContext ? ` ${identityContext}` : "";
+  return [
+    buildContactQuery(row),
+    `"${name}"${context} site:linkedin.com/in`,
+    `"${name}"${context} (official website OR portfolio OR professional profile OR biography) -site:linkedin.com`,
+  ].map((query) => query.slice(0, 240));
 }
 
 function verifiedPhotoUrl(
@@ -276,6 +334,18 @@ function verifiedPhotoUrl(
     (result.raw_content || "").includes(candidate)
   );
   return appearsInEvidence ? candidate : null;
+}
+
+function verifiedProfileLinks(
+  links: VerificationPayload["profile_links"],
+  results: WebSearchResult[],
+): VerificationPayload["profile_links"] {
+  const resultUrls = new Set(results.map((result) => result.url.replace(/\/$/, "")));
+  return links.filter((link) => {
+    const normalizedUrl = link.url.replace(/\/$/, "");
+    const normalizedEvidenceUrl = link.evidence_url.replace(/\/$/, "");
+    return resultUrls.has(normalizedUrl) && resultUrls.has(normalizedEvidenceUrl);
+  });
 }
 
 function currentPosition(payload: VerificationPayload): string | null {
@@ -350,14 +420,22 @@ export async function verifyDiscoveredRecord(
   let webSearches = 0;
 
   try {
-    const query = recordKind === "discovered_contact"
-      ? buildContactQuery(row as Record<string, unknown>)
-      : buildOrganizationQuery(row as Record<string, unknown>);
+    const queries = recordKind === "discovered_contact"
+      ? buildContactQueries(row as Record<string, unknown>)
+      : [buildOrganizationQuery(row as Record<string, unknown>)];
 
-    const search = await searchWeb(query, supabase);
-    webSearches += 1;
+    const searchResponses = await Promise.all(
+      queries.map((query) => searchWeb(query, supabase)),
+    );
+    webSearches += searchResponses.length;
+    const searchResults = searchResponses
+      .flatMap((response) => response.results)
+      .filter((result, index, results) =>
+        result.url && results.findIndex((candidate) => candidate.url === result.url) === index
+      )
+      .slice(0, 24);
 
-    if (search.quota_exhausted) {
+    if (searchResponses.every((response) => response.quota_exhausted) && searchResults.length === 0) {
       // Reset to queued so a future run can retry.
       await supabase
         .from(tableName)
@@ -401,7 +479,7 @@ export async function verifyDiscoveredRecord(
         : [],
     });
 
-    const userPrompt = `Candidate seed data:\n${seedJson}\n\nWeb search results for "${query}":\n${formatResultsForLLM(search.results)}\n\nReturn the verification payload as JSON.`;
+    const userPrompt = `Candidate seed data:\n${seedJson}\n\nSearch queries used:\n${queries.map((query) => `- ${query}`).join("\n")}\n\nWeb search results:\n${formatResultsForLLM(searchResults)}\n\nReturn the verification payload as JSON.`;
 
     const { data } = await callGeminiStructured<unknown>({
       apiKey: geminiApiKey,
@@ -420,8 +498,9 @@ export async function verifyDiscoveredRecord(
     const payload = await validatePayloadLocation(supabase, normalizePayload(data));
     payload.profile_photo_url = verifiedPhotoUrl(
       payload.profile_photo_url,
-      search.results,
+      searchResults,
     );
+    payload.profile_links = verifiedProfileLinks(payload.profile_links, searchResults);
 
     if (payload.contradiction) {
       await supabase.from(tableName).delete().eq("id", recordId);
@@ -462,6 +541,10 @@ export async function verifyDiscoveredRecord(
       if (payload.profile_photo_url) {
         update.profile_photo_url = payload.profile_photo_url;
       }
+      const linkedin = payload.profile_links.find((link) => link.type === "linkedin");
+      const website = payload.profile_links.find((link) => link.type === "website");
+      if (linkedin) update.linkedin_url = linkedin.url;
+      if (website) update.website_url = website.url;
       if (payload.professional_sectors.length > 0) {
         update.sectors = payload.professional_sectors;
       }
@@ -488,7 +571,8 @@ export async function verifyDiscoveredRecord(
           .filter(Boolean)
         : [];
       const evidenceUrls = payload.evidence.map((item) => item.url).filter(Boolean);
-      update.source_urls = [...new Set([...existingSourceUrls, ...evidenceUrls])];
+      const profileLinkUrls = payload.profile_links.flatMap((link) => [link.url, link.evidence_url]);
+      update.source_urls = [...new Set([...existingSourceUrls, ...evidenceUrls, ...profileLinkUrls])];
     }
 
     await supabase.from(tableName).update(update).eq("id", recordId);
@@ -505,10 +589,10 @@ export async function verifyDiscoveredRecord(
       web_searches_made: webSearches,
     };
   } catch (error) {
-    // Reset to queued so the scheduler can retry.
+    // Keep the failure visible and let the user choose whether to retry it.
     await supabase
       .from(tableName)
-      .update({ verification_status: "queued", verification_run_id: null })
+      .update({ verification_status: "failed", verification_run_id: null })
       .eq("id", recordId);
     return {
       record_kind: recordKind,

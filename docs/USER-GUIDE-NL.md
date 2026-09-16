@@ -1,202 +1,262 @@
-# Flemish Network — Gebruikershandleiding
+# Flemish Network - Gebruikershandleiding
 
-Deze handleiding volgt de huidige navigatie: **Network**, **Collections**, **Grow** en **Settings**. Vetgedrukte labels zijn de Engelstalige labels in de toepassing.
+Deze handleiding legt de huidige lokale interface uit: **Network**, **Collections**, **Grow** en **Settings**. De screenshots tonen de informatie die nu in de werkomgeving beschikbaar is.
 
 ## Toegang, rollen en navigatie
 
-**Doel:** aanmelden en weten welke functies beschikbaar zijn.
+**Doel:** beveiligde toegang geven tot de Flemish Network-werkomgeving.
 
-1. Meld je aan met een goedgekeurd e-mailadres en wachtwoord.
-2. Gebruik **Network**, **Collections**, **Grow** of **Settings** in de bovenste navigatie.
-3. Kies je naam om **My Account** te openen. Kies het afmeldpictogram om de sessie te beëindigen.
+De aanmeldpagina is het startpunt voor medewerkers. Na het aanmelden geeft de hoofdnavigatie toegang tot de lijst, collecties, onderzoekshulpmiddelen en instellingen.
 
-- **Viewer:** records en collecties bekijken en doorzoeken.
-- **Editor:** ook records aanpassen, collecties beheren, Grow gebruiken en wijzigingen beoordelen.
-- **Admin:** ook gebruikerstoegang, planningen en definitieve verwijdering beheren waar beschikbaar.
+1. **Vul je gegevens in.** Typ het e-mailadres dat toegang heeft en het bijbehorende wachtwoord.
+2. **Start je sessie.** Kies [[Sign In]].
+3. **Open een hoofdonderdeel.** Kies [[Network]], [[Collections]], [[Grow]] of [[Settings]] in de bovenste navigatie.
+4. **Open je account.** Kies je naam voor [[My Account]]. Kies het uitgangspictogram om af te melden.
+5. **Gebruik de functies van je rol.** Viewer kan lezen; Editor kan ook records wijzigen en Grow gebruiken; Admin kan ook toegang en systeeminstellingen beheren.
+
+- **Rol:** het toegangsniveau van een personeelsaccount: Viewer, Editor of Admin.
 
 ## Networks / Map
 
-**Doel:** zien waar personen en organisaties zich bevinden.
+**Doel:** geografisch verkennen waar personen en organisaties in het netwerk zich bevinden.
 
-1. Open **Network** en kies **Map**.
-2. Vul een naam of beschrijvende opdracht in. Druk op Enter of kies een automatisch aangevuld resultaat.
-3. Open **Filters** en kies **People**, **Organizations**, **People Scope**, **Sector**, **Occupation** of een **Flemish Connection**.
-4. Kies bij meerdere actieve criteria **All** of **Any**.
-5. Kies een marker of locatiecluster om de records op die plaats te bekijken.
-6. Verwijder een actief filter via de filterchip of kies **Reset All Filters**.
+De kaart plaatst records op hun bekende locaties. Je kunt zoeken, het netwerk filteren, een plaats bekijken en de profielen op die plaats openen.
 
-Zoektekst en filters werken apart. Een zoekopdracht selecteert niet automatisch filterwaarden.
+1. **Open de kaart.** Kies [[Network]] en daarna [[Map]].
+2. **Doorzoek het netwerk.** Vul een naam of beschrijving in en kies [[Submit search]].
+3. **Kies wat wordt getoond.** Open [[Filters]] en selecteer People, Organizations, scope, sector, occupation of Flemish connection.
+4. **Bekijk een locatie.** Kies een marker of genummerde cluster en selecteer daarna een record voor het profiel.
+5. **Pas de kaart aan.** Gebruik zoom, kaartthema en [[Reset View]].
+6. **Wis de selectie.** Verwijder een filterchip of kies [[Reset All Filters]].
+
+- **Kaartmarker:** één locatie op de kaart. Een genummerde marker groepeert meerdere records op of bij dezelfde plaats.
 
 ## Networks / List
 
-**Doel:** overeenkomende records in een gestructureerde lijst bekijken.
+**Doel:** het netwerk als een doorzoekbare lijst bekijken.
 
-1. Open **Network** en kies **List**.
-2. Zoek en filter zoals in de kaartweergave.
-3. Open een kaart van een persoon of organisatie voor het volledige profiel.
-4. Wis een gekozen stad om opnieuw alle resultaten te zien.
-5. Gebruik de beschikbare collectie- of exportfuncties voor de getoonde resultaten.
+De lijst toont personen en organisaties als kaarten. Vanaf deze pagina kun je profielen openen, resultaten exporteren of één of meer records aan een collectie toevoegen.
+
+1. **Open de lijst.** Kies [[Network]] en daarna [[List]].
+2. **Beperk de resultaten.** Gebruik het zoekveld en [[Filters]].
+3. **Toon of verberg een groep.** Kies [[People]] of [[Organizations]].
+4. **Open een profiel.** Kies de kaart van een persoon of organisatie.
+5. **Bewaar records samen.** Kies [[Add to collection]] op één kaart of [[Add all to collection]] voor de getoonde groep.
+6. **Download de resultaten.** Kies [[Export]].
+
+- **Netwerkrecord:** een persoon of organisatie die aan de hoofdlijst is toegevoegd en in Map, List en Stats kan verschijnen.
 
 ## Networks / Stats
 
-**Doel:** spreiding en dekking van het netwerk beoordelen.
+**Doel:** de omvang en samenstelling van het netwerk begrijpen.
 
-1. Open **Network** en kies **Stats**.
-2. Bekijk totalen en grafieken voor locaties, sectoren, beroepen, Vlaamse connecties en gegevenskwaliteit.
-3. Kies een grafieksegment of categorie om op die groep te focussen.
-4. Gebruik **View in Network** om de gefilterde records te openen.
+Stats vat de records binnen de huidige zoekopdracht en filters samen. De pagina toont totalen en groepeert de resultaten volgens beroep, sector, Vlaamse connectie en locatie.
+
+1. **Open het overzicht.** Kies [[Network]] en daarna [[Stats]].
+2. **Lees de totalen.** Bekijk People, Organizations en Cities.
+3. **Bekijk elke categorie.** Controleer Occupations, Sectors, Flemish Connections en Locations.
+4. **Open een groep.** Kies een categorie of de actie [[View in network]].
+5. **Wijzig de selectie.** Ga terug naar [[Map]] of [[List]], pas zoeken of filters aan en open [[Stats]] opnieuw.
+
+- **Stats:** een samenvatting van de records binnen de huidige zoekopdracht en filterselectie.
 
 ## Personenprofiel
 
-**Doel:** één persoon beoordelen en het goedgekeurde record onderhouden.
+**Doel:** het volledige record van één persoon tonen.
 
-1. Open een persoon via Network of een collectie.
-2. Controleer identiteit, huidige functie, locatie, contactlinks, VS-connecties, biografie, Vlaamse connecties en sectoren.
-3. Editors kunnen **Edit** kiezen, velden aanpassen en **Save** kiezen.
-4. Kies **Verify** om bronnen te controleren en voorgestelde wijzigingen te beoordelen voordat je ze toepast.
-5. Kies **Add to Collection** om de persoon aan een bestaande collectie toe te voegen.
-6. Gebruik **Print** voor een afdrukbaar profiel. Admins kunnen **Delete** gebruiken als het goedgekeurde record definitief weg moet.
+Een personenprofiel brengt identiteit, foto, beschrijving, locatie, opleiding, werk, tags, Vlaamse en VS-connecties, contactgegevens, bronnen en recordgeschiedenis samen. Afhankelijk van hun rol kunnen medewerkers het record ook wijzigen, bijwerken, afdrukken, verzamelen of verwijderen.
+
+1. **Bekijk de hoofdgegevens.** Controleer foto, naam, verificatiestatus, kopregel, About en Location.
+2. **Bekijk de achtergrond.** Controleer Education / Occupation, professionele sectoren en tags.
+3. **Bekijk de connecties.** Open de bronlinks bij Flemish Connection en US Connection.
+4. **Bekijk contactgegevens.** Open de bron bij een e-mailadres, LinkedIn-profiel, website of ander bewaard contactgegeven.
+5. **Controleer de geschiedenis.** Bekijk bij Stats wanneer, door wie en hoe het record is toegevoegd en wanneer het voor het laatst is gewijzigd.
+6. **Werk met het profiel.** Kies [[Edit]], [[Update]], [[Add to Collection]], [[Print]] of [[Delete]].
+
+- **Verificatiestatus:** toont of de diepere broncontrole klaar is en of een medewerker het profiel heeft beoordeeld.
 
 ## Organisatieprofiel
 
-**Doel:** een organisatie en haar relatie met het netwerk beoordelen.
+**Doel:** het volledige record van één organisatie tonen.
 
-1. Open een organisatie via Network of een collectie.
-2. Controleer type, locatie, website, beschrijving, Vlaamse connectie, sectoren en kerncontacten.
-3. Editors kunnen **Edit Organization** kiezen, velden aanpassen en **Save Changes** kiezen.
-4. Kies **Verify** om externe bronnen te controleren.
-5. Kies **Add to Collection** of open een vermeld kerncontact.
+Een organisatie verschijnt eerst met haar bewijs in Verification, zoals imec in dit voorbeeld. Na toevoeging aan het netwerk bundelt het profiel naam, type, locaties, website, beschrijving, sectoren, connecties, gekoppelde personen en bewaarde bronnen.
+
+1. **Bekijk het bewijs vóór toevoeging.** Controleer in [[Verification]] de beschrijving, scope, bewijstekst en bronlinks.
+2. **Voeg de beoordeelde organisatie toe.** Kies na de verificatie [[Add]].
+3. **Bekijk het organisatieprofiel.** Controleer naam, type, locatie, website, sectoren, About, Flemish Connection en US Locations.
+4. **Open ondersteunende informatie.** Kies een bewaarde bron of een gekoppelde persoon.
+5. **Wijzig of controleer opnieuw.** Kies [[Edit Organization]] en [[Save Changes]], of kies [[Verify]] voor een nieuwe broncontrole.
+6. **Gebruik de organisatie.** Kies [[Add to Collection]] of [[Visit Website]].
+
+- **Organisatieprofiel:** de hoofdpagina voor een bedrijf, universiteit, onderzoeksinstelling, overheidsdienst of andere organisatie.
 
 ## Collections
 
-**Doel:** werklijsten maken voor missies, evenementen, contacten of onderzoek.
+**Doel:** geselecteerde personen en organisaties in werkgroepen ordenen.
 
-1. Open **Collections**.
-2. Kies **New Collection**.
-3. Vul een naam en eventueel een beschrijving in en sla op.
-4. Kies een collectiekaart om de detailpagina te openen.
+Collections zijn herbruikbare lijsten voor missies, evenementen, contacten of onderzoek. Het overzicht toont de beschrijving, het ledenaantal en de laatste datum van elke collectie.
+
+1. **Open het overzicht.** Kies [[Collections]].
+2. **Maak een collectie.** Kies [[New Collection]].
+3. **Beschrijf de groep.** Vul een naam en eventueel een beschrijving in en sla op.
+4. **Open een collectie.** Kies de kaart of [[View Detail]].
+
+- **Collectie:** een bewaarde groep netwerkrecords. Een record kan in meerdere collecties staan.
 
 ## Collectiedetail
 
-**Doel:** leden beheren en gerichte suggesties genereren.
+**Doel:** de inhoud en notities van één collectie beheren.
 
-1. Bekijk leden, pas naam of beschrijving aan, voeg notities toe, verwijder leden of exporteer de collectie.
-2. Kies **Find Collection Suggestions**.
-3. Open een suggestie voor een voorbeeld; kies **Approve** of **Reject**. Gebruik zo nodig **Undo**.
-4. Kies **Add Approved** om goedgekeurde suggesties als leden op te slaan.
-5. Gebruik **Refresh** voor een nieuw concept of **Reset** om het huidige concept te wissen.
-6. Gebruik bij een lege collectie **Browse Network** of **Launch Discovery**. Launch Discovery vult alleen een opdracht in; de zoekronde start pas na **Run Discovery**.
+Deze pagina toont de leden en biedt functies om de collectie te wijzigen, notities toe te voegen, leden te verwijderen, de lijst te exporteren en relevante aanvullingen te vinden.
+
+1. **Bekijk de leden.** Kies een persoon of organisatie om het profiel te openen.
+2. **Wijzig de collectie.** Kies [[Edit collection name/description]] en sla de wijzigingen op.
+3. **Onderhoud de lijst.** Voeg notities toe of kies [[Remove from collection]] bij een lid.
+4. **Download of verwijder de collectie.** Kies [[Export]] of [[Delete Collection]].
+5. **Zoek aanvullingen.** Kies [[Find Collection Suggestions]], beoordeel elk resultaat en gebruik [[Approve]], [[Reject]] of [[Undo]].
+6. **Voeg beoordeelde suggesties toe.** Kies [[Add Approved]]. Gebruik [[Refresh]] voor nieuwe suggesties of [[Reset]] om ze te wissen.
+
+- **Collectiesuggestie:** een persoon of organisatie die wordt voorgesteld omdat die relevant lijkt voor het onderwerp of de leden van de collectie.
 
 ## Grow / Import / Add Manually
 
-**Doel:** één persoon of organisatie als kandidaat invoeren.
+**Doel:** één persoon of organisatie invoeren die nog niet in het netwerk staat.
 
-1. Open **Grow / Import** en kies **Add Manually**.
-2. Kies **People** of **Organizations**.
-3. Vul de bekende velden, netwerkstatus, Vlaamse connectie en brongegevens in.
-4. Kies **Create Pending Contact** of de overeenkomstige actie voor een organisatie.
-5. Beoordeel de kandidaat later onder **Grow / Verification**.
+Het handmatige formulier wordt gebruikt wanneer je de basisinformatie al kent. De nieuwe invoer gaat naar Verification zodat gegevens en bronnen kunnen worden gecontroleerd voordat het record aan de hoofdlijst wordt toegevoegd.
 
-Handmatige invoer wijzigt goedgekeurde records niet rechtstreeks.
+1. **Open het formulier.** Kies [[Grow]], [[Import]] en [[Add Manually]].
+2. **Kies het recordtype.** Kies [[People]] of [[Organizations]].
+3. **Vul de bekende informatie in.** Voeg de toepasselijke identiteit, locatie, functie of type, links, beschrijving, connecties, sectoren en bewijs toe.
+4. **Bewaar een persoon.** Kies de gemarkeerde knop [[Create]] onder het personenformulier.
+5. **Bewaar een organisatie.** Kies de gemarkeerde knop [[Create]] onder het organisatieformulier.
+6. **Ga verder.** Open [[Verification]] en start de broncontrole voor de nieuwe invoer.
+
+- **Discovered record:** een persoon of organisatie die is gevonden of ingevoerd, maar nog niet aan het hoofdnetwerk is toegevoegd.
 
 ## Grow / Import / Import File
 
-**Doel:** meerdere kandidaten vanuit een bestand maken.
+**Doel:** meerdere personen of organisaties uit één bestand invoeren.
 
-1. Open **Grow / Import** en kies **Import File**.
-2. Kies **People** of **Organizations**.
-3. Download indien nuttig een CSV- of Excel-sjabloon en upload CSV, TSV, TXT, XLS of XLSX.
-4. Koppel in **Map Columns** de bestandskolommen aan de velden en kies **Preview Import**.
-5. Controleer in **Confirm Import** conflicten en ongeldige rijen.
-6. Kies **Create Pending Candidates**. Conflicterende en ongeldige rijen worden overgeslagen.
-7. Beoordeel de kandidaten onder **Grow / Verification**.
+Bestandsimport is geschikt voor een bestaande spreadsheet of contactenlijst. Je kunt een sjabloon gebruiken, kolommen koppelen, fouten controleren en geldige rijen naar Verification sturen.
+
+1. **Open bestandsimport.** Kies [[Grow]], [[Import]] en [[Import File]].
+2. **Kies het recordtype.** Kies [[People]] of [[Organizations]].
+3. **Bereid het bestand voor.** Kies zo nodig [[Download CSV template]] of [[Download Excel template]].
+4. **Upload het bestand.** Kies het uploadvak en selecteer een CSV-, TSV-, TXT-, XLS- of XLSX-bestand.
+5. **Koppel de kolommen.** Verbind bij Map Columns de bestandskolommen met de platformvelden en kies [[Preview Import]].
+6. **Controleer en maak de invoer.** Bekijk fouten en duplicaten bij Confirm Import en kies [[Create records]].
+
+- **Kolomkoppeling:** de verbinding tussen een kolom in het geüploade bestand en het overeenkomstige veld in het platform.
 
 ## Grow / Discovery
 
-**Doel:** nieuwe kandidaten zoeken met een gewone opdracht of een voorgestelde zoekrichting.
+**Doel:** nieuwe personen en organisaties zoeken die mogelijk in het netwerk passen.
 
-1. Bekijk **Where to look next**. Gebruik **Refresh proposals** om nieuwe suggesties te maken.
-2. Kies **Launch** bij een voorstel of **Launch next proposal**.
-3. Je kunt ook een **Discovery prompt** invullen. Laat het veld leeg voor een algemene zoekronde.
-4. Kies **Run Discovery**.
-5. Volg de voortgang onder **Grow / Runs** en beoordeel kandidaten onder **Grow / Verification**.
+Discovery gebruikt een geschreven opdracht om geselecteerde webbronnen te doorzoeken. Namen en eerste bewijs worden bewaard zodat medewerkers kunnen kiezen welke records een diepere verificatie krijgen.
 
-Discovery maakt kandidaten aan en keurt ze niet goed.
+1. **Beschrijf de zoekopdracht.** Vul een duidelijke opdracht in bij Discovery prompt.
+2. **Start de zoekopdracht.** Kies [[Run Discovery]].
+3. **Gebruik een voorgestelde opdracht.** Kies [[Show suggestions]], bekijk de voorstellen en kies [[Launch]] bij een nuttig voorstel.
+4. **Volg het werk.** Open [[Runs]] voor voortgang, opdracht, resultaat en fouten.
+5. **Bekijk de resultaten.** Open [[Verification]] en gebruik het tabblad Discovered.
+
+- **Discovery:** de eerste zoekopdracht die mogelijke aanvullingen vindt en eerste bewijs voor beoordeling bewaart.
 
 ## Grow / Runs
 
-**Doel:** discovery- en verificatierondes volgen.
+**Doel:** de geschiedenis en huidige status van geautomatiseerd werk tonen.
 
-1. Open **Grow / Runs**.
-2. Bekijk status, starttijd, duur, resultaat, records, activiteit en geschatte kost.
-3. Kies **View details** voor stappen en fouten.
-4. Kies **Refresh** om de lijst opnieuw te laden.
-5. Gebruik **Cancel** alleen voor een lopende of wachtende ronde die moet stoppen.
+Runs bevat elke Discovery- en Verification-taak. De pagina toont wie ze startte, wanneer ze liep, wat ze vond, de kost en eventuele technische fouten.
 
-Het getal op de tab **Runs** is het aantal actieve rondes.
+1. **Open de geschiedenis.** Kies [[Grow]] en [[Runs]].
+2. **Lees de samenvatting.** Bekijk status, type, Started by, opdracht, starttijd, duur, resultaat en kost.
+3. **Open de technische details.** Kies [[View details]] voor afzonderlijke stappen en foutinformatie.
+4. **Werk de lijst bij.** Kies [[Refresh]].
+5. **Stop actief werk.** Kies [[Cancel]] bij een wachtende of lopende taak.
+
+- **Run:** één geregistreerde uitvoering van Discovery of Verification, met starttijd, resultaat en fouten.
 
 ## Grow / Verification
 
-**Doel:** beslissen wat er met nieuw gevonden personen en organisaties gebeurt.
+**Doel:** een gevonden record grondig controleren voordat het aan het netwerk wordt toegevoegd.
 
-Voor **Pending Discovered People** en **Pending Discovered Organizations**:
+Verification zoekt uitgebreidere en actuelere informatie, bewaart de ondersteunende bronnen en toont het resultaat voor beoordeling. De workflow loopt van Discovered naar Queued, Being verified, Verified en ten slotte [[Add]].
 
-1. Wacht tot de verificatie klaar is en de status **Verified** is.
-2. Controleer identiteit, locatie, huidige functie of organisatietype, bronnen en voorgestelde gegevens.
-3. Kies **Approve** om een nieuw goedgekeurd record te maken.
-4. Kies **Reject** als de kandidaat niet bewaard moet worden.
-5. Kies **Merge** als de kandidaat een duplicaat is; vergelijk de velden voor je bevestigt.
+1. **Kies wat je controleert.** Bekijk op het tabblad [[Discovered]] de samenvatting, het bewijs, het bronaantal en de duplicaatwaarschuwing.
+2. **Bekijk het verwachte profiel.** Kies de naam of [[Preview profile]].
+3. **Start de verificatie.** Kies [[Verify]] voor één record of [[Verify all]] voor de getoonde groep.
+4. **Volg de status.** Gebruik de workflowkaarten voor Queued for verification en Being verified. Kies [[Retry verification]] na een mislukte controle.
+5. **Beoordeel het resultaat.** Open het tabblad [[Verified]] en controleer het volledige profiel en de bronnen.
+6. **Rond de beoordeling af.** Kies [[Add]], [[Reject]] of [[Merge]] wanneer het record overeenkomt met een bestaand profiel.
 
-Bulkgoedkeuring sluit gevonden duplicaten uit. Bulkafwijzing is alleen beschikbaar voor geverifieerde rijen.
+- **Verified:** de diepere bronzoektocht is klaar en het resultaat wacht op een beslissing van een medewerker. Het record staat pas in het netwerk nadat [[Add]] is gekozen.
 
 ## Grow / Maintenance
 
-**Doel:** goedgekeurde records, geplande agents en de zoekindex actueel houden.
+**Doel:** netwerkinformatie en automatisch onderhoud op langere termijn betrouwbaar houden.
 
-1. Open onder **Records Freshness** een ouder record en start een controle, of kies **Mark Current** als geen controle nodig is.
-2. Bekijk de kaarten voor Discovery en Verification; start zo nodig handmatig een ronde.
-3. Admins kunnen de planning instellen op Off, Light, Normal of Aggressive.
-4. Controleer de zoekindexwachtrij en kies **Drain now** om openstaand werk meteen te verwerken.
-5. Gebruik **Run Housekeeping** om vastgelopen rondes op te ruimen; annuleer zo nodig een afzonderlijke ronde.
-6. Vergelijk onder **Profile Update Suggestions** en **Organization Update Suggestions** de oude en nieuwe waarden, bron, betrouwbaarheid en risico; keur geselecteerde wijzigingen goed of af.
+Maintenance toont de ouderdom van records, achtergrondschema’s, werk voor de zoekindex, vastgelopen taken en wijzigingen met bronnen. Medewerkers kunnen hier onderhoud starten en bepalen welke voorgestelde wijzigingen in het netwerk horen.
+
+1. **Bekijk de ouderdom.** Gebruik [[Up to date]], [[Aging]], [[Stale]] of [[Outdated]] bij Records Freshness.
+2. **Start een onderhoudscyclus.** Kies [[Run Housekeeping]] of de startknop bij Discovery of Verification.
+3. **Stel de schema’s in.** Kies voor elke automatische taak [[Off]], [[Light]], [[Normal]] of [[Aggressive]].
+4. **Beheer de zoekindex.** Bekijk het wachtende embeddingwerk en kies [[Drain now]] om het meteen te starten.
+5. **Behandel vastgelopen werk.** Bekijk Stuck Runs en kies [[Cancel]] wanneer een taak niet meer moet doorgaan.
+6. **Beoordeel voorgestelde wijzigingen.** Vergelijk huidige en voorgestelde waarden en hun bronnen; kies daarna [[Approve]], [[Approve all]], [[Reject]] of [[Refresh]].
+
+- **Wijzigingsvoorstel:** een wijziging met bron die wordt voorgesteld voor een record dat al in het netwerk staat.
 
 ## Settings / System
 
-**Doel:** gebruik, integraties en onderhoudsdefinities controleren.
+**Doel:** de diensten en het gebruik achter het platform volgen.
 
-1. Open **Settings / System**.
-2. Bekijk de API-totalen van vandaag en de grafiek van Gemini en Tavily over 14 dagen.
-3. Bekijk de zichtbare definities voor Light, Normal en Aggressive.
-4. Controleer **Connected Services**.
-5. Gebruik de beveiligde links om backend-API-sleutels toe te voegen of frontendvariabelen te beheren.
-6. Kies **Test Supabase** om de verbinding te testen en **Refresh** om de status opnieuw te laden.
+System toont API-gebruik, geschatte kost, definities voor run intensity, gekoppelde diensten en verbindingstests. Voor configuratie zijn links naar de dashboards van providers beschikbaar.
 
-Geheime waarden worden door de gekoppelde dienst beheerd en niet in de toepassing getoond.
+1. **Bekijk het gebruik.** Controleer Gemini calls, Tavily calls, geschatte kost en de grafiek over 14 dagen.
+2. **Bekijk de niveaus.** Lees de definities Light, Normal en Aggressive.
+3. **Controleer verbindingen.** Bekijk de status van Supabase, Gemini, Tavily en Vercel.
+4. **Test de database.** Kies [[Test Supabase]].
+5. **Laad de pagina opnieuw.** Kies [[Refresh]].
+6. **Open providerinstellingen.** Kies [[Add backend API key]] of [[Manage frontend variables]].
+
+- **Run intensity:** de instelling die bepaalt hoe vaak automatisch werk loopt en hoeveel records het controleert.
 
 ## Settings / Access
 
-**Doel:** gebruikerstoegang beheren. Deze pagina is alleen voor admins.
+**Doel:** bepalen wie de werkomgeving kan gebruiken en wat die persoon kan doen.
 
-1. Vul een e-mailadres, eventueel een volledige naam en een rol in.
-2. Kies **Add Access** om een uitnodiging te sturen.
-3. Pas in de gebruikerslijst een naam of rol aan en kies **Save**.
-4. Kies **Remove** om toegang in te trekken. De persoon moet opnieuw worden uitgenodigd om terug te keren.
+Deze adminpagina toont actieve personeelsaccounts en hun rollen. Admins kunnen toegang toevoegen, een naam of rol wijzigen en toegang verwijderen.
+
+1. **Voeg een personeelsaccount toe.** Vul e-mailadres, eventueel volledige naam en rol in en kies [[Add Access]].
+2. **Bekijk de accountlijst.** Controleer e-mail, naam, rol, status en laatste aanmelding.
+3. **Wijzig een account.** Pas naam of rol aan en kies [[Save]].
+4. **Verwijder toegang.** Kies [[Remove]].
+
+- **Staff access:** toestemming voor één e-mailadres om met een bepaalde rol bij deze werkomgeving aan te melden.
 
 ## Settings / My Account
 
-**Doel:** je personeelsprofiel en wachtwoord onderhouden.
+**Doel:** je eigen personeelsnaam en wachtwoord beheren.
 
-1. Kies je naam in de bovenste navigatie of open **Settings / My Account**.
-2. Pas **Full name** aan en kies **Save Changes**.
-3. Vul een nieuw wachtwoord in en bevestig het.
-4. Gebruik minstens 12 tekens met hoofdletters, kleine letters, cijfers en symbolen.
-5. Kies de knop om het wachtwoord bij te werken en wacht op de bevestiging.
+My Account toont je e-mailadres en rol en laat je weergavenaam of wachtwoord wijzigen. E-mailadres en rol worden afzonderlijk door een administrator beheerd.
+
+1. **Open je account.** Kies je naam of kies [[Settings]] en [[My Account]].
+2. **Wijzig je naam.** Pas Full name aan en kies [[Save Changes]].
+3. **Vul een nieuw wachtwoord in.** Voltooi New password en Confirm password.
+4. **Bewaar het wachtwoord.** Kies [[Update Password]].
+
+- **My Account:** de instellingenpagina van de medewerker die momenteel is aangemeld.
 
 ## Aanmelden en wachtwoordherstel
 
-**Doel:** een sessie starten of een wachtwoordreset aanvragen.
+**Doel:** een personeelsessie starten of opnieuw toegang krijgen tot een account.
 
-1. Vul op **Staff Sign In** je goedgekeurde e-mailadres en wachtwoord in.
-2. Kies **Sign In**.
-3. Vul voor een reset het goedgekeurde e-mailadres in en kies **Reset Password**.
-4. Open de link in de e-mail en stel op **My Account** een nieuw wachtwoord in.
+De aanmeldpagina gebruikt een e-mailadres dat toegang heeft en het bijbehorende wachtwoord. Dezelfde pagina kan een resetlink sturen wanneer het wachtwoord niet meer bekend is.
+
+1. **Meld je aan.** Vul het e-mailadres dat toegang heeft en het wachtwoord in en kies [[Sign In]].
+2. **Vraag een reset aan.** Vul dat e-mailadres in en kies [[Reset Password]].
+3. **Open de e-mail.** Volg de resetlink terug naar het platform.
+4. **Stel het nieuwe wachtwoord in.** Vul de wachtwoordvelden in en kies [[Update Password]].
+5. **Beëindig een gedeelde sessie.** Kies het uitgangspictogram wanneer je klaar bent.
+
+- **Wachtwoordreset:** een tijdelijke link per e-mail waarmee een nieuw wachtwoord voor een bestaand personeelsaccount wordt gekozen.

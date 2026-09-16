@@ -159,6 +159,67 @@ describe('Admin Discovery prompt handoff', () => {
     expect(screen.getByText('No runs yet.')).toBeTruthy();
   });
 
+  it('labels running verification correctly and shows who started it', async () => {
+    agentRuns.push({
+      id: 'run-verification-active',
+      agent_type: 'verification',
+      status: 'running',
+      params: { record_type: 'discovered_contact' },
+      started_at: '2026-09-15T23:03:00.000Z',
+      completed_at: null,
+      results: null,
+      error_message: null,
+      error_kind: null,
+      initiated_by_staff_id: 'staff-1',
+      initiated_by_name: 'Local Test Admin',
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+      created_at: '2026-09-15T23:03:00.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('Verification in progress')).toBeTruthy();
+    expect(screen.getByText('Checking sources and profile details.')).toBeTruthy();
+    expect(screen.getByText('Local Test Admin')).toBeTruthy();
+    expect(screen.queryByText('Discovery in progress')).toBeNull();
+  });
+
+  it('summarizes verification as people checked and verified instead of new records', async () => {
+    agentRuns.push({
+      id: 'run-verification-complete',
+      agent_type: 'verification',
+      status: 'completed',
+      params: { record_type: 'discovered_contact' },
+      started_at: '2026-09-15T23:00:00.000Z',
+      completed_at: '2026-09-15T23:01:30.000Z',
+      results: {
+        records_processed: 5,
+        verified: 2,
+        errors: 1,
+        returned_to_queue: 2,
+      },
+      error_message: null,
+      error_kind: null,
+      initiated_by_staff_id: 'staff-1',
+      initiated_by_name: 'Local Test Admin',
+      llm_calls_made: 2,
+      web_searches_made: 6,
+      web_search_provider: 'mixed',
+      cost_estimate_usd: 0.005,
+      created_at: '2026-09-15T23:00:00.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('2 people verified')).toBeTruthy();
+    expect(screen.getByText('5 people checked · 2 verified · 1 failed')).toBeTruthy();
+    expect(screen.getByText('Profile information and sources updated · 2 people returned to queue')).toBeTruthy();
+    expect(screen.queryByText('No new records')).toBeNull();
+  });
+
   it('summarizes discovery run results for people and organizations', async () => {
     const prompt = 'Find Flemish climate founders in California';
     agentRuns.push({
