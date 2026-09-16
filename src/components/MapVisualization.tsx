@@ -35,6 +35,7 @@ const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
 const MAX_CIRCLE_SCALE_COUNT = 25;
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+const OPENFREEMAP_LOAD_TIMEOUT_MS = 4000;
 const MAP_THEME_STORAGE_KEY = 'flemish-network-map-theme';
 const LIGHT_WATER_COLOR = '#e4e7e9';
 const DARK_THEME_SOURCE_WATER_COLOR = '#adadad';
@@ -73,6 +74,7 @@ function ApiFreeBasemap({
     let isActive = true;
     let hasFailed = false;
     let layer: L.MaplibreGL | null = null;
+    let loadTimeout: number | null = null;
 
     try {
       layer = maplibreGL({
@@ -83,18 +85,35 @@ function ApiFreeBasemap({
       layerRef.current = layer;
 
       const maplibreMap = layer.getMaplibreMap();
-      const handleError = (event: unknown) => {
+      const clearLoadTimeout = () => {
+        if (loadTimeout === null) return;
+        window.clearTimeout(loadTimeout);
+        loadTimeout = null;
+      };
+      const handleFailure = (event: unknown) => {
         if (!isActive || hasFailed) return;
         hasFailed = true;
+        clearLoadTimeout();
         console.warn('[map] OpenFreeMap failed; using the raster fallback', event);
         onFallback();
       };
+      const handleLoad = () => {
+        clearLoadTimeout();
+      };
 
-      maplibreMap.on('error', handleError);
+      maplibreMap.on('error', handleFailure);
+      maplibreMap.on('load', handleLoad);
+      loadTimeout = window.setTimeout(() => {
+        if (!maplibreMap.isStyleLoaded()) {
+          handleFailure(new Error('OpenFreeMap style load timed out'));
+        }
+      }, OPENFREEMAP_LOAD_TIMEOUT_MS);
 
       return () => {
         isActive = false;
-        maplibreMap.off('error', handleError);
+        clearLoadTimeout();
+        maplibreMap.off('error', handleFailure);
+        maplibreMap.off('load', handleLoad);
         if (layer && map.hasLayer(layer)) map.removeLayer(layer);
         if (layerRef.current === layer) layerRef.current = null;
       };
