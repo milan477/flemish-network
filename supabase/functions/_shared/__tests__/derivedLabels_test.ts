@@ -12,12 +12,22 @@ import type { SupabaseAdminClient } from "../database.types.ts";
 // Stub supabase admin client: only `from("locations").select(...).ilike(...).eq(...).limit(...).maybeSingle()`
 // is reached, and only when there is a US-candidate location to lookup.
 function stubSupabase(): SupabaseAdminClient {
+  let city = "";
+  let state = "";
   const chain = {
     select() { return this; },
-    ilike() { return this; },
-    eq() { return this; },
+    ilike(_column: string, value: string) { city = value; return this; },
+    eq(_column: string, value: string) { state = value; return this; },
     limit() { return this; },
-    async maybeSingle() { return { data: null, error: null }; },
+    async maybeSingle() {
+      if (city === "Boston" && state === "MA") {
+        return {
+          data: { id: "boston-ma", city, state, latitude: 42.36, longitude: -71.06 },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    },
   };
   return {
     from: () => chain,
@@ -132,6 +142,26 @@ Deno.test("buildVerificationDerivedLabels: linkedin_scrape method → high sourc
 
   // BAEF flemish entity present
   assert(seeds.some((s) => s.label_type === "flemish_entity" && s.label_value === "BAEF"));
+});
+
+Deno.test("buildVerificationDerivedLabels: rejects nonexistent US city/state pairs", async () => {
+  const seeds = await buildVerificationDerivedLabels(stubSupabase(), {
+    personId: "p-2",
+    source: "Web verification",
+    currentPosition: "Producer",
+    occupation: "Professional",
+    bio: "Belgian producer who studied in Brussels and Los Angeles.",
+    locationCity: "Brussels",
+    locationState: "CA",
+    rawLocationText: "RITCS in Brussels and USC in Los Angeles",
+    flemishTexts: ["Fayat Scholarship"],
+    evidenceUrl: "https://example.com/victor",
+    evidenceExcerpt: "Studied at RITCS in Brussels and USC in Los Angeles.",
+    method: "web_search_llm",
+    suggestionConfidence: 0.94,
+  });
+
+  assertEquals(seeds.some((seed) => seed.label_type === "us_location"), false);
 });
 
 Deno.test("getLocationLabelSummary / getLocationReviewRequired / normalizeLabelMetadata", () => {

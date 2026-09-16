@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Plus,
-  Loader2,
+  Earth,
   Check,
   Edit3,
   AlertTriangle,
@@ -346,7 +346,7 @@ export default function ContactCard({
                 }`}
               >
                 {isAdding ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Earth className="w-3 h-3 animate-spin" />
                 ) : (
                   <Plus className="w-3 h-3" />
                 )}

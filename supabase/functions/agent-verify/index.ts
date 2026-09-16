@@ -573,6 +573,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
         }
 
         if (result.status === "suggestions") {
+          const locationSuggestions = result.suggestions.filter((suggestion) =>
+            suggestion.field_name === "location_city" ||
+            suggestion.field_name === "location_state"
+          );
           const insertResult = await insertVerificationSuggestions(
             supabase,
             { recordType: "person", recordId: person.id },
@@ -582,7 +586,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
           suggestionsCreated += insertResult.inserted;
           suggestionsUpdated += insertResult.updated;
           duplicatesSkipped += insertResult.duplicatesSkipped;
-          const evidence = getPrimaryEvidence(result.suggestions);
+          const evidence = getPrimaryEvidence(
+            locationSuggestions.length > 0 ? locationSuggestions : result.suggestions,
+          );
           derivedLabelsUpserted += await upsertDerivedLabelSuggestions(
             supabase,
             await buildVerificationDerivedLabels(supabase, {
@@ -605,21 +611,20 @@ Deno.serve(wrapHandler(async (req: Request) => {
                 safeStr(person.bio),
               ),
               locationCity: getSuggestedValue(
-                result.suggestions,
+                locationSuggestions,
                 "location_city",
-                safeStr(person.locations?.city),
+                "",
               ),
               locationState: getSuggestedValue(
-                result.suggestions,
+                locationSuggestions,
                 "location_state",
-                safeStr(person.locations?.state),
+                "",
               ),
               rawLocationText:
-                result.suggestions.find((suggestion) =>
+                locationSuggestions.find((suggestion) =>
                   suggestion.field_name === "location_city" ||
                   suggestion.field_name === "location_state"
-                )?.evidence_excerpt ||
-                [person.locations?.city, person.locations?.state].filter(Boolean).join(", "),
+                )?.evidence_excerpt || "",
               flemishTexts: [safeStr(person.bio), safeStr(person.current_position)],
               evidenceUrl: evidence.evidenceUrl,
               evidenceExcerpt: evidence.evidenceExcerpt,

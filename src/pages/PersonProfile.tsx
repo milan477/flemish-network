@@ -10,7 +10,7 @@ import {
   Save,
   X,
   RotateCw,
-  Loader2,
+  Earth,
   Tag,
   ChevronDown,
   Library,
@@ -21,6 +21,10 @@ import {
   Camera,
   Trash2,
   Link,
+  ExternalLink,
+  GraduationCap,
+  History,
+  UserCheck,
 } from 'lucide-react';
 import {
   supabase,
@@ -41,6 +45,7 @@ import ProfileUpdateModal from '../components/ProfileUpdateModal';
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import LoadingGlobe from '../components/LoadingGlobe';
 import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
 import FlemishConnectionList from '../components/FlemishConnectionList';
 import { getLastDashboardLocation } from '../lib/dashboardSession';
@@ -49,7 +54,6 @@ import { useAuth } from '../lib/auth';
 import {
   currentAbroadBaseLabel,
   isUsConnectedAbroad,
-  personUsConnectionSummary,
 } from '../lib/networkScope';
 
 interface PersonProfileProps {
@@ -60,6 +64,62 @@ interface PersonProfileProps {
 interface PersonSector {
   sector_id: string;
   sectors: { name: string } | null;
+}
+
+interface ProfileSourceRecord {
+  id: string;
+  person_id: string;
+  field_name: string;
+  field_value: string | null;
+  is_current: boolean;
+  source_type: string;
+  source_label: string;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  verification_status: 'unverified' | 'sourced' | 'verified' | 'rejected';
+  verified_at: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ContactDetailRecord {
+  id: string;
+  contact_type: 'email' | 'linkedin' | 'website' | 'twitter' | 'other';
+  contact_value: string;
+  verification_status: 'unverified' | 'sourced' | 'verified' | 'rejected';
+  verification_method: string | null;
+  verified_at: string | null;
+  source_label: string;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+}
+
+interface PersonExperienceRecord {
+  id: string;
+  experience_type: 'education' | 'occupation';
+  title: string;
+  organization_name: string | null;
+  location_city: string | null;
+  location_state: string | null;
+  location_country: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_current: boolean | null;
+  source_label: string;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  verification_status: 'unverified' | 'sourced' | 'verified' | 'rejected';
+  verified_at: string | null;
+}
+
+interface PersonTagRecord {
+  id: string;
+  tag: string;
+  source_label: string;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+  verification_status: 'unverified' | 'sourced' | 'verified' | 'rejected';
 }
 
 const PROFILE_ACTION_BUTTON =
@@ -122,16 +182,21 @@ function reconcileConnections(
 }
 
 export default function PersonProfile({ personId, onNavigate }: PersonProfileProps) {
-  const { canEdit, isAdmin } = useAuth();
+  const { canEdit, isAdmin, staffUser } = useAuth();
   const goBack = useSmartBack(() => getLastDashboardLocation() || '/');
   const [person, setPerson] = useState<Person | null>(null);
   const [personSectors, setPersonSectors] = useState<{ id: string; name: string }[]>([]);
+  const [profileSources, setProfileSources] = useState<ProfileSourceRecord[]>([]);
+  const [contactDetails, setContactDetails] = useState<ContactDetailRecord[]>([]);
+  const [experiences, setExperiences] = useState<PersonExperienceRecord[]>([]);
+  const [personTags, setPersonTags] = useState<PersonTagRecord[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
   const [allFlemishConnections, setAllFlemishConnections] = useState<FlemishConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Person>>({});
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
+  const [editTags, setEditTags] = useState<string[]>([]);
   const [editFlemishConnections, setEditFlemishConnections] = useState<FlemishConnection[]>([]);
   const [editLocationDisplay, setEditLocationDisplay] = useState('');
   const [saving, setSaving] = useState(false);
@@ -141,7 +206,16 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   const [deleting, setDeleting] = useState(false);
 
   const loadPerson = useCallback(async () => {
-    const [personRes, sectorsRes, allSectorsRes, flemishRes] = await Promise.all([
+    const [
+      personRes,
+      sectorsRes,
+      allSectorsRes,
+      flemishRes,
+      sourcesRes,
+      contactsRes,
+      experiencesRes,
+      tagsRes,
+    ] = await Promise.all([
       supabase
         .from('people')
         .select('*, locations(*), person_us_connections(*, locations(*)), person_flemish_connections(flemish_connection_id, role, confidence, source_url, evidence_excerpt, flemish_connections(id, name, type, entity_type, is_filterable))')
@@ -150,12 +224,41 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       supabase.from('person_sectors').select('sector_id, sectors(name)').eq('person_id', personId),
       supabase.from('sectors').select('*'),
       supabase.from('flemish_connections').select('id, name, type, entity_type, is_filterable').order('name'),
+      supabase
+        .from('person_profile_sources')
+        .select('*')
+        .eq('person_id', personId)
+        .eq('is_current', true)
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('person_contact_details')
+        .select('*')
+        .eq('person_id', personId)
+        .eq('is_primary', true)
+        .neq('verification_status', 'rejected')
+        .order('is_primary', { ascending: false }),
+      supabase
+        .from('person_experiences')
+        .select('*')
+        .eq('person_id', personId)
+        .neq('verification_status', 'rejected')
+        .order('is_current', { ascending: false }),
+      supabase
+        .from('person_tags')
+        .select('*')
+        .eq('person_id', personId)
+        .neq('verification_status', 'rejected')
+        .order('tag'),
     ]);
 
     const personData = personRes.data;
     setPerson(personData);
     setAllSectors((allSectorsRes.data || []) as Sector[]);
     setAllFlemishConnections((flemishRes.data || []) as FlemishConnection[]);
+    setProfileSources((sourcesRes.data || []) as ProfileSourceRecord[]);
+    setContactDetails((contactsRes.data || []) as ContactDetailRecord[]);
+    setExperiences((experiencesRes.data || []) as PersonExperienceRecord[]);
+    setPersonTags((tagsRes.data || []) as PersonTagRecord[]);
 
     const ps = ((sectorsRes.data || []) as unknown as PersonSector[])
       .filter((r) => r.sectors?.name)
@@ -199,6 +302,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       profile_photo_url: person.profile_photo_url || '',
     });
     setEditSectorIds(personSectors.map((s) => s.id));
+    setEditTags(personTags.map((tag) => tag.tag));
     setEditFlemishConnections(
       reconcileConnections(getPersonFlemishConnections(person), allFlemishConnections)
     );
@@ -209,6 +313,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setEditing(false);
     setEditForm({});
     setEditSectorIds([]);
+    setEditTags([]);
     setEditFlemishConnections([]);
   };
 
@@ -283,6 +388,133 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     setSaveError(null);
 
     setPerson(updatedPerson as Person);
+
+    const actorName = staffUser?.full_name || staffUser?.email || 'Manual profile edit';
+    const manualSourceBase = {
+      person_id: person.id,
+      source_type: 'manual',
+      source_label: 'Manual profile edit',
+      evidence_excerpt: `Edited by ${actorName}`,
+      verification_status: 'unverified',
+      created_by_staff_id: staffUser?.id || null,
+      created_by_name: actorName,
+      is_current: true,
+    };
+
+    const locationValue = updatedPerson.locations
+      ? [updatedPerson.locations.city, updatedPerson.locations.state].filter(Boolean).join(', ')
+      : null;
+    const currentLocationValue = [
+      updatedPerson.current_location_city,
+      updatedPerson.current_location_country,
+    ].filter(Boolean).join(', ') || null;
+    const changedProfileFields = [
+      { fieldName: 'name', changed: computedName !== person.name, value: computedName },
+      { fieldName: 'photo', changed: updatePayload.profile_photo_url !== person.profile_photo_url, value: updatePayload.profile_photo_url },
+      { fieldName: 'about', changed: updatePayload.bio !== person.bio, value: updatePayload.bio },
+      { fieldName: 'location', changed: updatePayload.location_id !== person.location_id, value: locationValue },
+      {
+        fieldName: 'current_location',
+        changed:
+          updatePayload.current_location_city !== person.current_location_city ||
+          updatePayload.current_location_country !== person.current_location_country,
+        value: currentLocationValue,
+      },
+      { fieldName: 'current_position', changed: updatePayload.current_position !== person.current_position, value: updatePayload.current_position },
+      { fieldName: 'occupation', changed: updatePayload.occupation !== person.occupation, value: updatePayload.occupation },
+    ].filter((field) => field.changed);
+
+    if (changedProfileFields.length > 0) {
+      const changedNames = changedProfileFields.map((field) => field.fieldName);
+      const { error: retireSourcesError } = await supabase
+        .from('person_profile_sources')
+        .update({ is_current: false })
+        .eq('person_id', person.id)
+        .in('field_name', changedNames)
+        .eq('is_current', true);
+      if (retireSourcesError) {
+        setSaveError(`Profile saved, but source history could not be updated: ${retireSourcesError.message}`);
+      } else {
+        const { error: sourceInsertError } = await supabase
+          .from('person_profile_sources')
+          .insert(changedProfileFields.map((field) => ({
+            ...manualSourceBase,
+            field_name: field.fieldName,
+            field_value: field.value,
+          })));
+        if (sourceInsertError) {
+          setSaveError(`Profile saved, but its new sources could not be retained: ${sourceInsertError.message}`);
+        }
+      }
+    }
+
+    const contactChanges = [
+      { type: 'email', oldValue: person.email, value: updatePayload.email },
+      { type: 'linkedin', oldValue: person.linkedin_url, value: updatePayload.linkedin_url },
+      { type: 'website', oldValue: person.website_url, value: updatePayload.website_url },
+      { type: 'twitter', oldValue: person.twitter_url, value: updatePayload.twitter_url },
+    ].filter((contact) => contact.oldValue !== contact.value);
+
+    for (const contact of contactChanges) {
+      await supabase
+        .from('person_contact_details')
+        .update({ is_primary: false })
+        .eq('person_id', person.id)
+        .eq('contact_type', contact.type)
+        .eq('is_primary', true);
+
+      if (contact.value) {
+        await supabase
+          .from('person_contact_details')
+          .upsert({
+            person_id: person.id,
+            contact_type: contact.type,
+            contact_value: contact.value,
+            is_primary: true,
+            verification_status: 'unverified',
+            verification_method: null,
+            verified_at: null,
+            source_label: 'Manual profile edit',
+            source_url: null,
+            evidence_excerpt: `Edited by ${actorName}`,
+            created_by_staff_id: staffUser?.id || null,
+            created_by_name: actorName,
+          }, { onConflict: 'person_id,contact_type,contact_value' });
+      }
+    }
+
+    if (
+      updatePayload.current_position !== person.current_position ||
+      updatePayload.occupation !== person.occupation
+    ) {
+      await supabase
+        .from('person_experiences')
+        .update({ is_current: false })
+        .eq('person_id', person.id)
+        .eq('experience_type', 'occupation')
+        .eq('is_current', true);
+
+      const occupationTitle = updatePayload.current_position || updatePayload.occupation;
+      if (occupationTitle) {
+        const atParts = updatePayload.current_position?.split(/\s+at\s+/i) || [];
+        await supabase.from('person_experiences').insert({
+          person_id: person.id,
+          experience_type: 'occupation',
+          title: atParts[0] || occupationTitle,
+          organization_name: atParts.length > 1 ? atParts.slice(1).join(' at ') : null,
+          location_city: updatedPerson.locations?.city || updatedPerson.current_location_city || null,
+          location_state: updatedPerson.locations?.state || null,
+          location_country: updatedPerson.current_location_country || null,
+          is_current: true,
+          source_label: 'Manual profile edit',
+          source_url: null,
+          evidence_excerpt: `Edited by ${actorName}`,
+          verification_status: 'unverified',
+          created_by_staff_id: staffUser?.id || null,
+          created_by_name: actorName,
+        });
+      }
+    }
 
     const ensuredConnections: FlemishConnection[] = [];
     for (const connection of editFlemishConnections) {
@@ -366,7 +598,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
           role: existingLink?.role || 'profile_fact',
           confidence: existingLink?.confidence ?? 1,
           source_url: existingLink?.source_url || null,
-          evidence_excerpt: existingLink?.evidence_excerpt || null,
+          evidence_excerpt: existingLink?.evidence_excerpt || `Added manually by ${actorName}`,
         };
       });
 
@@ -405,6 +637,63 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
         if (insertErr) throw insertErr;
       }
 
+      const priorTagNames = personTags.map((tag) => tag.tag);
+      const normalizedEditTags = Array.from(new Set(editTags.map((tag) => tag.trim()).filter(Boolean)));
+      const removedTags = priorTagNames.filter((tag) =>
+        !normalizedEditTags.some((next) => next.toLowerCase() === tag.toLowerCase())
+      );
+      const addedTags = normalizedEditTags.filter((tag) =>
+        !priorTagNames.some((existing) => existing.toLowerCase() === tag.toLowerCase())
+      );
+      if (removedTags.length > 0) {
+        const { error: removeTagsError } = await supabase
+          .from('person_tags')
+          .update({ verification_status: 'rejected' })
+          .eq('person_id', person.id)
+          .in('tag', removedTags);
+        if (removeTagsError) throw removeTagsError;
+      }
+      if (addedTags.length > 0) {
+        const { error: addTagsError } = await supabase
+          .from('person_tags')
+          .upsert(addedTags.map((tag) => ({
+            person_id: person.id,
+            tag,
+            source_label: 'Manual profile edit',
+            source_url: null,
+            evidence_excerpt: `Added manually by ${actorName}`,
+            verification_status: 'unverified',
+            verified_at: null,
+            created_by_staff_id: staffUser?.id || null,
+            created_by_name: actorName,
+          })), { onConflict: 'person_id,tag' });
+        if (addTagsError) throw addTagsError;
+      }
+
+      if (toRemove.length > 0 || toAdd.length > 0) {
+        const { error: retireSectorSourcesError } = await supabase
+          .from('person_profile_sources')
+          .update({ is_current: false })
+          .eq('person_id', person.id)
+          .eq('field_name', 'sector')
+          .eq('is_current', true);
+        if (retireSectorSourcesError) throw retireSectorSourcesError;
+
+        const selectedSectorNames = allSectors
+          .filter((sector) => editSectorIds.includes(sector.id))
+          .map((sector) => sector.name);
+        if (selectedSectorNames.length > 0) {
+          const { error: insertSectorSourcesError } = await supabase
+            .from('person_profile_sources')
+            .insert(selectedSectorNames.map((name) => ({
+              ...manualSourceBase,
+              field_name: 'sector',
+              field_value: name,
+            })));
+          if (insertSectorSourcesError) throw insertSectorSourcesError;
+        }
+      }
+
       setPerson({
         ...(updatedPerson as Person),
         person_flemish_connections: ensuredConnections.map((connection) => ({
@@ -418,6 +707,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
       );
       setEditFlemishConnections(ensuredConnections);
       setEditing(false);
+      await loadPerson();
       kickEmbeddingWorker();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -467,6 +757,26 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
     loadPerson();
   };
 
+  const updateContactVerification = async (
+    contactId: string,
+    status: 'verified' | 'rejected'
+  ) => {
+    const { error } = await supabase
+      .from('person_contact_details')
+      .update({
+        verification_status: status,
+        verification_method: status === 'verified' ? 'staff_review' : 'marked_outdated',
+        verified_at: status === 'verified' ? new Date().toISOString() : null,
+        is_primary: status !== 'rejected',
+      })
+      .eq('id', contactId);
+    if (error) {
+      setSaveError(`Could not update contact verification: ${error.message}`);
+      return;
+    }
+    await loadPerson();
+  };
+
   const deletePerson = async () => {
     if (!person || deleting) return;
 
@@ -496,7 +806,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-600"></div>
+        <LoadingGlobe className="h-12 w-12" label="Loading profile" />
       </div>
     );
   }
@@ -538,7 +848,13 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                   setField={setField}
                 />
               ) : (
-                <ProfileAvatar person={person} size="lg" />
+                <div className="flex flex-col items-center gap-2">
+                  <ProfileAvatar person={person} size="lg" />
+                  <SourceLinks
+                    items={profileSources.filter((source) => source.field_name === 'photo')}
+                    compact
+                  />
+                </div>
               )}
               <div className="flex-1 min-w-0">
                 {editing ? (
@@ -567,9 +883,10 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           <button
                             onClick={() => setShowUpdateModal(true)}
                             className={PROFILE_ACTION_SECONDARY}
+                            title="Look for profile updates and additional information"
                           >
                             <RotateCw className="w-4 h-4" />
-                            <span>Verify</span>
+                            <span>Update</span>
                           </button>
                           <div className="relative">
                             <button
@@ -607,7 +924,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                           className={PROFILE_ACTION_DANGER}
                         >
                           {deleting ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Earth className="w-4 h-4 animate-spin" />
                           ) : (
                             <Trash2 className="w-4 h-4" />
                           )}
@@ -623,7 +940,7 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                         disabled={saving}
                         className={PROFILE_ACTION_PRIMARY}
                       >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {saving ? <Earth className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                         <span>Save</span>
                       </button>
                       <button
@@ -643,9 +960,6 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
                   </div>
                 )}
 
-                {!editing && (
-                  <SocialLinks person={person} />
-                )}
               </div>
             </div>
           </div>
@@ -658,6 +972,8 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
               allFlemishConnections={allFlemishConnections}
               editSectorIds={editSectorIds}
               toggleEditSector={toggleEditSector}
+              editTags={editTags}
+              setEditTags={setEditTags}
               editFlemishConnections={editFlemishConnections}
               setEditFlemishConnections={setEditFlemishConnections}
               onCreateFlemishConnection={async (name, type) => {
@@ -713,6 +1029,12 @@ export default function PersonProfile({ personId, onNavigate }: PersonProfilePro
             <ViewBody
               person={person}
               personSectors={personSectors}
+              profileSources={profileSources}
+              contactDetails={contactDetails}
+              experiences={experiences}
+              personTags={personTags}
+              canEdit={canEdit}
+              onUpdateContactVerification={updateContactVerification}
               onNavigate={onNavigate}
             />
           )}
@@ -740,11 +1062,11 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
   const personState = person.locations?.state || '';
   const abroadBase = currentAbroadBaseLabel(person);
   const sourceLabels: Record<string, string> = {
-    manual: 'Added manually',
-    csv_import: 'Added via CSV import',
-    ai_agent: 'Discovery',
+    manual: 'Manual',
+    csv_import: 'File',
+    ai_agent: 'Automated discovery',
     discovery_agent: 'Discovery',
-    self_reported: 'Self-reported',
+    self_reported: 'Manual',
   };
 
   return (
@@ -810,26 +1132,6 @@ function ViewHeader({ person, onNavigate }: { person: Person; onNavigate: (page:
           <span>Currently based in {abroadBase}</span>
         </div>
       )}
-      {person.email && (
-        <a
-          href={`mailto:${person.email}`}
-          className="flex items-center space-x-2 text-gray-500 hover:text-blue-600 transition-colors group"
-        >
-          <Mail className="w-4 h-4" />
-          <span className="text-sm group-hover:underline">{person.email}</span>
-        </a>
-      )}
-      {person.linkedin_url && (
-        <a
-          href={person.linkedin_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center space-x-2 text-gray-500 hover:text-[#0A66C2] transition-colors group"
-        >
-          <Linkedin className="w-4 h-4" />
-          <span className="text-sm group-hover:underline">{person.linkedin_url}</span>
-        </a>
-      )}
     </>
   );
 }
@@ -886,7 +1188,7 @@ function EditableAvatar({
         <ProfileAvatar person={previewPerson} size="lg" />
         <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
           {uploading ? (
-            <Loader2 className="w-6 h-6 text-white animate-spin" />
+            <Earth className="w-6 h-6 text-white animate-spin" />
           ) : (
             <Camera className="w-6 h-6 text-white" />
           )}
@@ -1084,36 +1386,6 @@ function EditHeader({
   );
 }
 
-function SocialLinks({ person }: { person: Person }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 mt-3">
-      {person.twitter_url && (
-        <a
-          href={person.twitter_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-900 transition-colors"
-        >
-          <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-            <title>Twitter (X)</title>
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
-        </a>
-      )}
-      {person.website_url && (
-        <a
-          href={person.website_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:text-yellow-700 hover:border-yellow-500 transition-colors"
-        >
-          <Globe className="w-5 h-5" />
-        </a>
-      )}
-    </div>
-  );
-}
-
 function EditBody({
   editForm,
   setField,
@@ -1121,6 +1393,8 @@ function EditBody({
   allFlemishConnections,
   editSectorIds,
   toggleEditSector,
+  editTags,
+  setEditTags,
   editFlemishConnections,
   setEditFlemishConnections,
   onCreateFlemishConnection,
@@ -1131,6 +1405,8 @@ function EditBody({
   allFlemishConnections: FlemishConnection[];
   editSectorIds: string[];
   toggleEditSector: (id: string) => void;
+  editTags: string[];
+  setEditTags: React.Dispatch<React.SetStateAction<string[]>>;
   editFlemishConnections: FlemishConnection[];
   setEditFlemishConnections: React.Dispatch<React.SetStateAction<FlemishConnection[]>>;
   onCreateFlemishConnection: (
@@ -1138,6 +1414,18 @@ function EditBody({
     type: FlemishConnection['type']
   ) => Promise<FlemishConnection | null>;
 }) {
+  const [tagDraft, setTagDraft] = useState('');
+  const addTag = () => {
+    const nextTag = tagDraft.trim();
+    if (!nextTag) return;
+    setEditTags((current) =>
+      current.some((tag) => tag.toLowerCase() === nextTag.toLowerCase())
+        ? current
+        : [...current, nextTag]
+    );
+    setTagDraft('');
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -1179,6 +1467,41 @@ function EditBody({
           ))}
         </div>
       </div>
+      <div>
+        <label className="text-sm font-medium text-gray-700 mb-2 block">Tags</label>
+        <div className="flex gap-2">
+          <input
+            value={tagDraft}
+            onChange={(event) => setTagDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addTag();
+              }
+            }}
+            className={INPUT_CLS}
+            placeholder="Add a tag"
+          />
+          <button type="button" onClick={addTag} className={PROFILE_ACTION_SECONDARY}>Add</button>
+        </div>
+        {editTags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {editTags.map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700">
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => setEditTags((current) => current.filter((item) => item !== tag))}
+                  className="text-gray-400 hover:text-red-600"
+                  aria-label={`Remove ${tag}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1192,37 +1515,285 @@ const SECTOR_COLORS: Record<string, { bg: string; text: string }> = {
   Research: { bg: 'bg-yellow-50', text: 'text-yellow-800' },
 };
 
+interface SourceDisplayItem {
+  source_label?: string | null;
+  source_url?: string | null;
+  evidence_excerpt?: string | null;
+  verification_status?: 'unverified' | 'sourced' | 'verified' | 'rejected' | null;
+}
+
+function formatProfileDate(value?: string | null, withTime = false): string {
+  if (!value) return 'Unknown';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+  return withTime
+    ? date.toLocaleString()
+    : date.toLocaleDateString();
+}
+
+function profileSourceLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    manual: 'Manual',
+    csv_import: 'File',
+    ai_agent: 'Automated discovery',
+    discovery_agent: 'Discovery',
+    self_reported: 'Manual',
+  };
+  return value ? labels[value] || value : 'Unknown';
+}
+
+function statusClasses(status?: string | null): string {
+  if (status === 'verified') return 'bg-green-50 text-green-700 border-green-100';
+  if (status === 'sourced') return 'bg-blue-50 text-blue-700 border-blue-100';
+  return 'bg-gray-50 text-gray-500 border-gray-100';
+}
+
+function statusLabel(status?: string | null): string {
+  if (status === 'verified') return 'Verified';
+  if (status === 'sourced') return 'Source retained';
+  return 'Unverified';
+}
+
+function SourceLinks({
+  items,
+  compact = false,
+}: {
+  items: SourceDisplayItem[];
+  compact?: boolean;
+}) {
+  const unique = items.filter((item, index, all) => {
+    const key = `${item.source_url || ''}|${item.source_label || ''}|${item.evidence_excerpt || ''}`;
+    return all.findIndex((candidate) =>
+      `${candidate.source_url || ''}|${candidate.source_label || ''}|${candidate.evidence_excerpt || ''}` === key
+    ) === index;
+  });
+
+  if (unique.length === 0) {
+    return compact ? null : <p className="mt-3 text-xs text-gray-400">No retained source yet.</p>;
+  }
+
+  return (
+    <div className={`${compact ? 'justify-center' : ''} mt-3 flex flex-wrap items-center gap-2`}>
+      {unique.map((item, index) => {
+        const label = item.source_label || 'Source';
+        const content = (
+          <>
+            <Link className="h-3 w-3" />
+            <span>{compact ? 'Source' : label}</span>
+            {item.source_url && <ExternalLink className="h-3 w-3" />}
+          </>
+        );
+        const className =
+          'inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:border-yellow-300 hover:text-yellow-800';
+
+        return item.source_url ? (
+          <a
+            key={`${item.source_url}-${index}`}
+            href={item.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={className}
+            title={item.evidence_excerpt || label}
+          >
+            {content}
+          </a>
+        ) : (
+          <span
+            key={`${label}-${index}`}
+            className={className}
+            title={item.evidence_excerpt || 'Source URL unavailable'}
+          >
+            {content}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProfileSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-yellow-600">{icon}</span>
+        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function ViewBody({
   person,
   personSectors,
+  profileSources,
+  contactDetails,
+  experiences,
+  personTags,
+  canEdit,
+  onUpdateContactVerification,
   onNavigate,
 }: {
   person: Person;
   personSectors: { id: string; name: string }[];
+  profileSources: ProfileSourceRecord[];
+  contactDetails: ContactDetailRecord[];
+  experiences: PersonExperienceRecord[];
+  personTags: PersonTagRecord[];
+  canEdit: boolean;
+  onUpdateContactVerification: (
+    contactId: string,
+    status: 'verified' | 'rejected'
+  ) => Promise<void>;
   onNavigate: (page: string, id?: string, preset?: FilterPreset) => void;
 }) {
   const flemishConnections = getPersonFlemishConnections(person);
-  const usConnectionSummary = personUsConnectionSummary(person);
+  const locationSources = profileSources.filter((source) =>
+    source.field_name === 'location' || source.field_name === 'current_location'
+  );
+  const aboutSources = profileSources.filter((source) => source.field_name === 'about');
+  const workSources = profileSources.filter((source) =>
+    ['current_position', 'occupation', 'sector'].includes(source.field_name)
+  );
+  const primaryLocation = person.locations
+    ? `${person.locations.city}${person.locations.state ? `, ${person.locations.state}` : ''}`
+    : null;
+  const abroadLocation = currentAbroadBaseLabel(person);
 
   return (
-    <>
-      {usConnectionSummary && (
-        <div className="mb-8 pb-8 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">US Connections</h2>
-          <p className="text-gray-700 leading-relaxed">{usConnectionSummary}</p>
+    <div className="space-y-5 border-t border-gray-100 pt-7">
+      <ProfileSection title="Verification status" icon={<UserCheck className="h-4 w-4" />}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${statusClasses(person.last_verified_at ? 'verified' : 'unverified')}`}>
+            {person.last_verified_at ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+            {person.last_verified_at ? 'Verified profile' : 'Unverified profile'}
+          </span>
+          <span className="text-sm text-gray-500">
+            {person.last_verified_at
+              ? `Last verified ${formatProfileDate(person.last_verified_at, true)}`
+              : 'No completed profile verification yet'}
+          </span>
         </div>
-      )}
+      </ProfileSection>
 
-      {person.bio && (
-        <div className="mb-8 pb-8 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">About</h2>
-          <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{person.bio}</p>
+      <ProfileSection title="About" icon={<Database className="h-4 w-4" />}>
+        {person.bio ? (
+          <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{person.bio}</p>
+        ) : (
+          <p className="text-sm text-gray-400">No description found yet.</p>
+        )}
+        <SourceLinks items={aboutSources} />
+      </ProfileSection>
+
+      <ProfileSection title="Location" icon={<MapPin className="h-4 w-4" />}>
+        {primaryLocation || abroadLocation ? (
+          <div className="space-y-2 text-sm text-gray-700">
+            {primaryLocation && <p>{primaryLocation}</p>}
+            {abroadLocation && <p>Currently based in {abroadLocation}</p>}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No current residence found yet.</p>
+        )}
+        <SourceLinks items={locationSources} />
+      </ProfileSection>
+
+      <ProfileSection title="Education / Occupation" icon={<GraduationCap className="h-4 w-4" />}>
+        {experiences.length > 0 ? (
+          <div className="space-y-3">
+            {experiences.map((experience) => {
+              const experienceLocation = [
+                experience.location_city,
+                experience.location_state,
+                experience.location_country,
+              ].filter(Boolean).join(', ');
+              return (
+                <div key={experience.id} className="rounded-lg border border-gray-100 bg-gray-50/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                        {experience.experience_type === 'education' ? 'Education' : 'Occupation'}
+                        {experience.is_current ? ' · Current' : ''}
+                      </p>
+                      <p className="mt-1 font-medium text-gray-900">{experience.title}</p>
+                      {experience.organization_name && (
+                        <p className="mt-1 text-sm text-gray-600">{experience.organization_name}</p>
+                      )}
+                      {experienceLocation && (
+                        <p className="mt-1 flex items-center gap-1 text-sm text-gray-500">
+                          <MapPin className="h-3.5 w-3.5" />
+                          {experienceLocation}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`rounded-md border px-2 py-1 text-[10px] font-medium ${statusClasses(experience.verification_status)}`}>
+                      {statusLabel(experience.verification_status)}
+                    </span>
+                  </div>
+                  <SourceLinks items={[experience]} />
+                </div>
+              );
+            })}
+          </div>
+        ) : person.current_position || person.occupation ? (
+          <div>
+            <p className="font-medium text-gray-900">{person.current_position || person.occupation}</p>
+            {person.occupation && person.current_position && (
+              <p className="mt-1 text-sm text-gray-500">{person.occupation}</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No education or occupation facts found yet.</p>
+        )}
+
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Professional sectors</p>
+          {personSectors.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {personSectors.map((sector) => {
+                const colors = SECTOR_COLORS[sector.name] || { bg: 'bg-gray-50', text: 'text-gray-700' };
+                return (
+                  <button
+                    key={sector.id}
+                    onClick={() => onNavigate('dashboard', undefined, { sector: sector.name })}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${colors.bg} ${colors.text} transition-all hover:ring-2 hover:ring-yellow-300`}
+                  >
+                    {sector.name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">No current professional sector assigned.</p>
+          )}
+          <SourceLinks items={workSources} />
         </div>
-      )}
+      </ProfileSection>
 
-      {flemishConnections.length > 0 && (
-        <div className="mb-8 pb-8 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Flemish Connection</h2>
+      <ProfileSection title="Tags" icon={<Tag className="h-4 w-4" />}>
+        {personTags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {personTags.map((tag) => (
+              <span key={tag.id} className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm text-gray-700" title={tag.evidence_excerpt || undefined}>
+                {tag.tag}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No tags assigned yet.</p>
+        )}
+        <SourceLinks items={personTags} />
+      </ProfileSection>
+
+      <ProfileSection title="Flemish Connection" icon={<Link className="h-4 w-4" />}>
+        {flemishConnections.length > 0 ? (
           <FlemishConnectionList
             links={person.person_flemish_connections || []}
             onSelect={(name) =>
@@ -1230,31 +1801,161 @@ function ViewBody({
             }
             sourceIcon="link"
           />
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-gray-400">No Flemish connection retained yet.</p>
+        )}
+      </ProfileSection>
 
-      <div className="mb-8 pb-8 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sectors</h2>
-        {personSectors.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {personSectors.map((s) => {
-              const colors = SECTOR_COLORS[s.name] || { bg: 'bg-gray-50', text: 'text-gray-700' };
+      <ProfileSection title="US Connection" icon={<Globe className="h-4 w-4" />}>
+        {(person.person_us_connections || []).length > 0 ? (
+          <div className="space-y-2">
+            {(person.person_us_connections || []).map((connection, index) => {
+              const confidence = connection.confidence === null || connection.confidence === undefined
+                ? null
+                : `${Math.round(connection.confidence * 100)}% confidence`;
+              const location = connection.locations;
+              const locationLabel = location
+                ? `${location.city}, ${location.state}`
+                : null;
+
               return (
-                <button
-                  key={s.id}
-                  onClick={() => onNavigate('dashboard', undefined, { sector: s.name })}
-                  className={`px-4 py-2 ${colors.bg} ${colors.text} rounded-lg text-sm font-medium hover:ring-2 hover:ring-yellow-300 transition-all cursor-pointer`}
+                <div
+                  key={connection.id || `${connection.location_id}-${index}`}
+                  className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600"
                 >
-                  {s.name}
-                </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {location ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('dashboard', undefined, {
+                          focusCity: {
+                            city: location.city,
+                            state: location.state,
+                          },
+                        })}
+                        className="cursor-pointer rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 transition-all hover:ring-2 hover:ring-blue-300"
+                      >
+                        {connection.connection_label || 'United States connection'}
+                      </button>
+                    ) : (
+                      <span className="rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+                        {connection.connection_label || 'United States connection'}
+                      </span>
+                    )}
+                    {locationLabel && (
+                      <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-500">
+                        {locationLabel}
+                      </span>
+                    )}
+                    {confidence && <span className="text-xs text-gray-500">{confidence}</span>}
+                  </div>
+                  {connection.evidence_excerpt && (
+                    <p className="mt-1 text-xs text-gray-500">{connection.evidence_excerpt}</p>
+                  )}
+                  {connection.source_url && (
+                    <a
+                      href={connection.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      <Link className="h-3 w-3" />
+                      Source
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>
         ) : (
-          <p className="text-sm text-gray-400">No sectors assigned yet</p>
+          <p className="text-sm text-gray-400">No US connection retained yet.</p>
         )}
-      </div>
+      </ProfileSection>
 
-    </>
+      <ProfileSection title="Contact details" icon={<Mail className="h-4 w-4" />}>
+        {contactDetails.length > 0 ? (
+          <div className="space-y-3">
+            {contactDetails.map((contact) => {
+              const href = contact.contact_type === 'email'
+                ? `mailto:${contact.contact_value}`
+                : contact.contact_value;
+              return (
+                <div key={contact.id} className="flex flex-col gap-2 rounded-lg border border-gray-100 p-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                      {contact.contact_type}
+                    </p>
+                    <a
+                      href={href}
+                      target={contact.contact_type === 'email' ? undefined : '_blank'}
+                      rel={contact.contact_type === 'email' ? undefined : 'noopener noreferrer'}
+                      className="mt-1 inline-flex max-w-full items-center gap-1 break-all text-sm font-medium text-blue-700 hover:underline"
+                    >
+                      {contact.contact_value}
+                      {contact.contact_type !== 'email' && <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />}
+                    </a>
+                    <SourceLinks items={[contact]} />
+                  </div>
+                  <div className="flex flex-col items-start gap-2 sm:items-end">
+                    <span className={`w-fit rounded-md border px-2 py-1 text-[10px] font-medium ${statusClasses(contact.verification_status)}`}>
+                      {statusLabel(contact.verification_status)}
+                    </span>
+                    {canEdit && (
+                      <div className="flex flex-wrap gap-2">
+                        {contact.verification_status !== 'verified' && (
+                          <button
+                            type="button"
+                            onClick={() => onUpdateContactVerification(contact.id, 'verified')}
+                            className="text-xs font-medium text-green-700 hover:underline"
+                          >
+                            Verify contact
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onUpdateContactVerification(contact.id, 'rejected')}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Mark outdated
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No contact details found.</p>
+        )}
+        <p className="mt-3 text-xs text-gray-400">
+          Contact details have a separate verification status. A retained source does not automatically verify that the address is current.
+        </p>
+      </ProfileSection>
+
+      <ProfileSection title="Stats" icon={<History className="h-4 w-4" />}>
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Added</dt>
+            <dd className="mt-1 text-sm font-medium text-gray-800">{formatProfileDate(person.created_at, true)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Added by</dt>
+            <dd className="mt-1 text-sm font-medium text-gray-800">{person.created_by_name || 'Unknown'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">How</dt>
+            <dd className="mt-1 text-sm font-medium text-gray-800">{profileSourceLabel(person.data_source)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Last update</dt>
+            <dd className="mt-1 text-sm font-medium text-gray-800">{formatProfileDate(person.updated_at, true)}</dd>
+            {person.updated_by_name && (
+              <dd className="mt-1 text-xs text-gray-500">by {person.updated_by_name}</dd>
+            )}
+          </div>
+        </dl>
+      </ProfileSection>
+    </div>
   );
 }

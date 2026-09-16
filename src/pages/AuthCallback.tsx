@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import LoadingGlobe from '../components/LoadingGlobe';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -41,7 +41,7 @@ export default function AuthCallback() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="flex flex-col items-center gap-3 text-center">
-        <Loader2 className="h-10 w-10 animate-spin text-yellow-500" />
+        <LoadingGlobe label="Completing sign in" />
         <div>
           <h1 className="text-lg font-semibold text-gray-900">
             Completing sign in

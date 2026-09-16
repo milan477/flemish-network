@@ -51,6 +51,8 @@ export type Database = {
           error_message: string | null
           heartbeat_at: string | null
           id: string
+          initiated_by_name: string | null
+          initiated_by_staff_id: string | null
           llm_calls_made: number | null
           llm_model_used: string | null
           params: Json | null
@@ -69,6 +71,8 @@ export type Database = {
           error_message?: string | null
           heartbeat_at?: string | null
           id?: string
+          initiated_by_name?: string | null
+          initiated_by_staff_id?: string | null
           llm_calls_made?: number | null
           llm_model_used?: string | null
           params?: Json | null
@@ -87,6 +91,8 @@ export type Database = {
           error_message?: string | null
           heartbeat_at?: string | null
           id?: string
+          initiated_by_name?: string | null
+          initiated_by_staff_id?: string | null
           llm_calls_made?: number | null
           llm_model_used?: string | null
           params?: Json | null

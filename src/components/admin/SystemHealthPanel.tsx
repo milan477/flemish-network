@@ -5,7 +5,7 @@ import {
   Clock,
   Database,
   ExternalLink,
-  Loader2,
+  Earth,
   Play,
   RefreshCw,
   Square,
@@ -549,7 +549,7 @@ export default function SystemHealthPanel({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2
+        <Earth
           className={`w-6 h-6 animate-spin ${
             isSettings ? 'text-teal-600' : 'text-yellow-600'
           }`}
@@ -583,7 +583,7 @@ export default function SystemHealthPanel({
             aria-label="Test Supabase connectivity"
             className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {actionLoading === 'connectivity' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+            {actionLoading === 'connectivity' ? <Earth className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Test Supabase
           </button>
           )}
@@ -596,7 +596,7 @@ export default function SystemHealthPanel({
             aria-label="Run housekeeping to clear stuck agent runs"
             className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {actionLoading === 'housekeeping' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {actionLoading === 'housekeeping' ? <Earth className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Run Housekeeping
           </button>
           )}
@@ -763,7 +763,7 @@ export default function SystemHealthPanel({
                   disabled={actionLoading === `cancel:${run.id}`}
                   className="inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {actionLoading === `cancel:${run.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                  {actionLoading === `cancel:${run.id}` ? <Earth className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
                   Cancel
                 </button>
               </div>
@@ -939,7 +939,7 @@ function AgentScheduleCard({
           <h3 className="font-semibold text-gray-900">{summary.label}</h3>
           {summary.running ? (
             <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(summary.running.status)}`}>
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Earth className="h-3 w-3 animate-spin" />
               {summary.running.status}
             </span>
           ) : (
@@ -957,7 +957,7 @@ function AgentScheduleCard({
           title={`Run ${summary.label}`}
           aria-label={`Run ${summary.label}`}
         >
-          {actionLoading === `run:${summary.kind}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {actionLoading === `run:${summary.kind}` ? <Earth className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
         </button>
       </div>
 
@@ -1045,7 +1045,7 @@ function AgentScheduleCard({
           disabled={actionLoading === `cancel:${runningRun.id}`}
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
         >
-          {actionLoading === `cancel:${runningRun.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+          {actionLoading === `cancel:${runningRun.id}` ? <Earth className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
           Cancel Running
         </button>
       )}
@@ -1108,7 +1108,7 @@ function SearchIndexFooter({
   let icon = <CheckCircle2 className="h-4 w-4 text-green-600" />;
   if (pending > 0 && !stuck) {
     statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — draining`;
-    icon = <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />;
+    icon = <Earth className="h-4 w-4 animate-spin text-yellow-600" />;
   } else if (stuck) {
     statusLine = `${pending.toLocaleString()} search-index record${pending === 1 ? '' : 's'} pending — last drain ${
       lastDrainAt ? formatAge(lastDrainAt) + ' ago' : 'never'
@@ -1135,7 +1135,7 @@ function SearchIndexFooter({
           className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
         >
           {actionLoading === 'run:embeddings' ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Earth className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}

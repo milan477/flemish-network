@@ -43,6 +43,8 @@ vi.mock('../supabase', async (importOriginal) => {
 
 vi.mock('../toast', () => ({
   notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
+  notifyInfo: vi.fn(),
 }));
 
 afterEach(() => {
@@ -89,6 +91,23 @@ describe('Admin Discovery prompt handoff', () => {
         },
       });
     });
+  });
+
+  it('opens Runs after the scheduler accepts a discovery run', async () => {
+    invokeMock.mockResolvedValue({ data: { status: 'running' }, error: null });
+    const onDiscoveryStarted = vi.fn();
+    render(
+      <AddContactPanel
+        sectors={[]}
+        onContactAdded={vi.fn()}
+        onDiscoveryStarted={onDiscoveryStarted}
+        initialDiscoveryPrompt="Find Flemish founders in Texas"
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Discovery' }));
+
+    await waitFor(() => expect(onDiscoveryStarted).toHaveBeenCalledTimes(1));
   });
 
   it('forces the quota-free official Fayat discovery path past the manual cooldown', async () => {
@@ -141,11 +160,12 @@ describe('Admin Discovery prompt handoff', () => {
   });
 
   it('summarizes discovery run results for people and organizations', async () => {
+    const prompt = 'Find Flemish climate founders in California';
     agentRuns.push({
       id: 'run-1',
       agent_type: 'discovery',
       status: 'completed',
-      params: {},
+      params: { query: prompt },
       started_at: '2026-05-07T12:00:00.000Z',
       completed_at: '2026-05-07T12:01:00.000Z',
       results: {
@@ -177,6 +197,7 @@ describe('Admin Discovery prompt handoff', () => {
     render(<AgentDashboard />);
 
     expect(await screen.findByText('6 new records')).toBeTruthy();
+    expect(screen.getByText(prompt)).toBeTruthy();
     expect(screen.getByText('4 people · 2 organizations')).toBeTruthy();
     expect(screen.getByText('2 records merged · 5 duplicates skipped')).toBeTruthy();
 
@@ -185,5 +206,63 @@ describe('Admin Discovery prompt handoff', () => {
     fireEvent.click(detailsButton);
     expect(screen.getByRole('button', { name: 'Hide details' })).toBeTruthy();
     expect(screen.getByText('Claim Frontier')).toBeTruthy();
+  });
+
+  it('uses red only for the failed status in a failed run row', async () => {
+    agentRuns.push({
+      id: 'run-failed',
+      agent_type: 'discovery',
+      status: 'failed',
+      params: { query: 'Find Flemish founders in Texas' },
+      started_at: '2026-05-07T12:00:00.000Z',
+      completed_at: '2026-05-07T12:00:10.000Z',
+      results: null,
+      error_message: 'The discovery provider could not be reached.',
+      error_kind: 'provider_unavailable',
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+      created_at: '2026-05-07T12:00:00.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    const failedStatus = await screen.findByText('failed');
+    expect(failedStatus.className).toContain('text-rose-700');
+    expect(screen.getByText('Run failed').className).toContain('text-gray-900');
+    screen.getAllByText('The discovery provider could not be reached.').forEach((message) => {
+      expect(message.className).not.toMatch(/text-(rose|red)/);
+    });
+    expect(screen.getByText('Failure details').className).not.toMatch(/text-(rose|red)/);
+  });
+
+  it('does not crash when stored run steps omit the step identifier', async () => {
+    agentRuns.push({
+      id: 'run-with-legacy-step',
+      agent_type: 'discovery',
+      status: 'completed',
+      params: { query: 'Fayat scholarship alumni that have gone to Finland.' },
+      started_at: '2026-09-16T02:34:17.000Z',
+      completed_at: '2026-09-16T02:34:19.000Z',
+      results: {
+        suggestions_created: 0,
+        organizations_inserted: 0,
+        steps: [{ elapsed: '1.3s', status: 'ok', detail: { duplicates_skipped: 31 } }],
+      },
+      error_message: null,
+      error_kind: null,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: 'official_vlaanderen_directory',
+      cost_estimate_usd: 0,
+      created_at: '2026-09-16T02:34:17.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
+    expect(screen.getByText('Run step')).toBeTruthy();
+    expect(screen.getByText('ok')).toBeTruthy();
   });
 });

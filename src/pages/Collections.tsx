@@ -5,6 +5,7 @@ import CollectionModal from '../components/CollectionModal';
 import CollectionDetail from '../components/CollectionDetail';
 import { useAuth } from '../lib/auth';
 import { formatDate } from '../lib/formatDateTime';
+import LoadingGlobe from '../components/LoadingGlobe';
 
 interface CollectionsProps {
   collectionId?: string;
@@ -111,7 +112,7 @@ export default function Collections({
 
       {loading ? (
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
+          <LoadingGlobe className="h-12 w-12" label="Loading collections" />
         </div>
       ) : collections.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center max-w-2xl mx-auto mt-12">

@@ -66,6 +66,10 @@ export interface Person {
   welcomes_visits?: boolean;
   data_source?: string;
   last_verified_at?: string;
+  created_by_staff_id?: string | null;
+  updated_by_staff_id?: string | null;
+  created_by_name?: string | null;
+  updated_by_name?: string | null;
   created_at: string;
   updated_at: string;
 }

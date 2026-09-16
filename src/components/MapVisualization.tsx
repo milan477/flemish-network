@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Moon, Sun, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Earth, Moon, Sun, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
@@ -462,7 +462,7 @@ export default function MapVisualization({
         {loading && clusters.length === 0 && (
           <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
              <div className="bg-white px-6 py-3 rounded-full shadow-xl flex items-center space-x-3 border border-gray-100">
-                <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                <Earth className="h-4 w-4 animate-spin" aria-hidden="true" />
                 <span className="text-sm font-medium text-gray-700">Loading map data...</span>
              </div>
           </div>

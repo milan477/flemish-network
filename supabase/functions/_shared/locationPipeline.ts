@@ -163,9 +163,14 @@ export function parseLocationCandidate(
   );
 
   let isUsCandidate = false;
-  if (isUsCountry(country) || Boolean(stateCode)) {
+  if (country) {
+    // An explicit country is stronger evidence than a state-like token. This
+    // prevents contradictory values such as "Brussels, CA, Belgium" from
+    // being treated as a US location merely because CA is a state code.
+    isUsCandidate = isUsCountry(country);
+  } else if (Boolean(stateCode)) {
     isUsCandidate = true;
-  } else if (country || isNonUsByKeyword) {
+  } else if (isNonUsByKeyword) {
     isUsCandidate = false;
   } else if (city && !rawText) {
     isUsCandidate = Boolean(stateCode);
@@ -225,4 +230,25 @@ export async function findExistingUsLocation(
   }
 
   return (data || null) as ExistingLocationMatch | null;
+}
+
+export async function resolveVerifiedUsLocation(
+  supabase: SupabaseAdminClient,
+  city: string,
+  state: string,
+  country = "",
+): Promise<ExistingLocationMatch | null> {
+  const normalizedCity = normalizeWhitespace(city);
+  const normalizedState = stateToCode(state);
+  const normalizedCountry = normalizeWhitespace(country);
+
+  if (
+    !normalizedCity ||
+    !normalizedState ||
+    (normalizedCountry && !isUsCountry(normalizedCountry))
+  ) {
+    return null;
+  }
+
+  return await findExistingUsLocation(supabase, normalizedCity, normalizedState);
 }

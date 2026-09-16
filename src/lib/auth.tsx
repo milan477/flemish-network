@@ -12,6 +12,7 @@ import type { Session } from '@supabase/supabase-js';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from './supabase';
+import LoadingGlobe from '../components/LoadingGlobe';
 
 interface AuthContextValue {
   session: Session | null;
@@ -38,7 +39,7 @@ function FullScreenSpinner({ label }: { label: string }) {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
+        <LoadingGlobe label={label} />
         <p className="text-sm text-gray-500">{label}</p>
       </div>
     </div>

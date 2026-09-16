@@ -1,4 +1,4 @@
-import { X, MapPin, Building2, ExternalLink } from 'lucide-react';
+import { Earth, X, MapPin, Building2, ExternalLink } from 'lucide-react';
 import { displayName } from '../lib/supabase';
 import type { MapCluster } from '../lib/supabase';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -86,7 +86,7 @@ export default function ClusterPopover({
       <div className="overflow-y-auto custom-scrollbar">
         {!fullDataReady && (
           <div className="flex items-center justify-center gap-2 py-6 text-gray-400">
-            <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            <Earth className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
             <span className="text-xs font-medium">Loading…</span>
           </div>
         )}

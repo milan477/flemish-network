@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, X, Loader2, Sparkles } from 'lucide-react';
+import { Search, X, Earth, Sparkles } from 'lucide-react';
 
 interface UnifiedSearchBarProps {
   onSearch: (query: string) => void;
@@ -52,7 +52,7 @@ export default function UnifiedSearchBar({
       <form onSubmit={handleSubmit} className="relative">
         <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
           {isSearching ? (
-            <Loader2 className="w-4 h-4 text-yellow-600 animate-spin" />
+            <Earth className="w-4 h-4 text-yellow-600 animate-spin" />
           ) : (
             <Search className="w-4 h-4 text-gray-400" />
           )}

@@ -4,7 +4,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-  Loader2,
+  Earth,
 } from 'lucide-react';
 import type { Person } from '../lib/supabase';
 import { exportPeopleToCsv, exportPeopleToExcel } from '../lib/exportService';
@@ -70,7 +70,7 @@ export default function PeopleExportMenu({
         className={buttonClassName}
       >
         {exporting ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
+          <Earth className="w-4 h-4 animate-spin" />
         ) : (
           <Download className="w-4 h-4" />
         )}
@@ -87,7 +87,7 @@ export default function PeopleExportMenu({
             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
           >
             {exporting === 'xlsx' ? (
-              <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+              <Earth className="h-4 w-4 animate-spin text-yellow-600" />
             ) : (
               <FileSpreadsheet className="h-4 w-4 text-green-600" />
             )}
@@ -100,7 +100,7 @@ export default function PeopleExportMenu({
             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
           >
             {exporting === 'csv' ? (
-              <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+              <Earth className="h-4 w-4 animate-spin text-yellow-600" />
             ) : (
               <FileText className="h-4 w-4 text-gray-500" />
             )}

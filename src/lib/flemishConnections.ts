@@ -135,15 +135,23 @@ export const CANONICAL_FLEMISH_CONNECTIONS: CanonicalFlemishConnectionCatalogEnt
     ],
   },
   {
-    name: 'Fayat Fellowship',
+    name: 'Fayat Scholarship',
     type: 'other',
     connection_group: 'funding_exchange',
     is_filterable: false,
-    aliases: ['Fayat'],
+    aliases: ['Fayat', 'Fayatbeurzen', 'Fayat Scholarships', 'Fayat Fellowship'],
     patterns: [
       /\bfayat\b/i,
-      /\bfayat\s+fellow(?:ship)?\b/i,
+      /\bfayat(?:beurzen|\s+scholarships?|\s+fellow(?:ship)?)\b/i,
     ],
+  },
+  {
+    name: 'Belgian',
+    type: 'other',
+    connection_group: 'nationality_origin',
+    is_filterable: false,
+    aliases: ['Belgian national', 'from Belgium'],
+    patterns: [/^belgian$/i, /^belgian\s+national$/i, /^from\s+belgium$/i],
   },
   {
     name: 'Flemish Government',

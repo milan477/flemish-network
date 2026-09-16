@@ -6,7 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  Loader2,
+  Earth,
   Check,
 } from 'lucide-react';
 import { displayName, type Person } from '../../lib/supabase';
@@ -72,10 +72,10 @@ export default function StaleContactsBar({
   const needsAttention = aging.length + stale.length + outdated.length;
 
   const groups: FreshnessGroup[] = [
-    { key: 'fresh', label: FRESHNESS_TIER_LABELS.fresh, barColor: 'bg-green-500', icon: CheckCircle2, items: fresh },
-    { key: 'aging', label: FRESHNESS_TIER_LABELS.aging, barColor: 'bg-yellow-400', icon: Clock, items: aging },
-    { key: 'stale', label: FRESHNESS_TIER_LABELS.stale, barColor: 'bg-orange-400', icon: AlertTriangle, items: stale },
-    { key: 'outdated', label: FRESHNESS_TIER_LABELS.outdated, barColor: 'bg-red-500', icon: AlertTriangle, items: outdated },
+    { key: 'fresh', label: FRESHNESS_TIER_LABELS.fresh, barColor: 'bg-emerald-300', icon: CheckCircle2, items: fresh },
+    { key: 'aging', label: FRESHNESS_TIER_LABELS.aging, barColor: 'bg-amber-300', icon: Clock, items: aging },
+    { key: 'stale', label: FRESHNESS_TIER_LABELS.stale, barColor: 'bg-orange-300', icon: AlertTriangle, items: stale },
+    { key: 'outdated', label: FRESHNESS_TIER_LABELS.outdated, barColor: 'bg-rose-300', icon: AlertTriangle, items: outdated },
   ];
 
   const staleList = [...aging, ...stale, ...outdated].sort(
@@ -111,7 +111,7 @@ export default function StaleContactsBar({
                 className="flex items-center space-x-1.5 text-xs font-medium text-yellow-800 bg-yellow-50 hover:bg-yellow-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
               >
                 {aiLoading ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Earth className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Sparkles className="w-3.5 h-3.5" />
                 )}
@@ -206,10 +206,10 @@ export default function StaleContactsBar({
                     <span
                       className={`text-xs font-medium ${
                         days > 365
-                          ? 'text-red-600'
+                          ? 'text-rose-500'
                           : days > 90
-                            ? 'text-orange-600'
-                            : 'text-yellow-600'
+                            ? 'text-orange-500'
+                            : 'text-amber-600'
                       }`}
                     >
                       {days}d ago
@@ -221,7 +221,7 @@ export default function StaleContactsBar({
                         className="flex items-center space-x-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 px-2.5 py-1.5 rounded-md transition-colors disabled:opacity-50"
                       >
                         {isMarking ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <Earth className="w-3 h-3 animate-spin" />
                         ) : (
                           <Check className="w-3 h-3" />
                         )}
@@ -235,7 +235,7 @@ export default function StaleContactsBar({
                           className="flex items-center space-x-1 text-xs font-medium text-yellow-800 bg-yellow-50 hover:bg-yellow-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
                         >
                           {isChecking ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <Earth className="w-3 h-3 animate-spin" />
                           ) : (
                             <Sparkles className="w-3 h-3" />
                           )}
@@ -247,7 +247,7 @@ export default function StaleContactsBar({
                           className="flex items-center space-x-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50"
                         >
                           {isMarking ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <Earth className="w-3 h-3 animate-spin" />
                           ) : (
                             <Check className="w-3 h-3" />
                           )}

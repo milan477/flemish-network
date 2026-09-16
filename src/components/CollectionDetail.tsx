@@ -12,7 +12,7 @@ import {
   Save,
   Pencil,
   Sparkles,
-  Loader2,
+  Earth,
   Building2,
   Check,
   RotateCcw,
@@ -30,6 +30,7 @@ import {
   getOrganizationFlemishConnectionText,
   getPersonFlemishConnectionText,
 } from '../lib/flemishConnections';
+import LoadingGlobe from './LoadingGlobe';
 import CollectionModal from './CollectionModal';
 import { suggestPeopleEmbedding, type CollectionSuggestionGap } from '../lib/aiService';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -536,7 +537,7 @@ export default function CollectionDetail({
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
+        <LoadingGlobe className="h-12 w-12" label="Loading collection" />
       </div>
     );
   }
@@ -616,7 +617,7 @@ export default function CollectionDetail({
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-yellow-400 hover:bg-yellow-500 text-gray-900 rounded-lg transition-colors disabled:opacity-50"
             >
               {suggestLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Earth className="w-4 h-4 animate-spin" />
               ) : (
                 <Sparkles className="w-4 h-4" />
               )}
@@ -643,7 +644,7 @@ export default function CollectionDetail({
                   disabled={suggestLoading}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-yellow-50 disabled:opacity-50"
                 >
-                  {suggestLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {suggestLoading ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   Refresh
                 </button>
                 <button
@@ -673,7 +674,7 @@ export default function CollectionDetail({
             )}
             {suggestLoading ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Earth className="w-4 h-4 animate-spin" />
                 Finding collection suggestions...
               </div>
             ) : visibleDraftItems.length === 0 ? (
@@ -778,7 +779,7 @@ export default function CollectionDetail({
                     disabled={savingDraftMembers || acceptedCount === 0}
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
                   >
-                    {savingDraftMembers ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    {savingDraftMembers ? <Earth className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     Add Approved
                   </button>
                 </div>
@@ -833,7 +834,7 @@ export default function CollectionDetail({
                   disabled={discoveryPromptLoading}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-6 py-2 font-semibold text-gray-900 shadow-sm transition-colors hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {discoveryPromptLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {discoveryPromptLoading && <Earth className="h-4 w-4 animate-spin" />}
                   {discoveryPromptLoading ? 'Creating prompt…' : 'Launch Discovery'}
                 </button>
               )}

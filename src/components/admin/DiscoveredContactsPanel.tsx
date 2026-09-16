@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Loader2,
+  Earth,
   Check,
   UserPlus,
   ExternalLink,
@@ -59,6 +59,8 @@ interface DiscoveredContact {
   source_urls: string[] | null;
   status: string;
   agent_run_id: string | null;
+  created_by_staff_id?: string | null;
+  created_by_name?: string | null;
   created_at: string;
   last_seen_at?: string | null;
   last_evidence_at?: string | null;
@@ -85,6 +87,9 @@ export interface VerificationPayload {
   location_country: string | null;
   current_role: string | null;
   current_employer: string | null;
+  profile_photo_url: string | null;
+  professional_sectors: string[];
+  belgian_identity_confirmed: boolean;
   flemish_ties: string[];
   evidence: Array<{ url: string; excerpt: string }>;
   confidence: number;
@@ -183,6 +188,7 @@ function isContactReadyForBulkApproval(
 ): boolean {
   if (isDuplicate) return false;
   if ((contact.verification_status ?? 'queued') !== 'verified') return false;
+  if (!contact.suggested_us_network_status) return false;
   const confidence =
     contact.suggested_us_network_confidence ?? contact.discovery_confidence ?? 0;
   return confidence >= 0.8;
@@ -319,10 +325,177 @@ function contactSourceLabel(source: string): string {
   return source.replace(/_/g, ' ');
 }
 
-function approvedPersonDataSource(source: string): string {
+function approvedPersonDataSource(source: string, staffLaunchedDiscovery: boolean): string {
   if (source === 'manual') return 'manual';
   if (source === 'import') return 'csv_import';
-  return 'ai_agent';
+  return staffLaunchedDiscovery ? 'discovery_agent' : 'ai_agent';
+}
+
+async function resolveContactOrigin(contact: DiscoveredContact): Promise<{
+  staffId: string | null;
+  name: string | null;
+  staffLaunchedDiscovery: boolean;
+}> {
+  if (contact.source === 'manual' || contact.source === 'import') {
+    return {
+      staffId: contact.created_by_staff_id || null,
+      name: contact.created_by_name || null,
+      staffLaunchedDiscovery: false,
+    };
+  }
+
+  if (!contact.agent_run_id) {
+    return { staffId: null, name: 'System', staffLaunchedDiscovery: false };
+  }
+
+  const { data } = await supabase
+    .from('agent_runs')
+    .select('initiated_by_staff_id, initiated_by_name')
+    .eq('id', contact.agent_run_id)
+    .maybeSingle();
+
+  return {
+    staffId: data?.initiated_by_staff_id || null,
+    name: data?.initiated_by_name || 'System',
+    staffLaunchedDiscovery: Boolean(data?.initiated_by_staff_id || data?.initiated_by_name),
+  };
+}
+
+async function retainApprovedPersonSources(
+  personId: string,
+  contact: DiscoveredContact,
+  sectors: Sector[],
+  includedFields?: Set<string>
+) {
+  const includes = (field: string) => !includedFields || includedFields.has(field);
+  const evidence = contact.verification_payload?.evidence?.[0];
+  const sourceUrl = evidence?.url || contact.source_urls?.[0] || null;
+  const evidenceExcerpt = evidence?.excerpt || contact.bio || contact.flemish_connection || null;
+  const sourceLabel = contact.source === 'manual' ? 'Manual discovery review' : 'Discovery evidence';
+  const verificationStatus = sourceUrl ? 'sourced' : 'unverified';
+  const locationValue = [contact.location_city, contact.location_state].filter(Boolean).join(', ') || null;
+  const currentLocationValue = [contact.current_location_city, contact.current_location_country].filter(Boolean).join(', ') || null;
+  const fields = [
+    { fieldName: 'photo', sourceField: 'profile_photo_url', value: contact.profile_photo_url },
+    { fieldName: 'about', sourceField: 'bio', value: contact.bio },
+    { fieldName: 'location', sourceField: 'location', value: locationValue },
+    { fieldName: 'current_location', sourceField: 'current_location', value: currentLocationValue },
+    { fieldName: 'current_position', sourceField: 'current_position', value: contact.current_position },
+    { fieldName: 'occupation', sourceField: 'occupation', value: contact.occupation },
+  ].filter((field) => field.value && includes(field.sourceField));
+
+  for (const field of fields) {
+    await supabase
+      .from('person_profile_sources')
+      .update({ is_current: false })
+      .eq('person_id', personId)
+      .eq('field_name', field.fieldName)
+      .eq('is_current', true);
+  }
+
+  const matchedSectors = includes('sectors')
+    ? sectors.filter((sector) => contact.sectors?.includes(sector.name))
+    : [];
+  const sourceRows = [
+    ...fields.map((field) => ({
+      person_id: personId,
+      field_name: field.fieldName,
+      field_value: field.value,
+      source_type: contact.source,
+      source_label: sourceLabel,
+      source_url: sourceUrl,
+      evidence_excerpt: evidenceExcerpt,
+      verification_status: verificationStatus,
+      is_current: true,
+    })),
+    ...matchedSectors.map((sector) => ({
+      person_id: personId,
+      field_name: 'sector',
+      field_value: sector.name,
+      source_type: contact.source,
+      source_label: sourceLabel,
+      source_url: sourceUrl,
+      evidence_excerpt: evidenceExcerpt,
+      verification_status: verificationStatus,
+      is_current: true,
+    })),
+  ];
+  if (sourceRows.length > 0) {
+    await supabase.from('person_profile_sources').insert(sourceRows);
+  }
+
+  const contacts = [
+    { type: 'email', sourceField: 'email', value: contact.email },
+    { type: 'linkedin', sourceField: 'linkedin_url', value: contact.linkedin_url },
+    { type: 'website', sourceField: 'website_url', value: contact.website_url },
+  ].filter((item) => item.value && includes(item.sourceField));
+  for (const item of contacts) {
+    await supabase
+      .from('person_contact_details')
+      .update({ is_primary: false })
+      .eq('person_id', personId)
+      .eq('contact_type', item.type)
+      .eq('is_primary', true);
+    await supabase.from('person_contact_details').upsert({
+      person_id: personId,
+      contact_type: item.type,
+      contact_value: item.value,
+      is_primary: true,
+      verification_status: verificationStatus,
+      verification_method: sourceUrl ? 'source_review' : null,
+      source_label: sourceLabel,
+      source_url: sourceUrl,
+      evidence_excerpt: evidenceExcerpt,
+    }, { onConflict: 'person_id,contact_type,contact_value' });
+  }
+
+  if (includes('current_position') || includes('occupation')) {
+    const occupationTitle = contact.current_position || contact.occupation;
+    if (occupationTitle) {
+      await supabase
+        .from('person_experiences')
+        .update({ is_current: false })
+        .eq('person_id', personId)
+        .eq('experience_type', 'occupation')
+        .eq('is_current', true);
+      const atParts = contact.current_position?.split(/\s+at\s+/i) || [];
+      await supabase.from('person_experiences').insert({
+        person_id: personId,
+        experience_type: 'occupation',
+        title: atParts[0] || occupationTitle,
+        organization_name: atParts.length > 1 ? atParts.slice(1).join(' at ') : null,
+        location_city: contact.location_city || contact.current_location_city || null,
+        location_state: contact.location_state || null,
+        location_country: contact.current_location_country || null,
+        is_current: true,
+        source_label: sourceLabel,
+        source_url: sourceUrl,
+        evidence_excerpt: evidenceExcerpt,
+        verification_status: verificationStatus,
+      });
+    }
+  }
+
+  const educationMatch = contact.bio?.match(/studied\s+(.+?)\s+at\s+(.+?)\s+in\s+the United States/i);
+  if (educationMatch && includes('bio')) {
+    const educationLocation = (contact.suggested_us_connections || []).find((connection) =>
+      /study|scholar|university|college|school/i.test(connection.connection_label || '')
+    );
+    await supabase.from('person_experiences').insert({
+      person_id: personId,
+      experience_type: 'education',
+      title: educationMatch[1].trim(),
+      organization_name: educationMatch[2].replace(/[.;,]+$/, '').trim(),
+      location_city: educationLocation?.location_city || null,
+      location_state: educationLocation?.location_state || null,
+      location_country: 'United States',
+      is_current: false,
+      source_label: sourceLabel,
+      source_url: sourceUrl,
+      evidence_excerpt: evidenceExcerpt,
+      verification_status: verificationStatus,
+    });
+  }
 }
 
 async function checkOrganizationDuplicates(
@@ -396,6 +569,7 @@ async function approveContact(
   networkStatus: 'us_based' | 'us_connected_abroad'
 ): Promise<boolean> {
   const parsed = parseTitleFromName(contact.name || '');
+  const origin = await resolveContactOrigin(contact);
   const flemishConnectionText = contact.flemish_connection?.trim() || null;
   const locationId =
     networkStatus === 'us_based'
@@ -431,7 +605,9 @@ async function approveContact(
       linkedin_url: contact.linkedin_url || null,
       website_url: contact.website_url || null,
       profile_photo_url: contact.profile_photo_url || null,
-      data_source: approvedPersonDataSource(contact.source),
+      data_source: approvedPersonDataSource(contact.source, origin.staffLaunchedDiscovery),
+      created_by_staff_id: origin.staffId,
+      created_by_name: origin.name || 'Unknown',
     })
     .select('id')
     .maybeSingle();
@@ -496,6 +672,7 @@ async function approveContact(
       );
     }
   }
+  await retainApprovedPersonSources(person.id, contact, sectors);
   const { error: reviewError } = await supabase
     .from('discovered_contacts')
     .update({
@@ -753,6 +930,12 @@ async function mergeIntoExisting(
       );
     }
   }
+  const retainedFields = new Set(selectedFields);
+  if (selectedFields.includes('location_city') || selectedFields.includes('location_state')) {
+    retainedFields.add('location');
+  }
+  if (contact.sectors?.length) retainedFields.add('sectors');
+  await retainApprovedPersonSources(existingPerson.id, contact, sectors, retainedFields);
   const { error: reviewError } = await supabase
     .from('discovered_contacts')
     .update({
@@ -1101,7 +1284,7 @@ function MergeCompare({
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
           >
             {merging ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Earth className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <RefreshCw className="w-3.5 h-3.5" />
             )}
@@ -1616,7 +1799,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
+        <Earth className="w-6 h-6 animate-spin text-yellow-600" />
       </div>
     );
   }
@@ -1683,7 +1866,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           pending contact{contacts.length !== 1 ? 's' : ''}
           {checkingDupes ? (
             <span className="ml-2 text-xs text-gray-400">
-              <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+              <Earth className="w-3 h-3 animate-spin inline mr-1" />
               Checking duplicates...
             </span>
           ) : dupeCount > 0 ? (
@@ -1701,7 +1884,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
             >
               {actionId === 'verify-queued' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Earth className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
@@ -1714,7 +1897,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
           >
             {bulkApprovalProgress ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Earth className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Check className="w-3.5 h-3.5" />
             )}
@@ -1765,7 +1948,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                 {verificationStatus === 'failed' ? (
                   <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
                 ) : (
-                  <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                  <Earth className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
                 )}
                 <span className={`text-[11px] font-medium ${verificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
                   {verificationStatus === 'failed'
@@ -2085,7 +2268,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                       className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {isActioning ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <Earth className="w-3 h-3 animate-spin" />
                       ) : (
                         <UserPlus className="w-3 h-3" />
                       )}
@@ -2106,7 +2289,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
                   >
                     {isActioning ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <Earth className="w-3 h-3 animate-spin" />
                     ) : (
                       <UserPlus className="w-3 h-3" />
                     )}
@@ -2165,7 +2348,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               pending organization{organizations.length !== 1 ? 's' : ''}
               {checkingDupes ? (
                 <span className="ml-2 text-xs text-gray-400">
-                  <Loader2 className="w-3 h-3 animate-spin inline mr-1" />
+                  <Earth className="w-3 h-3 animate-spin inline mr-1" />
                   Checking duplicates...
                 </span>
               ) : organizationDupeCount > 0 ? (
@@ -2226,7 +2409,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                       {orgVerificationStatus === 'failed' ? (
                         <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
                       ) : (
-                        <Loader2 className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
+                        <Earth className="w-3 h-3 text-slate-500 flex-shrink-0 animate-spin" />
                       )}
                       <span className={`text-[11px] font-medium ${orgVerificationStatus === 'failed' ? 'text-red-700' : 'text-slate-600'}`}>
                         {orgVerificationStatus === 'failed'
@@ -2434,7 +2617,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                             className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50"
                           >
                             {isActioning ? (
-                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <Earth className="w-3 h-3 animate-spin" />
                             ) : (
                               <GitMerge className="w-3 h-3" />
                             )}
@@ -2456,7 +2639,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                           className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
                         >
                           {isActioning ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <Earth className="w-3 h-3 animate-spin" />
                           ) : (
                             <Building2 className="w-3 h-3" />
                           )}

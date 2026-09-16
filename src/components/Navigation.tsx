@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
   MapPin,
-  Earth,
   Library,
   Plus,
   PlusCircle,
@@ -10,6 +9,7 @@ import {
   Settings,
 } from 'lucide-react';
 import type { StaffUser } from '../lib/supabase';
+import { BrandGlobe } from './LoadingGlobe';
 
 interface NavigationProps {
   currentPage: string;
@@ -55,7 +55,7 @@ export default function Navigation({
               title="Network dashboard"
             >
               <div className="flex h-8 w-8 items-center justify-center">
-                <Earth className="h-7 w-7 text-yellow-300" aria-hidden="true" />
+                <BrandGlobe />
               </div>
             </button>
 

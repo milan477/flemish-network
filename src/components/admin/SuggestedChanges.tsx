@@ -6,7 +6,7 @@ import {
   ExternalLink,
   Info,
   Inbox,
-  Loader2,
+  Earth,
   ShieldAlert,
   XCircle,
 } from 'lucide-react';
@@ -320,7 +320,7 @@ export default function SuggestedChanges({
               className="flex items-center space-x-1.5 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 transition-colors hover:bg-green-100 disabled:opacity-50"
             >
               {batchProcessing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Earth className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <CheckCheck className="h-3.5 w-3.5" />
               )}
@@ -333,7 +333,7 @@ export default function SuggestedChanges({
             className="flex items-center space-x-1.5 rounded-lg bg-yellow-50 px-2.5 py-1.5 text-xs font-medium text-yellow-800 transition-colors hover:bg-yellow-100 disabled:opacity-50"
           >
             {batchProcessing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Earth className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <CheckCheck className="h-3.5 w-3.5" />
             )}
@@ -545,7 +545,7 @@ export default function SuggestedChanges({
                       title="Approve"
                     >
                       {isProcessing ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Earth className="h-4 w-4 animate-spin" />
                       ) : (
                         <CheckCircle className="h-4 w-4" />
                       )}

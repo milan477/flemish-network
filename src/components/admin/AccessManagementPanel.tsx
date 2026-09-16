@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, MailPlus, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { Earth, MailPlus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from '../../lib/supabase';
 import { useAuth } from '../../lib/auth';
 
@@ -272,7 +272,7 @@ export default function AccessManagementPanel() {
                     className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingId === user.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Earth className="h-4 w-4 animate-spin" />
                     ) : (
                       <Save className="h-4 w-4" />
                     )}
@@ -354,7 +354,7 @@ export default function AccessManagementPanel() {
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:opacity-50"
           >
             {creating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Earth className="h-4 w-4 animate-spin" />
             ) : (
               <MailPlus className="h-4 w-4" />
             )}
@@ -378,7 +378,7 @@ export default function AccessManagementPanel() {
       {loading ? (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
           <div className="flex items-center justify-center px-6 py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-yellow-500" />
+            <Earth className="h-5 w-5 animate-spin text-yellow-500" />
           </div>
         </div>
       ) : staffUsers.length === 0 ? (

@@ -4,12 +4,13 @@
 
 import type { JsonSchema } from "./aiContracts.ts";
 import { callGeminiStructured } from "./gemini.ts";
-import type { Json, SupabaseAdminClient } from "./database.types.ts";
+import type { SupabaseAdminClient } from "./database.types.ts";
+import { resolveVerifiedUsLocation } from "./locationPipeline.ts";
 import {
-  isOfficialFayatLaureatesUrl,
-  OFFICIAL_FAYAT_LAUREATES_URL,
-} from "./fayatDirectory.ts";
-import { formatResultsForLLM, searchWeb } from "./webSearch.ts";
+  formatResultsForLLM,
+  searchWeb,
+  type WebSearchResult,
+} from "./webSearch.ts";
 
 export type DiscoveredRecordKind = "discovered_contact" | "discovered_organization";
 
@@ -37,6 +38,9 @@ export interface VerificationPayload {
   location_country: string | null;
   current_role: string | null;
   current_employer: string | null;
+  profile_photo_url: string | null;
+  professional_sectors: string[];
+  belgian_identity_confirmed: boolean;
   flemish_ties: string[];
   evidence: Array<{ url: string; excerpt: string }>;
   confidence: number;
@@ -57,7 +61,17 @@ const VERIFICATION_PROMPT_CONTACT = `You verify whether a candidate person belon
 Use the search results to assess:
 - Does this person plausibly exist as described?
 - Is there a Flemish or Belgian connection (study at KU Leuven/UGent/VUB/UAntwerp, work at imec, BAEF fellow, Belgian/Flemish heritage, etc.)?
-- Where do they currently live or work?
+- What is their current residence, current employer, current role, and current professional sector?
+- Is there an exact, direct profile-photo URL for this person in the supplied results?
+
+Current-fact rules:
+- Treat scholarship, degree, and study-location facts as historical evidence only. Do not use them as the current role, employer, residence, or professional sector.
+- Use null or an empty array when a current fact is not supported. Do not infer a current residence from a former university.
+- professional_sectors may contain only: Artificial Intelligence, Biotechnology, Finance, Culture & Arts, Education, Research.
+- Assign Education only when current professional work is in education, not merely because the person studied at a university.
+- profile_photo_url must be an exact absolute image URL present in the supplied search results and must depict this exact person. Never use a logo, icon, placeholder, or inferred URL; otherwise use null.
+- A Fayat award is one connection: "Fayat Scholarship". Do not add "Fayatbeurzen", "Fayat Scholarships", or "Flemish Government" as separate connections.
+- Set belgian_identity_confirmed=true only when a source explicitly identifies the person as Belgian, a Belgian national, or from Belgium. A Fayat award, Belgian institution, name, or Flemish programme alone is not proof of nationality or origin.
 
 Network scope rules:
 - "us_based": currently lives or primarily works in the United States.
@@ -100,6 +114,22 @@ export const VERIFICATION_SCHEMA: JsonSchema = {
     location_country: { type: "string", nullable: true },
     current_role: { type: "string", nullable: true },
     current_employer: { type: "string", nullable: true },
+    profile_photo_url: { type: "string", nullable: true },
+    professional_sectors: {
+      type: "array",
+      items: {
+        type: "string",
+        enum: [
+          "Artificial Intelligence",
+          "Biotechnology",
+          "Finance",
+          "Culture & Arts",
+          "Education",
+          "Research",
+        ],
+      },
+    },
+    belgian_identity_confirmed: { type: "boolean" },
     flemish_ties: { type: "array", items: { type: "string" } },
     evidence: {
       type: "array",
@@ -131,12 +161,39 @@ function safeStr(value: unknown): string {
   return String(value).trim();
 }
 
-function normalizePayload(raw: unknown): VerificationPayload {
+const PROFESSIONAL_SECTORS = new Set([
+  "Artificial Intelligence",
+  "Biotechnology",
+  "Finance",
+  "Culture & Arts",
+  "Education",
+  "Research",
+]);
+
+function normalizeHttpUrl(value: unknown): string | null {
+  const candidate = safeStr(value);
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (/\b(logo|icon|placeholder|default-avatar|favicon)\b/i.test(parsed.href)) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+export function normalizePayload(raw: unknown): VerificationPayload {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const scope = r.network_scope;
   const validScope = scope === "us_based" || scope === "us_connected_abroad" ? scope : null;
   const evidenceRaw = Array.isArray(r.evidence) ? r.evidence : [];
   const flemishTiesRaw = Array.isArray(r.flemish_ties) ? r.flemish_ties : [];
+  const sectorRaw = Array.isArray(r.professional_sectors)
+    ? r.professional_sectors
+    : [];
   return {
     network_scope: validScope,
     location_city: safeStr(r.location_city) || null,
@@ -144,6 +201,11 @@ function normalizePayload(raw: unknown): VerificationPayload {
     location_country: safeStr(r.location_country) || null,
     current_role: safeStr(r.current_role) || null,
     current_employer: safeStr(r.current_employer) || null,
+    profile_photo_url: normalizeHttpUrl(r.profile_photo_url),
+    professional_sectors: sectorRaw
+      .map((value) => safeStr(value))
+      .filter((value) => PROFESSIONAL_SECTORS.has(value)),
+    belgian_identity_confirmed: r.belgian_identity_confirmed === true,
     flemish_ties: flemishTiesRaw.map((value) => safeStr(value)).filter(Boolean).slice(0, 8),
     evidence: evidenceRaw
       .map((item) => {
@@ -159,50 +221,68 @@ function normalizePayload(raw: unknown): VerificationPayload {
   };
 }
 
-export function trustedOfficialFayatPayload(
-  raw: Record<string, unknown>,
-): VerificationPayload | null {
-  if (safeStr(raw.source) !== "official_fayat_directory") return null;
+export async function validatePayloadLocation(
+  supabase: SupabaseAdminClient,
+  payload: VerificationPayload,
+): Promise<VerificationPayload> {
+  if (payload.network_scope !== "us_based") return payload;
 
-  const sourceUrls = Array.isArray(raw.source_urls)
-    ? raw.source_urls.map((value) => safeStr(value)).filter(Boolean)
-    : [];
-  const officialUrl = sourceUrls.find(isOfficialFayatLaureatesUrl);
-  if (!officialUrl) return null;
+  if (payload.confidence < 0.85) {
+    return {
+      ...payload,
+      location_city: null,
+      location_state: null,
+      location_country: null,
+    };
+  }
 
-  const flemishConnection = safeStr(raw.flemish_connection);
-  const evidenceExcerpt = safeStr(raw.bio) ||
-    `${safeStr(raw.name)} is listed in the official Fayat laureate directory.`;
+  const match = await resolveVerifiedUsLocation(
+    supabase,
+    payload.location_city || "",
+    payload.location_state || "",
+    payload.location_country || "",
+  );
 
   return {
-    network_scope: "us_connected_abroad",
-    location_city: null,
-    location_state: null,
-    location_country: null,
-    current_role: safeStr(raw.current_position) || safeStr(raw.occupation) || null,
-    current_employer: null,
-    flemish_ties: flemishConnection ? [flemishConnection] : ["Fayatbeurzen laureate"],
-    evidence: [{
-      url: officialUrl || OFFICIAL_FAYAT_LAUREATES_URL,
-      excerpt: evidenceExcerpt,
-    }],
-    confidence: 1,
-    contradiction: false,
-    contradiction_reason: null,
-    notes: "Verified from the official Vlaanderen Fayat laureate directory.",
+    ...payload,
+    location_city: match?.city || null,
+    location_state: match?.state || null,
+    location_country: match ? "United States" : null,
   };
 }
 
-function buildContactQuery(row: Record<string, unknown>): string {
-  const parts: string[] = [];
-  parts.push(`"${safeStr(row.name)}"`);
-  const employer = safeStr(row.current_position) || safeStr(row.occupation);
-  if (employer) parts.push(`"${employer}"`);
-  const flemish = safeStr(row.flemish_connection);
-  if (flemish) parts.push(flemish);
-  const loc = [safeStr(row.location_city), safeStr(row.location_state)].filter(Boolean).join(" ");
-  if (loc) parts.push(loc);
+export function buildContactQuery(row: Record<string, unknown>): string {
+  const parts: string[] = [`"${safeStr(row.name)}"`];
+  const identityContext = safeStr(row.flemish_connection);
+  if (identityContext) parts.push(identityContext);
+  parts.push(
+    "current residence",
+    "current employer",
+    "current role",
+    "professional sector",
+    "profile photo",
+  );
   return parts.join(" ").slice(0, 240);
+}
+
+function verifiedPhotoUrl(
+  candidate: string | null,
+  results: WebSearchResult[],
+): string | null {
+  if (!candidate) return null;
+  const appearsInEvidence = results.some((result) =>
+    result.url.includes(candidate) ||
+    result.content.includes(candidate) ||
+    (result.raw_content || "").includes(candidate)
+  );
+  return appearsInEvidence ? candidate : null;
+}
+
+function currentPosition(payload: VerificationPayload): string | null {
+  if (payload.current_role && payload.current_employer) {
+    return `${payload.current_role} at ${payload.current_employer}`;
+  }
+  return payload.current_role || payload.current_employer;
 }
 
 function buildOrganizationQuery(row: Record<string, unknown>): string {
@@ -254,44 +334,6 @@ export async function verifyDiscoveredRecord(
 
   const recordName = safeStr((row as Record<string, unknown>).name) || recordId;
 
-  const officialFayatPayload = recordKind === "discovered_contact"
-    ? trustedOfficialFayatPayload(row as Record<string, unknown>)
-    : null;
-  if (officialFayatPayload) {
-    const { error: updateError } = await supabase
-      .from(tableName)
-      .update({
-        verification_status: "verified",
-        verified_at: new Date().toISOString(),
-        verification_payload: officialFayatPayload as unknown as Json,
-        verification_run_id: runId ?? null,
-        suggested_us_network_status: officialFayatPayload.network_scope,
-      })
-      .eq("id", recordId);
-
-    if (updateError) {
-      return {
-        record_kind: recordKind,
-        record_id: recordId,
-        record_name: recordName,
-        outcome: "error",
-        detail: updateError.message,
-        llm_calls_made: 0,
-        web_searches_made: 0,
-      };
-    }
-
-    return {
-      record_kind: recordKind,
-      record_id: recordId,
-      record_name: recordName,
-      outcome: "verified",
-      detail: "trusted_source=official_fayat_directory confidence=1.00",
-      llm_calls_made: 0,
-      web_searches_made: 0,
-    };
-  }
-
   if (!geminiApiKey) {
     return {
       record_kind: recordKind,
@@ -337,6 +379,9 @@ export async function verifyDiscoveredRecord(
       seed_role: recordKind === "discovered_contact"
         ? safeStr((row as Record<string, unknown>).current_position)
         : safeStr((row as Record<string, unknown>).description),
+      seed_program_context: recordKind === "discovered_contact"
+        ? safeStr((row as Record<string, unknown>).bio)
+        : "",
       seed_location: recordKind === "discovered_contact"
         ? [
           safeStr((row as Record<string, unknown>).location_city),
@@ -372,7 +417,11 @@ export async function verifyDiscoveredRecord(
     });
     llmCalls += 1;
 
-    const payload = normalizePayload(data);
+    const payload = await validatePayloadLocation(supabase, normalizePayload(data));
+    payload.profile_photo_url = verifiedPhotoUrl(
+      payload.profile_photo_url,
+      search.results,
+    );
 
     if (payload.contradiction) {
       await supabase.from(tableName).delete().eq("id", recordId);
@@ -401,10 +450,45 @@ export async function verifyDiscoveredRecord(
           ? "us_based_organization"
           : "belgian_organization_with_us_presence";
     }
+    update.suggested_us_network_confidence = payload.confidence;
 
     if (recordKind === "discovered_contact") {
-      if (payload.location_city) update.current_location_city = payload.location_city;
-      if (payload.location_country) update.current_location_country = payload.location_country;
+      const isOfficialFayat = safeStr(
+        (row as Record<string, unknown>).source,
+      ) === "official_fayat_directory";
+      const position = currentPosition(payload);
+      if (position) update.current_position = position;
+      if (payload.current_role) update.occupation = payload.current_role;
+      if (payload.profile_photo_url) {
+        update.profile_photo_url = payload.profile_photo_url;
+      }
+      if (payload.professional_sectors.length > 0) {
+        update.sectors = payload.professional_sectors;
+      }
+      if (isOfficialFayat) {
+        update.flemish_connection = payload.belgian_identity_confirmed
+          ? "Fayat Scholarship, Belgian"
+          : "Fayat Scholarship";
+      }
+      if (payload.network_scope === "us_based") {
+        if (payload.location_city) update.location_city = payload.location_city;
+        if (payload.location_state) update.location_state = payload.location_state;
+      } else if (payload.network_scope === "us_connected_abroad") {
+        if (payload.location_city) update.current_location_city = payload.location_city;
+        if (payload.location_country) {
+          update.current_location_country = payload.location_country;
+        }
+      }
+
+      const existingSourceUrls = Array.isArray(
+          (row as Record<string, unknown>).source_urls,
+        )
+        ? ((row as Record<string, unknown>).source_urls as unknown[])
+          .map((value) => safeStr(value))
+          .filter(Boolean)
+        : [];
+      const evidenceUrls = payload.evidence.map((item) => item.url).filter(Boolean);
+      update.source_urls = [...new Set([...existingSourceUrls, ...evidenceUrls])];
     }
 
     await supabase.from(tableName).update(update).eq("id", recordId);

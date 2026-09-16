@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import InteractiveStatsOverview from './admin/InteractiveStatsOverview';
+import LoadingGlobe from './LoadingGlobe';
 import type { PersonSectorRow } from './admin/interactiveStatsShared';
 import { supabase, type FilterPreset, type Person } from '../lib/supabase';
 
@@ -60,7 +61,7 @@ export default function NetworkStats({ onNavigate }: NetworkStatsProps) {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin text-yellow-600" />
+        <LoadingGlobe className="h-8 w-8" label="Loading statistics" />
       </div>
     );
   }

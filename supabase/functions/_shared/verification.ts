@@ -11,6 +11,10 @@ import {
 } from "./aiContracts.ts";
 import { callGeminiStructured } from "./gemini.ts";
 import type { SupabaseAdminClient } from "./database.types.ts";
+import { fetchPage } from "./discovery.ts";
+import {
+  resolveVerifiedUsLocation,
+} from "./locationPipeline.ts";
 import {
   formatResultsForLLM,
   searchWeb,
@@ -119,6 +123,13 @@ interface LinkedInProfile {
   location_city: string;
   location_state: string;
   is_us_location: boolean | null;
+}
+
+interface ProfilePhotoCandidate {
+  image_url: string;
+  alt_text: string;
+  source_url: string;
+  page_title: string;
 }
 
 export interface VerificationExecutionResult {
@@ -500,7 +511,13 @@ function truncateExcerpt(value: string, maxLength = 240): string {
 }
 
 export function getFieldRisk(fieldName: string): VerificationRisk {
-  if (fieldName === "bio" || fieldName === "description" || fieldName === "_status") {
+  if (
+    fieldName === "bio" ||
+    fieldName === "description" ||
+    fieldName === "_status" ||
+    fieldName === "location_city" ||
+    fieldName === "location_state"
+  ) {
     return "high";
   }
 
@@ -593,6 +610,54 @@ function finalizeSuggestions(
 
     return b.confidence - a.confidence;
   });
+}
+
+export async function retainVerifiedUsLocationSuggestions(
+  supabase: SupabaseAdminClient,
+  suggestions: VerificationSuggestion[],
+): Promise<VerificationSuggestion[]> {
+  const citySuggestion = suggestions.find((suggestion) =>
+    suggestion.field_name === "location_city"
+  );
+  const stateSuggestion = suggestions.find((suggestion) =>
+    suggestion.field_name === "location_state"
+  );
+
+  if (!citySuggestion && !stateSuggestion) return suggestions;
+
+  const withoutLocation = suggestions.filter((suggestion) =>
+    suggestion.field_name !== "location_city" &&
+    suggestion.field_name !== "location_state"
+  );
+  if (!citySuggestion || !stateSuggestion) return withoutLocation;
+
+  if (
+    citySuggestion.evidence_url &&
+    stateSuggestion.evidence_url &&
+    normalizeUrl(citySuggestion.evidence_url) !== normalizeUrl(stateSuggestion.evidence_url)
+  ) {
+    return withoutLocation;
+  }
+
+  const match = await resolveVerifiedUsLocation(
+    supabase,
+    citySuggestion.suggested_value,
+    stateSuggestion.suggested_value,
+  );
+  if (!match) return withoutLocation;
+
+  const locationSuggestions = [citySuggestion, stateSuggestion].map((suggestion) => {
+    const suggestedValue = suggestion.field_name === "location_city"
+      ? match.city
+      : match.state;
+    return {
+      ...suggestion,
+      suggested_value: suggestedValue,
+      dedupe_key: buildDedupeKey(suggestion.field_name, suggestedValue),
+    };
+  });
+
+  return [...withoutLocation, ...locationSuggestions];
 }
 
 function passesRiskPolicy(suggestion: VerificationSuggestion): boolean {
@@ -843,10 +908,52 @@ function buildSearchQuery(person: VerificationPerson): string {
     .join(" ");
 }
 
+async function collectProfilePhotoCandidates(
+  person: VerificationPerson,
+  searchResults: WebSearchResult[],
+): Promise<ProfilePhotoCandidate[]> {
+  if (safeStr(person.profile_photo_url)) return [];
+
+  const pages = await Promise.all(
+    searchResults.slice(0, 5).map(async (result) => {
+      try {
+        return await fetchPage(result.url);
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const seen = new Set<string>();
+  const candidates: ProfilePhotoCandidate[] = [];
+
+  for (const page of pages) {
+    if (!page || page.status < 200 || page.status >= 400) continue;
+
+    for (const image of page.images.slice(0, 8)) {
+      const imageUrl = safeStr(image.url);
+      if (!imageUrl || seen.has(normalizeUrl(imageUrl))) continue;
+
+      seen.add(normalizeUrl(imageUrl));
+      candidates.push({
+        image_url: imageUrl,
+        alt_text: safeStr(image.altText),
+        source_url: page.canonicalUrl || page.finalUrl,
+        page_title: page.title,
+      });
+
+      if (candidates.length >= 24) return candidates;
+    }
+  }
+
+  return candidates;
+}
+
 async function callCheckProfile(
   person: VerificationPerson,
   geminiApiKey: string,
   searchResults: WebSearchResult[],
+  photoCandidates: ProfilePhotoCandidate[],
 ): Promise<{ suggestions: VerificationSuggestion[]; modelUsed: string }> {
   if (!geminiApiKey) {
     throw new Error("Missing GEMINI_API_KEY");
@@ -868,6 +975,7 @@ async function callCheckProfile(
         occupation: safeStr(person.occupation),
         email: safeStr(person.email),
         linkedin_url: safeStr(person.linkedin_url),
+        profile_photo_url: safeStr(person.profile_photo_url),
         bio: safeStr(person.bio),
         website_url: safeStr(person.website_url),
         twitter_url: safeStr(person.twitter_url),
@@ -875,6 +983,7 @@ async function callCheckProfile(
         location_state: safeStr(person.locations?.state),
       },
       searchResults: formatResultsForLLM(searchResults),
+      photoCandidates,
     }),
     schema: definition.schema,
     parse: (payload) => definition.normalizeResult(payload) as ProfileCheckResult,
@@ -883,9 +992,19 @@ async function callCheckProfile(
   });
 
   const fallbackResult = searchResults[0];
+  const allowedPhotoUrls = new Set(
+    photoCandidates.map((candidate) => normalizeUrl(candidate.image_url)),
+  );
   const suggestions = data.suggestions
-    .map((suggestion) =>
-      buildSuggestion({
+    .map((suggestion) => {
+      if (
+        suggestion.field_name === "profile_photo_url" &&
+        !allowedPhotoUrls.has(normalizeUrl(suggestion.suggested_value))
+      ) {
+        return null;
+      }
+
+      return buildSuggestion({
         field_name: suggestion.field_name,
         current_value: getPersonFieldValue(person, suggestion.field_name),
         suggested_value: suggestion.suggested_value,
@@ -898,11 +1017,16 @@ async function callCheckProfile(
           "",
         confidence: clampConfidence(
           suggestion.confidence,
-          getFieldRisk(suggestion.field_name) === "high" ? 0.86 : 0.76,
+          suggestion.field_name === "location_city" ||
+              suggestion.field_name === "location_state"
+            ? 0
+            : getFieldRisk(suggestion.field_name) === "high"
+            ? 0.86
+            : 0.76,
         ),
         method: "web_search_llm",
-      })
-    )
+      });
+    })
     .filter((suggestion): suggestion is VerificationSuggestion => Boolean(suggestion));
 
   return {
@@ -1191,7 +1315,10 @@ export async function runVerificationForPerson(
       const scrapedItem = scrape.items[0];
       if (scrapedItem) {
         const normalizedProfile = normalizeLinkedInProfile(scrapedItem);
-        const suggestions = diffLinkedInProfile(person, normalizedProfile);
+        const suggestions = await retainVerifiedUsLocationSuggestions(
+          supabase,
+          diffLinkedInProfile(person, normalizedProfile),
+        );
 
         return {
           person,
@@ -1279,19 +1406,25 @@ export async function runVerificationForPerson(
     };
   }
 
+  const photoCandidates = await collectProfilePhotoCandidates(person, searchResponse.results);
   const llmResult = await callCheckProfile(
     person,
     safeStr(options.geminiApiKey),
     searchResponse.results,
+    photoCandidates,
+  );
+  const suggestions = await retainVerifiedUsLocationSuggestions(
+    supabase,
+    llmResult.suggestions,
   );
 
   return {
     person,
-    suggestions: llmResult.suggestions,
+    suggestions,
     path: "web_search",
-    status: llmResult.suggestions.length > 0 ? "suggestions" : "verified",
-    detail: llmResult.suggestions.length > 0
-      ? `${llmResult.suggestions.length} differences detected`
+    status: suggestions.length > 0 ? "suggestions" : "verified",
+    detail: suggestions.length > 0
+      ? `${suggestions.length} differences detected`
       : undefined,
     warnings,
     llm_calls_made: 1,

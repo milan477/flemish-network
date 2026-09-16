@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@^1.0.0";
 import {
   getFieldRisk,
   insertVerificationSuggestions,
+  retainVerifiedUsLocationSuggestions,
   type VerificationSuggestion,
 } from "../verification.ts";
 import type { SupabaseAdminClient } from "../database.types.ts";
@@ -118,11 +119,53 @@ Deno.test("getFieldRisk: name, website_url, and current_position are medium-risk
   assertEquals(getFieldRisk("email"), "medium");
 });
 
-Deno.test("getFieldRisk: type, location_city, location_state, and profile_photo_url are low-risk", () => {
+Deno.test("getFieldRisk: current location is high-risk; type and profile photo are low-risk", () => {
   assertEquals(getFieldRisk("type"), "low");
-  assertEquals(getFieldRisk("location_city"), "low");
-  assertEquals(getFieldRisk("location_state"), "low");
+  assertEquals(getFieldRisk("location_city"), "high");
+  assertEquals(getFieldRisk("location_state"), "high");
   assertEquals(getFieldRisk("profile_photo_url"), "low");
+});
+
+Deno.test("location suggestions require a paired, real US city and state", async () => {
+  let city = "";
+  let state = "";
+  const chain = {
+    select() { return this; },
+    ilike(_column: string, value: string) { city = value; return this; },
+    eq(_column: string, value: string) { state = value; return this; },
+    limit() { return this; },
+    async maybeSingle() {
+      return city === "Los Angeles" && state === "CA"
+        ? { data: { id: "la", city, state, latitude: 34.05, longitude: -118.24 }, error: null }
+        : { data: null, error: null };
+    },
+  };
+  const supabase = { from: () => chain } as unknown as SupabaseAdminClient;
+  const citySuggestion = makeSuggestion({
+    field_name: "location_city",
+    suggested_value: "Brussels",
+    dedupe_key: "location_city::brussels",
+    risk_level: "high",
+    confidence: 0.94,
+  });
+  const stateSuggestion = makeSuggestion({
+    field_name: "location_state",
+    suggested_value: "CA",
+    dedupe_key: "location_state::ca",
+    risk_level: "high",
+    confidence: 0.94,
+  });
+
+  assertEquals(
+    await retainVerifiedUsLocationSuggestions(supabase, [citySuggestion, stateSuggestion]),
+    [],
+  );
+
+  const valid = await retainVerifiedUsLocationSuggestions(supabase, [
+    { ...citySuggestion, suggested_value: "Los Angeles" },
+    stateSuggestion,
+  ]);
+  assertEquals(valid.map((suggestion) => suggestion.suggested_value), ["Los Angeles", "CA"]);
 });
 
 // ---------------------------------------------------------------------------

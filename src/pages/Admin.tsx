@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useActiveAgentRun, useActiveAgentRunCount } from '../hooks/useActiveAgentRun';
-import { Activity, ChevronDown, ChevronRight, FileUp, Loader2, Search, ShieldCheck } from 'lucide-react';
+import {
+  useActiveAgentRun,
+  useActiveAgentRunCount,
+  useVerificationQueueCount,
+} from '../hooks/useActiveAgentRun';
+import { Activity, ChevronDown, ChevronRight, FileUp, Earth, Search, ShieldCheck } from 'lucide-react';
 import {
   supabase,
   type Person,
@@ -20,6 +24,7 @@ import DiscoveryPlanningPanel, { type RecommendedAction } from '../components/ad
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { notifyError, notifySuccess, notifyInfo } from '../lib/toast';
+import LoadingGlobe from '../components/LoadingGlobe';
 import {
   isCanonicalExpandTab,
   normalizeExpandTab,
@@ -40,6 +45,7 @@ export default function Admin() {
   const importMode: AddContactMode = addContactMode === 'import' ? 'import' : 'manual';
   const discoveryRunActive = useActiveAgentRun('discovery');
   const activeRunCount = useActiveAgentRunCount();
+  const verificationQueueCount = useVerificationQueueCount();
 
   const setAddContactMode = useCallback(
     (next: AddContactMode) => {
@@ -381,11 +387,13 @@ export default function Admin() {
         },
       });
       if (error) throw error;
-      handleSchedulerResponse(data, 'Discovery run started.');
+      if (handleSchedulerResponse(data, 'Discovery run started.')) {
+        navigate('/expand/runs');
+      }
     } catch (err) {
       notifyError(err, { hint: 'Could not start discovery from this recommendation.' });
     }
-  }, [handleSchedulerResponse]);
+  }, [handleSchedulerResponse, navigate]);
 
   const startDiscoveryRun = useCallback(async () => {
     try {
@@ -397,11 +405,13 @@ export default function Admin() {
         },
       });
       if (error) throw error;
-      handleSchedulerResponse(data, 'Discovery run started.');
+      if (handleSchedulerResponse(data, 'Discovery run started.')) {
+        navigate('/expand/runs');
+      }
     } catch (err) {
       notifyError(err, { hint: 'Could not start a discovery run.' });
     }
-  }, [handleSchedulerResponse]);
+  }, [handleSchedulerResponse, navigate]);
 
   const exploreSuggestion = useCallback(
     async (suggestionId: string, surface: string | null, lens: string | null) => {
@@ -418,18 +428,20 @@ export default function Admin() {
           },
         });
         if (error) throw error;
-        handleSchedulerResponse(data, 'Exploring this suggestion now.');
+        if (handleSchedulerResponse(data, 'Exploring this suggestion now.')) {
+          navigate('/expand/runs');
+        }
       } catch (err) {
         notifyError(err, { hint: 'Could not start discovery on this suggestion.' });
       }
     },
-    [handleSchedulerResponse]
+    [handleSchedulerResponse, navigate]
   );
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-500" />
+        <LoadingGlobe label="Loading workspace" />
       </div>
     );
   }
@@ -474,7 +486,7 @@ export default function Admin() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <Loader2 className={`w-4 h-4 ${activeRunCount > 0 ? 'animate-spin' : ''}`} />
+            <Earth className={`w-4 h-4 ${activeRunCount > 0 ? 'animate-spin' : ''}`} />
             Runs
             {activeRunCount > 0 && (
               <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -496,6 +508,19 @@ export default function Admin() {
           >
             <ShieldCheck className="w-4 h-4" />
             Verification
+            {verificationQueueCount > 0 && (
+              <span
+                className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                  activeTab === 'verification'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+                aria-label={`${verificationQueueCount} records need verification`}
+                title={`${verificationQueueCount} records need verification`}
+              >
+                {verificationQueueCount > 99 ? '99+' : verificationQueueCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => handleTabChange('maintenance')}
@@ -529,6 +554,7 @@ export default function Admin() {
               loadData({ showSpinner: false });
               setDiscoveryRefreshKey((current) => current + 1);
             }}
+            onDiscoveryStarted={() => navigate('/expand/runs')}
             mode="discovery"
             availableModes={['discovery']}
             initialDiscoveryPrompt={discoveryPrompt}

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Loader2,
+  Earth,
   CheckCircle2,
   XCircle,
   Clock,
@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { notifyError } from '../../lib/toast';
-import StructuredErrorBanner from './StructuredErrorBanner';
 
 interface AgentRun {
   id: string;
@@ -39,9 +38,14 @@ function serviceLabelForRun(agentType: string): string {
   return AGENT_LABELS[agentType]?.label || 'Service run';
 }
 
+function promptForRun(run: AgentRun): string | null {
+  const prompt = run.params?.query;
+  return typeof prompt === 'string' && prompt.trim() ? prompt.trim() : null;
+}
+
 const STATUS_STYLES: Record<string, { className: string; icon: typeof Clock }> = {
   pending: { className: 'bg-gray-50 text-gray-600 ring-gray-200', icon: Clock },
-  running: { className: 'bg-yellow-50 text-yellow-800 ring-yellow-200', icon: Loader2 },
+  running: { className: 'bg-yellow-50 text-yellow-800 ring-yellow-200', icon: Earth },
   completed: { className: 'bg-yellow-50 text-yellow-800 ring-yellow-200', icon: CheckCircle2 },
   failed: { className: 'bg-rose-50 text-rose-700 ring-rose-200', icon: XCircle },
 };
@@ -225,7 +229,7 @@ export default function AgentDashboard({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
+        <Earth className="w-6 h-6 animate-spin text-yellow-600" />
       </div>
     );
   }
@@ -258,7 +262,7 @@ export default function AgentDashboard({
             Refresh
           </button>
         </div>
-        <div className="hidden border-y border-gray-100 bg-gray-50/70 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 lg:grid lg:grid-cols-[minmax(140px,0.8fr)_minmax(150px,0.8fr)_minmax(320px,2fr)_80px_112px] lg:gap-5 sm:px-6">
+        <div className="hidden border-y border-gray-100 bg-gray-50/70 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 lg:grid lg:grid-cols-[minmax(220px,1.2fr)_minmax(150px,0.8fr)_minmax(280px,1.8fr)_80px_112px] lg:gap-5 sm:px-6">
           <span>Run</span>
           <span>Started</span>
           <span>Outcome</span>
@@ -281,6 +285,7 @@ export default function AgentDashboard({
               const isExpanded = expandedRunId === run.id;
               const hasSteps = Boolean(run.results && Array.isArray(run.results.steps));
               const outcome = summarizeOutcome(run);
+              const prompt = promptForRun(run);
               const runRef = run.completed_at || run.started_at;
               const supersededBySuccess = run.status === 'failed' && !!runRef && runs.some(
                 (other) =>
@@ -294,7 +299,7 @@ export default function AgentDashboard({
 
               return (
                 <article key={run.id} className="px-5 py-4 transition-colors hover:bg-gray-50/40 sm:px-6">
-                  <div className="grid gap-4 lg:grid-cols-[minmax(140px,0.8fr)_minmax(150px,0.8fr)_minmax(320px,2fr)_80px_112px] lg:items-center lg:gap-5">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(220px,1.2fr)_minmax(150px,0.8fr)_minmax(280px,1.8fr)_80px_112px] lg:items-center lg:gap-5">
                     <div className="min-w-0">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${style.className}`}
@@ -307,6 +312,12 @@ export default function AgentDashboard({
                       <p className="mt-1.5 truncate text-xs text-gray-500">
                         {serviceLabelForRun(run.agent_type)}
                       </p>
+                      {prompt && (
+                        <p className="mt-1 line-clamp-2 text-xs leading-4 text-gray-700" title={prompt}>
+                          <span className="font-medium text-gray-500">Prompt: </span>
+                          {prompt}
+                        </p>
+                      )}
                     </div>
 
                     <div className="text-sm text-gray-700">
@@ -333,12 +344,12 @@ export default function AgentDashboard({
                     </div>
 
                     <div className="min-w-0">
-                      <p className={`text-sm font-semibold ${run.status === 'failed' ? 'text-rose-700' : 'text-gray-900'}`}>
+                      <p className="text-sm font-semibold text-gray-900">
                         {outcome.headline}
                       </p>
                       {outcome.records && (
                         <p
-                          className={`mt-0.5 truncate text-xs ${run.status === 'failed' ? 'text-rose-600' : 'text-gray-600'}`}
+                          className="mt-0.5 truncate text-xs text-gray-600"
                           title={outcome.records}
                         >
                           {outcome.records}
@@ -374,7 +385,7 @@ export default function AgentDashboard({
                   {isExpanded && hasSteps && (
                     <div id={`run-details-${run.id}`} className="mt-4 border-t border-gray-100 pt-1">
                       <RunStepsDetail
-                        steps={run.results!.steps as StepLog[]}
+                        steps={run.results!.steps as unknown[]}
                         params={run.params}
                         errors={run.results!.errors as string[] | undefined}
                       />
@@ -383,17 +394,15 @@ export default function AgentDashboard({
 
                   {run.status === 'failed' && run.error_message && !supersededBySuccess && (
                     <div className="mt-4 border-t border-gray-100 pt-4">
-                      <StructuredErrorBanner
-                        title="Discovery run failed"
-                        error={{
-                          name: 'AgentRunError',
-                          message: run.error_message,
-                          code: run.error_kind || 'unknown',
-                          hint: run.error_kind
-                            ? `See docs/RUNBOOK.md [${run.error_kind}] for fix steps.`
-                            : undefined,
-                        }}
-                      />
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                        <p className="font-medium text-gray-900">Failure details</p>
+                        <p className="mt-1">{run.error_message}</p>
+                        {run.error_kind && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            Code: {run.error_kind}. See docs/RUNBOOK.md for fix steps.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </article>
@@ -410,8 +419,27 @@ interface StepLog {
   step: string;
   timestamp: string;
   elapsed: string;
-  status: 'ok' | 'error' | 'skipped';
+  status: string;
   detail: Record<string, unknown>;
+}
+
+function normalizeStepLog(value: unknown): StepLog {
+  const record = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const detail = record.detail && typeof record.detail === 'object' && !Array.isArray(record.detail)
+    ? record.detail as Record<string, unknown>
+    : {};
+  const step = [record.step, record.name, record.label, record.type]
+    .find((candidate) => typeof candidate === 'string' && candidate.trim()) as string | undefined;
+
+  return {
+    step: step?.trim() || '',
+    timestamp: typeof record.timestamp === 'string' ? record.timestamp : '',
+    elapsed: typeof record.elapsed === 'string' ? record.elapsed : '—',
+    status: typeof record.status === 'string' ? record.status : 'unknown',
+    detail,
+  };
 }
 
 const STEP_LABELS: Record<string, string> = {
@@ -423,6 +451,7 @@ const STEP_LABELS: Record<string, string> = {
   insert: 'Insert Contacts',
   discovery_plan: 'Discovery Plan',
   frontier_claim: 'Claim Frontier',
+  official_fayat_directory: 'Official Fayat Directory',
   // Prefix matches for parameterized step IDs (`<prefix>_<uuid>` / `<prefix>_<n>`).
   seed_search: 'Seed Search',
   page_classification: 'Page Classification',
@@ -441,6 +470,7 @@ const NUMERIC_SUFFIX_RE = /_\d+$/;
  * id so future agent steps still render readably without a code change.
  */
 function formatStepLabel(stepId: string): string {
+  if (!stepId) return 'Run step';
   let prefix = stepId.replace(UUID_SUFFIX_RE, '');
   if (prefix === stepId) {
     prefix = stepId.replace(NUMERIC_SUFFIX_RE, '');
@@ -470,7 +500,7 @@ function RunStepsDetail({
   params,
   errors,
 }: {
-  steps: StepLog[];
+  steps: unknown[];
   params: Record<string, unknown> | null;
   errors?: string[];
 }) {
@@ -493,7 +523,8 @@ function RunStepsDetail({
 
       {/* Steps timeline */}
       <div className="space-y-1">
-        {steps.map((step, i) => {
+        {steps.map((rawStep, i) => {
+          const step = normalizeStepLog(rawStep);
           const isOpen = expandedStep === i;
           return (
             <div key={i} className="bg-white rounded-lg border border-gray-100">

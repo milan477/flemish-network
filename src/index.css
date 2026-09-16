@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Every loading indicator uses the same yellow globe as the app logo. */
+.lucide-earth.animate-spin {
+  color: rgb(253 224 71) !important;
+}
+
 @media print {
   /* Hide navigation, action buttons, and non-essential UI */
   nav,

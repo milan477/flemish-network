@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const ACTIVE_STATUSES = ['pending', 'running'] as const;
+const VERIFICATION_QUEUE_STATUSES = ['queued', 'verifying', 'verified', 'failed'] as const;
 
 export function useActiveAgentRun(agentType: string): boolean {
   const [isActive, setIsActive] = useState(false);
@@ -109,4 +110,62 @@ export function useActiveAgentRunCount(): number {
   }, []);
 
   return activeCount;
+}
+
+/**
+ * Counts discovered people and organizations still present in Verification.
+ * This includes records waiting for automated verification, failed records,
+ * and verified records awaiting an Approve/Reject/Merge decision.
+ */
+export function useVerificationQueueCount(): number {
+  const [queueCount, setQueueCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = async () => {
+      const [peopleResult, organizationResult] = await Promise.all([
+        supabase
+          .from('discovered_contacts')
+          .select('id', { count: 'exact', head: true })
+          .in('verification_status', VERIFICATION_QUEUE_STATUSES as unknown as string[])
+          .is('approved_person_id', null),
+        supabase
+          .from('discovered_organizations')
+          .select('id', { count: 'exact', head: true })
+          .in('verification_status', VERIFICATION_QUEUE_STATUSES as unknown as string[])
+          .is('approved_organization_id', null),
+      ]);
+      if (cancelled) return;
+      setQueueCount((peopleResult.count ?? 0) + (organizationResult.count ?? 0));
+    };
+
+    void refresh();
+
+    const channel = supabase
+      .channel('verification:queue-count')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'discovered_contacts' },
+        () => void refresh()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'discovered_organizations' },
+        () => void refresh()
+      )
+      .subscribe();
+
+    const poll = window.setInterval(() => {
+      void refresh();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  return queueCount;
 }

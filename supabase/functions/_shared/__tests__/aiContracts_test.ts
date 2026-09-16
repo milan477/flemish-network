@@ -95,6 +95,21 @@ Deno.test("normalizeProfileCheckResult: clamps confidence to 0..1, defaults sour
   assertEquals(r.suggestions[0].source, "web_search");
 });
 
+Deno.test("normalizeProfileCheckResult: accepts profile photo suggestions", () => {
+  const r = normalizeProfileCheckResult({
+    suggestions: [{
+      field_name: "profile_photo_url",
+      current_value: "",
+      suggested_value: "https://example.com/milan.jpg",
+      source: "Personal website",
+      confidence: 0.92,
+    }],
+  });
+
+  assertEquals(r.suggestions.length, 1);
+  assertEquals(r.suggestions[0].field_name, "profile_photo_url");
+});
+
 Deno.test("isAiAgentTask: only known tasks accepted", () => {
   assert(isAiAgentTask("smart_search"));
   assert(isAiAgentTask("merge_text"));
@@ -112,6 +127,14 @@ Deno.test("getAiAgentTaskDefinition: surfaces system prompt + schema", () => {
   assertEquals(typeof def.normalizeResult, "function");
 });
 
+Deno.test("check_profile requires paired, current US location evidence", () => {
+  const prompt = getAiAgentTaskDefinition("check_profile").systemPrompt;
+  assert(prompt.includes("explicit current US residence"));
+  assert(prompt.includes("former school"));
+  assert(prompt.includes("both city and state"));
+  assert(prompt.includes("real US location"));
+});
+
 Deno.test("buildSearchPrompt + buildCheckProfilePrompt: stable formatting", () => {
   assertEquals(buildSearchPrompt("foo"), 'Search query: "foo"');
   assertEquals(buildSearchPrompt(null), 'Search query: ""');
@@ -123,4 +146,21 @@ Deno.test("buildSearchPrompt + buildCheckProfilePrompt: stable formatting", () =
   assert(p.includes('"name": "Jan"'));
   assert(p.includes('"extra": "42"'));
   assert(p.includes("result blob"));
+  assert(p.includes("Profile photo candidates:"));
+});
+
+Deno.test("buildCheckProfilePrompt: includes exact profile photo candidates", () => {
+  const p = buildCheckProfilePrompt(
+    { name: "Milan", profile_photo_url: "" },
+    "search results",
+    [{
+      image_url: "https://example.com/milan.jpg",
+      alt_text: "Milan Liessens Dujardin",
+      source_url: "https://example.com/about",
+      page_title: "About Milan",
+    }],
+  );
+
+  assert(p.includes('"image_url": "https://example.com/milan.jpg"'));
+  assert(p.includes('"alt_text": "Milan Liessens Dujardin"'));
 });

@@ -1,30 +1,84 @@
 import { assertEquals } from "jsr:@std/assert@^1.0.0";
-import { trustedOfficialFayatPayload } from "../discoveredVerification.ts";
-import { OFFICIAL_FAYAT_LAUREATES_URL } from "../fayatDirectory.ts";
+import {
+  buildContactQuery,
+  normalizePayload,
+  validatePayloadLocation,
+} from "../discoveredVerification.ts";
+import type { SupabaseAdminClient } from "../database.types.ts";
 
-Deno.test("trusted official Fayat candidates verify without an LLM or web search", () => {
-  const payload = trustedOfficialFayatPayload({
+Deno.test("official Fayat candidates request current professional facts", () => {
+  const query = buildContactQuery({
     name: "Example Laureate",
     source: "official_fayat_directory",
-    source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
-    occupation: "Fayat Scholarship laureate",
-    bio: "Fayat Scholarship laureate; studied at a U.S. institution.",
-    flemish_connection: "Fayatbeurzen (Fayat Scholarships)",
+    flemish_connection: "Fayatbeurzen laureate",
   });
 
-  assertEquals(payload?.network_scope, "us_connected_abroad");
-  assertEquals(payload?.confidence, 1);
-  assertEquals(payload?.contradiction, false);
-  assertEquals(payload?.evidence[0]?.url, OFFICIAL_FAYAT_LAUREATES_URL);
+  assertEquals(query.includes('"Example Laureate"'), true);
+  assertEquals(query.includes("current residence"), true);
+  assertEquals(query.includes("current employer"), true);
+  assertEquals(query.includes("current role"), true);
+  assertEquals(query.includes("professional sector"), true);
+  assertEquals(query.includes("profile photo"), true);
 });
 
-Deno.test("untrusted discovery sources still require normal verification", () => {
-  assertEquals(
-    trustedOfficialFayatPayload({
-      name: "Example Person",
-      source: "web_search",
-      source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
-    }),
-    null,
-  );
+Deno.test("verification payload keeps only canonical sectors and safe photo URLs", () => {
+  const payload = normalizePayload({
+    network_scope: "us_based",
+    profile_photo_url: "https://example.com/people/example.jpg",
+    professional_sectors: ["Research", "Student", "Education"],
+    belgian_identity_confirmed: true,
+    flemish_ties: [],
+    evidence: [],
+    confidence: 0.8,
+    contradiction: false,
+  });
+
+  assertEquals(payload.profile_photo_url, "https://example.com/people/example.jpg");
+  assertEquals(payload.professional_sectors, ["Research", "Education"]);
+  assertEquals(payload.belgian_identity_confirmed, true);
+
+  const placeholder = normalizePayload({
+    profile_photo_url: "https://example.com/default-avatar.png",
+  });
+  assertEquals(placeholder.profile_photo_url, null);
+});
+
+Deno.test("discovered verification rejects an unrecognized US city/state pair", async () => {
+  const chain = {
+    select() { return this; },
+    ilike() { return this; },
+    eq() { return this; },
+    limit() { return this; },
+    async maybeSingle() { return { data: null, error: null }; },
+  };
+  const supabase = { from: () => chain } as unknown as SupabaseAdminClient;
+  const payload = normalizePayload({
+    network_scope: "us_based",
+    location_city: "Brussels",
+    location_state: "CA",
+    confidence: 0.94,
+  });
+
+  const validated = await validatePayloadLocation(supabase, payload);
+  assertEquals(validated.location_city, null);
+  assertEquals(validated.location_state, null);
+  assertEquals(validated.location_country, null);
+});
+
+Deno.test("discovered verification requires high confidence for current US location", async () => {
+  const supabase = ({
+    from: () => {
+      throw new Error("location lookup should not run");
+    },
+  }) as unknown as SupabaseAdminClient;
+  const payload = normalizePayload({
+    network_scope: "us_based",
+    location_city: "Los Angeles",
+    location_state: "CA",
+    confidence: 0.7,
+  });
+
+  const validated = await validatePayloadLocation(supabase, payload);
+  assertEquals(validated.location_city, null);
+  assertEquals(validated.location_state, null);
 });

@@ -7,7 +7,7 @@ import {
   ExternalLink,
   Inbox,
   Info,
-  Loader2,
+  Earth,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
@@ -192,7 +192,7 @@ export default function OrganizationSuggestedChanges({
                     }}
                     className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
                   >
-                    {anyProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+                    {anyProcessing ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
                     Approve selected ({selectedInGroup.length})
                   </button>
                 )}
@@ -201,7 +201,7 @@ export default function OrganizationSuggestedChanges({
                   onClick={() => void handleApproveMultiple(group.items, group.orgId)}
                   className="inline-flex items-center gap-1 rounded-lg bg-yellow-50 px-2.5 py-1.5 text-xs font-medium text-yellow-800 hover:bg-yellow-100 disabled:opacity-50"
                 >
-                  {anyProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+                  {anyProcessing ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
                   Approve all ({group.items.length})
                 </button>
               </div>
@@ -288,7 +288,7 @@ export default function OrganizationSuggestedChanges({
                             </a>
                           )}
                         </div>
-                        {isProcessing && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-400" />}
+                        {isProcessing && <Earth className="h-4 w-4 shrink-0 animate-spin text-gray-400" />}
                       </div>
                     );
                   })}

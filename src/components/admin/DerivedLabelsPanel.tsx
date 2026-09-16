@@ -3,7 +3,7 @@ import {
   CheckCircle,
   ExternalLink,
   Inbox,
-  Loader2,
+  Earth,
   MapPin,
   Tag,
   XCircle,
@@ -329,7 +329,7 @@ export default function DerivedLabelsPanel({
                   className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
                 >
                   {isProcessing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Earth className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <CheckCircle className="h-3.5 w-3.5" />
                   )}

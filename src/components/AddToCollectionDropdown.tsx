@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Library, Plus, Check, Loader2, Minus } from 'lucide-react';
+import { Library, Plus, Check, Earth, Minus } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
 import { notifyError } from '../lib/toast';
@@ -209,7 +209,7 @@ export default function AddToCollectionDropdown({
       <div className="max-h-64 overflow-y-auto py-2">
         {loading && collections.length === 0 ? (
           <div className="px-4 py-8 text-center">
-            <Loader2 className="w-6 h-6 text-yellow-500 animate-spin mx-auto mb-2" />
+            <Earth className="w-6 h-6 text-yellow-500 animate-spin mx-auto mb-2" />
             <p className="text-xs text-gray-400">Loading collections...</p>
           </div>
         ) : collections.length === 0 && !showCreateInline ? (
@@ -238,7 +238,7 @@ export default function AddToCollectionDropdown({
                   )}
                 </div>
                 {processingId === collection.id ? (
-                  <Loader2 className="w-4 h-4 text-gray-300 animate-spin" />
+                  <Earth className="w-4 h-4 text-gray-300 animate-spin" />
                 ) : allIn ? (
                   <Check className="w-4 h-4 text-green-500" />
                 ) : someIn ? (

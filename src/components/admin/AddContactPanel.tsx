@@ -6,7 +6,7 @@ import {
   AlertCircle,
   XCircle,
   CheckCircle2,
-  Loader2,
+  Earth,
   Search,
   Mail,
   Linkedin,
@@ -41,6 +41,7 @@ import { notifyError, notifySuccess, notifyInfo } from '../../lib/toast';
 interface AddContactPanelProps {
   sectors: Sector[];
   onContactAdded: () => void;
+  onDiscoveryStarted?: () => void;
   /** URL-driven sub-tab. The parent owns the source of truth via ?mode=. */
   mode?: Tab;
   onModeChange?: (next: Tab) => void;
@@ -187,6 +188,7 @@ function reconcileConnections(
 export default function AddContactPanel({
   sectors,
   onContactAdded,
+  onDiscoveryStarted,
   mode,
   onModeChange,
   initialDiscoveryPrompt = '',
@@ -257,6 +259,7 @@ export default function AddContactPanel({
         // without retyping. Phase 1B explicitly calls this out: do NOT clear
         // on submit.
         onContactAdded();
+        onDiscoveryStarted?.();
       } else if (status === 'rejected') {
         const payload = data as { reason?: string; message?: string; wait_minutes?: number };
         if (payload.reason === 'quota_exhausted') {
@@ -344,7 +347,7 @@ export default function AddContactPanel({
                 className="inline-flex items-center gap-2 rounded-lg bg-yellow-400 px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-yellow-500 disabled:opacity-50"
               >
                 {runButtonDisabled ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Earth className="h-4 w-4 animate-spin" />
                 ) : (
                   <Search className="h-4 w-4" />
                 )}
@@ -1225,7 +1228,7 @@ function ManualAddForm({
           className="flex items-center space-x-2 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {saving || dupeChecking ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Earth className="w-4 h-4 animate-spin" />
           ) : (
             <Plus className="w-4 h-4" />
           )}
@@ -1590,7 +1593,7 @@ function ManualOrganizationFormComponent({
           disabled={saving}
           className="flex items-center space-x-2 rounded-lg bg-yellow-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-yellow-600 disabled:opacity-50"
         >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {saving ? <Earth className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           <span>Create Pending Organization</span>
         </button>
         {success && (

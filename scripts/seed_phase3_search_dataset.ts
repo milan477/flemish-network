@@ -87,7 +87,7 @@ const flemishConnections = [
   { name: 'VITO', type: 'company' },
   { name: 'Flanders Make', type: 'company' },
   { name: 'BAEF', type: 'other' },
-  { name: 'Fayat Scholarship', type: 'government' },
+  { name: 'Fayat Scholarship', type: 'other' },
   { name: 'Flanders Investment & Trade', type: 'government' },
 ];
 

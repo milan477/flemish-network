@@ -1886,7 +1886,7 @@ async function extractCandidatesFromPage(
   if (officialFayatLaureates) {
     const contacts = officialFayatLaureates.map(
       (laureate): ExtractedPageContact => {
-        const scholarship = "Fayatbeurzen (Fayat Scholarships)";
+        const scholarship = "Fayat Scholarship";
         const evidence =
           `The official Vlaanderen laureate directory lists ${laureate.name} as a ${scholarship} laureate who studied ${laureate.program} at ${laureate.institution} in the United States.`;
 
@@ -1894,23 +1894,22 @@ async function extractCandidatesFromPage(
           name: laureate.name,
           bio:
             `${scholarship} laureate; studied ${laureate.program} at ${laureate.institution} in the United States.`,
-          occupation: "Fayat Scholarship laureate",
+          occupation: "",
           current_position: "",
-          location_city: laureate.city,
-          location_state: laureate.state,
-          flemish_connection:
-            `${scholarship}, Flemish Government scholarship programme`,
+          location_city: "",
+          location_state: "",
+          flemish_connection: scholarship,
           flemish_fact_candidates: [{
-            canonical_name: "Fayatbeurzen",
-            candidate_alias: scholarship,
+            canonical_name: scholarship,
+            candidate_alias: "Fayatbeurzen",
             role: "laureate",
             source_url: OFFICIAL_FAYAT_LAUREATES_URL,
             evidence_excerpt: evidence,
             confidence: 1,
             raw_evidence: evidence,
           }],
-          suggested_us_network_status: "us_connected_abroad",
-          suggested_us_network_confidence: 1,
+          suggested_us_network_status: "needs_review",
+          suggested_us_network_confidence: 0,
           current_location_city: "",
           current_location_country: "",
           suggested_us_connections: [{
@@ -1924,7 +1923,7 @@ async function extractCandidatesFromPage(
           website_url: "",
           email: "",
           linkedin_url: "",
-          sectors: ["Education"],
+          sectors: [],
           source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
           raw_location_text:
             `${laureate.institution}, ${laureate.city}, ${laureate.state}`,
@@ -5294,22 +5293,21 @@ Deno.serve(wrapHandler(async (req: Request) => {
       const officialContacts =
         (getOfficialFayatUsLaureates(OFFICIAL_FAYAT_LAUREATES_URL) || []).map(
           (laureate): ExtractedPageContact => {
-            const scholarship = "Fayatbeurzen (Fayat Scholarships)";
+            const scholarship = "Fayat Scholarship";
             const evidence =
               `The official Vlaanderen laureate directory lists ${laureate.name} as a ${scholarship} laureate who studied ${laureate.program} at ${laureate.institution} in the United States.`;
             return {
               name: laureate.name,
               bio:
                 `${scholarship} laureate; studied ${laureate.program} at ${laureate.institution} in the United States.`,
-              occupation: "Fayat Scholarship laureate",
+              occupation: "",
               current_position: "",
-              location_city: laureate.city,
-              location_state: laureate.state,
-              flemish_connection:
-                `${scholarship}, Flemish Government scholarship programme`,
+              location_city: "",
+              location_state: "",
+              flemish_connection: scholarship,
               flemish_fact_candidates: [],
-              suggested_us_network_status: "us_connected_abroad",
-              suggested_us_network_confidence: 1,
+              suggested_us_network_status: "needs_review",
+              suggested_us_network_confidence: 0,
               current_location_city: "",
               current_location_country: "",
               suggested_us_connections: [{
@@ -5323,7 +5321,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
               website_url: "",
               email: "",
               linkedin_url: "",
-              sectors: ["Education"],
+              sectors: [],
               source_urls: [OFFICIAL_FAYAT_LAUREATES_URL],
               raw_location_text:
                 `${laureate.institution}, ${laureate.city}, ${laureate.state}`,
@@ -5379,8 +5377,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
             evidence_count: 1,
             discovery_confidence: 1,
             candidate_key: `fayat:${normalizeName(contact.name)}`,
-            suggested_us_network_status: "us_connected_abroad",
-            suggested_us_network_confidence: 1,
+            suggested_us_network_status: null,
+            suggested_us_network_confidence: null,
             current_location_city: null,
             current_location_country: null,
             suggested_us_connections: contact.suggested_us_connections,

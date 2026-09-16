@@ -15,6 +15,7 @@ import {
 import DirectoryGrid from '../components/DirectoryGrid';
 import FilterPanel from '../components/FilterPanel';
 import UnifiedSearchBar from '../components/UnifiedSearchBar';
+import LoadingGlobe from '../components/LoadingGlobe';
 import {
   lookupCity,
   ensureLocationsLoaded,
@@ -979,7 +980,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center bg-gray-100">
-                <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
+                <LoadingGlobe label="Loading map" />
               </div>
             }
           >
@@ -1041,7 +1042,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <Suspense
                 fallback={
                   <div className="flex h-64 items-center justify-center">
-                    <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-yellow-500" />
+                    <LoadingGlobe label="Loading statistics" />
                   </div>
                 }
               >

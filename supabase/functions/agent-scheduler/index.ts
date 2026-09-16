@@ -207,7 +207,11 @@ Deno.serve(wrapHandler(async (req: Request) => {
       supabaseUrl,
       req,
       agentType,
-      params
+      params,
+      {
+        id: staffUser.id,
+        name: staffUser.full_name || staffUser.email,
+      },
     );
 
     if (scheduleJobKind) {
@@ -1478,7 +1482,8 @@ async function triggerAgentRun(
   supabaseUrl: string,
   req: Request,
   agentType: SchedulerAgentType,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  initiatedBy: { id: string; name: string },
 ): Promise<string> {
   const { data: run, error: insertError } = await supabase
     .from("agent_runs")
@@ -1486,6 +1491,8 @@ async function triggerAgentRun(
       agent_type: agentType,
       status: "pending",
       params,
+      initiated_by_staff_id: initiatedBy.id,
+      initiated_by_name: initiatedBy.name,
     })
     .select("id")
     .single();

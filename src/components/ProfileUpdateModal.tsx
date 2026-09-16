@@ -3,7 +3,7 @@ import {
   AlertCircle,
   Check,
   ExternalLink,
-  Loader2,
+  Earth,
   RotateCw,
   ShieldAlert,
   X,
@@ -32,6 +32,21 @@ interface ProfileUpdateModalProps {
 }
 
 type Stage = 'idle' | 'searching' | 'results' | 'applying' | 'done' | 'error';
+
+function retainedFieldName(fieldName: string): string {
+  if (fieldName === 'bio') return 'about';
+  if (fieldName === 'profile_photo_url') return 'photo';
+  if (fieldName === 'location_city' || fieldName === 'location_state') return 'location';
+  return fieldName;
+}
+
+function contactTypeForField(fieldName: string): 'email' | 'linkedin' | 'website' | 'twitter' | null {
+  if (fieldName === 'email') return 'email';
+  if (fieldName === 'linkedin_url') return 'linkedin';
+  if (fieldName === 'website_url') return 'website';
+  if (fieldName === 'twitter_url') return 'twitter';
+  return null;
+}
 
 function getRiskClasses(fieldName: string): string {
   const risk = getSuggestionRisk(fieldName);
@@ -171,6 +186,85 @@ export default function ProfileUpdateModal({
       return;
     }
 
+    const retainedByField = new Map<string, VerificationSuggestion>();
+    selectedSuggestions.forEach((suggestion) => {
+      retainedByField.set(retainedFieldName(suggestion.field_name), suggestion);
+    });
+
+    const retainedFields = Array.from(retainedByField.keys());
+    if (retainedFields.length > 0) {
+      const { error: supersedeError } = await supabase
+        .from('person_profile_sources')
+        .update({ is_current: false })
+        .eq('person_id', person.id)
+        .in('field_name', retainedFields);
+
+      if (supersedeError) {
+        setErrorMsg(`Profile updated, but prior source records could not be superseded: ${supersedeError.message}`);
+        setStage('error');
+        return;
+      }
+
+      const { error: sourceError } = await supabase
+        .from('person_profile_sources')
+        .insert(Array.from(retainedByField.entries()).map(([fieldName, suggestion]) => ({
+          person_id: person.id,
+          field_name: fieldName,
+          field_value: suggestion.suggested_value || null,
+          is_current: true,
+          source_type: suggestion.method || 'verification',
+          source_label: suggestion.source || 'Profile verification',
+          source_url: suggestion.evidence_url || null,
+          evidence_excerpt: suggestion.evidence_excerpt || null,
+          verification_status: 'verified',
+          verified_at: new Date().toISOString(),
+        })));
+
+      if (sourceError) {
+        setErrorMsg(`Profile updated, but its sources could not be retained: ${sourceError.message}`);
+        setStage('error');
+        return;
+      }
+    }
+
+    for (const suggestion of selectedSuggestions) {
+      const contactType = contactTypeForField(suggestion.field_name);
+      if (!contactType || !suggestion.suggested_value) continue;
+
+      const { error: oldContactError } = await supabase
+        .from('person_contact_details')
+        .update({ is_primary: false })
+        .eq('person_id', person.id)
+        .eq('contact_type', contactType)
+        .eq('is_primary', true);
+      if (oldContactError) {
+        setErrorMsg(`Profile updated, but contact history could not be retained: ${oldContactError.message}`);
+        setStage('error');
+        return;
+      }
+
+      const { error: contactError } = await supabase
+        .from('person_contact_details')
+        .upsert({
+          person_id: person.id,
+          contact_type: contactType,
+          contact_value: suggestion.suggested_value,
+          is_primary: true,
+          verification_status: suggestion.evidence_url ? 'sourced' : 'unverified',
+          verification_method: suggestion.method || null,
+          verified_at: null,
+          source_label: suggestion.source || 'Profile verification',
+          source_url: suggestion.evidence_url || null,
+          evidence_excerpt: suggestion.evidence_excerpt || null,
+        }, { onConflict: 'person_id,contact_type,contact_value' });
+
+      if (contactError) {
+        setErrorMsg(`Profile updated, but contact evidence could not be retained: ${contactError.message}`);
+        setStage('error');
+        return;
+      }
+    }
+
     setStage('done');
     setTimeout(() => onApplied(), 1200);
   };
@@ -188,7 +282,7 @@ export default function ProfileUpdateModal({
               <RotateCw className="h-4.5 w-4.5 text-blue-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Verification Preview</h3>
+              <h3 className="font-semibold text-gray-900">Profile Update</h3>
               <p className="text-xs text-gray-500">{displayName(person)}</p>
             </div>
           </div>
@@ -204,24 +298,24 @@ export default function ProfileUpdateModal({
           {stage === 'idle' && (
             <div className="py-6 text-center">
               <p className="mb-6 text-gray-600">
-                Run the shared verification pipeline for this profile, review the evidence, and choose
-                which low/medium-risk updates to apply directly.
+                The system will look for updates or additional information, including a profile photo.
+                You can review the evidence and choose what to apply.
               </p>
               <button
                 onClick={runSearch}
                 className="inline-flex items-center space-x-2 rounded-lg bg-blue-600 px-6 py-2.5 font-medium text-white transition-colors hover:bg-blue-700"
               >
                 <RotateCw className="h-4 w-4" />
-                <span>Run Verification</span>
+                <span>Look for Updates</span>
               </button>
             </div>
           )}
 
           {stage === 'searching' && (
             <div className="py-10 text-center">
-              <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-500" />
+              <Earth className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-500" />
               <p className="text-gray-600">
-                Verifying profile evidence for {displayName(person)}...
+                Looking for profile updates for {displayName(person)}...
               </p>
             </div>
           )}
@@ -315,9 +409,25 @@ export default function ProfileUpdateModal({
                               {suggestion.current_value}
                             </div>
                           )}
-                          <div className="text-sm font-medium text-gray-900">
-                            {suggestion.suggested_value}
-                          </div>
+                          {suggestion.field_name === 'profile_photo_url' ? (
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={suggestion.suggested_value}
+                                alt={`Suggested profile photo for ${displayName(person)}`}
+                                className="h-16 w-16 rounded-xl border border-gray-200 bg-white object-cover"
+                                onError={(event) => {
+                                  event.currentTarget.style.display = 'none';
+                                }}
+                              />
+                              <span className="text-sm font-medium text-gray-900">
+                                Suggested profile photo
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-sm font-medium text-gray-900">
+                              {suggestion.suggested_value}
+                            </div>
+                          )}
 
                           <p className="mt-2 text-xs text-gray-500">
                             {getSuggestionGuidance(suggestion.field_name)}
@@ -387,7 +497,7 @@ export default function ProfileUpdateModal({
 
           {stage === 'applying' && (
             <div className="py-10 text-center">
-              <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-500" />
+              <Earth className="mx-auto mb-4 h-8 w-8 animate-spin text-blue-500" />
               <p className="text-gray-600">Applying selected profile updates...</p>
             </div>
           )}

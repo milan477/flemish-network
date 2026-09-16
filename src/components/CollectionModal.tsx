@@ -1,6 +1,6 @@
 import { useMemo, useReducer, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Check, Loader2, Sparkles, User, Building2, RotateCcw, Undo2 } from 'lucide-react';
+import { X, Check, Earth, Sparkles, User, Building2, RotateCcw, Undo2 } from 'lucide-react';
 import { supabase, type Collection } from '../lib/supabase';
 import { suggestPeopleEmbedding, type CollectionSuggestionGap } from '../lib/aiService';
 import {
@@ -223,7 +223,7 @@ export default function CollectionModal({
                     disabled={isLoadingSuggestions}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {isLoadingSuggestions ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    {isLoadingSuggestions ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                     More
                   </button>
                   <button
@@ -240,7 +240,7 @@ export default function CollectionModal({
 
               {isLoadingSuggestions ? (
                 <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                  <Loader2 className="w-8 h-8 text-yellow-500 animate-spin" />
+                  <Earth className="w-8 h-8 text-yellow-500 animate-spin" />
                   <p className="text-sm text-gray-500">Analyzing the network...</p>
                 </div>
               ) : visibleDraftItems.length === 0 ? (
@@ -399,7 +399,7 @@ export default function CollectionModal({
                 disabled={isSaving}
                 className="px-6 py-2 bg-gray-900 hover:bg-black text-white text-sm font-bold rounded-lg transition-all shadow-md flex items-center gap-2"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {isSaving ? <Earth className="w-4 h-4 animate-spin" /> : null}
                 {collection
                   ? acceptedCount > 0
                     ? `Save with ${acceptedCount} approved`

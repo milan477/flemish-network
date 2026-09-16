@@ -8,7 +8,7 @@ import {
   Pencil,
   Save,
   X,
-  Loader2,
+  Earth,
   ChevronDown,
   Globe,
   Library,
@@ -26,6 +26,7 @@ import {
 import CitySearch from '../components/CitySearch';
 import AddToCollectionDropdown from '../components/AddToCollectionDropdown';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import LoadingGlobe from '../components/LoadingGlobe';
 import FlemishConnectionSelector from '../components/FlemishConnectionSelector';
 import FlemishConnectionList from '../components/FlemishConnectionList';
 import {
@@ -418,7 +419,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-64px)]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-600"></div>
+        <LoadingGlobe className="h-12 w-12" label="Loading organization" />
       </div>
     );
   }
@@ -598,7 +599,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                       disabled={saving}
                       className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
                     >
-                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      {saving ? <Earth className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       <span>Save Changes</span>
                     </button>
                     <button
@@ -654,7 +655,7 @@ export default function OrganizationProfile({ organizationId, onNavigate }: Orga
                         className="px-6 py-2 bg-yellow-50 text-yellow-800 hover:bg-yellow-100 font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50"
                       >
                         {verifying ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <Earth className="w-4 h-4 animate-spin" />
                         ) : (
                           <ShieldCheck className="w-4 h-4" />
                         )}

@@ -6,8 +6,10 @@ import {
   buildLocationLabelValue,
   normalizeWhitespace,
   normalizeLocationKey,
+  resolveVerifiedUsLocation,
   safeString,
 } from "../locationPipeline.ts";
+import type { SupabaseAdminClient } from "../database.types.ts";
 
 Deno.test("safeString / normalizeWhitespace handle edge inputs", () => {
   assertEquals(safeString(null), "");
@@ -57,6 +59,12 @@ Deno.test("parseLocationCandidate: marks Belgian location as non-US", () => {
   assertEquals(r.review_required, true);
 });
 
+Deno.test("parseLocationCandidate: explicit non-US country overrides a US state token", () => {
+  const r = parseLocationCandidate("Brussels, CA, Belgium", "Brussels", "CA", "Belgium");
+  assertEquals(r.is_us_candidate, false);
+  assertEquals(r.review_required, true);
+});
+
 Deno.test("parseLocationCandidate: handles 'City, USA' with empty state", () => {
   const r = parseLocationCandidate("Springfield, USA", "", "");
   assertEquals(r.is_us_candidate, true);
@@ -76,4 +84,31 @@ Deno.test("buildLocationLabelValue: prefers city/state over raw fallback", () =>
   assertEquals(buildLocationLabelValue("Boston", "MA", "raw"), "Boston, MA");
   assertEquals(buildLocationLabelValue("", "", "Brussels"), "Brussels");
   assertEquals(buildLocationLabelValue("", "", ""), "");
+});
+
+Deno.test("resolveVerifiedUsLocation: requires a real city/state pair", async () => {
+  let city = "";
+  let state = "";
+  const chain = {
+    select() { return this; },
+    ilike(_column: string, value: string) { city = value; return this; },
+    eq(_column: string, value: string) { state = value; return this; },
+    limit() { return this; },
+    async maybeSingle() {
+      return city === "Los Angeles" && state === "CA"
+        ? { data: { id: "la", city, state, latitude: 34.05, longitude: -118.24 }, error: null }
+        : { data: null, error: null };
+    },
+  };
+  const supabase = { from: () => chain } as unknown as SupabaseAdminClient;
+
+  assertEquals(await resolveVerifiedUsLocation(supabase, "Brussels", "CA"), null);
+  assertEquals(
+    (await resolveVerifiedUsLocation(supabase, "Los Angeles", "California"))?.id,
+    "la",
+  );
+  assertEquals(
+    await resolveVerifiedUsLocation(supabase, "Los Angeles", "CA", "Belgium"),
+    null,
+  );
 });

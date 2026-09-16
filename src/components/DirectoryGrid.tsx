@@ -1,4 +1,4 @@
-import { MapPin, Users, Building2, X, Search, Sparkles, Loader2, Library, ShieldCheck, ShieldAlert, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
+import { MapPin, Users, Building2, X, Search, Sparkles, Earth, Library, ShieldCheck, ShieldAlert, Lightbulb, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { displayName } from '../lib/supabase';
 import type { Person, Organization } from '../lib/supabase';
@@ -9,6 +9,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { logSearchClick } from '../lib/aiService';
 import { useAuth } from '../lib/auth';
 import { personCardLocationLabel } from '../lib/networkScope';
+import LoadingGlobe from './LoadingGlobe';
 import {
   organizationExactSearchScore,
   personExactSearchScore,
@@ -132,7 +133,7 @@ function SearchResultGroup({
 
       {loading && items.length === 0 ? (
         <div className="flex items-center gap-2 py-5 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+          <Earth className="h-4 w-4 animate-spin text-yellow-600" />
           Finding exact matches for this refinement...
         </div>
       ) : items.length === 0 ? (
@@ -172,7 +173,7 @@ function SearchResultGroup({
           )}
           {loading && (
             <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />
+              <Earth className="h-3.5 w-3.5 animate-spin text-yellow-600" />
               Looking for more exact matches...
             </div>
           )}
@@ -402,7 +403,7 @@ export default function DirectoryGrid({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-yellow-600" />
+        <LoadingGlobe label="Loading directory" />
       </div>
     );
   }
@@ -470,7 +471,7 @@ export default function DirectoryGrid({
 
           {aiLoading && !hasSearchResults && (
             <div className="flex items-center space-x-3 py-6">
-              <Loader2 className="w-5 h-5 text-yellow-600 animate-spin" />
+              <Earth className="w-5 h-5 text-yellow-600 animate-spin" />
               <span className="text-sm text-gray-600">
                 Running AI-enhanced search...
               </span>
@@ -502,7 +503,7 @@ export default function DirectoryGrid({
               {aiLoading && refinementGroups.length === 0 && (
                 <section className="rounded-2xl border border-yellow-200 bg-yellow-50/60 p-5">
                   <div className="flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin text-yellow-600" />
+                    <Earth className="h-5 w-5 animate-spin text-yellow-600" />
                     <div>
                       <h2 className="text-base font-semibold text-gray-900">AI enhancement</h2>
                       <p className="text-xs text-gray-500">Finding useful interpretations...</p>
@@ -594,7 +595,7 @@ export default function DirectoryGrid({
                     disabled={loadingMore}
                     className="flex items-center space-x-2 px-6 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:border-yellow-400 hover:text-yellow-600 transition-colors disabled:opacity-50"
                   >
-                    {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {loadingMore && <Earth className="w-4 h-4 animate-spin" />}
                     <span>{loadingMore ? 'Loading...' : 'Show more people'}</span>
                   </button>
                 </div>
@@ -639,7 +640,7 @@ export default function DirectoryGrid({
                     disabled={loadingMore}
                     className="flex items-center space-x-2 px-6 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:border-yellow-400 hover:text-yellow-600 transition-colors disabled:opacity-50"
                   >
-                    {loadingMore && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {loadingMore && <Earth className="w-4 h-4 animate-spin" />}
                     <span>{loadingMore ? 'Loading...' : 'Show more organizations'}</span>
                   </button>
                 </div>

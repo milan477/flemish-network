@@ -10,6 +10,7 @@ import {
 } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import ErrorBoundary from './components/ErrorBoundary';
+import LoadingGlobe from './components/LoadingGlobe';
 import Login from './pages/Login';
 import AuthCallback from './pages/AuthCallback';
 import type { FilterPreset } from './lib/supabase';
@@ -29,14 +30,10 @@ const Collections = lazy(() => import('./pages/Collections'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Settings = lazy(() => import('./pages/Settings'));
 
-function PageLoader({ settings = false }: { settings?: boolean }) {
+function PageLoader() {
   return (
     <div className="flex h-96 items-center justify-center">
-      <div
-        className={`h-10 w-10 animate-spin rounded-full border-b-2 ${
-          settings ? 'border-teal-600' : 'border-yellow-500'
-        }`}
-      />
+      <LoadingGlobe label="Loading page" />
     </div>
   );
 }
@@ -191,7 +188,7 @@ export default function App() {
 
   const wrap = (scope: string, node: ReactNode) => (
     <ErrorBoundary scope={scope}>
-      <Suspense fallback={<PageLoader settings={scope === 'settings'} />}>{node}</Suspense>
+      <Suspense fallback={<PageLoader />}>{node}</Suspense>
     </ErrorBoundary>
   );
 

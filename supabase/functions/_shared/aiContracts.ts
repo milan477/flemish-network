@@ -59,6 +59,7 @@ export const VALID_PROFILE_SUGGESTION_FIELDS = [
   "occupation",
   "email",
   "linkedin_url",
+  "profile_photo_url",
   "bio",
   "phone",
   "website_url",
@@ -249,10 +250,15 @@ Given a person's current profile data and web search results about them, identif
 Rules:
 - Only suggest changes clearly supported by the search results
 - Compare search results against each current profile field
-- Field names must be exactly one of: title, first_name, last_name, name, current_position, occupation, email, linkedin_url, bio, phone, website_url, twitter_url, location_city, location_state
+- Field names must be exactly one of: title, first_name, last_name, name, current_position, occupation, email, linkedin_url, profile_photo_url, bio, phone, website_url, twitter_url, location_city, location_state
 - Do not suggest a change if the current value already matches what's in the search results
 - Be conservative: only suggest changes you are confident about
+- For profile_photo_url, only suggest an exact absolute image URL from the supplied profile photo candidates. The image must clearly depict this exact person; never use a logo, icon, banner, placeholder, or ambiguous group photo
 - For bio, only suggest if current bio is empty or very short and search results provide substantial information
+- For location_city and location_state, only suggest a person's explicit current US residence or primary current US work location
+- Never infer a current location from a birthplace, former school, scholarship, degree, event, project, or an organization's address
+- Location changes must include both city and state, supported together by the same evidence; never return only one half of the pair
+- Verify that the city and state form a real US location. Do not combine a non-US city with a US state code
 - The source field should briefly describe where the information was found (e.g. "LinkedIn profile", "University website", "News article")
 - Set evidence_url to the supporting result URL and evidence_excerpt to a short quote/paraphrase from that same result
 - Set confidence to a number between 0 and 1
@@ -401,7 +407,8 @@ export function buildSearchPrompt(query: unknown): string {
 
 export function buildCheckProfilePrompt(
   person: Record<string, unknown> | undefined,
-  searchResults: unknown
+  searchResults: unknown,
+  photoCandidates?: unknown
 ): string {
   const sanitized: Record<string, string> = {};
   if (person && typeof person === "object") {
@@ -410,7 +417,8 @@ export function buildCheckProfilePrompt(
     }
   }
 
-  return `Current profile:\n${JSON.stringify(sanitized, null, 2)}\n\nWeb search results:\n${safeString(searchResults)}`;
+  const candidates = Array.isArray(photoCandidates) ? photoCandidates : [];
+  return `Current profile:\n${JSON.stringify(sanitized, null, 2)}\n\nWeb search results:\n${safeString(searchResults)}\n\nProfile photo candidates:\n${JSON.stringify(candidates, null, 2)}`;
 }
 
 function buildMergeTextPrompt(context: Record<string, unknown>): string {
@@ -457,7 +465,8 @@ export const AI_AGENT_TASK_DEFINITIONS: Record<AiAgentTask, AiTaskDefinition> = 
     buildUserPrompt: (context) =>
       buildCheckProfilePrompt(
         context.person as Record<string, unknown> | undefined,
-        context.searchResults
+        context.searchResults,
+        context.photoCandidates
       ),
     normalizeResult: normalizeProfileCheckResult,
   },

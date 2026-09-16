@@ -44,7 +44,7 @@ Defined in `supabase/functions/_shared/gemini.ts`.
 |---|---|---|
 | `query_parsing`, `query_generation`, `page_classification` | `gemini-2.5-flash-lite` | `GEMINI_FLASH_LITE_MODEL`, `GEMINI_QUERY_MODEL`, `GEMINI_QUERY_GENERATION_MODEL`, `GEMINI_CLASSIFICATION_MODEL` |
 | `contact_extraction` | `gemini-3.5-flash` | `GEMINI_FLASH_MODEL`, `GEMINI_EXTRACTION_MODEL` |
-| `profile_verification` | `gemini-3.5-flash` (Flash-only) | Flash-valued `GEMINI_PROFILE_MODEL` and `GEMINI_PROFILE_FALLBACK_MODEL` entries may be used only as fallbacks |
+| `profile_verification` | `gemini-3.5-flash` (Flash-only; Gemini 2.5 excluded) | Flash-valued `GEMINI_PROFILE_MODEL` and `GEMINI_PROFILE_FALLBACK_MODEL` entries may be used only when they are not Gemini 2.5 models |
 | `lightweight_text_merge`, `offline_evaluation` | `gemini-2.5-pro` | `GEMINI_PRO_MODEL`, `GEMINI_MERGE_MODEL`, `GEMINI_EVAL_MODEL` |
 | `search_rerank` | `gemini-2.5-flash` (thinking budget = 0) | `GEMINI_SEARCH_RERANK_MODEL`, `GEMINI_SEARCH_RERANK_FALLBACK_MODEL` |
 | embeddings | `gemini-embedding-001` | `GEMINI_EMBEDDING_MODEL` |

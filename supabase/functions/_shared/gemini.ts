@@ -23,6 +23,14 @@ function flashModel(value: string | null | undefined): string | null {
   return normalized?.toLowerCase().includes("flash") ? normalized : null;
 }
 
+function profileFlashModel(value: string | null | undefined): string | null {
+  const normalized = flashModel(value);
+  if (!normalized) return null;
+
+  const modelName = normalized.toLowerCase().replace(/^models\//, "");
+  return modelName.startsWith("gemini-2.5-") ? null : normalized;
+}
+
 function unique(values: Array<string | null | undefined>): string[] {
   return Array.from(
     new Set(
@@ -68,16 +76,16 @@ export function getGeminiModelChain(route: GeminiModelRoute): string[] {
         FLASH_FALLBACK_DEFAULT,
       ]);
     case "profile_verification":
-      // Verification is latency-sensitive and high-volume. Keep this route on
-      // Flash even when an old project secret still points GEMINI_PROFILE_MODEL
-      // at a Pro model.
+      // Profile verification uses Flash, but never the Gemini 2.5 family.
+      // Filter environment overrides as well as built-in fallbacks so an old
+      // project secret cannot silently reintroduce gemini-2.5-flash.
       return unique([
         PROFILE_FLASH_DEFAULT,
-        flashModel(Deno.env.get("GEMINI_PROFILE_MODEL")),
-        flashModel(FLASH_DEFAULT),
-        flashModel(Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL")),
-        flashModel(FLASH_LITE_DEFAULT),
-        flashModel(FLASH_FALLBACK_DEFAULT),
+        profileFlashModel(Deno.env.get("GEMINI_PROFILE_MODEL")),
+        profileFlashModel(FLASH_DEFAULT),
+        profileFlashModel(Deno.env.get("GEMINI_PROFILE_FALLBACK_MODEL")),
+        profileFlashModel(FLASH_LITE_DEFAULT),
+        profileFlashModel(FLASH_FALLBACK_DEFAULT),
       ]);
     case "lightweight_text_merge":
       return unique([

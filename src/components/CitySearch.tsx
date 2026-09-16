@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { MapPin, Loader2, ChevronDown } from 'lucide-react';
+import { MapPin, Earth, ChevronDown } from 'lucide-react';
 
 interface CitySearchProps {
   value: string; // The currently selected location ID
@@ -100,7 +100,7 @@ export default function CitySearch({
           placeholder={placeholder}
         />
         <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center space-x-1 pointer-events-none">
-          {loading && <Loader2 className="w-3 h-3 animate-spin text-gray-400" />}
+          {loading && <Earth className="w-3 h-3 animate-spin text-gray-400" />}
           <ChevronDown className="w-4 h-4 text-gray-400" />
         </div>
       </div>

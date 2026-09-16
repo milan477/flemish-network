@@ -1,9 +1,9 @@
 import type { Json, SupabaseAdminClient } from "./database.types.ts";
 import {
   buildLocationLabelValue,
-  findExistingUsLocation,
   normalizeLocationKey,
   parseLocationCandidate,
+  resolveVerifiedUsLocation,
   safeString,
 } from "./locationPipeline.ts";
 
@@ -180,9 +180,9 @@ const FLEMISH_ENTITY_PATTERNS: Array<{ canonical: string; type: string; patterns
     patterns: [/\bbaef\b/i, /\bbelgian\s+american\s+educational\s+foundation\b/i],
   },
   {
-    canonical: "Fayat Fellowship",
+    canonical: "Fayat Scholarship",
     type: "program",
-    patterns: [/\bfayat\b/i, /\bfayat\s+fellow(?:ship)?\b/i],
+    patterns: [/\bfayat\b/i, /\bfayat(?:beurzen|\s+scholarships?|\s+fellow(?:ship)?)\b/i],
   },
   {
     canonical: "Flemish Government",
@@ -368,19 +368,28 @@ async function buildLocationSeed(
     input.location_state,
   );
 
-  if (!parsed.label_value) return null;
+  if (!parsed.is_us_candidate || !parsed.city || !parsed.state) return null;
 
-  const existingLocation = parsed.is_us_candidate && parsed.city && parsed.state
-    ? await findExistingUsLocation(supabase, parsed.city, parsed.state)
-    : null;
+  const existingLocation = await resolveVerifiedUsLocation(
+    supabase,
+    parsed.city,
+    parsed.state,
+    parsed.country,
+  );
+  if (!existingLocation) return null;
 
-  const normalizedValue = normalizeText(parsed.label_value);
+  const labelValue = buildLocationLabelValue(
+    existingLocation.city,
+    existingLocation.state,
+    parsed.raw_text,
+  );
+  const normalizedValue = normalizeText(labelValue);
   if (!normalizedValue) return null;
 
   return {
     ...subject,
     label_type: "us_location",
-    label_value: buildLocationLabelValue(parsed.city, parsed.state, parsed.raw_text),
+    label_value: labelValue,
     normalized_value: normalizedValue,
     raw_value: parsed.raw_text || null,
     confidence: clampConfidence(
@@ -392,15 +401,15 @@ async function buildLocationSeed(
     evidence_excerpt: input.evidence_excerpt || null,
     metadata: {
       raw_location_text: parsed.raw_text,
-      parsed_city: parsed.city,
-      parsed_state: parsed.state,
+      parsed_city: existingLocation.city,
+      parsed_state: existingLocation.state,
       parsed_country: parsed.country,
       is_us_candidate: parsed.is_us_candidate,
       parser_confidence: parsed.parser_confidence,
-      review_required: parsed.review_required || !existingLocation?.id,
-      location_id: existingLocation?.id || null,
-      latitude: existingLocation?.latitude ?? null,
-      longitude: existingLocation?.longitude ?? null,
+      review_required: false,
+      location_id: existingLocation.id,
+      latitude: existingLocation.latitude ?? null,
+      longitude: existingLocation.longitude ?? null,
     },
     agent_run_id: subject.agent_run_id || null,
     dedupe_key: buildDedupeKey(

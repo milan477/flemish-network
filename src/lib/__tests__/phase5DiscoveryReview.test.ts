@@ -85,7 +85,8 @@ describe('Phase 5D discovery review contract', () => {
     expect(reviewPanel).toContain('function approvedPersonDataSource');
     expect(reviewPanel).toContain("if (source === 'manual') return 'manual'");
     expect(reviewPanel).toContain("if (source === 'import') return 'csv_import'");
-    expect(reviewPanel).toContain('data_source: approvedPersonDataSource(contact.source)');
+    expect(reviewPanel).toContain('data_source: approvedPersonDataSource(contact.source, origin.staffLaunchedDiscovery)');
+    expect(reviewPanel).toContain('created_by_name: origin.name');
     expect(approvedPeopleSourceBackfill).toContain("WHEN 'manual' THEN 'manual'");
     expect(approvedPeopleSourceBackfill).toContain("WHEN 'import' THEN 'csv_import'");
     expect(approvedPeopleSourceBackfill).toContain('discovered.approved_person_id = person.id');

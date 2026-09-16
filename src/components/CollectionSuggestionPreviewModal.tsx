@@ -5,7 +5,7 @@ import {
   ExternalLink,
   Globe,
   Linkedin,
-  Loader2,
+  Earth,
   Mail,
   MapPin,
   Tag,
@@ -160,7 +160,7 @@ export default function CollectionSuggestionPreviewModal({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Earth className="h-4 w-4 animate-spin" />
               Loading profile preview...
             </div>
           ) : error ? (

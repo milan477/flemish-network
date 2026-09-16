@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, Loader2, Save, ShieldCheck } from 'lucide-react';
+import { KeyRound, Earth, Save, ShieldCheck } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
@@ -187,7 +187,7 @@ export default function Account({ embedded = false }: { embedded?: boolean }) {
             className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Earth className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
@@ -255,7 +255,7 @@ export default function Account({ embedded = false }: { embedded?: boolean }) {
             className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {savingPassword ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Earth className="h-4 w-4 animate-spin" />
             ) : (
               <KeyRound className="h-4 w-4" />
             )}
