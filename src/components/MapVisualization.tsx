@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Earth, Moon, Sun, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap, Popup } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
 import type { MapCluster } from '../lib/supabase';
 import ClusterPopover from './ClusterPopover';
 import L from 'leaflet';
@@ -10,7 +9,6 @@ import L from 'leaflet';
 // Leaflet styles for clustering (not included in default leaflet.css)
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import 'maplibre-gl/dist/maplibre-gl.css';
 
 // Fix for default Leaflet icons in Vite
 delete (L.Icon.Default.prototype as L.Icon.Default & { _getIconUrl?: unknown })._getIconUrl;
@@ -34,14 +32,8 @@ interface MapVisualizationProps {
 const INITIAL_CENTER: [number, number] = [39.8283, -98.5795]; // US Center
 const INITIAL_ZOOM = 4;
 const MAX_CIRCLE_SCALE_COUNT = 25;
-const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/positron';
-const OPENFREEMAP_LOAD_TIMEOUT_MS = 4000;
 const MAP_THEME_STORAGE_KEY = 'flemish-network-map-theme';
-const LIGHT_WATER_COLOR = '#e4e7e9';
-const DARK_THEME_SOURCE_WATER_COLOR = '#adadad';
-const MAP_LABEL_FONT = ['Noto Sans Regular'];
 
-type BasemapProvider = 'openfreemap' | 'osm';
 type MapTheme = 'light' | 'dark';
 
 function getInitialMapTheme(): MapTheme {
@@ -54,117 +46,6 @@ function getInitialMapTheme(): MapTheme {
   } catch {
     return 'light';
   }
-}
-
-function ApiFreeBasemap({
-  provider,
-  theme,
-  onFallback,
-}: {
-  provider: BasemapProvider;
-  theme: MapTheme;
-  onFallback: () => void;
-}) {
-  const map = useMap();
-  const layerRef = useRef<L.MaplibreGL | null>(null);
-
-  useEffect(() => {
-    if (provider !== 'openfreemap') return;
-
-    let isActive = true;
-    let hasFailed = false;
-    let layer: L.MaplibreGL | null = null;
-    let loadTimeout: number | null = null;
-
-    try {
-      layer = maplibreGL({
-        style: OPENFREEMAP_STYLE,
-        attributionControl: false,
-      });
-      layer.addTo(map);
-      layerRef.current = layer;
-
-      const maplibreMap = layer.getMaplibreMap();
-      const clearLoadTimeout = () => {
-        if (loadTimeout === null) return;
-        window.clearTimeout(loadTimeout);
-        loadTimeout = null;
-      };
-      const handleFailure = (event: unknown) => {
-        if (!isActive || hasFailed) return;
-        hasFailed = true;
-        clearLoadTimeout();
-        console.warn('[map] OpenFreeMap failed; using the raster fallback', event);
-        onFallback();
-      };
-      const handleLoad = () => {
-        clearLoadTimeout();
-      };
-
-      maplibreMap.on('error', handleFailure);
-      maplibreMap.on('load', handleLoad);
-      loadTimeout = window.setTimeout(() => {
-        if (!maplibreMap.isStyleLoaded()) {
-          handleFailure(new Error('OpenFreeMap style load timed out'));
-        }
-      }, OPENFREEMAP_LOAD_TIMEOUT_MS);
-
-      return () => {
-        isActive = false;
-        clearLoadTimeout();
-        maplibreMap.off('error', handleFailure);
-        maplibreMap.off('load', handleLoad);
-        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
-        if (layerRef.current === layer) layerRef.current = null;
-      };
-    } catch (error) {
-      console.warn('[map] OpenFreeMap is unavailable; using the raster fallback', error);
-      onFallback();
-    }
-  }, [map, onFallback, provider]);
-
-  useEffect(() => {
-    if (provider !== 'openfreemap' || !layerRef.current) return;
-
-    const maplibreMap = layerRef.current.getMaplibreMap();
-    const applyMapStyle = () => {
-      if (maplibreMap.getLayer('water')) {
-        maplibreMap.setPaintProperty(
-          'water',
-          'fill-color',
-          theme === 'light' ? LIGHT_WATER_COLOR : DARK_THEME_SOURCE_WATER_COLOR
-        );
-      }
-
-      maplibreMap.getStyle().layers?.forEach((layer) => {
-        if (layer.type !== 'symbol' || !layer.layout?.['text-field']) return;
-
-        const configuredFont = layer.layout['text-font'];
-        if (JSON.stringify(configuredFont).includes('Italic')) {
-          maplibreMap.setLayoutProperty(layer.id, 'text-font', MAP_LABEL_FONT);
-        }
-      });
-    };
-
-    if (maplibreMap.isStyleLoaded()) {
-      applyMapStyle();
-      return;
-    }
-
-    maplibreMap.on('load', applyMapStyle);
-    return () => { maplibreMap.off('load', applyMapStyle); };
-  }, [provider, theme]);
-
-  if (provider === 'osm') {
-    return (
-      <TileLayer
-        maxZoom={19}
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-    );
-  }
-
-  return null;
 }
 
 function MapController({
@@ -200,7 +81,6 @@ export default function MapVisualization({
   totalOrganizations,
 }: MapVisualizationProps) {
   const [selectedCityKey, setSelectedCityKey] = useState<string | null>(null);
-  const [basemapProvider, setBasemapProvider] = useState<BasemapProvider>('openfreemap');
   const [mapTheme, setMapTheme] = useState<MapTheme>(getInitialMapTheme);
   const [currentZoom, setCurrentZoom] = useState(INITIAL_ZOOM);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -236,10 +116,6 @@ export default function MapVisualization({
 
   const handleBackdropClick = useCallback(() => {
     setSelectedCityKey(null);
-  }, []);
-
-  const handleBasemapFallback = useCallback(() => {
-    setBasemapProvider('osm');
   }, []);
 
   const toggleMapTheme = () => {
@@ -312,7 +188,7 @@ export default function MapVisualization({
   return (
     <div
       ref={containerRef}
-      className={`absolute inset-0 select-none basemap-${basemapProvider} map-theme-${mapTheme}`}
+      className={`absolute inset-0 select-none map-theme-${mapTheme}`}
     >
       <style>{`
         @keyframes pulse-slow {
@@ -326,12 +202,10 @@ export default function MapVisualization({
           background: none !important;
           border: none !important;
         }
-        .map-theme-light.basemap-openfreemap .leaflet-gl-layer,
-        .map-theme-light.basemap-osm .leaflet-tile-pane {
+        .map-theme-light .leaflet-tile-pane {
           filter: grayscale(1);
         }
-        .map-theme-dark.basemap-openfreemap .leaflet-gl-layer,
-        .map-theme-dark.basemap-osm .leaflet-tile-pane {
+        .map-theme-dark .leaflet-tile-pane {
           filter: grayscale(1) invert(1);
         }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -363,10 +237,9 @@ export default function MapVisualization({
           attributionControl={false}
           ref={(map) => { mapRef.current = map; }}
         >
-          <ApiFreeBasemap
-            provider={basemapProvider}
-            theme={mapTheme}
-            onFallback={handleBasemapFallback}
+          <TileLayer
+            maxZoom={19}
+            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           
           <MapController
@@ -415,20 +288,8 @@ export default function MapVisualization({
         </MapContainer>
 
         <div className="absolute bottom-1 left-1 z-[1000] rounded bg-white/85 px-1.5 py-0.5 text-[10px] text-slate-600 shadow-sm backdrop-blur-sm">
-          {basemapProvider === 'openfreemap' ? (
-            <>
-              <a className="hover:underline" href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a>
-              {' · © '}
-              <a className="hover:underline" href="https://www.openmaptiles.org" target="_blank" rel="noreferrer">OpenMapTiles</a>
-              {' · © '}
-              <a className="hover:underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-            </>
-          ) : (
-            <>
-              {'© '}
-              <a className="hover:underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
-            </>
-          )}
+          {'© '}
+          <a className="hover:underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
         </div>
 
         {/* Custom Zoom Controls */}
