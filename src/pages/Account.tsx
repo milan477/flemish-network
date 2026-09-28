@@ -108,161 +108,175 @@ export default function Account({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  return (
-    <div className={embedded ? 'w-full' : 'max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8'}>
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-gray-900">My Account</h1>
-            <p className="mt-2 text-sm text-gray-500">
-              Manage your staff profile for this workspace.
-            </p>
-          </div>
-          <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{staffUser.role}</span>
-            </div>
+  const setupPrompt = shouldSetPassword && (
+    <div className="mb-6 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+      Set a strong password before continuing to the workspace.
+    </div>
+  );
+
+  const profileCard = (
+    <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900">My Account</h1>
+          <p className="mt-2 text-sm text-gray-500">
+            Manage your staff profile for this workspace.
+          </p>
+        </div>
+        <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>{staffUser.role}</span>
           </div>
         </div>
+      </div>
 
-        {shouldSetPassword && (
-          <div className="mb-6 rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
-            Set a strong password before continuing to the workspace.
-          </div>
-        )}
-
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-gray-700">
-                Email
-              </span>
-              <input
-                value={staffUser.email}
-                disabled
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-gray-700">
-                Role
-              </span>
-              <input
-                value={staffUser.role}
-                disabled
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"
-              />
-            </label>
-          </div>
-
+      <form onSubmit={handleSave} className="space-y-6">
+        <div className="grid gap-6 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-gray-700">
-              Full name
+              Email
             </span>
             <input
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
-              placeholder="Your name"
+              value={staffUser.email}
+              disabled
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"
             />
           </label>
 
-          {message && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              {message}
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? (
-              <Earth className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            <span>{saving ? 'Saving...' : 'Save Changes'}</span>
-          </button>
-        </form>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">Password</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            Use at least {PASSWORD_MIN_LENGTH} characters with uppercase,
-            lowercase, number, and symbol characters.
-          </p>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-gray-700">
+              Role
+            </span>
+            <input
+              value={staffUser.role}
+              disabled
+              className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500"
+            />
+          </label>
         </div>
 
-        <form onSubmit={handlePasswordSave} className="space-y-6">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-gray-700">
-              New password
-            </span>
-            <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3">
-              <KeyRound className="h-4 w-4 text-gray-400" />
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-xl px-3 py-3 text-sm text-gray-900 outline-none"
-                autoComplete="new-password"
-                required={shouldSetPassword}
-              />
-            </div>
-          </label>
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">
+            Full name
+          </span>
+          <input
+            value={fullName}
+            onChange={(event) => setFullName(event.target.value)}
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+            placeholder="Your name"
+          />
+        </label>
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-gray-700">
-              Confirm password
-            </span>
+        {message && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {message}
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={saving}
+          className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? (
+            <Earth className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+        </button>
+      </form>
+    </div>
+  );
+
+  const passwordCard = (
+    <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">Password</h2>
+        <p className="mt-2 text-sm text-gray-500">
+          Use at least {PASSWORD_MIN_LENGTH} characters with uppercase,
+          lowercase, number, and symbol characters.
+        </p>
+      </div>
+
+      {setupPrompt}
+
+      <form onSubmit={handlePasswordSave} className="space-y-6">
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">
+            New password
+          </span>
+          <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 focus-within:border-yellow-500 focus-within:ring-2 focus-within:ring-yellow-200">
+            <KeyRound className="h-4 w-4 text-gray-400" />
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full rounded-xl px-3 py-3 text-sm text-gray-900 outline-none"
+              autoComplete="new-password"
+              autoFocus={shouldSetPassword}
+              required={shouldSetPassword}
+            />
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">
+            Confirm password
+          </span>
+          <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 focus-within:border-yellow-500 focus-within:ring-2 focus-within:ring-yellow-200">
+            <KeyRound className="h-4 w-4 text-gray-400" />
             <input
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+              className="w-full rounded-xl px-3 py-3 text-sm text-gray-900 outline-none"
               autoComplete="new-password"
               required={shouldSetPassword}
             />
-          </label>
+          </div>
+        </label>
 
-          {passwordMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              {passwordMessage}
-            </div>
+        {passwordMessage && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {passwordMessage}
+          </div>
+        )}
+
+        {passwordError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {passwordError}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={savingPassword || !password || !confirmPassword}
+          className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {savingPassword ? (
+            <Earth className="h-4 w-4 animate-spin" />
+          ) : (
+            <KeyRound className="h-4 w-4" />
           )}
+          <span>{savingPassword ? 'Saving...' : 'Update Password'}</span>
+        </button>
+      </form>
+    </div>
+  );
 
-          {passwordError && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {passwordError}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={savingPassword || !password || !confirmPassword}
-            className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-medium text-gray-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {savingPassword ? (
-              <Earth className="h-4 w-4 animate-spin" />
-            ) : (
-              <KeyRound className="h-4 w-4" />
-            )}
-            <span>{savingPassword ? 'Saving...' : 'Update Password'}</span>
-          </button>
-        </form>
-      </div>
+  // Password setup leads the page so the required form is never below the fold.
+  return (
+    <div className={embedded ? 'w-full space-y-6' : 'max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6'}>
+      {shouldSetPassword ? passwordCard : profileCard}
+      {shouldSetPassword ? profileCard : passwordCard}
     </div>
   );
 }

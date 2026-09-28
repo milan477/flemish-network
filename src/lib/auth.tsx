@@ -12,6 +12,7 @@ import { isAuthSessionMissingError, type Session } from '@supabase/supabase-js';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from './supabase';
+import { buildPasswordSetupPath, isAccountSettingsPath } from './appRouting';
 import { onEdgeAuthFailure } from './sessionEvents';
 import LoadingGlobe from '../components/LoadingGlobe';
 
@@ -369,15 +370,10 @@ export function RequireAuth() {
 
   if (
     staffUser.password_reset_required &&
-    location.pathname !== '/account'
+    !isAccountSettingsPath(location.pathname)
   ) {
     const redirect = `${location.pathname}${location.search}`;
-    return (
-      <Navigate
-        to={`/account?setPassword=1&redirect=${encodeURIComponent(redirect)}`}
-        replace
-      />
-    );
+    return <Navigate to={buildPasswordSetupPath(redirect)} replace />;
   }
 
   return <Outlet />;

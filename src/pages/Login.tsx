@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, Earth, Mail, ShieldCheck } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/auth';
+import { describeAuthEmailError } from '../lib/authMessages';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { staffUser, loading, authError, clearAuthError } = useAuth();
   const [email, setEmail] = useState('');
@@ -13,7 +15,9 @@ export default function Login() {
   const [sending, setSending] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(
+    () => (location.state as { authMessage?: string } | null)?.authMessage ?? null
+  );
 
   const redirect = searchParams.get('redirect') || '/';
 
@@ -114,7 +118,7 @@ export default function Login() {
     );
 
     if (error) {
-      setFormError(error.message);
+      setFormError(describeAuthEmailError(error));
       setResetting(false);
       return;
     }
@@ -155,7 +159,7 @@ export default function Login() {
             <span className="mb-1.5 block text-sm font-medium text-gray-700">
               Email
             </span>
-            <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3">
+            <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 focus-within:border-yellow-500 focus-within:ring-2 focus-within:ring-yellow-200">
               <Mail className="h-4 w-4 text-gray-400" />
               <input
                 type="email"
@@ -174,7 +178,7 @@ export default function Login() {
             <span className="mb-1.5 block text-sm font-medium text-gray-700">
               Password
             </span>
-            <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3">
+            <div className="flex items-center rounded-xl border border-gray-200 bg-white px-3 focus-within:border-yellow-500 focus-within:ring-2 focus-within:ring-yellow-200">
               <KeyRound className="h-4 w-4 text-gray-400" />
               <input
                 type="password"

@@ -1,8 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { AuthSessionMissingError } from '@supabase/supabase-js';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { AuthApiError, AuthSessionMissingError } from '@supabase/supabase-js';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import App from '../../App';
 import { AuthProvider, RequireAuth, SESSION_ENDED_MESSAGE, useAuth } from '../auth';
+import { EMAIL_RATE_LIMIT_MESSAGE, USED_SIGN_IN_LINK_MESSAGE } from '../authMessages';
 import { notifyEdgeAuthFailure } from '../sessionEvents';
 
 const { supabaseMock, authStateCallbacks } = vi.hoisted(() => {
@@ -22,6 +24,8 @@ const { supabaseMock, authStateCallbacks } = vi.hoisted(() => {
         };
       }),
       signOut: vi.fn(),
+      resetPasswordForEmail: vi.fn(),
+      updateUser: vi.fn(),
     },
     rpc: vi.fn(),
     from: vi.fn(),
@@ -32,6 +36,10 @@ const { supabaseMock, authStateCallbacks } = vi.hoisted(() => {
 
 vi.mock('../supabase', () => ({
   supabase: supabaseMock,
+}));
+
+vi.mock('../../pages/Collections', () => ({
+  default: () => <div>Collections page</div>,
 }));
 
 const session = {
@@ -106,14 +114,30 @@ function renderProtectedRoute() {
   );
 }
 
-function mockSignedInStaff() {
+function mockSignedInStaff(profile = staffUser) {
   supabaseMock.auth.getSession.mockResolvedValue({ data: { session } });
   supabaseMock.rpc.mockResolvedValue({ error: null });
   supabaseMock.from.mockReturnValue({
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: staffUser, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: profile, error: null }),
   });
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
+}
+
+function renderApp(initialEntry: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <AuthProvider>
+        <App />
+        <LocationProbe />
+      </AuthProvider>
+    </MemoryRouter>
+  );
 }
 
 // supabase-js clears a revoked session and emits SIGNED_OUT from getUser().
@@ -204,5 +228,113 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(supabaseMock.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     });
+  });
+});
+
+describe('password setup routing', () => {
+  const PASSWORD_SETUP_PROMPT = 'Set a strong password before continuing to the workspace.';
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockSignedInStaff({ ...staffUser, password_reset_required: true });
+  });
+
+  it('lands an invite or recovery callback on the password form', async () => {
+    renderApp('/auth/callback?setPassword=1&redirect=%2F');
+
+    await screen.findByText(PASSWORD_SETUP_PROMPT);
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/settings/account?setPassword=1&redirect=%2F'
+    );
+
+    // The password form leads the page and has focus, so it is never below the fold.
+    const newPassword = screen.getByLabelText('New password');
+    expect(document.activeElement).toBe(newPassword);
+    expect(
+      newPassword.compareDocumentPosition(screen.getByLabelText('Full name')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('sends a protected page to the password form and back afterwards', async () => {
+    renderApp('/collections');
+
+    await screen.findByText(PASSWORD_SETUP_PROMPT);
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/settings/account?setPassword=1&redirect=%2Fcollections'
+    );
+  });
+
+  it('saves the new password and continues to the original page', async () => {
+    let passwordSet = false;
+    const staffUpdate = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
+    supabaseMock.from.mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn(async () => ({
+        data: { ...staffUser, password_reset_required: !passwordSet },
+        error: null,
+      })),
+      update: staffUpdate,
+    });
+    supabaseMock.auth.updateUser.mockImplementation(async () => {
+      passwordSet = true;
+      return { data: { user: session.user }, error: null };
+    });
+
+    renderApp('/collections');
+    fireEvent.change(await screen.findByLabelText('New password'), {
+      target: { value: 'Str0ng!Passw0rd' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'Str0ng!Passw0rd' },
+    });
+    fireEvent.click(screen.getByText('Update Password'));
+
+    await screen.findByText('Collections page');
+    expect(screen.getByTestId('location').textContent).toBe('/collections');
+    expect(supabaseMock.auth.updateUser).toHaveBeenCalledWith({ password: 'Str0ng!Passw0rd' });
+    expect(staffUpdate).toHaveBeenCalledWith({ password_reset_required: false });
+  });
+
+  it('keeps legacy /account password links working', async () => {
+    renderApp('/account?setPassword=1&redirect=%2F');
+
+    await screen.findByText(PASSWORD_SETUP_PROMPT);
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/settings/account?setPassword=1&redirect=%2F'
+    );
+  });
+});
+
+describe('sign-in email problems', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    supabaseMock.auth.getSession.mockResolvedValue({ data: { session: null } });
+  });
+
+  it('explains an already used or expired email link on the login page', async () => {
+    renderApp(
+      '/auth/callback?setPassword=1&redirect=%2F#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'
+    );
+
+    await screen.findByText(USED_SIGN_IN_LINK_MESSAGE);
+    expect(screen.getByTestId('location').textContent).toBe('/login?redirect=%2F');
+  });
+
+  it('explains the hourly email limit when a reset email cannot be sent', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: true, error: null });
+    supabaseMock.auth.resetPasswordForEmail.mockResolvedValue({
+      data: null,
+      error: new AuthApiError('email rate limit exceeded', 429, 'over_email_send_rate_limit'),
+    });
+
+    renderApp('/login');
+    fireEvent.change(await screen.findByPlaceholderText('name@organization.org'), {
+      target: { value: 'staff@example.org' },
+    });
+    fireEvent.click(screen.getByText('Reset Password'));
+
+    await screen.findByText(EMAIL_RATE_LIMIT_MESSAGE);
   });
 });

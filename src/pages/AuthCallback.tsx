@@ -1,24 +1,28 @@
-import { useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
+import { buildPasswordSetupPath } from '../lib/appRouting';
+import { describeSignInLinkError } from '../lib/authMessages';
 import LoadingGlobe from '../components/LoadingGlobe';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { staffUser, loading, authError } = useAuth();
+  const { staffUser, loading } = useAuth();
   const redirect = searchParams.get('redirect') || '/';
   const shouldSetPassword = searchParams.get('setPassword') === '1';
+  // Captured once: the link error only exists in the URL Supabase redirected to.
+  const [linkError] = useState(() =>
+    describeSignInLinkError(location.hash, location.search)
+  );
 
   useEffect(() => {
     if (loading) return;
 
     if (staffUser) {
       if (shouldSetPassword || staffUser.password_reset_required) {
-        navigate(
-          `/account?setPassword=1&redirect=${encodeURIComponent(redirect)}`,
-          { replace: true }
-        );
+        navigate(buildPasswordSetupPath(redirect), { replace: true });
         return;
       }
 
@@ -26,17 +30,11 @@ export default function AuthCallback() {
       return;
     }
 
-    if (authError) {
-      navigate(`/login?redirect=${encodeURIComponent(redirect)}`, {
-        replace: true,
-      });
-      return;
-    }
-
     navigate(`/login?redirect=${encodeURIComponent(redirect)}`, {
       replace: true,
+      state: linkError ? { authMessage: linkError } : undefined,
     });
-  }, [authError, loading, navigate, redirect, shouldSetPassword, staffUser]);
+  }, [linkError, loading, navigate, redirect, shouldSetPassword, staffUser]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">

@@ -18,7 +18,7 @@
 | `/settings/access` | Admin-only staff access management. |
 | `/settings/account` | Staff profile and password update. Clicking the user name in the top navigation opens this route. |
 | `/login` | Staff email/password sign-in and password reset request |
-| `/auth/callback` | Supabase invite/recovery redirect landing; existing `/account?setPassword=1` callbacks are preserved through the compatibility redirect. |
+| `/auth/callback` | Supabase invite/recovery redirect landing. Sends password setup straight to `/settings/account?setPassword=1`, and a used or expired email link to `/login` with an explanation. |
 | `/account` | Compatibility redirect to `/settings/account`, preserving query parameters. |
 
 Unknown `/expand/:tab` values normalize to `/expand/discovery`; unknown or unauthorized `/settings/:tab` values normalize to the first permitted settings tab. Legacy `/admin/*` paths redirect to their new destination (`growth` merges into Discovery, `coverage` becomes Network Stats, `system` becomes Maintenance, and `access` becomes Settings > Access). `/contacts/new` redirects to `/expand/import?mode=manual`.
@@ -35,8 +35,10 @@ An empty collection shows **Browse Network** followed by **Launch Discovery**. L
 - A revoked session keeps a valid-looking JWT until it expires, and PostgREST accepts it; edge functions reject it (`auth.getUser` returns `session_not_found`, surfaced as `401 auth_failed`). `AuthProvider` therefore confirms the session with Supabase Auth (`supabase.auth.getUser()`) when the signed-in user changes, when the tab regains focus (at most once per minute), and after any `401` from `/functions/v1/*` (detected by the fetch wrapper in `src/lib/sessionEvents.ts`). On `session_not_found` supabase-js clears the session and staff land on `/login` with "Your session has ended. Please sign in again."
 - `notifyError` (`src/lib/toast.ts`) unwraps raw supabase-js `FunctionsHttpError` bodies, so toasts show the edge function's `{ error: { code, message } }` instead of the generic non-2xx message; `auth_failed` shows the session-ended message.
 - `/settings/access` invites and removes staff through the existing staff-management edge functions and remains admin-only.
-- Invite and recovery emails redirect through `/auth/callback`; the legacy `/account?setPassword=1` destination forwards to `/settings/account?setPassword=1`.
-- New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to account setup until the password update succeeds.
+- Invite and recovery emails redirect through `/auth/callback`, which routes password setup to `/settings/account?setPassword=1&redirect=...` (`buildPasswordSetupPath` in `src/lib/appRouting.ts`). The legacy `/account?setPassword=1` destination still forwards there.
+- New invited staff rows set `password_reset_required = true`; authenticated staff with that flag are redirected to `/settings/account?setPassword=1` until the password update succeeds. `RequireAuth` exempts exactly `/settings/account` and the legacy `/account` forward (`isAccountSettingsPath`); guarding any other path causes a redirect loop.
+- Invite and recovery links are single-use. When Supabase redirects back with an error (`error_code=otp_expired` for a used or expired link), supabase-js clears the local session and `/auth/callback` shows the reason on `/login` instead of a bare sign-in form.
+- The built-in Supabase mailer allows only a few auth emails per hour for the whole project; `/login` explains `over_email_send_rate_limit` instead of showing the raw error.
 - Client password setup requires at least 12 characters with uppercase, lowercase, number, and symbol characters. Supabase Auth password policy should match or exceed that rule in project settings.
 - Password reset requests use Supabase Auth `resetPasswordForEmail` after checking `can_request_staff_login`.
 

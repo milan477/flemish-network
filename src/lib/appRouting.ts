@@ -58,6 +58,18 @@ export function isCanonicalSettingsTab(tab?: string | null): tab is SettingsTab 
   return tab === 'system' || tab === 'access' || tab === 'account';
 }
 
+// The My Account settings tab hosts the password form. `/account` only
+// forwards here, so password guards must target and exempt this exact path.
+export const ACCOUNT_SETTINGS_PATH = '/settings/account';
+
+export function isAccountSettingsPath(pathname: string): boolean {
+  return pathname === ACCOUNT_SETTINGS_PATH || pathname === '/account';
+}
+
+export function buildPasswordSetupPath(redirect: string): string {
+  return `${ACCOUNT_SETTINGS_PATH}?setPassword=1&redirect=${encodeURIComponent(redirect)}`;
+}
+
 export function normalizeAdminTab(tab?: string | null, canAccessAdminOnlyTabs = false): AdminTab {
   if (tab === 'discovery' || tab === 'verification' || tab === 'growth' || tab === 'coverage' || tab === 'system') {
     return tab;
