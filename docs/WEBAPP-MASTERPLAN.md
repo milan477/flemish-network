@@ -791,6 +791,12 @@ Goal: make the platform usable by Flemish government staff for a feedback round,
 - `[done]` Made the top-bar user name open My Account directly and kept `/account` as a query-preserving compatibility redirect for Supabase recovery links.
 - `[done]` Added redirects from the former `/admin/*` routes to their new destinations.
 
+## Revoked Session Handling - Completed 2026-09-28
+
+- `[done]` Root cause of "Edge Function returned a non-2xx status code / Could not start discovery." on production: explicit sign-out used Supabase's default `global` scope, which revoked the user's sessions on every browser. Other open tabs kept a JWT that PostgREST still accepted, but `agent-scheduler` rejected it (`auth.getUser` -> `session_not_found` -> `401 auth_failed`), and the toast hid the reason.
+- `[done]` Sign-out now uses `scope: 'local'`; `AuthProvider` confirms the session with Supabase Auth on user change, tab focus, and any edge-function `401`, routing staff to `/login` with a session-ended message; `notifyError` unwraps edge error bodies. Contract documented in `docs/ROUTES.md` (Staff Auth Contract).
+- `[todo]` Deployed edge functions lag `origin/main` shared code (`gemini.ts`, `aiContracts.ts`, `locationPipeline.ts`, `derivedLabels.ts`, `verification.ts`) for `ai-agent`, `update-profile`, `geocode`, `generate-embeddings`, `suggest-people`, `agent-discovery`, `search-people`, and `agent-discovery-reflect`. Decide whether to deploy the committed model-routing and location changes; the two `npm run lint` errors in `gemini.ts` and `locationPipeline.ts` should be fixed in the same deploy.
+
 ## Handoff Rules For Future Agents
 
 - Start with this file, then read the specific active doc for the phase being implemented.

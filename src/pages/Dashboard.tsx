@@ -512,7 +512,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     setPeople((prev) => [...prev, ...next]);
     setHasMorePeople(next.length === MORE_PAGE);
     setLoadingMore(false);
-  }, [people.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [people.length]);
 
   const handleLoadMoreOrgs = useCallback(async () => {
     setLoadingMore(true);
@@ -524,7 +524,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     setOrganizations((prev) => [...prev, ...next]);
     setHasMoreOrgs(next.length === MORE_PAGE);
     setLoadingMore(false);
-  }, [organizations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [organizations.length]);
 
   useEffect(() => {
     setLastDashboardLocation(`${location.pathname}${location.search}`);
@@ -709,7 +709,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     })();
 
     return () => { tier1Cancelled = true; };
-  }, [activeFilters, activeQuery, effectiveMatchMode, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFilters, activeQuery, effectiveMatchMode, filters]);
 
   useEffect(() => {
     if (!activeQuery) {

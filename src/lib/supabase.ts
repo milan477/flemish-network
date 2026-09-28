@@ -5,6 +5,7 @@ import type {
   PersonFlemishConnectionLink,
 } from './flemishConnections';
 import { DEFAULT_FLEMISH_CONNECTIONS } from './flemishConnections';
+import { createSessionAwareFetch } from './sessionEvents';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
@@ -14,6 +15,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+  },
+  global: {
+    fetch: createSessionAwareFetch(supabaseUrl),
   },
 });
 

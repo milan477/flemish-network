@@ -1,13 +1,16 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { AuthSessionMissingError } from '@supabase/supabase-js';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthProvider, RequireAuth } from '../auth';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthProvider, RequireAuth, SESSION_ENDED_MESSAGE, useAuth } from '../auth';
+import { notifyEdgeAuthFailure } from '../sessionEvents';
 
 const { supabaseMock, authStateCallbacks } = vi.hoisted(() => {
   const authStateCallbacks: Array<(event: string, session: unknown) => void> = [];
   const supabaseMock = {
     auth: {
       getSession: vi.fn(),
+      getUser: vi.fn(),
       onAuthStateChange: vi.fn((callback) => {
         authStateCallbacks.push(callback);
         return {
@@ -73,20 +76,58 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function ProtectedContent() {
+  const { signOut } = useAuth();
+  return (
+    <div>
+      Protected content
+      <button type="button" onClick={() => void signOut()}>Sign out</button>
+    </div>
+  );
+}
+
+function LoginPage() {
+  const { authError } = useAuth();
+  return <div>Login page {authError}</div>;
+}
+
 function renderProtectedRoute() {
   return render(
     <MemoryRouter initialEntries={['/']}>
       <AuthProvider>
         <Routes>
           <Route element={<RequireAuth />}>
-            <Route path="/" element={<div>Protected content</div>} />
+            <Route path="/" element={<ProtectedContent />} />
           </Route>
-          <Route path="/login" element={<div>Login page</div>} />
+          <Route path="/login" element={<LoginPage />} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>
   );
 }
+
+function mockSignedInStaff() {
+  supabaseMock.auth.getSession.mockResolvedValue({ data: { session } });
+  supabaseMock.rpc.mockResolvedValue({ error: null });
+  supabaseMock.from.mockReturnValue({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: staffUser, error: null }),
+  });
+}
+
+// supabase-js clears a revoked session and emits SIGNED_OUT from getUser().
+function mockRevokedSession() {
+  supabaseMock.auth.getUser.mockImplementation(async () => {
+    authStateCallbacks.forEach((callback) => callback('SIGNED_OUT', null));
+    return { data: { user: null }, error: new AuthSessionMissingError() };
+  });
+}
+
+beforeEach(() => {
+  supabaseMock.auth.getUser.mockResolvedValue({ data: { user: session.user }, error: null });
+  supabaseMock.auth.signOut.mockResolvedValue({ error: null });
+});
 
 afterEach(() => {
   cleanup();
@@ -128,6 +169,40 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Protected content')).toBeTruthy();
+    });
+  });
+
+  it('routes to login with a session-ended message when Supabase Auth reports the session is gone', async () => {
+    mockSignedInStaff();
+    mockRevokedSession();
+
+    renderProtectedRoute();
+
+    await screen.findByText(`Login page ${SESSION_ENDED_MESSAGE}`);
+  });
+
+  it('re-checks the session with Supabase Auth when an edge function returns 401', async () => {
+    mockSignedInStaff();
+
+    renderProtectedRoute();
+    await screen.findByText('Protected content');
+    await waitFor(() => expect(supabaseMock.auth.getUser).toHaveBeenCalledTimes(1));
+
+    mockRevokedSession();
+    act(() => notifyEdgeAuthFailure());
+
+    await screen.findByText(`Login page ${SESSION_ENDED_MESSAGE}`);
+    expect(supabaseMock.auth.getUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('signs out only the current browser session', async () => {
+    mockSignedInStaff();
+
+    renderProtectedRoute();
+    fireEvent.click(await screen.findByText('Sign out'));
+
+    await waitFor(() => {
+      expect(supabaseMock.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
     });
   });
 });

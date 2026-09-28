@@ -31,12 +31,20 @@ export class EdgeFunctionError extends Error {
   }
 }
 
+/** True for a supabase-js FunctionsHttpError-like value carrying the raw Response. */
+export function hasEdgeResponse(raw: unknown): raw is { context: Response; message: string } {
+  if (raw instanceof EdgeFunctionError) return false;
+  const ctx = (raw as { context?: unknown } | null)?.context;
+  return typeof Response !== 'undefined' && ctx instanceof Response;
+}
+
 export async function extractEdgeError(
   raw: unknown,
   fallbackMessage = 'Edge function failed'
 ): Promise<EdgeFunctionError> {
   // supabase-js v2 FunctionsHttpError shape: { context: Response, message: string }
   const ctx = (raw as { context?: Response } | null)?.context;
+  const fallbackCode = ctx?.status === 401 ? 'auth_failed' : 'unknown';
   if (ctx && typeof ctx.text === 'function') {
     try {
       const text = await ctx.text();
@@ -46,12 +54,12 @@ export async function extractEdgeError(
           if (parsed && typeof parsed === 'object' && parsed.error && typeof parsed.error === 'object') {
             return new EdgeFunctionError(
               String(parsed.error.message || fallbackMessage),
-              String(parsed.error.code || 'unknown'),
+              String(parsed.error.code || fallbackCode),
               parsed.error.hint ? String(parsed.error.hint) : undefined
             );
           }
           if (parsed && typeof parsed.error === 'string') {
-            return new EdgeFunctionError(parsed.error);
+            return new EdgeFunctionError(parsed.error, fallbackCode);
           }
         } catch {
           // Body was not JSON — fall through to message-based.
@@ -68,7 +76,7 @@ export async function extractEdgeError(
       : typeof raw === 'string'
       ? raw
       : fallbackMessage;
-  return new EdgeFunctionError(message);
+  return new EdgeFunctionError(message, fallbackCode);
 }
 
 export function describeError(error: unknown): {

@@ -8,11 +8,17 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { isAuthSessionMissingError, type Session } from '@supabase/supabase-js';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { supabase, type AppRole, type StaffUser } from './supabase';
+import { onEdgeAuthFailure } from './sessionEvents';
 import LoadingGlobe from '../components/LoadingGlobe';
+
+export const SESSION_ENDED_MESSAGE = 'Your session has ended. Please sign in again.';
+
+// Minimum gap between server-side session checks triggered by tab focus.
+const FOCUS_SESSION_CHECK_INTERVAL_MS = 60_000;
 
 interface AuthContextValue {
   session: Session | null;
@@ -195,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(
         error instanceof Error ? error.message : 'Authentication failed.'
       );
-      // Local-scope signOut — don't broadcast SIGNED_OUT to sibling tabs.
+      // Local scope: end only this browser's session, not the user's other devices.
       await supabase.auth.signOut({ scope: 'local' });
       updateSession(null);
     } finally {
@@ -233,6 +239,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [hydrateSession]);
 
+  // The stored JWT stays valid until it expires even when its server-side
+  // session was revoked (e.g. signed out on another device), and PostgREST
+  // accepts it. Ask Supabase Auth directly: on session_not_found supabase-js
+  // clears the stored session and emits SIGNED_OUT, which routes to /login.
+  const sessionCheckRef = useRef<Promise<void> | null>(null);
+  const lastSessionCheckRef = useRef(0);
+  const verifySessionWithServer = useCallback(() => {
+    if (!sessionRef.current) return Promise.resolve();
+    if (sessionCheckRef.current) return sessionCheckRef.current;
+    lastSessionCheckRef.current = Date.now();
+    const check = supabase.auth.getUser()
+      .then(({ error }) => {
+        if (error && isAuthSessionMissingError(error)) {
+          setAuthError(SESSION_ENDED_MESSAGE);
+        }
+      })
+      .catch((err) => {
+        console.warn('[auth] session check failed', err);
+      })
+      .finally(() => {
+        sessionCheckRef.current = null;
+      });
+    sessionCheckRef.current = check;
+    return check;
+  }, []);
+
+  // Re-check when the signed-in user changes, not on every token refresh.
+  const sessionUserId = session?.user.id ?? null;
+  useEffect(() => {
+    if (sessionUserId) void verifySessionWithServer();
+  }, [sessionUserId, verifySessionWithServer]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastSessionCheckRef.current < FOCUS_SESSION_CHECK_INTERVAL_MS) return;
+      void verifySessionWithServer();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    const unsubscribeEdge = onEdgeAuthFailure(() => {
+      void verifySessionWithServer();
+    });
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      unsubscribeEdge();
+    };
+  }, [verifySessionWithServer]);
+
   const refreshStaffUser = useCallback(async () => {
     writeCache(null); // force fresh load, don't serve stale cache
     const {
@@ -243,8 +299,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setAuthError(null);
-    // Global scope: explicit user-initiated logout SHOULD broadcast to sibling tabs.
-    await supabase.auth.signOut();
+    // Local scope ends this browser's session; supabase-js still broadcasts
+    // SIGNED_OUT to sibling tabs. The default 'global' scope would also revoke
+    // the user's sessions on every other browser and device, leaving those
+    // tabs with a dead token that edge functions reject.
+    await supabase.auth.signOut({ scope: 'local' });
     updateStaffUser(null);
     updateSession(null);
   }, [updateSession, updateStaffUser]);
