@@ -168,7 +168,7 @@ export function parseLocationCandidate(
     // prevents contradictory values such as "Brussels, CA, Belgium" from
     // being treated as a US location merely because CA is a state code.
     isUsCandidate = isUsCountry(country);
-  } else if (Boolean(stateCode)) {
+  } else if (stateCode) {
     isUsCandidate = true;
   } else if (isNonUsByKeyword) {
     isUsCandidate = false;

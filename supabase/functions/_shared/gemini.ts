@@ -23,11 +23,6 @@ const PROFILE_MODEL_FALLBACKS = [
   "gemini-3.1-pro-preview",
 ] as const;
 
-function flashModel(value: string | null | undefined): string | null {
-  const normalized = value?.trim();
-  return normalized?.toLowerCase().includes("flash") ? normalized : null;
-}
-
 function profileModel(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   if (!normalized) return null;
