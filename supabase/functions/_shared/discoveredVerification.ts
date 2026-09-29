@@ -365,6 +365,10 @@ function buildOrganizationQuery(row: Record<string, unknown>): string {
   return parts.join(" ").slice(0, 240);
 }
 
+export function isGeminiRateLimitError(message: string): boolean {
+  return /\brate limited\b/i.test(message);
+}
+
 export async function verifyDiscoveredRecord(
   supabase: SupabaseAdminClient,
   options: RunDiscoveredVerificationOptions,
@@ -598,17 +602,24 @@ export async function verifyDiscoveredRecord(
       web_searches_made: webSearches,
     };
   } catch (error) {
-    // Keep the failure visible and let the user choose whether to retry it.
+    const detail = error instanceof Error ? error.message : String(error);
+    // A rate limit says nothing about the record: put it back in the requested
+    // queue so a later batch retries it. Real failures stay visible so staff
+    // can choose whether to retry.
+    const rateLimited = isGeminiRateLimitError(detail);
     await supabase
       .from(tableName)
-      .update({ verification_status: "failed", verification_run_id: null })
+      .update({
+        verification_status: rateLimited ? "requested" : "failed",
+        verification_run_id: null,
+      })
       .eq("id", recordId);
     return {
       record_kind: recordKind,
       record_id: recordId,
       record_name: recordName,
-      outcome: "error",
-      detail: error instanceof Error ? error.message : String(error),
+      outcome: rateLimited ? "skipped_quota" : "error",
+      detail,
       llm_calls_made: llmCalls,
       web_searches_made: webSearches,
     };

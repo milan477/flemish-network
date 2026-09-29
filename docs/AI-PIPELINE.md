@@ -280,8 +280,9 @@ Each tick first runs `markZombieRuns` (a `running` row with a heartbeat older th
 ### Discovered-record verification queue
 
 - `verify_discovered` (`contact_ids`, `organization_ids`) moves the selected `queued`/`failed` rows (or NULL status) to `requested`, resets `verification_attempts` to 0, and returns `contacts_enqueued`/`organizations_enqueued` as the number of rows now requested. It then starts batches right away, preferring the rows just clicked.
-- A batch claims up to 5 `requested` rows atomically (`requested` -> `verifying` guarded by the current status), creates an `agent_runs` row with `params.user_requested = true`, and dispatches `agent-verify`. At most 2 user-requested batches run at once; a successful batch chains the next while its scheduler invocation is alive, and the 5-minute tick drains the rest, so "Verify all" no longer depends on one 150 s invocation.
+- A batch claims up to 5 `requested` rows atomically (`requested` -> `verifying` guarded by the current status), creates an `agent_runs` row with `params.user_requested = true`, and dispatches `agent-verify`. At most 1 user-requested batch runs at a time (two in parallel tripped the Gemini rate limit on 2026-09-29); a successful batch chains the next while its scheduler invocation is alive, and the 5-minute tick drains the rest, so "Verify all" no longer depends on one 150 s invocation.
 - Dispatch failures and abandoned runs return rows to `requested` through the same orphan recovery.
+- A Gemini rate limit (`Gemini <model> rate limited` after the whole model chain) is transient: the record goes back to `requested`, the step reports `skipped_quota`, and the batch stops so the next batch or tick retries it. Other errors still mark the record `failed` for an explicit retry.
 
 For each row in `public.agent_schedules` where `cadence_preset != 'off'` and `next_run_at <= now()`:
 

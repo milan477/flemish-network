@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@^1.0.0";
 import {
   buildContactQuery,
   buildContactQueries,
+  isGeminiRateLimitError,
   normalizePayload,
   validatePayloadLocation,
 } from "../discoveredVerification.ts";
@@ -110,4 +111,10 @@ Deno.test("discovered verification requires high confidence for current US locat
   const validated = await validatePayloadLocation(supabase, payload);
   assertEquals(validated.location_city, null);
   assertEquals(validated.location_state, null);
+});
+
+Deno.test("isGeminiRateLimitError: only Gemini rate limits count as transient", () => {
+  assertEquals(isGeminiRateLimitError("Gemini gemini-2.5-pro rate limited"), true);
+  assertEquals(isGeminiRateLimitError("Gemini gemini-3.5-flash failed (400): bad schema"), false);
+  assertEquals(isGeminiRateLimitError("row missing"), false);
 });

@@ -918,8 +918,9 @@ async function triggerDailyReflection(
 const VERIFY_BATCH_SIZE = 5;
 // Upper bound on concurrently running user-requested verification batches.
 // Clicks and ticks never start more than this, so a large "Verify all" drains
-// steadily instead of stampeding the web-search and Gemini quotas.
-const MAX_ACTIVE_VERIFY_BATCHES = 2;
+// steadily. Two parallel batches already tripped the Gemini rate limit on
+// 2026-09-29, so batches run one at a time.
+const MAX_ACTIVE_VERIFY_BATCHES = 1;
 
 type DiscoveredRecordKind = "discovered_contact" | "discovered_organization";
 type DiscoveredTableName = "discovered_contacts" | "discovered_organizations";
