@@ -2283,11 +2283,16 @@ async function getQueuedFrontierCount(
   return count || 0;
 }
 
+// Pages found for a staff member's prompt must be claimed before the
+// background frontier (gap, pivot, and surface seeds score roughly 3-20),
+// otherwise the run reads unrelated queued pages instead of the prompt's results.
+const CUSTOM_QUERY_PRIORITY_BOOST = 100;
+
 function customQueryPlan(generated: GeneratedQuery): SearchSeedPlan {
   return {
     query: generated.query,
     sourceType: "custom_query" as const,
-    priorityBoost: 6,
+    priorityBoost: CUSTOM_QUERY_PRIORITY_BOOST,
     maxSeedUrls: 10,
     coverageTargetKey: null,
     gapLabel: null,
@@ -3322,9 +3327,16 @@ async function seedFrontier(
   const providersUsed = new Set<string>();
   const usedEntityKeys = new Set<string>();
 
-  for (let index = 0; index < plans.length; index += 1) {
-    const plan = plans[index];
-    const searchResponse = await searchWeb(plan.query, supabase);
+  // Run the seed searches concurrently. Serially they took ~7 s each, which
+  // left prompted runs no time budget to read any page.
+  const searchResponses = await Promise.all(
+    plans.map((plan) => searchWeb(plan.query, supabase)),
+  );
+
+  // Log each search's attempt row concurrently too; the steps are logged
+  // afterwards in plan order.
+  const persisted = await Promise.all(plans.map(async (plan, index) => {
+    const searchResponse = searchResponses[index];
     if (searchResponse.provider && searchResponse.provider !== "none") {
       providersUsed.add(searchResponse.provider);
     }
@@ -3393,18 +3405,26 @@ async function seedFrontier(
       })
       .filter((row): row is FrontierUpsertRow => row !== null);
 
-    if (frontierRows.length > 0) {
-      seeded += await saveFrontierSeeds(supabase, frontierRows);
-      frontierRows.forEach((row) => {
-        void bumpDomainStats(supabase, row.domain, {
-          lastSeenAt: new Date().toISOString(),
-        });
-      });
-      if (plan.entityKey) {
-        usedEntityKeys.add(plan.entityKey);
-      }
+    if (frontierRows.length > 0 && plan.entityKey) {
+      usedEntityKeys.add(plan.entityKey);
     }
 
+    return { plan, searchResponse, frontierRows };
+  }));
+
+  // One save for all plans: searches overlap, and concurrent inserts of the
+  // same canonical_url would violate its unique constraint.
+  const allFrontierRows = persisted.flatMap(({ frontierRows }) => frontierRows);
+  if (allFrontierRows.length > 0) {
+    seeded = await saveFrontierSeeds(supabase, allFrontierRows);
+    allFrontierRows.forEach((row) => {
+      void bumpDomainStats(supabase, row.domain, {
+        lastSeenAt: new Date().toISOString(),
+      });
+    });
+  }
+
+  for (const [index, { plan, searchResponse, frontierRows }] of persisted.entries()) {
     steps.push({
       step: `seed_search_${index + 1}`,
       timestamp: new Date().toISOString(),
@@ -5244,15 +5264,25 @@ Deno.serve(wrapHandler(async (req: Request) => {
     };
 
     const startTime = Date.now();
-    // Edge functions on the free plan are killed at 150 s wall clock. The
-    // budget has to leave room for one in-flight page (fetch + classify +
-    // extract, up to ~30 s) plus the wrap-up writes after the loop; a run
-    // killed mid-wrap-up never records its results and surfaces as a zombie.
+    // Edge functions on the free plan are killed at 150 s wall clock, and a
+    // run killed mid-wrap-up never records its results (it surfaces as a
+    // zombie). Planning and seeding must finish by DEADLINE_MS. Pages may start
+    // until PAGE_START_CUTOFF_MS, and the run stops waiting on an in-flight
+    // page at PAGE_HARD_STOP_MS, which leaves ~35 s for the wrap-up writes no
+    // matter how slow a page is (classify + extraction retries can exceed 60 s).
     const DEADLINE_MS = 80_000;
-    const PAGE_START_BUDGET_MS = 30_000;
+    const PAGE_START_CUTOFF_MS = 90_000;
+    const PAGE_HARD_STOP_MS = 115_000;
     const timeLeft = () => DEADLINE_MS - (Date.now() - startTime);
     const isTimedOut = () => timeLeft() < 3_000;
-    const canStartPage = () => timeLeft() >= PAGE_START_BUDGET_MS;
+    const canStartPage = () => Date.now() - startTime < PAGE_START_CUTOFF_MS;
+    let hardStopTimer: ReturnType<typeof setTimeout> | undefined;
+    const pageHardStop = new Promise<"hard_stop">((resolve) => {
+      hardStopTimer = setTimeout(
+        () => resolve("hard_stop"),
+        Math.max(0, PAGE_HARD_STOP_MS - (Date.now() - startTime)),
+      );
+    });
     const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
 
     let llmCallsMade = 0;
@@ -5849,18 +5879,36 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
       try {
         await heartbeat();
-        const result = await processFrontierRow(
-          supabase,
-          frontier,
-          domainPolicies.get(frontier.domain) || null,
-          geminiKey,
-          flemishConnectionCatalogPrompt,
-          runId,
-          steps,
-          elapsed,
-          llmStats,
-          heartbeat,
-        );
+        const outcome = await Promise.race([
+          processFrontierRow(
+            supabase,
+            frontier,
+            domainPolicies.get(frontier.domain) || null,
+            geminiKey,
+            flemishConnectionCatalogPrompt,
+            runId,
+            steps,
+            elapsed,
+            llmStats,
+            heartbeat,
+          ),
+          pageHardStop,
+        ]);
+        if (outcome === "hard_stop") {
+          steps.push({
+            step: `frontier_process_${frontier.id}`,
+            timestamp: new Date().toISOString(),
+            elapsed: elapsed(),
+            status: "skipped",
+            detail: {
+              frontier_id: frontier.id,
+              url: frontier.canonical_url,
+              reason: "Page still running at the hard stop; wrapping up the run",
+            },
+          });
+          break;
+        }
+        const result = outcome;
 
         pagesFetched += 1;
         insertedContacts += result.insertedContacts;
@@ -5921,11 +5969,12 @@ Deno.serve(wrapHandler(async (req: Request) => {
       }
     }
 
+    clearTimeout(hardStopTimer);
     llmCallsMade = llmStats.calls;
 
-    if (isTimedOut()) {
-      await releaseClaimedFrontier(supabase, runId);
-    }
+    // Pages claimed but not started (time budget) go straight back to the
+    // queue instead of waiting out the 20-minute stale-claim window.
+    await releaseClaimedFrontier(supabase, runId);
 
     const frontierQueueAfter = await getQueuedFrontierCount(supabase);
 

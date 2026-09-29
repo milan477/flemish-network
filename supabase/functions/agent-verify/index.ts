@@ -252,9 +252,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
         const tableName = recordKind === "discovered_contact"
           ? "discovered_contacts"
           : "discovered_organizations";
+        // Back to the staff-requested queue; the scheduler tick picks them up.
         await supabase
           .from(tableName)
-          .update({ verification_status: "queued", verification_run_id: null })
+          .update({ verification_status: "requested", verification_run_id: null })
           .in("id", unprocessedIds);
       }
 

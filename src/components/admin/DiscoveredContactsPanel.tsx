@@ -76,7 +76,7 @@ interface DiscoveredContact {
   reviewed_at?: string | null;
   review_outcome?: string | null;
   approved_person_id?: string | null;
-  verification_status?: 'queued' | 'verifying' | 'verified' | 'failed' | null;
+  verification_status?: 'queued' | 'requested' | 'verifying' | 'verified' | 'failed' | null;
   verification_attempts?: number | null;
   verification_payload?: VerificationPayload | null;
   verified_at?: string | null;
@@ -150,7 +150,7 @@ interface DiscoveredOrganization {
   last_seen_at: string | null;
   last_evidence_at: string | null;
   evidence_count: number | null;
-  verification_status?: 'queued' | 'verifying' | 'verified' | 'failed' | null;
+  verification_status?: 'queued' | 'requested' | 'verifying' | 'verified' | 'failed' | null;
   verification_attempts?: number | null;
   verification_payload?: VerificationPayload | null;
   verified_at?: string | null;
@@ -1392,7 +1392,7 @@ function ContactPreviewModal({ contact, evidence, onClose }: ContactPreviewModal
                     Profile preview
                   </span>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${status === 'verified' ? 'bg-green-100 text-green-700' : status === 'verifying' ? 'bg-blue-100 text-blue-700' : status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-800'}`}>
-                    {status === 'verified' ? 'Verified' : status === 'verifying' ? 'Being verified' : status === 'failed' ? 'Verification failed' : 'Discovered'}
+                    {status === 'verified' ? 'Verified' : status === 'verifying' ? 'Being verified' : status === 'requested' ? 'Queued for verification' : status === 'failed' ? 'Verification failed' : 'Discovered'}
                   </span>
                 </div>
                 <h2 id="candidate-profile-title" className="truncate text-2xl font-semibold text-gray-950">
@@ -1562,7 +1562,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     // Lifecycle is owned by verification_status — NOT the legacy `status`
     // column. Filtering on status='pending' silently hides rows whose status
     // drifted (e.g. 'approved' + verification_status='queued').
-    const verificationStates = ['queued', 'verifying', 'verified', 'failed'];
+    const verificationStates = ['queued', 'requested', 'verifying', 'verified', 'failed'];
     const [contactsRes, organizationsRes, sectorsRes] = await Promise.all([
       supabase
         .from('discovered_contacts')
@@ -1811,7 +1811,6 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           action: 'verify_discovered',
           contact_ids: queued.map((contact) => contact.id),
           organization_ids: [],
-          drain_selected: true,
         },
       });
       if (error) throw error;
@@ -1821,11 +1820,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           ?.verification?.contacts_enqueued ?? 0,
       );
       if (started === 0) {
-        throw new Error('The verification queue did not start.');
+        throw new Error('No contacts were queued for verification.');
       }
 
-      notifySuccess(`Verification started for all ${queued.length} discovered contact${queued.length === 1 ? '' : 's'}.`, {
-        hint: 'They will be processed in controlled batches and move to Verified when complete.',
+      notifySuccess(`Queued ${started} contact${started === 1 ? '' : 's'} for verification.`, {
+        hint: 'They are verified a few at a time in the background and move to Verified when done. You can leave this page or start a new Discovery meanwhile.',
       });
       await loadData();
     } catch (error) {
@@ -1852,8 +1851,8 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         (data as { verification?: { contacts_enqueued?: number } } | null)
           ?.verification?.contacts_enqueued ?? 0,
       );
-      if (started !== 1) throw new Error('Verification did not start for this contact.');
-      notifySuccess(`Verification started for ${contact.name}.`);
+      if (started !== 1) throw new Error('This contact could not be queued for verification.');
+      notifySuccess(`${contact.name} is queued for verification.`);
       await loadData();
     } catch (error) {
       notifyError(error, { hint: `${contact.name} remains in Discovered.` });
@@ -1875,7 +1874,6 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           action: 'verify_discovered',
           contact_ids: [],
           organization_ids: queued.map((organization) => organization.id),
-          drain_selected: true,
         },
       });
       if (error) throw error;
@@ -1883,9 +1881,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         (data as { verification?: { organizations_enqueued?: number } } | null)
           ?.verification?.organizations_enqueued ?? 0,
       );
-      if (started === 0) throw new Error('Organization verification did not start.');
-      notifySuccess(`Verification started for all ${queued.length} discovered organization${queued.length === 1 ? '' : 's'}.`, {
-        hint: 'They will be processed in controlled batches and move to Verified when complete.',
+      if (started === 0) throw new Error('No organizations were queued for verification.');
+      notifySuccess(`Queued ${started} organization${started === 1 ? '' : 's'} for verification.`, {
+        hint: 'They are verified a few at a time in the background and move to Verified when done. You can leave this page or start a new Discovery meanwhile.',
       });
       await loadData();
     } catch (error) {
@@ -1910,8 +1908,8 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         (data as { verification?: { organizations_enqueued?: number } } | null)
           ?.verification?.organizations_enqueued ?? 0,
       );
-      if (started !== 1) throw new Error('Verification did not start for this organization.');
-      notifySuccess(`Verification started for ${organization.name}.`);
+      if (started !== 1) throw new Error('This organization could not be queued for verification.');
+      notifySuccess(`${organization.name} is queued for verification.`);
       await loadData();
     } catch (error) {
       notifyError(error, { hint: `${organization.name} remains in Discovered.` });
@@ -2123,8 +2121,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
 
   const dupeCount = duplicates.size;
   const newCount = contacts.length - dupeCount;
-  const queuedContactCount = contacts.filter(
+  const verifiableContactCount = contacts.filter(
     (contact) => ['queued', 'failed'].includes(contact.verification_status ?? 'queued'),
+  ).length;
+  const requestedContactCount = contacts.filter(
+    (contact) => contact.verification_status === 'requested',
   ).length;
   const discoveredContacts = contacts.filter(
     (contact) => (contact.verification_status ?? 'queued') !== 'verified',
@@ -2141,8 +2142,11 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
   ).length;
   const organizationDupeCount = organizationDuplicates.size;
   const organizationNewCount = organizations.length - organizationDupeCount;
-  const queuedOrganizationCount = organizations.filter(
+  const verifiableOrganizationCount = organizations.filter(
     (organization) => ['queued', 'failed'].includes(organization.verification_status ?? 'queued'),
+  ).length;
+  const requestedOrganizationCount = organizations.filter(
+    (organization) => organization.verification_status === 'requested',
   ).length;
   const discoveredOrganizations = organizations.filter(
     (organization) => (organization.verification_status ?? 'queued') !== 'verified',
@@ -2160,7 +2164,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
     (organization) => organization.verification_status === 'verifying',
   ).length;
   const verifyingTotal = verifyingContactCount + verifyingOrganizationCount;
-  const waitingTotal = queuedContactCount + queuedOrganizationCount;
+  const waitingTotal = requestedContactCount + requestedOrganizationCount;
   const discoveredTotal = discoveredContacts.length + discoveredOrganizations.length;
   const verifiedTotal = verifiedContacts.length + verifiedOrganizations.length;
   const candidateTotal = discoveredTotal + verifiedTotal;
@@ -2186,12 +2190,12 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           <li className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-yellow-800">1 · Discovered</p>
             <p className="mt-2 text-2xl font-semibold text-gray-950">{candidateTotal}</p>
-            <p className="mt-1 text-xs text-gray-600">Found by discovery</p>
+            <p className="mt-1 text-xs text-gray-600">All candidates from every Discovery run</p>
           </li>
           <li className="rounded-xl border border-yellow-300 bg-yellow-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-yellow-900">2 · Queued for verification</p>
             <p className="mt-2 text-2xl font-semibold text-gray-950">{waitingTotal}</p>
-            <p className="mt-1 text-xs text-gray-600">Waiting for deeper search</p>
+            <p className="mt-1 text-xs text-gray-600">Verify clicked, waiting for a slot</p>
           </li>
           <li className={`rounded-xl border p-4 ${verifyingTotal > 0 ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
             <p className={`text-xs font-semibold uppercase tracking-wide ${verifyingTotal > 0 ? 'text-blue-700' : 'text-gray-500'}`}>3 · Being verified</p>
@@ -2232,10 +2236,14 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
         </div>
       </section>
 
-      {reviewStage === 'discovered' && verifyingTotal > 0 && (
+      {reviewStage === 'discovered' && verifyingTotal + waitingTotal > 0 && (
         <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-900">
           <Earth className="h-4 w-4 flex-shrink-0 animate-spin" />
-          <span><strong>{verifyingTotal}</strong> record{verifyingTotal === 1 ? ' is' : 's are'} currently being verified.</span>
+          <span>
+            <strong>{verifyingTotal}</strong> being verified
+            {waitingTotal > 0 && <>, <strong>{waitingTotal}</strong> queued</>}.
+            {' '}This runs in the background, a few records at a time. You can start a new Discovery meanwhile.
+          </span>
         </div>
       )}
 
@@ -2284,7 +2292,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {reviewStage === 'discovered' && queuedContactCount > 0 && (
+          {reviewStage === 'discovered' && verifiableContactCount > 0 && (
             <button
               onClick={handleVerifyQueued}
               disabled={actionId !== null}
@@ -2295,7 +2303,7 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               ) : (
                 <RefreshCw className="w-3.5 h-3.5" />
               )}
-              Verify all ({queuedContactCount})
+              Verify all ({verifiableContactCount})
             </button>
           )}
           {reviewStage === 'verified' && <button
@@ -2368,7 +2376,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     ? 'Verification failed — review or retry'
                     : verificationStatus === 'verifying'
                       ? 'Verifying — checking sources and Flemish ties…'
-                      : 'Queued for verification'}
+                      : verificationStatus === 'requested'
+                        ? 'Queued for verification'
+                        : 'Not verified yet'}
                 </span>
               </div>
             )}
@@ -2663,9 +2673,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     <Eye className="h-3 w-3" />
                     Preview profile
                   </button>
-                  {!isVerified && verificationStatus === 'verifying' ? (
+                  {!isVerified && (verificationStatus === 'verifying' || verificationStatus === 'requested') ? (
                     <span className="text-[11px] text-slate-500 italic">
-                      Verification in progress
+                      {verificationStatus === 'verifying' ? 'Verification in progress' : 'Waiting for verification'}
                     </span>
                   ) : !isVerified ? (
                     <button
@@ -2794,14 +2804,14 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
               ) : null}
             </div>
             <div className="flex items-center gap-2">
-              {reviewStage === 'discovered' && queuedOrganizationCount > 0 && <button
+              {reviewStage === 'discovered' && verifiableOrganizationCount > 0 && <button
                 type="button"
                 onClick={() => void handleVerifyOrganizations()}
                 disabled={actionId !== null}
                 className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
               >
                 {actionId === 'verify-organizations' ? <Earth className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Verify all ({queuedOrganizationCount})
+                Verify all ({verifiableOrganizationCount})
               </button>}
               {reviewStage === 'verified' && <button
                 onClick={handleApproveAllOrganizations}
@@ -2862,7 +2872,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                           ? 'Verification failed — review or retry'
                           : orgVerificationStatus === 'verifying'
                             ? 'Verifying — checking sources and Flemish ties…'
-                            : 'Queued for verification'}
+                            : orgVerificationStatus === 'requested'
+                              ? 'Queued for verification'
+                              : 'Not verified yet'}
                       </span>
                     </div>
                   )}
@@ -3051,9 +3063,9 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0 pt-0.5">
-                      {!orgIsVerified && orgVerificationStatus === 'verifying' ? (
+                      {!orgIsVerified && (orgVerificationStatus === 'verifying' || orgVerificationStatus === 'requested') ? (
                         <span className="text-[11px] text-slate-500 italic">
-                          Verification in progress
+                          {orgVerificationStatus === 'verifying' ? 'Verification in progress' : 'Waiting for verification'}
                         </span>
                       ) : !orgIsVerified ? (
                         <button

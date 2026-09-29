@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const ACTIVE_STATUSES = ['pending', 'running'] as const;
-const VERIFICATION_QUEUE_STATUSES = ['queued', 'verifying', 'verified', 'failed'] as const;
+const VERIFICATION_QUEUE_STATUSES = ['queued', 'requested', 'verifying', 'verified', 'failed'] as const;
 
 export function useActiveAgentRun(agentType: string): boolean {
   const [isActive, setIsActive] = useState(false);

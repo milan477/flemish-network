@@ -11,9 +11,11 @@ import { EMBEDDING_MODEL } from "../_shared/embeddings.ts";
 import { getGeminiModelSummary } from "../_shared/gemini.ts";
 import { createLogger } from "../_shared/log.ts";
 import {
+  planOrphanedVerificationRecovery,
   SCHEDULER_AGENT_FUNCTIONS,
   schedulerAgentTypeError,
   type SchedulerAgentType,
+  type VerifyingRecord,
 } from "../_shared/scheduler.ts";
 import { refreshArmStats } from "../_shared/banditAllocator.ts";
 
@@ -112,16 +114,13 @@ Deno.serve(wrapHandler(async (req: Request) => {
     }
 
     if (action === "verify_discovered") {
-      const hasContactSelection = Array.isArray(body.contact_ids);
-      const hasOrganizationSelection = Array.isArray(body.organization_ids);
-      const verification = await enqueueDiscoveredVerification(
+      const verification = await requestDiscoveredVerification(
         supabase,
         supabaseUrl,
         req,
         {
-          contactIds: hasContactSelection ? normalizeRecordIds(body.contact_ids) : undefined,
-          organizationIds: hasOrganizationSelection ? normalizeRecordIds(body.organization_ids) : undefined,
-          drainSelected: body.drain_selected === true,
+          contactIds: normalizeRecordIds(body.contact_ids),
+          organizationIds: normalizeRecordIds(body.organization_ids),
           initiatedBy: {
             id: staffUser.id,
             name: staffUser.full_name?.trim() || staffUser.email,
@@ -455,6 +454,8 @@ async function runScheduleTick(
 ): Promise<{
   outcomes: TickJobOutcome[];
   zombies_marked_failed: number;
+  verification_recovered: number;
+  verification_batches_started: number;
   housekeeping: Awaited<ReturnType<typeof runHousekeeping>> | null;
 }> {
   const schedules = await loadSchedules(supabase);
@@ -466,6 +467,17 @@ async function runScheduleTick(
   // member happens to open the admin UI.
   const zombiesMarkedFailed = await markZombieRuns(supabase).catch((err) => {
     log.warn("zombie_cleanup_failed_pre_tick", err instanceof Error ? err.message : String(err));
+    return 0;
+  });
+
+  // Zombie runs are failed now, so their 'verifying' rows can go back to the
+  // queue before this tick drains the staff-requested verification queue.
+  const verificationRecovered = await recoverOrphanedVerification(supabase).catch((err) => {
+    log.warn("verification_recovery_failed", err instanceof Error ? err.message : String(err));
+    return 0;
+  });
+  const verificationBatchesStarted = await drainRequestedVerification(supabase, supabaseUrl, req).catch((err) => {
+    log.warn("verification_drain_failed", err instanceof Error ? err.message : String(err));
     return 0;
   });
 
@@ -527,7 +539,13 @@ async function runScheduleTick(
     });
   }
 
-  return { outcomes, zombies_marked_failed: zombiesMarkedFailed, housekeeping };
+  return {
+    outcomes,
+    zombies_marked_failed: zombiesMarkedFailed,
+    verification_recovered: verificationRecovered,
+    verification_batches_started: verificationBatchesStarted,
+    housekeeping,
+  };
 }
 
 async function dispatchScheduledJob(
@@ -898,11 +916,22 @@ async function triggerDailyReflection(
 }
 
 const VERIFY_BATCH_SIZE = 5;
+// Upper bound on concurrently running user-requested verification batches.
+// Clicks and ticks never start more than this, so a large "Verify all" drains
+// steadily instead of stampeding the web-search and Gemini quotas.
+const MAX_ACTIVE_VERIFY_BATCHES = 2;
+
+type DiscoveredRecordKind = "discovered_contact" | "discovered_organization";
+type DiscoveredTableName = "discovered_contacts" | "discovered_organizations";
+
+const DISCOVERED_TARGETS: { kind: DiscoveredRecordKind; table: DiscoveredTableName }[] = [
+  { kind: "discovered_contact", table: "discovered_contacts" },
+  { kind: "discovered_organization", table: "discovered_organizations" },
+];
 
 interface VerificationSelection {
   contactIds?: string[];
   organizationIds?: string[];
-  drainSelected?: boolean;
   initiatedBy?: { id: string; name: string };
 }
 
@@ -911,105 +940,134 @@ function normalizeRecordIds(value: unknown): string[] {
   return [...new Set(value.filter((id): id is string => typeof id === "string" && id.length > 0))].slice(0, 100);
 }
 
-async function enqueueDiscoveredVerification(
+/**
+ * Staff Verify / Verify all: move the selected discovered records to
+ * 'requested' and start the first batch right away. Whatever is left is
+ * drained by later batches and by the agent-scheduler tick, so the queue does
+ * not depend on this invocation staying alive.
+ */
+async function requestDiscoveredVerification(
   supabase: SupabaseAdminClient,
-  supabaseUrl?: string,
-  req?: Request,
-  selection: VerificationSelection = {},
+  supabaseUrl: string,
+  req: Request,
+  selection: VerificationSelection,
 ): Promise<{
   contacts_pre_filtered: number;
   organizations_pre_filtered: number;
   contacts_enqueued: number;
   organizations_enqueued: number;
 }> {
-  let contactsEnqueued = 0;
-  let orgsEnqueued = 0;
+  const [contactIds, organizationIds] = await Promise.all([
+    markVerificationRequested(supabase, "discovered_contacts", selection.contactIds ?? []),
+    markVerificationRequested(supabase, "discovered_organizations", selection.organizationIds ?? []),
+  ]);
 
-  if (supabaseUrl) {
-    // A user-requested bulk retry should cover every selected failed row once.
-    // Only reset the explicitly supplied IDs; unrelated discoveries remain
-    // untouched. Subsequent batches exclude records that fail again.
-    if (selection.drainSelected && selection.contactIds?.length) {
-      await supabase
-        .from("discovered_contacts")
-        .update({ verification_status: "queued", verification_run_id: null })
-        .eq("verification_status", "failed")
-        .in("id", selection.contactIds);
-    }
-    if (selection.drainSelected && selection.organizationIds?.length) {
-      await supabase
-        .from("discovered_organizations")
-        .update({ verification_status: "queued", verification_run_id: null })
-        .eq("verification_status", "failed")
-        .in("id", selection.organizationIds);
-    }
-
-    const [contactResult, organizationResult] = await Promise.all([
-      selection.contactIds?.length === 0
-        ? Promise.resolve(0)
-        : enqueueVerificationBatch(
-          supabase,
-          supabaseUrl,
-          req,
-          "discovered_contact",
-          "discovered_contacts",
-          selection.contactIds,
-          selection.drainSelected || selection.contactIds === undefined,
-          !selection.drainSelected && selection.contactIds !== undefined,
-          selection.initiatedBy,
-        ),
-      selection.organizationIds?.length === 0
-        ? Promise.resolve(0)
-        : enqueueVerificationBatch(
-          supabase,
-          supabaseUrl,
-          req,
-          "discovered_organization",
-          "discovered_organizations",
-          selection.organizationIds,
-          selection.drainSelected || selection.organizationIds === undefined,
-          !selection.drainSelected && selection.organizationIds !== undefined,
-          selection.initiatedBy,
-        ),
-    ]);
-    contactsEnqueued = contactResult;
-    orgsEnqueued = organizationResult;
-  }
+  await drainRequestedVerification(supabase, supabaseUrl, req, {
+    preferredIds: {
+      discovered_contacts: contactIds,
+      discovered_organizations: organizationIds,
+    },
+    initiatedBy: selection.initiatedBy,
+  });
 
   return {
     contacts_pre_filtered: 0,
     organizations_pre_filtered: 0,
-    contacts_enqueued: contactsEnqueued,
-    organizations_enqueued: orgsEnqueued,
+    contacts_enqueued: contactIds.length,
+    organizations_enqueued: organizationIds.length,
   };
 }
 
-async function enqueueVerificationBatch(
+async function markVerificationRequested(
+  supabase: SupabaseAdminClient,
+  tableName: DiscoveredTableName,
+  recordIds: string[],
+): Promise<string[]> {
+  if (recordIds.length === 0) return [];
+  // An explicit request (including a retry of a failed row) starts a fresh
+  // attempt budget. Rows already requested, verifying, or verified are left alone.
+  const { data, error } = await supabase
+    .from(tableName)
+    .update({
+      verification_status: "requested",
+      verification_run_id: null,
+      verification_attempts: 0,
+    })
+    .in("id", recordIds)
+    .or("verification_status.is.null,verification_status.in.(queued,failed)")
+    .select("id");
+  if (error) throw new HttpError(500, `Failed to request verification: ${error.message}`);
+  return (data ?? []).map((row) => row.id as string);
+}
+
+async function countActiveVerifyBatches(supabase: SupabaseAdminClient): Promise<number> {
+  const { count, error } = await supabase
+    .from("agent_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("agent_type", "verification")
+    .in("status", ["pending", "running"])
+    .contains("params", { user_requested: true });
+  if (error) throw new Error(`Failed to count verification batches: ${error.message}`);
+  return count ?? 0;
+}
+
+/** Starts verification batches for 'requested' rows while batch slots are free. */
+async function drainRequestedVerification(
   supabase: SupabaseAdminClient,
   supabaseUrl: string,
   req: Request | undefined,
-  recordKind: "discovered_contact" | "discovered_organization",
-  tableName: "discovered_contacts" | "discovered_organizations",
-  selectedIds?: string[],
-  drainQueue = true,
-  includeFailed = true,
+  options: {
+    preferredIds?: Partial<Record<DiscoveredTableName, string[]>>;
+    initiatedBy?: { id: string; name: string };
+  } = {},
+): Promise<number> {
+  let slots = MAX_ACTIVE_VERIFY_BATCHES - await countActiveVerifyBatches(supabase);
+  let started = 0;
+  for (const target of DISCOVERED_TARGETS) {
+    while (slots > 0) {
+      const claimed = await startVerificationBatch(
+        supabase,
+        supabaseUrl,
+        req,
+        target,
+        options.preferredIds?.[target.table] ?? [],
+        options.initiatedBy,
+      );
+      if (claimed === 0) break;
+      slots -= 1;
+      started += 1;
+    }
+  }
+  return started;
+}
+
+async function startVerificationBatch(
+  supabase: SupabaseAdminClient,
+  supabaseUrl: string,
+  req: Request | undefined,
+  target: { kind: DiscoveredRecordKind; table: DiscoveredTableName },
+  preferredIds: string[],
   initiatedBy?: { id: string; name: string },
 ): Promise<number> {
-  let queuedQuery = supabase
-    .from(tableName)
-    .select("id")
-    .order("created_at", { ascending: true });
-  queuedQuery = includeFailed
-    ? queuedQuery.in("verification_status", ["queued", "failed"])
-    : queuedQuery.eq("verification_status", "queued");
-  if (selectedIds) queuedQuery = queuedQuery.in("id", selectedIds);
-  const { data: queued, error } = await queuedQuery.limit(VERIFY_BATCH_SIZE);
+  // The records a staff member just clicked go first; otherwise oldest first.
+  const pickRequested = (ids?: string[]) => {
+    let query = supabase
+      .from(target.table)
+      .select("id")
+      .eq("verification_status", "requested")
+      .order("created_at", { ascending: true })
+      .limit(VERIFY_BATCH_SIZE);
+    if (ids) query = query.in("id", ids);
+    return query;
+  };
+  let { data: candidates, error } = preferredIds.length > 0
+    ? await pickRequested(preferredIds)
+    : { data: [] as { id: string }[], error: null };
+  if (!error && (candidates ?? []).length === 0) {
+    ({ data: candidates, error } = await pickRequested());
+  }
+  if (error || !candidates || candidates.length === 0) return 0;
 
-  if (error || !queued || queued.length === 0) return 0;
-
-  const recordIds = queued.map((row) => row.id);
-
-  // Create the agent_runs row up-front so we can dedupe future enqueues.
   const { data: run, error: runError } = await supabase
     .from("agent_runs")
     .insert({
@@ -1018,8 +1076,8 @@ async function enqueueVerificationBatch(
       started_at: new Date().toISOString(),
       heartbeat_at: new Date().toISOString(),
       params: {
-        record_type: recordKind,
-        record_ids: recordIds,
+        record_type: target.kind,
+        record_ids: candidates.map((row) => row.id),
         auto_enqueued: false,
         user_requested: true,
       },
@@ -1028,27 +1086,46 @@ async function enqueueVerificationBatch(
     })
     .select("id")
     .single();
-
   if (runError || !run) {
     log.warn("verify_run_insert_failed", runError?.message ?? "no run");
     return 0;
   }
 
-  // Mark rows as 'verifying' immediately so repeated user actions cannot enqueue them twice.
-  await supabase
-    .from(tableName)
+  // Claim atomically: a concurrent click, chained batch, or tick may have
+  // picked some of the same rows, and only the one that flips them wins.
+  const { data: claimedRows } = await supabase
+    .from(target.table)
     .update({ verification_status: "verifying", verification_run_id: run.id })
-    .in("id", recordIds);
+    .in("id", candidates.map((row) => row.id))
+    .eq("verification_status", "requested")
+    .select("id");
+  const recordIds = (claimedRows ?? []).map((row) => row.id as string);
+  if (recordIds.length === 0) {
+    await supabase.from("agent_runs").delete().eq("id", run.id);
+    return 0;
+  }
+  if (recordIds.length < candidates.length) {
+    await supabase
+      .from("agent_runs")
+      .update({
+        params: {
+          record_type: target.kind,
+          record_ids: recordIds,
+          auto_enqueued: false,
+          user_requested: true,
+        },
+      })
+      .eq("id", run.id);
+  }
 
   const forwardedAuth = req?.headers.get("Authorization") || req?.headers.get("authorization");
   const forwardedApiKey = req?.headers.get("apikey") || req?.headers.get("Apikey");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  // Verification dispatch does not require user context — fall back to the
-  // service-role client when the caller did not forward auth (e.g. anonymous
-  // housekeeping invocation). Persist the failure to agent_runs instead of
-  // silently re-queueing the rows; that pattern produced an invisible
-  // perpetual loop ("rows stay queued, housekeeping says ok").
+  // Verification dispatch does not require user context, so fall back to the
+  // service key when the caller did not forward auth. Persist the failure to
+  // agent_runs instead of silently re-queueing the rows; that pattern produced
+  // an invisible perpetual loop ("rows stay queued, housekeeping says ok").
   let dispatchAuth = forwardedAuth;
   let dispatchApiKey = forwardedApiKey;
   if (!dispatchAuth) {
@@ -1064,8 +1141,8 @@ async function enqueueVerificationBatch(
         })
         .eq("id", run.id);
       await supabase
-        .from(tableName)
-        .update({ verification_status: "queued", verification_run_id: null })
+        .from(target.table)
+        .update({ verification_status: "requested", verification_run_id: null })
         .in("id", recordIds);
       return 0;
     }
@@ -1085,7 +1162,7 @@ async function enqueueVerificationBatch(
     url: `${supabaseUrl}/functions/v1/agent-verify`,
     headers: dispatchHeaders,
     body: {
-      record_type: recordKind,
+      record_type: target.kind,
       record_ids: recordIds,
       run_id: run.id,
     },
@@ -1093,73 +1170,71 @@ async function enqueueVerificationBatch(
     onSuccess: async (response) => {
       const result = await response.clone().json().catch(() => ({})) as {
         records_processed?: number;
-        errors?: number;
         quota_exhausted?: boolean;
       };
-      // Drain queued records serially in bounded batches. Failed records stay
-      // visible for an explicit retry and are excluded from automatic draining.
-      if (!drainQueue ||
-        result.quota_exhausted ||
-        Number(result.records_processed || 0) === 0 ||
-        Number(result.errors || 0) >= Number(result.records_processed || 0)
-      ) {
-        return;
-      }
-      await enqueueVerificationBatch(
-        supabase,
-        supabaseUrl,
-        req,
-        recordKind,
-        tableName,
-        selectedIds,
-        true,
-        false,
-        initiatedBy,
-      );
+      // Keep draining while this invocation is alive; the tick picks up the
+      // rest if it is not. Stop on quota exhaustion so retries do not spin.
+      if (result.quota_exhausted || Number(result.records_processed || 0) === 0) return;
+      await drainRequestedVerification(supabase, supabaseUrl, req);
     },
-    // Increment attempts so a chronically-failing row escalates to 'failed'
-    // rather than silently re-queueing forever.
-    onFailure: () => incrementVerificationAttempts(supabase, tableName, recordIds),
+    onFailure: async () => {
+      await recoverOrphanedVerification(supabase, target.table);
+    },
   });
 
   return recordIds.length;
 }
 
-async function incrementVerificationAttempts(
+/**
+ * Returns 'verifying' rows whose run is no longer pending or running to the
+ * queue (or to 'failed' after VERIFICATION_MAX_ATTEMPTS). Without this, a
+ * killed agent-verify left rows spinning in "Being verified" forever.
+ */
+async function recoverOrphanedVerification(
   supabase: SupabaseAdminClient,
-  tableName: "discovered_contacts" | "discovered_organizations",
-  recordIds: string[],
-): Promise<void> {
-  if (recordIds.length === 0) return;
-  // Fetch existing attempts, then update per-row. supabase-js v2 has no
-  // server-side increment expression so we read-modify-write here.
-  const { data: rows } = await supabase
-    .from(tableName)
-    .select("id, verification_attempts")
-    .in("id", recordIds);
-  const VERIFICATION_MAX_ATTEMPTS = 3;
-  for (const row of rows ?? []) {
-    const attempts = ((row as { verification_attempts?: number | null }).verification_attempts ?? 0) + 1;
-    if (attempts >= VERIFICATION_MAX_ATTEMPTS) {
-      await supabase
-        .from(tableName)
-        .update({
-          verification_status: "failed",
-          verification_run_id: null,
-          verification_attempts: attempts,
-        })
-        .eq("id", row.id);
-    } else {
-      await supabase
-        .from(tableName)
-        .update({
-          verification_status: "queued",
-          verification_run_id: null,
-          verification_attempts: attempts,
-        })
-        .eq("id", row.id);
+  onlyTable?: DiscoveredTableName,
+): Promise<number> {
+  let recovered = 0;
+  for (const { table } of DISCOVERED_TARGETS) {
+    if (onlyTable && table !== onlyTable) continue;
+    const { data, error } = await supabase
+      .from(table)
+      .select("id, verification_run_id, verification_attempts")
+      .eq("verification_status", "verifying")
+      .limit(200);
+    // database.types.ts predates verification_attempts, hence the cast.
+    const rows = (data ?? []) as unknown as VerifyingRecord[];
+    if (error || rows.length === 0) continue;
+
+    const runIds = [...new Set(rows.map((row) => row.verification_run_id).filter(Boolean))] as string[];
+    const { data: activeRuns } = runIds.length > 0
+      ? await supabase
+        .from("agent_runs")
+        .select("id")
+        .in("id", runIds)
+        .in("status", ["pending", "running"])
+      : { data: [] as { id: string }[] };
+    const plan = planOrphanedVerificationRecovery(
+      rows,
+      new Set((activeRuns ?? []).map((run) => run.id as string)),
+    );
+
+    for (const [entries, status] of [[plan.requeue, "requested"], [plan.fail, "failed"]] as const) {
+      for (const entry of entries) {
+        await supabase
+          .from(table)
+          .update({
+            verification_status: status,
+            verification_run_id: null,
+            verification_attempts: entry.attempts,
+          })
+          .eq("id", entry.id)
+          .eq("verification_status", "verifying");
+      }
+      recovered += entries.length;
     }
   }
+  return recovered;
 }
 
 interface PlanningAction {

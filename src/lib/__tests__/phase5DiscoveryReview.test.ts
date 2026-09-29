@@ -95,7 +95,8 @@ describe('Phase 5D discovery review contract', () => {
   it('starts queued discovery verification explicitly and only enables approval for ready rows', () => {
     expect(reviewPanel).toContain('handleVerifyQueued');
     expect(reviewPanel).toContain("action: 'verify_discovered'");
-    expect(reviewPanel).toContain('Verify all ({queuedContactCount})');
+    expect(reviewPanel).toContain('Verify all ({verifiableContactCount})');
+    expect(reviewPanel).toContain("contact.verification_status === 'requested'");
     expect(reviewPanel).toContain('`Add Verified (${readyContactCount})`');
     expect(reviewPanel).toContain('readyContactCount === 0');
     expect(reviewPanel).toContain(".is('approved_person_id', null)");
@@ -129,6 +130,11 @@ describe('Phase 5D discovery review contract', () => {
     expect(scheduler).toContain('if (action === "verify_discovered")');
     expect(scheduler).not.toContain('autoEnqueueDiscoveredVerification');
     expect(scheduler).toContain('user_requested: true');
-    expect(scheduler).toContain('Drain queued records serially in bounded batches');
+    // Only rows a staff member moved to 'requested' are drained, by batches
+    // and by the tick, and abandoned 'verifying' rows are recovered.
+    expect(scheduler).toContain('.eq("verification_status", "requested")');
+    expect(scheduler).toContain('.or("verification_status.is.null,verification_status.in.(queued,failed)")');
+    expect(scheduler).toContain('await recoverOrphanedVerification(supabase)');
+    expect(scheduler).toContain('await drainRequestedVerification(supabase, supabaseUrl, req)');
   });
 });

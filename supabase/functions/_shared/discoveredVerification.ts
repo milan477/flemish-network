@@ -390,7 +390,15 @@ export async function verifyDiscoveredRecord(
     .eq("id", recordId)
     .maybeSingle();
 
+  // Early exits must not leave the row spinning in 'verifying'.
+  const markFailed = () =>
+    supabase
+      .from(tableName)
+      .update({ verification_status: "failed", verification_run_id: null })
+      .eq("id", recordId);
+
   if (loadError || !row) {
+    await markFailed();
     return {
       record_kind: recordKind,
       record_id: recordId,
@@ -405,6 +413,7 @@ export async function verifyDiscoveredRecord(
   const recordName = safeStr((row as Record<string, unknown>).name) || recordId;
 
   if (!geminiApiKey) {
+    await markFailed();
     return {
       record_kind: recordKind,
       record_id: recordId,
@@ -436,10 +445,10 @@ export async function verifyDiscoveredRecord(
       .slice(0, 24);
 
     if (searchResponses.every((response) => response.quota_exhausted) && searchResults.length === 0) {
-      // Reset to queued so a future run can retry.
+      // Back to the requested queue so a later batch can retry.
       await supabase
         .from(tableName)
-        .update({ verification_status: "queued", verification_run_id: null })
+        .update({ verification_status: "requested", verification_run_id: null })
         .eq("id", recordId);
       return {
         record_kind: recordKind,
