@@ -71,7 +71,6 @@ import {
 } from "../_shared/banditAllocator.ts";
 import { validatePivot } from "../_shared/pivotValidation.ts";
 import {
-  appendCanonicalFlemishConnections,
   loadFlemishConnectionCatalogPrompt,
   resolveModelFlemishFactCandidates,
 } from "../_shared/flemishConnectionCatalog.ts";
@@ -80,6 +79,22 @@ import {
   isOfficialFayatLaureatesUrl,
   OFFICIAL_FAYAT_LAUREATES_URL,
 } from "../_shared/fayatDirectory.ts";
+import {
+  type DiscoveredContactNetworkStatus,
+  discoveredContactNetworkScopeColumns,
+  mergeDiscoveredContactNetworkStatus,
+  normalizeDiscoveredContactNetworkStatus,
+} from "../_shared/discoveredContactScope.ts";
+import {
+  composeFlemishConnectionText,
+  CONTACT_FLEMISH_CONNECTION_LIMITS,
+  discoveryWriteError,
+  ORGANIZATION_RELEVANCE_LIMITS,
+  pageSaveNeedsRetry,
+  preservedDiscoveryProvenance,
+  type RecordSaveFailure,
+  saveRecordsIsolated,
+} from "../_shared/discoveryPersistence.ts";
 
 const log = createLogger("agent-discovery");
 
@@ -424,6 +439,8 @@ interface ExistingContactLookupRow {
   last_evidence_at?: string | null;
   discovery_confidence?: number | string | null;
   candidate_key?: string | null;
+  source?: string | null;
+  agent_run_id?: string | null;
 }
 
 interface ExtractedContact {
@@ -435,10 +452,8 @@ interface ExtractedContact {
   location_state: string;
   flemish_connection: string;
   flemish_fact_candidates: FlemishFactCandidate[];
-  suggested_us_network_status:
-    | "us_based"
-    | "us_connected_abroad"
-    | "needs_review";
+  // NULL until established; the extraction model's "needs_review" maps to NULL.
+  suggested_us_network_status: DiscoveredContactNetworkStatus | null;
   suggested_us_network_confidence: number;
   current_location_city: string;
   current_location_country: string;
@@ -1250,13 +1265,10 @@ function mergeContacts(
       ...base.flemish_fact_candidates,
       ...other.flemish_fact_candidates,
     ],
-    suggested_us_network_status:
-      base.suggested_us_network_status === "us_connected_abroad" ||
-        other.suggested_us_network_status === "us_connected_abroad"
-        ? "us_connected_abroad"
-        : base.suggested_us_network_status === "needs_review"
-        ? "needs_review"
-        : other.suggested_us_network_status,
+    suggested_us_network_status: mergeDiscoveredContactNetworkStatus(
+      base.suggested_us_network_status,
+      other.suggested_us_network_status,
+    ),
     suggested_us_network_confidence: Math.max(
       base.suggested_us_network_confidence || 0,
       other.suggested_us_network_confidence || 0,
@@ -1442,7 +1454,7 @@ function mapLinkedInProfile(profile: LinkedInProfile): ExtractedContact {
         location_state: location.state,
       })
       ? "us_based"
-      : "needs_review",
+      : null,
     suggested_us_network_confidence: 0,
     current_location_city: "",
     current_location_country: "",
@@ -1482,13 +1494,6 @@ function isLikelyUS(
   }
 
   return true;
-}
-
-function normalizePersonUsNetworkStatus(
-  value: unknown,
-): ExtractedContact["suggested_us_network_status"] {
-  if (value === "us_connected_abroad" || value === "needs_review") return value;
-  return "us_based";
 }
 
 function clampConfidence(value: unknown): number {
@@ -1770,7 +1775,7 @@ function normalizeExtractedPageContact(
         )
         .filter((candidate) => candidate.canonical_name.length > 0)
       : [],
-    suggested_us_network_status: normalizePersonUsNetworkStatus(
+    suggested_us_network_status: normalizeDiscoveredContactNetworkStatus(
       raw.suggested_us_network_status,
     ),
     suggested_us_network_confidence: clampConfidence(
@@ -1908,7 +1913,7 @@ async function extractCandidatesFromPage(
             confidence: 1,
             raw_evidence: evidence,
           }],
-          suggested_us_network_status: "needs_review",
+          suggested_us_network_status: null,
           suggested_us_network_confidence: 0,
           current_location_city: "",
           current_location_country: "",
@@ -3596,7 +3601,7 @@ function mapExistingContactRow(
     location_state: safeString(row.location_state),
     flemish_connection: safeString(row.flemish_connection),
     flemish_fact_candidates: [],
-    suggested_us_network_status: normalizePersonUsNetworkStatus(
+    suggested_us_network_status: normalizeDiscoveredContactNetworkStatus(
       row.suggested_us_network_status,
     ),
     suggested_us_network_confidence: clampConfidence(
@@ -3800,7 +3805,7 @@ async function insertEvidenceRows(
     .select("id");
 
   if (error) {
-    throw new Error(`Failed to write discovery evidence: ${error.message}`);
+    throw discoveryWriteError("Failed to write discovery evidence", error);
   }
 
   return data?.length || 0;
@@ -3828,7 +3833,7 @@ async function upsertEntityPivots(
       .maybeSingle();
 
     if (loadError) {
-      throw new Error(`Failed to load entity pivot: ${loadError.message}`);
+      throw discoveryWriteError("Failed to load entity pivot", loadError);
     }
 
     const nextSourceUrls = uniqueStrings([
@@ -3877,9 +3882,9 @@ async function upsertEntityPivots(
         .maybeSingle();
 
       if (insertError || !insertedPivot) {
-        throw new Error(
-          insertError?.message || "Failed to insert entity pivot",
-        );
+        throw insertError
+          ? discoveryWriteError(null, insertError)
+          : new Error("Failed to insert entity pivot");
       }
 
       pivotId = insertedPivot.id;
@@ -3908,9 +3913,7 @@ async function upsertEntityPivots(
         .eq("id", existingPivot.id);
 
       if (updateError) {
-        throw new Error(
-          `Failed to update entity pivot: ${updateError.message}`,
-        );
+        throw discoveryWriteError("Failed to update entity pivot", updateError);
       }
 
       pivotId = existingPivot.id;
@@ -3935,8 +3938,9 @@ async function upsertEntityPivots(
       });
 
     if (sourceError) {
-      throw new Error(
-        `Failed to write entity pivot source: ${sourceError.message}`,
+      throw discoveryWriteError(
+        "Failed to write entity pivot source",
+        sourceError,
       );
     }
 
@@ -3979,9 +3983,10 @@ async function persistCandidateBundle(
         supabase,
         mergedContact.flemish_fact_candidates,
       );
-    mergedContact.flemish_connection = appendCanonicalFlemishConnections(
+    mergedContact.flemish_connection = composeFlemishConnectionText(
       mergedContact.flemish_connection,
       mergedContact.flemish_fact_candidates,
+      CONTACT_FLEMISH_CONNECTION_LIMITS,
     );
     const insertedEvidenceCount = await insertEvidenceRows(
       supabase,
@@ -4003,9 +4008,10 @@ async function persistCandidateBundle(
         occupation: mergedContact.occupation || null,
         location_city: mergedContact.location_city || null,
         location_state: mergedContact.location_state || null,
-        suggested_us_network_status: mergedContact.suggested_us_network_status,
-        suggested_us_network_confidence:
+        ...discoveredContactNetworkScopeColumns(
+          mergedContact.suggested_us_network_status,
           mergedContact.suggested_us_network_confidence,
+        ),
         current_location_city: mergedContact.current_location_city || null,
         current_location_country: mergedContact.current_location_country ||
           null,
@@ -4017,12 +4023,14 @@ async function persistCandidateBundle(
         sectors: mergedContact.sectors.length > 0
           ? mergedContact.sectors
           : null,
-        source: "frontier_page",
         source_urls: mergedContact.source_urls.length > 0
           ? mergedContact.source_urls
           : null,
-        candidate_key: bundle.candidateKey,
-        agent_run_id: runId || null,
+        ...preservedDiscoveryProvenance(pendingMatch, {
+          source: "frontier_page",
+          candidate_key: bundle.candidateKey,
+          agent_run_id: runId || null,
+        }),
         last_seen_at: nowIso,
         last_evidence_at: insertedEvidenceCount > 0
           ? nowIso
@@ -4038,7 +4046,7 @@ async function persistCandidateBundle(
       .eq("id", pendingMatch.id);
 
     if (error) {
-      throw new Error(`Failed to update discovered contact: ${error.message}`);
+      throw discoveryWriteError("Failed to update discovered contact", error);
     }
 
     const derivedLabelsUpserted = await upsertDerivedLabelSuggestions(
@@ -4081,9 +4089,10 @@ async function persistCandidateBundle(
       supabase,
       bundle.contact.flemish_fact_candidates,
     );
-  bundle.contact.flemish_connection = appendCanonicalFlemishConnections(
+  bundle.contact.flemish_connection = composeFlemishConnectionText(
     bundle.contact.flemish_connection,
     bundle.contact.flemish_fact_candidates,
+    CONTACT_FLEMISH_CONNECTION_LIMITS,
   );
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
@@ -4096,9 +4105,10 @@ async function persistCandidateBundle(
       occupation: bundle.contact.occupation || null,
       location_city: bundle.contact.location_city || null,
       location_state: bundle.contact.location_state || null,
-      suggested_us_network_status: bundle.contact.suggested_us_network_status,
-      suggested_us_network_confidence:
+      ...discoveredContactNetworkScopeColumns(
+        bundle.contact.suggested_us_network_status,
         bundle.contact.suggested_us_network_confidence,
+      ),
       current_location_city: bundle.contact.current_location_city || null,
       current_location_country: bundle.contact.current_location_country || null,
       suggested_us_connections: bundle.contact.suggested_us_connections,
@@ -4131,7 +4141,9 @@ async function persistCandidateBundle(
     .maybeSingle();
 
   if (error || !data) {
-    throw new Error(error?.message || "Failed to insert discovered contact");
+    throw error
+      ? discoveryWriteError(null, error)
+      : new Error("Failed to insert discovered contact");
   }
 
   const insertedEvidenceCount = await insertEvidenceRows(
@@ -4197,6 +4209,8 @@ interface ExistingOrganizationLookupRow {
   confidence?: number | string | null;
   evidence_count?: number | null;
   last_evidence_at?: string | null;
+  source?: string | null;
+  agent_run_id?: string | null;
 }
 
 interface PersistOrganizationResult {
@@ -4422,8 +4436,9 @@ async function insertOrganizationEvidenceRows(
     .select("id");
 
   if (error) {
-    throw new Error(
-      `Failed to write discovered organization evidence: ${error.message}`,
+    throw discoveryWriteError(
+      "Failed to write discovered organization evidence",
+      error,
     );
   }
 
@@ -4469,9 +4484,10 @@ async function persistOrganizationBundle(
         supabase,
         merged.flemish_fact_candidates,
       );
-    merged.flemish_belgian_relevance = appendCanonicalFlemishConnections(
+    merged.flemish_belgian_relevance = composeFlemishConnectionText(
       merged.flemish_belgian_relevance,
       merged.flemish_fact_candidates,
+      ORGANIZATION_RELEVANCE_LIMITS,
     );
     await insertOrganizationEvidenceRows(
       supabase,
@@ -4485,23 +4501,25 @@ async function persistOrganizationBundle(
         name: merged.name,
         website_url: merged.website_url || null,
         description: merged.description || null,
-        candidate_key: safeString(pendingMatch.candidate_key) ||
-          bundle.candidateKey,
-        source: "agent_discovery",
+        ...preservedDiscoveryProvenance(pendingMatch, {
+          source: "agent_discovery",
+          candidate_key: bundle.candidateKey,
+          agent_run_id: runId || null,
+        }),
         suggested_us_network_status: merged.suggested_us_network_status,
         us_locations: merged.us_locations,
         sectors: merged.sectors.length > 0 ? merged.sectors : null,
         flemish_belgian_relevance: merged.flemish_belgian_relevance || null,
         source_urls: merged.source_urls.length > 0 ? merged.source_urls : null,
         confidence: Number(merged.confidence.toFixed(2)),
-        agent_run_id: runId || null,
         last_seen_at: new Date().toISOString(),
       })
       .eq("id", pendingMatch.id);
 
     if (error) {
-      throw new Error(
-        `Failed to update discovered organization: ${error.message}`,
+      throw discoveryWriteError(
+        "Failed to update discovered organization",
+        error,
       );
     }
 
@@ -4516,11 +4534,11 @@ async function persistOrganizationBundle(
       supabase,
       bundle.organization.flemish_fact_candidates,
     );
-  bundle.organization.flemish_belgian_relevance =
-    appendCanonicalFlemishConnections(
-      bundle.organization.flemish_belgian_relevance,
-      bundle.organization.flemish_fact_candidates,
-    );
+  bundle.organization.flemish_belgian_relevance = composeFlemishConnectionText(
+    bundle.organization.flemish_belgian_relevance,
+    bundle.organization.flemish_fact_candidates,
+    ORGANIZATION_RELEVANCE_LIMITS,
+  );
   const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("discovered_organizations")
@@ -4553,9 +4571,9 @@ async function persistOrganizationBundle(
     .maybeSingle();
 
   if (error || !data) {
-    throw new Error(
-      error?.message || "Failed to insert discovered organization",
-    );
+    throw error
+      ? discoveryWriteError(null, error)
+      : new Error("Failed to insert discovered organization");
   }
 
   await insertOrganizationEvidenceRows(
@@ -5055,29 +5073,82 @@ async function processFrontierRow(
   let insertedOrganizations = 0;
   let mergedOrganizations = 0;
 
-  for (const bundle of bundles) {
-    const result = await persistCandidateBundle(supabase, bundle, runId);
+  // Each record saves on its own: one rejected contact or organization is
+  // logged and skipped instead of discarding everything else on the page.
+  const contactSaves = await saveRecordsIsolated(
+    bundles,
+    async (bundle) => {
+      const result = await persistCandidateBundle(supabase, bundle, runId);
+      if (result.discoveredContactId) {
+        await upsertEntityPivots(
+          supabase,
+          result.discoveredContactId,
+          bundle,
+          geminiKey,
+        );
+      }
+      return result;
+    },
+    (bundle) => bundle.contact.name,
+  );
+  for (const { result } of contactSaves.saved) {
     if (result.status === "inserted") insertedContacts += 1;
     if (result.status === "merged") mergedContacts += 1;
     if (result.status === "duplicate_people") duplicatesSkipped += 1;
     derivedLabelsUpserted += result.derivedLabelsUpserted;
-    if (result.discoveredContactId) {
-      await upsertEntityPivots(
-        supabase,
-        result.discoveredContactId,
-        bundle,
-        geminiKey,
-      );
-    }
   }
 
-  for (const bundle of organizationBundles) {
-    const result = await persistOrganizationBundle(supabase, bundle, runId);
+  const organizationSaves = await saveRecordsIsolated(
+    organizationBundles,
+    (bundle) => persistOrganizationBundle(supabase, bundle, runId),
+    (bundle) => bundle.organization.name,
+  );
+  for (const { result } of organizationSaves.saved) {
     if (result.status === "inserted") insertedOrganizations += 1;
     if (result.status === "merged") mergedOrganizations += 1;
     if (result.status === "duplicate_organizations") {
       organizationDuplicatesSkipped += 1;
     }
+  }
+
+  const recordFailures: Array<
+    RecordSaveFailure & { kind: "contact" | "organization" }
+  > = [
+    ...contactSaves.failures.map((failure) => ({
+      ...failure,
+      kind: "contact" as const,
+    })),
+    ...organizationSaves.failures.map((failure) => ({
+      ...failure,
+      kind: "organization" as const,
+    })),
+  ];
+  for (const failure of recordFailures) {
+    steps.push({
+      step: `record_save_failed_${frontier.id}`,
+      timestamp: new Date().toISOString(),
+      elapsed: elapsed(),
+      status: "error",
+      detail: {
+        frontier_id: frontier.id,
+        url: page.canonicalUrl,
+        record_kind: failure.kind,
+        name: failure.record,
+        error: failure.error,
+        code: failure.code,
+        data_error: failure.dataError,
+      },
+    });
+  }
+  if (
+    pageSaveNeedsRetry(
+      contactSaves.saved.length + organizationSaves.saved.length,
+      recordFailures,
+    )
+  ) {
+    // Nothing saved and the cause was not the records' own data: hand the
+    // page back to the page-level retry path.
+    throw recordFailures.find((failure) => !failure.dataError)?.cause;
   }
 
   if (duplicatesSkipped + organizationDuplicatesSkipped > 0) {
@@ -5137,6 +5208,7 @@ async function processFrontierRow(
       merged_organizations: mergedOrganizations,
       organization_duplicates_skipped: organizationDuplicatesSkipped,
       derived_labels_upserted: derivedLabelsUpserted,
+      record_save_failures: recordFailures.length,
       child_links_queued: childLinksQueued,
       sitemap_seeded: harvestResult.sitemapSeeded,
       rss_seeded: harvestResult.rssSeeded,
@@ -5336,7 +5408,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
               location_state: "",
               flemish_connection: scholarship,
               flemish_fact_candidates: [],
-              suggested_us_network_status: "needs_review",
+              suggested_us_network_status: null,
               suggested_us_network_confidence: 0,
               current_location_city: "",
               current_location_country: "",
@@ -5407,8 +5479,10 @@ Deno.serve(wrapHandler(async (req: Request) => {
             evidence_count: 1,
             discovery_confidence: 1,
             candidate_key: `fayat:${normalizeName(contact.name)}`,
-            suggested_us_network_status: null,
-            suggested_us_network_confidence: null,
+            ...discoveredContactNetworkScopeColumns(
+              contact.suggested_us_network_status,
+              contact.suggested_us_network_confidence,
+            ),
             current_location_city: null,
             current_location_country: null,
             suggested_us_connections: contact.suggested_us_connections,

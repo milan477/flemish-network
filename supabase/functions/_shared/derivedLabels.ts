@@ -1,4 +1,5 @@
 import type { Json, SupabaseAdminClient } from "./database.types.ts";
+import { discoveryWriteError } from "./discoveryPersistence.ts";
 import {
   buildLocationLabelValue,
   normalizeLocationKey,
@@ -725,13 +726,28 @@ export async function buildVerificationDerivedLabels(
   return seeds;
 }
 
+// One upsert statement may touch each `dedupe_key` only once (Postgres rejects
+// the whole batch with "ON CONFLICT DO UPDATE command cannot affect row a second
+// time"). Seeds collide when, for example, text inference and a catalog fact
+// candidate name the same Flemish entity, so keep the most confident seed per key.
+function dedupeSeedsByKey(seeds: DerivedLabelSeed[]): DerivedLabelSeed[] {
+  const byKey = new Map<string, DerivedLabelSeed>();
+  for (const seed of seeds) {
+    const existing = byKey.get(seed.dedupe_key);
+    if (!existing || seed.confidence > existing.confidence) {
+      byKey.set(seed.dedupe_key, seed);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 export async function upsertDerivedLabelSuggestions(
   supabase: SupabaseAdminClient,
   seeds: DerivedLabelSeed[],
 ): Promise<number> {
   if (seeds.length === 0) return 0;
 
-  const rows = seeds.map((seed) => ({
+  const rows = dedupeSeedsByKey(seeds).map((seed) => ({
     person_id: seed.person_id || null,
     discovered_contact_id: seed.discovered_contact_id || null,
     label_type: seed.label_type,
@@ -756,7 +772,7 @@ export async function upsertDerivedLabelSuggestions(
     .select("id");
 
   if (error) {
-    throw new Error(`Failed to upsert derived labels: ${error.message}`);
+    throw discoveryWriteError("Failed to upsert derived labels", error);
   }
 
   return data?.length || 0;

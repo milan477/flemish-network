@@ -6,8 +6,10 @@ import {
   getLocationReviewRequired,
   getNormalizedLabelValue,
   normalizeLabelMetadata,
+  upsertDerivedLabelSuggestions,
 } from "../derivedLabels.ts";
 import type { SupabaseAdminClient } from "../database.types.ts";
+import { isRecordDataError } from "../discoveryPersistence.ts";
 
 // Stub supabase admin client: only `from("locations").select(...).ilike(...).eq(...).limit(...).maybeSingle()`
 // is reached, and only when there is a US-candidate location to lookup.
@@ -177,4 +179,125 @@ Deno.test("getLocationLabelSummary / getLocationReviewRequired / normalizeLabelM
   assertEquals(getLocationReviewRequired(null), true);
   assertEquals(normalizeLabelMetadata(null), {});
   assertEquals(getNormalizedLabelValue("  Boston  MA "), "boston ma");
+});
+
+// Stub for `from("derived_label_suggestions").upsert(rows, { onConflict }).select("id")`
+// that behaves like Postgres INSERT ... ON CONFLICT DO UPDATE: a batch that hits the
+// same conflict key twice fails with SQLSTATE 21000.
+function recordingUpsertSupabase(): {
+  client: SupabaseAdminClient;
+  upserts: Array<Array<Record<string, unknown>>>;
+} {
+  const upserts: Array<Array<Record<string, unknown>>> = [];
+  const client = {
+    from(table: string) {
+      if (table !== "derived_label_suggestions") {
+        throw new Error(`unexpected table ${table}`);
+      }
+      return {
+        upsert(rows: Array<Record<string, unknown>>, options: { onConflict: string }) {
+          upserts.push(rows);
+          const keys = rows.map((row) => String(row[options.onConflict]));
+          const duplicate = keys.length !== new Set(keys).size;
+          return {
+            select() {
+              return Promise.resolve(
+                duplicate
+                  ? {
+                    data: null,
+                    error: {
+                      code: "21000",
+                      message: "ON CONFLICT DO UPDATE command cannot affect row a second time",
+                    },
+                  }
+                  : { data: rows.map((_, index) => ({ id: `label-${index}` })), error: null },
+              );
+            },
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseAdminClient;
+  return { client, upserts };
+}
+
+Deno.test("upsertDerivedLabelSuggestions: a Flemish entity found by both text inference and a catalog fact candidate upserts once", async () => {
+  // A frontier contact whose flemish_connection text and LLM fact candidate both name KU Leuven,
+  // with the fact candidate duplicated by mergeContacts concatenating two pages' candidates.
+  const seeds = await buildDiscoveryDerivedLabels(stubSupabase(), {
+    discoveredContactId: "dc-dup",
+    agentRunId: "run-dup",
+    source: "frontier_page",
+    currentPosition: "",
+    occupation: "",
+    bio: "",
+    locationCity: "",
+    locationState: "",
+    rawLocationText: "",
+    flemishConnection: "KU Leuven",
+    flemishFactCandidates: [
+      { canonical_name: "KU Leuven", role: "alumnus", confidence: 0.95 },
+      { canonical_name: "KU Leuven", role: "alumnus", confidence: 0.6 },
+    ],
+    sectors: [],
+    evidence: [],
+  });
+  const { client, upserts } = recordingUpsertSupabase();
+
+  const upserted = await upsertDerivedLabelSuggestions(client, seeds);
+
+  assertEquals(upserts.length, 1);
+  const keys = upserts[0].map((row) => row.dedupe_key);
+  assertEquals(keys.length, new Set(keys).size);
+  assertEquals(upserted, keys.length);
+  const kuLeuven = upserts[0].filter((row) =>
+    row.dedupe_key === "discovered:dc-dup|flemish_entity|ku leuven"
+  );
+  assertEquals(kuLeuven.length, 1);
+  // The strongest evidence wins the conflict instead of an arbitrary row.
+  assertEquals(kuLeuven[0].confidence, 0.95);
+});
+
+Deno.test("upsertDerivedLabelSuggestions: a rejected batch surfaces the Postgres SQLSTATE so the caller can isolate the record", async () => {
+  const client = {
+    from() {
+      return {
+        upsert() {
+          return {
+            select() {
+              return Promise.resolve({
+                data: null,
+                error: {
+                  code: "23502",
+                  message: 'null value in column "label_value" violates not-null constraint',
+                },
+              });
+            },
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseAdminClient;
+
+  let thrown: unknown = null;
+  try {
+    await upsertDerivedLabelSuggestions(client, [{
+      discovered_contact_id: "dc-err",
+      label_type: "sector",
+      label_value: "Research",
+      normalized_value: "research",
+      confidence: 0.9,
+      source: "frontier_page",
+      dedupe_key: "discovered:dc-err|sector|research",
+    }]);
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert(thrown instanceof Error);
+  assertEquals(
+    thrown.message,
+    'Failed to upsert derived labels: null value in column "label_value" violates not-null constraint',
+  );
+  assert(isRecordDataError(thrown));
 });
