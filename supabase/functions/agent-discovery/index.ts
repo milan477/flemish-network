@@ -95,6 +95,14 @@ import {
   type RecordSaveFailure,
   saveRecordsIsolated,
 } from "../_shared/discoveryPersistence.ts";
+import {
+  claimFrontierForRun,
+  hardStopRequeuePatch,
+} from "../_shared/frontierClaim.ts";
+import {
+  createEnrichmentBudget,
+  type EnrichmentBudget,
+} from "../_shared/enrichmentBudget.ts";
 
 const log = createLogger("agent-discovery");
 
@@ -113,6 +121,7 @@ const MAX_CHILD_LINKS = 5;
 const DEFAULT_PER_DOMAIN_RUN_LIMIT = 3;
 const MAX_LINKEDIN_ENRICHMENTS = 3;
 const LINKEDIN_ENRICHMENT_TIMEOUT_SECS = 12;
+const LINKEDIN_ENRICHMENT_RUN_BUDGET_MS = 15_000;
 const MAX_SITEMAP_SEEDS = 12;
 const MAX_RSS_SEEDS = 8;
 const MAX_GAP_TARGETS = 6;
@@ -3327,7 +3336,12 @@ async function seedFrontier(
   frontierBefore: number,
   steps: StepLog[],
   elapsed: () => string,
-): Promise<{ seeded: number; provider: string; usedEntityKeys: string[] }> {
+): Promise<{
+  seeded: number;
+  provider: string;
+  usedEntityKeys: string[];
+  ownSeedUrls: string[];
+}> {
   let seeded = 0;
   const providersUsed = new Set<string>();
   const usedEntityKeys = new Set<string>();
@@ -3475,6 +3489,12 @@ async function seedFrontier(
     seeded,
     provider: [...providersUsed][0] || "none",
     usedEntityKeys: [...usedEntityKeys],
+    // A prompted run claims these first (see claimFrontierForRun).
+    ownSeedUrls: uniqueStrings(
+      persisted
+        .filter(({ plan }) => plan.sourceType === "custom_query")
+        .flatMap(({ frontierRows }) => frontierRows.map((row) => row.canonical_url)),
+    ),
   };
 }
 
@@ -3515,24 +3535,6 @@ async function markEntityPivotsSeeded(
       `Failed to mark entity pivots seeded: ${updateError.message}`,
     );
   }
-}
-
-async function claimFrontierBatch(
-  supabase: SupabaseAdminClient,
-  runId: string,
-  batchSize: number,
-): Promise<FrontierRow[]> {
-  const { data, error } = await supabase.rpc("claim_discovery_frontier", {
-    p_run_id: runId,
-    p_limit: batchSize,
-    p_per_domain_limit: DEFAULT_PER_DOMAIN_RUN_LIMIT,
-  });
-
-  if (error) {
-    throw new Error(`Failed to claim discovery frontier: ${error.message}`);
-  }
-
-  return (data || []) as FrontierRow[];
 }
 
 async function releaseClaimedFrontier(
@@ -4638,8 +4640,27 @@ async function maybeEnrichViaLinkedIn(
   bundles: CandidateBundle[],
   steps: StepLog[],
   elapsed: () => string,
+  linkedInBudget: EnrichmentBudget,
 ): Promise<{ bundles: CandidateBundle[]; searches: number }> {
   if (bundles.length === 0) {
+    return { bundles, searches: 0 };
+  }
+
+  const skipForBudget = (remainingTargets: number) => {
+    steps.push({
+      step: "linkedin_enrichment",
+      timestamp: new Date().toISOString(),
+      elapsed: elapsed(),
+      status: "skipped",
+      detail: {
+        reason: "LinkedIn enrichment time budget for this run is used up",
+        skipped_contacts: remainingTargets,
+        spent_ms: linkedInBudget.spentMs,
+      },
+    });
+  };
+  if (!linkedInBudget.canStart()) {
+    skipForBudget(bundles.length);
     return { bundles, searches: 0 };
   }
 
@@ -4664,7 +4685,12 @@ async function maybeEnrichViaLinkedIn(
     )
     .slice(0, MAX_LINKEDIN_ENRICHMENTS);
 
-  for (const target of targets) {
+  for (const [targetIndex, target] of targets.entries()) {
+    if (!linkedInBudget.canStart()) {
+      skipForBudget(targets.length - targetIndex);
+      break;
+    }
+
     const keywords = uniqueStrings([
       target.bundle.contact.name,
       `${target.bundle.contact.name} ${target.bundle.contact.current_position}`
@@ -4673,6 +4699,7 @@ async function maybeEnrichViaLinkedIn(
 
     if (!keywords) continue;
 
+    const searchStartedAt = Date.now();
     try {
       const result = await runApifyActor<LinkedInProfile>(
         APIFY_ACTORS.LINKEDIN_PROFILE_SEARCH,
@@ -4687,6 +4714,7 @@ async function maybeEnrichViaLinkedIn(
         },
       );
 
+      linkedInBudget.record(Date.now() - searchStartedAt);
       searches += 1;
       const match = (result.items || [])
         .map(mapLinkedInProfile)
@@ -4720,6 +4748,7 @@ async function maybeEnrichViaLinkedIn(
         };
       }
     } catch (error) {
+      linkedInBudget.record(Date.now() - searchStartedAt);
       const code = error instanceof ApifyError ? error.code : "unknown";
       steps.push({
         step: `linkedin_enrichment_${searches + 1}`,
@@ -4757,6 +4786,7 @@ async function processFrontierRow(
   elapsed: () => string,
   llmStats: { calls: number },
   heartbeat: () => Promise<void>,
+  linkedInBudget: EnrichmentBudget,
 ): Promise<PageProcessResult> {
   const page = await fetchPage(frontier.url);
   await heartbeat();
@@ -5061,7 +5091,7 @@ async function processFrontierRow(
   );
   const enrichment = isOfficialFayatLaureatesUrl(page.canonicalUrl)
     ? { bundles, searches: 0 }
-    : await maybeEnrichViaLinkedIn(bundles, steps, elapsed);
+    : await maybeEnrichViaLinkedIn(bundles, steps, elapsed, linkedInBudget);
   bundles = enrichment.bundles;
   await heartbeat();
 
@@ -5356,12 +5386,22 @@ Deno.serve(wrapHandler(async (req: Request) => {
       );
     });
     const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+    // LinkedIn searches block page processing (~3.4 s typical, up to the
+    // actor timeout plus the client's 5 s abort slack). Cap their total per
+    // run and only start one whose worst case ends before pages stop starting.
+    const linkedInBudget = createEnrichmentBudget({
+      runStartedAtMs: startTime,
+      latestFinishMs: PAGE_START_CUTOFF_MS,
+      runBudgetMs: LINKEDIN_ENRICHMENT_RUN_BUDGET_MS,
+      worstCaseSearchMs: (LINKEDIN_ENRICHMENT_TIMEOUT_SECS + 5) * 1000,
+    });
 
     let llmCallsMade = 0;
     let webSearchesMade = 0;
     let linkedinSearchesMade = 0;
     let webSearchProvider = "none";
     let frontierSeeded = 0;
+    let ownSeedUrls: string[] = [];
     let frontierClaimed = 0;
     let pagesFetched = 0;
     let insertedContacts = 0;
@@ -5604,79 +5644,6 @@ Deno.serve(wrapHandler(async (req: Request) => {
       });
     }
 
-    if (isOfficialFayatRun) {
-      const nowIso = new Date().toISOString();
-      const { data: existingFayatFrontier, error: lookupError } = await supabase
-        .from("discovery_frontier")
-        .select("id")
-        .eq("canonical_url", OFFICIAL_FAYAT_LAUREATES_URL)
-        .maybeSingle();
-      if (lookupError) {
-        throw new Error(
-          `Failed to locate official Fayat frontier: ${lookupError.message}`,
-        );
-      }
-      if (existingFayatFrontier) {
-        const { error: updateError } = await supabase
-          .from("discovery_frontier")
-          .update({
-            url: OFFICIAL_FAYAT_LAUREATES_URL,
-            domain: "www.vlaanderen.be",
-            status: "queued",
-            priority_score: 100000,
-            claimed_at: null,
-            claimed_run_id: null,
-            next_fetch_at: nowIso,
-            content_hash: null,
-            fetch_error_count: 0,
-            discovery_reason: "official_fayat_directory",
-            source_type: "official_directory",
-            search_query: query,
-            title: "Fayatbeurs contactgegevens laureaten",
-          })
-          .eq("id", existingFayatFrontier.id);
-        if (updateError) {
-          throw new Error(
-            `Failed to queue official Fayat frontier: ${updateError.message}`,
-          );
-        }
-      } else {
-        const { error: insertError } = await supabase
-          .from("discovery_frontier")
-          .insert({
-            url: OFFICIAL_FAYAT_LAUREATES_URL,
-            canonical_url: OFFICIAL_FAYAT_LAUREATES_URL,
-            domain: "www.vlaanderen.be",
-            status: "queued",
-            priority_score: 100000,
-            depth: 0,
-            discovered_from_url: null,
-            discovery_reason: "official_fayat_directory",
-            source_type: "official_directory",
-            pivot_entity_key: null,
-            pivot_entity_name: null,
-            pivot_entity_type: null,
-            search_query: query,
-            anchor_text: null,
-            title: "Fayatbeurs contactgegevens laureaten",
-            next_fetch_at: nowIso,
-          });
-        if (insertError) {
-          throw new Error(
-            `Failed to seed official Fayat frontier: ${insertError.message}`,
-          );
-        }
-      }
-      frontierSeeded = 1;
-      steps.push({
-        step: "official_fayat_seed",
-        timestamp: nowIso,
-        elapsed: elapsed(),
-        status: "ok",
-        detail: { url: OFFICIAL_FAYAT_LAUREATES_URL },
-      });
-    }
-
     const [
       queuedFrontierCount,
       taxonomy,
@@ -5879,6 +5846,7 @@ Deno.serve(wrapHandler(async (req: Request) => {
         elapsed,
       );
       frontierSeeded = seedResult.seeded;
+      ownSeedUrls = seedResult.ownSeedUrls;
       webSearchProvider = seedResult.provider;
       webSearchesMade = seedPlans.length;
       entityPivotsUsed = uniqueStrings([
@@ -5902,7 +5870,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
       );
     }
 
-    const claimed = await claimFrontierBatch(supabase, runId, batchSize);
+    const { rows: claimed, ownClaimed: ownSeedsClaimed } =
+      await claimFrontierForRun<FrontierRow>(supabase, {
+        runId,
+        batchSize,
+        perDomainLimit: DEFAULT_PER_DOMAIN_RUN_LIMIT,
+        ownSeedUrls,
+        nowIso: new Date().toISOString(),
+      });
     frontierClaimed = claimed.length;
 
     if (claimed.length > 0) {
@@ -5927,6 +5902,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
       status: claimed.length > 0 ? "ok" : "skipped",
       detail: {
         claimed_count: claimed.length,
+        own_seeds_available: ownSeedUrls.length,
+        own_seeds_claimed: ownSeedsClaimed,
         frontier_ids: claimed.map((row) => row.id),
       },
     });
@@ -5965,10 +5942,20 @@ Deno.serve(wrapHandler(async (req: Request) => {
             elapsed,
             llmStats,
             heartbeat,
+            linkedInBudget,
           ),
           pageHardStop,
         ]);
         if (outcome === "hard_stop") {
+          // Requeue at a normal priority with a growing delay; only while this
+          // run still holds the claim (the page may have finished meanwhile).
+          const requeue = hardStopRequeuePatch(frontier, Date.now());
+          await supabase
+            .from("discovery_frontier")
+            .update(requeue)
+            .eq("id", frontier.id)
+            .eq("claimed_run_id", runId)
+            .eq("status", "fetching");
           steps.push({
             step: `frontier_process_${frontier.id}`,
             timestamp: new Date().toISOString(),
@@ -5978,6 +5965,8 @@ Deno.serve(wrapHandler(async (req: Request) => {
               frontier_id: frontier.id,
               url: frontier.canonical_url,
               reason: "Page still running at the hard stop; wrapping up the run",
+              requeued_priority: requeue.priority_score,
+              next_fetch_at: requeue.next_fetch_at,
             },
           });
           break;
