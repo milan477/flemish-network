@@ -809,6 +809,20 @@ Goal: make the platform usable by Flemish government staff for a feedback round,
 - `[todo]` Align the Supabase Auth password policy with the client rule (project currently enforces `password_min_length = 6` and no required character classes).
 - `[todo]` Hilde, Paul, Flore, and Veerle still have `password_reset_required = true`; each needs one fresh invite or reset email after the fix is live.
 
+## Demo Readiness - 2026-10-07
+
+Headless Playwright pass over production before the 2026-10-08 staff demo. The demo script, Q&A sheet and live bug tracker live in the shared doc "Demo Flemish Network: draaiboek en factsheet".
+
+- `[done]` Scheduled Discovery had saved 0 candidates for days: `agent-discovery` still wrote `needs_review` into `discovered_contacts.suggested_us_network_status`, which the constraint has rejected since migration `20260508000006`. All writes now go through `_shared/discoveredContactScope.ts` (NULL, `us_based`, `us_connected_abroad` only). CSV import had the same bug (`src/lib/csvParser.ts`).
+- `[done]` Derived-label upserts failed with "ON CONFLICT DO UPDATE command cannot affect row a second time"; batches are deduped by `dedupe_key` first.
+- `[done]` One rejected record no longer discards a whole page (`saveRecordsIsolated`, `pageSaveNeedsRetry` in `_shared/discoveryPersistence.ts`); merges keep `source`, `candidate_key` and the first `agent_run_id`; `flemish_connection` text is bounded (160 per part, 400 total).
+- `[done]` UI: Network sidebar "Cities 0" race in `Dashboard.tsx`; Runs hides idle scheduled verification checks and labels runs without a staff actor; Settings uses the yellow accent; the Flemish Connection picker defaults to `is_filterable` connections; long connection text is clamped on candidate cards; failure cards show plain-language hints (`src/lib/failureHints.ts`) instead of pointing staff at `docs/RUNBOOK.md`.
+- `[next]` Verification throughput: each batch verifies about one record before Gemini rate-limits (the `profile_verification` chain ends on `gemini-2.5-pro`), so "Verify all" drains at roughly one record per 5-minute tick. Check which models in the chain answer and the Gemini API key tier.
+- `[next]` `isRetryableUpstreamError` in `agent-discovery` treats any message containing "network" as transient (constraint names such as `..._us_network_status_check` matched); classify by error code instead.
+- `[next]` Delete the model-created non-entities from `flemish_connections` (for example "A Major Flemish University", "Attended Belgian Conference", "Born In Brussels"); none are referenced by people, organizations or aliases. Stop Discovery from creating them.
+- `[next]` Discovered organizations contain off-topic results (Autism Speaks, HealthData.gov, CDC ADDM) and duplicates (Vygon x3, BAEF x2).
+- `[next]` Decide whether the staff-facing area is "Grow" (UI, user guides) or "Expand" (route names, `docs/PRODUCT-SERVICES.md`) and align the docs.
+
 ## Handoff Rules For Future Agents
 
 - Start with this file, then read the specific active doc for the phase being implemented.
