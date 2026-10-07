@@ -7,6 +7,7 @@ import {
   applyMappings,
   buildCandidateKeyForMode,
   getImportTemplateData,
+  importedDiscoveredContactScope,
   normalizePeopleStatus,
   parseCSV,
   suggestMappingsForMode,
@@ -48,6 +49,44 @@ describe('csvParser US scope fields', () => {
     expect(normalizePeopleStatus('US-based')).toBe('us_based');
     expect(normalizePeopleStatus('US-connected abroad')).toBe('us_connected_abroad');
     expect(normalizePeopleStatus('needs review')).toBe('needs_review');
+  });
+
+  it('never writes needs_review into discovered_contacts (unestablished scope is NULL)', () => {
+    expect(importedDiscoveredContactScope({ us_network_status: 'Needs review' })).toEqual({
+      suggested_us_network_status: null,
+      suggested_us_network_confidence: null,
+    });
+    expect(
+      importedDiscoveredContactScope({ us_network_status: 'needs_review', current_location_city: 'Leuven' })
+    ).toEqual({ suggested_us_network_status: null, suggested_us_network_confidence: null });
+  });
+
+  it('keeps explicit scopes and infers a blank scope from the location columns', () => {
+    expect(importedDiscoveredContactScope({ us_network_status: 'US-based' }).suggested_us_network_status).toBe(
+      'us_based'
+    );
+    expect(
+      importedDiscoveredContactScope({ us_network_status: 'US-connected abroad' }).suggested_us_network_status
+    ).toBe('us_connected_abroad');
+    expect(importedDiscoveredContactScope({ us_network_status: '' }).suggested_us_network_status).toBe('us_based');
+    expect(
+      importedDiscoveredContactScope({ us_network_status: '', us_connection_city: 'New Haven' })
+        .suggested_us_network_status
+    ).toBe('us_connected_abroad');
+  });
+
+  it('only emits values the discovered_contacts scope constraints accept', () => {
+    const statuses = ['US-based', 'US-connected abroad', 'needs review', 'needs_review', 'unknown', '', undefined];
+    for (const status of statuses) {
+      for (const currentCity of ['', 'Leuven']) {
+        const scope = importedDiscoveredContactScope({
+          ...(status === undefined ? {} : { us_network_status: status }),
+          current_location_city: currentCity,
+        });
+        expect([null, 'us_based', 'us_connected_abroad']).toContain(scope.suggested_us_network_status);
+        expect(scope.suggested_us_network_confidence).toBeNull();
+      }
+    }
   });
 
   it('rejects connected-abroad rows without a US connection location', () => {

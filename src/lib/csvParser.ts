@@ -372,6 +372,23 @@ export function normalizePeopleStatus(
   return PEOPLE_STATUS_ALIASES.get(key) || null;
 }
 
+// Scope columns for a CSV row imported into discovered_contacts. The table only
+// accepts us_based, us_connected_abroad, or NULL (migration
+// 20260508000006_verify_before_promote.sql), so an explicit "needs review"
+// becomes NULL for verification to establish. A blank scope is inferred from
+// the location columns. CSV imports carry no scope confidence.
+export function importedDiscoveredContactScope(row: MappedRow): {
+  suggested_us_network_status: 'us_based' | 'us_connected_abroad' | null;
+  suggested_us_network_confidence: null;
+} {
+  const explicit = normalizePeopleStatus(row.us_network_status);
+  const status =
+    explicit === 'needs_review'
+      ? null
+      : explicit || (row.current_location_city || row.us_connection_city ? 'us_connected_abroad' : 'us_based');
+  return { suggested_us_network_status: status, suggested_us_network_confidence: null };
+}
+
 export interface CsvParseResult {
   headers: string[];
   rows: string[][];

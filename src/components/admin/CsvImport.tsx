@@ -21,7 +21,7 @@ import {
   applyMappings,
   buildCandidateKeyForMode,
   downloadTemplate,
-  normalizePeopleStatus,
+  importedDiscoveredContactScope,
   parseCSV,
   parseExcel,
   splitImportMultiValue,
@@ -310,9 +310,6 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
   const insertPersonCandidate = async (row: MappedRow) => {
     const name = personName(row);
     const nowIso = new Date().toISOString();
-    const normalizedStatus =
-      normalizePeopleStatus(row.us_network_status) ||
-      (row.current_location_city || row.us_connection_city ? 'us_connected_abroad' : 'us_based');
 
     return supabase.from('discovered_contacts').insert({
       name,
@@ -331,7 +328,7 @@ export default function CsvImport({ onContactAdded }: CsvImportProps) {
       last_seen_at: nowIso,
       source_urls: splitImportMultiValue(row.us_connection_source_url),
       candidate_key: buildCandidateKeyForMode(row, 'people'),
-      suggested_us_network_status: normalizedStatus,
+      ...importedDiscoveredContactScope(row),
       current_location_city: row.current_location_city || null,
       current_location_country: row.current_location_country || null,
       suggested_us_connections:
