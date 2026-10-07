@@ -550,9 +550,7 @@ export default function SystemHealthPanel({
     return (
       <div className="flex items-center justify-center h-48">
         <Earth
-          className={`w-6 h-6 animate-spin ${
-            isSettings ? 'text-teal-600' : 'text-yellow-600'
-          }`}
+          className="w-6 h-6 animate-spin text-yellow-600"
         />
       </div>
     );
@@ -603,11 +601,7 @@ export default function SystemHealthPanel({
           <button
             type="button"
             onClick={loadData}
-            className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-              isSettings
-                ? 'bg-teal-600 text-white hover:bg-teal-700'
-                : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
-            }`}
+            className="inline-flex items-center gap-2 rounded-md bg-yellow-400 px-3 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-yellow-500"
           >
             <RefreshCw className="h-4 w-4" />
             Refresh
@@ -716,11 +710,7 @@ export default function SystemHealthPanel({
               href="https://supabase.com/dashboard/project/ofzuhajxwxggybkuzefq/settings/functions"
               target="_blank"
               rel="noreferrer"
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                isSettings
-                  ? 'bg-teal-600 text-white hover:bg-teal-700'
-                  : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
-              }`}
+              className="inline-flex items-center gap-2 rounded-md bg-yellow-400 px-3 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-yellow-500"
             >
               Add backend API key
               <ExternalLink className="h-4 w-4" />
@@ -792,14 +782,14 @@ function MaintenancePresetDefinitions() {
               key={preset}
               className={`rounded-lg border p-4 ${
                 preset === 'normal'
-                  ? 'border-teal-200 bg-teal-50/50'
+                  ? 'border-yellow-200 bg-yellow-50/50'
                   : 'border-gray-200 bg-gray-50/50'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-gray-900">{PRESET_LABELS[preset]}</h4>
                 {preset === 'normal' && (
-                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                  <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-800">
                     Default
                   </span>
                 )}

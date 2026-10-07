@@ -54,7 +54,7 @@ export default function Settings() {
                 onClick={() => handleTabChange(item.key)}
                 className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                   activeTab === item.key
-                    ? 'border-teal-600 text-teal-700'
+                    ? 'border-yellow-500 text-yellow-700'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
