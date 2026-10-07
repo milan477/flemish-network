@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { staffFailureHint } from '../../lib/failureHints';
 import { useAuth } from '../../lib/auth';
 import { notifyError, notifySuccess } from '../../lib/toast';
 import StructuredErrorBanner from './StructuredErrorBanner';
@@ -618,7 +619,7 @@ export default function SystemHealthPanel({
       {mode !== 'maintenance' && connectivity === 'failed' && (
         <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           <AlertTriangle className="h-4 w-4" />
-          Supabase connectivity failed. See the toast details and RUNBOOK [auth_failed] or [network].
+          Supabase connectivity failed. Reload the page and test again; if it keeps failing, contact engineering.
         </div>
       )}
 
@@ -1048,7 +1049,7 @@ function AgentScheduleCard({
             name: 'AgentRunError',
             message: failureMessage,
             code: failureCode,
-            hint: `See docs/RUNBOOK.md [${failureCode}] for fix steps.`,
+            hint: staffFailureHint(failureCode),
           }}
         />
       )}

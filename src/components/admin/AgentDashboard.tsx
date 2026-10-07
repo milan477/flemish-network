@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { notifyError } from '../../lib/toast';
+import { staffFailureHint } from '../../lib/failureHints';
 
 interface AgentRun {
   id: string;
@@ -483,10 +484,9 @@ export default function AgentDashboard({
                       <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
                         <p className="font-medium text-gray-900">Failure details</p>
                         <p className="mt-1">{run.error_message}</p>
+                        <p className="mt-1">{staffFailureHint(run.error_kind)}</p>
                         {run.error_kind && (
-                          <p className="mt-1 text-xs text-gray-500">
-                            Code: {run.error_kind}. See docs/RUNBOOK.md for fix steps.
-                          </p>
+                          <p className="mt-1 text-xs text-gray-500">Code: {run.error_kind}</p>
                         )}
                       </div>
                     </div>

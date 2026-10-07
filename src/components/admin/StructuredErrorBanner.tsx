@@ -23,8 +23,8 @@ const CODE_LABEL: Record<string, string> = {
 /**
  * Phase 6.3 shared error display. Surfaces `{ code, message, hint }` from
  * `EdgeFunctionError` so admin panels (SystemHealthPanel, AgentDashboard,
- * ProfileUpdateModal) all render the same shape and the hint line points
- * the user at the matching docs/RUNBOOK.md entry.
+ * ProfileUpdateModal) all render the same shape; the hint line carries the
+ * plain-language next step from `staffFailureHint`.
  */
 export default function StructuredErrorBanner({
   error,

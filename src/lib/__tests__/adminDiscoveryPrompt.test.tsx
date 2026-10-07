@@ -175,6 +175,33 @@ describe('Admin Discovery prompt handoff', () => {
     expect(screen.getByText(/Scheduled checks that found nothing to verify are not listed/)).toBeTruthy();
   });
 
+  it('explains a failed run in plain language instead of pointing at repository docs', async () => {
+    agentRuns.push({
+      id: 'run-quota',
+      agent_type: 'verification',
+      status: 'failed',
+      params: { record_type: 'discovered_contact', user_requested: true },
+      started_at: '2026-10-07T18:45:00.000Z',
+      completed_at: '2026-10-07T18:45:30.000Z',
+      results: null,
+      error_message: 'Gemini gemini-2.5-pro rate limited',
+      error_kind: 'quota_exhausted',
+      initiated_by_staff_id: null,
+      initiated_by_name: null,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+      created_at: '2026-10-07T18:45:00.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText(/reached its usage limit/)).toBeTruthy();
+    expect(screen.getByText('Code: quota_exhausted')).toBeTruthy();
+    expect(screen.queryByText(/RUNBOOK/)).toBeNull();
+  });
+
   it('names the schedule or the verification queue when no staff member started a run', async () => {
     const base = {
       status: 'completed',
