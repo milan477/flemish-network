@@ -976,6 +976,7 @@ async function requestDiscoveredVerification(
       discovered_organizations: organizationIds,
     },
     initiatedBy: selection.initiatedBy,
+    ignoreQuotaBackoff: true,
   });
 
   return {
@@ -1061,12 +1062,17 @@ async function drainRequestedVerification(
   options: {
     preferredIds?: Partial<Record<DiscoveredTableName, string[]>>;
     initiatedBy?: { id: string; name: string };
+    // A staff Verify click is a deliberate retry (for example after the
+    // Gemini quota was raised): it starts one batch even during the backoff.
+    ignoreQuotaBackoff?: boolean;
   } = {},
 ): Promise<{ started: number; skippedForQuota: number; backoffUntil: string | null }> {
   let slots = MAX_ACTIVE_VERIFY_BATCHES - await countActiveVerifyBatches(supabase);
   if (slots <= 0) return { started: 0, skippedForQuota: 0, backoffUntil: null };
 
-  const backoff = planVerificationQueueBackoff(await loadRecentVerifyBatches(supabase), Date.now());
+  const backoff = options.ignoreQuotaBackoff
+    ? { skip: false, backoffUntil: null, consecutiveQuotaBatches: 0 }
+    : planVerificationQueueBackoff(await loadRecentVerifyBatches(supabase), Date.now());
   if (backoff.skip) {
     const waiting = await hasRequestedVerification(supabase);
     if (waiting) {
