@@ -39,6 +39,7 @@ import {
   type DerivedLabelSuggestion,
 } from '../../lib/derivedLabels';
 import { syncPersonFlemishConnections } from '../../lib/flemishConnectionSync';
+import { lastVerifiedAtAfterMerge, verifiedAtForApproval } from '../../lib/discoveryApproval';
 import { kickEmbeddingWorker } from '../../lib/embeddingRefresh';
 import { notifyError, notifySuccess } from '../../lib/toast';
 import { resolveLocationId as resolveOrCreateLocationId } from '../../lib/locations';
@@ -630,6 +631,7 @@ async function approveContact(
       website_url: contact.website_url || null,
       profile_photo_url: contact.profile_photo_url || null,
       data_source: approvedPersonDataSource(contact.source, origin.staffLaunchedDiscovery),
+      last_verified_at: verifiedAtForApproval(contact),
       created_by_staff_id: origin.staffId,
       created_by_name: origin.name || 'Unknown',
     })
@@ -897,6 +899,9 @@ async function mergeIntoExisting(
   // Remove location_city/location_state from direct updates (they don't exist on people table)
   delete updates.location_city;
   delete updates.location_state;
+
+  const mergedVerifiedAt = lastVerifiedAtAfterMerge(existingPerson.last_verified_at, contact);
+  if (mergedVerifiedAt) updates.last_verified_at = mergedVerifiedAt;
 
   const mergedFlemishConnection =
     selectedFields.includes('flemish_connection') && updates.flemish_connection !== undefined
