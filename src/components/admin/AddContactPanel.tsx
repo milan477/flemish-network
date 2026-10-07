@@ -35,6 +35,7 @@ import CsvImport from './CsvImport';
 import CitySearch from '../CitySearch';
 import FlemishConnectionSelector from '../FlemishConnectionSelector';
 import { personCardLocationLabel, currentAbroadBaseLabel } from '../../lib/networkScope';
+import { discoveryCooldownHint } from '../../lib/schedulerMessages';
 import { buildCandidateKeyForMode } from '../../lib/csvParser';
 import { notifyError, notifySuccess, notifyInfo } from '../../lib/toast';
 
@@ -264,8 +265,7 @@ export default function AddContactPanel({
         const payload = data as { reason?: string; message?: string; wait_minutes?: number };
         if (payload.reason === 'quota_exhausted') {
           notifyInfo('Discovery already ran recently.', {
-            hint: payload.message ||
-              `Wait ${payload.wait_minutes ?? 'a few'} more minute${payload.wait_minutes === 1 ? '' : 's'} or pass force=true.`,
+            hint: discoveryCooldownHint(payload.wait_minutes),
           });
         } else {
           notifyError(payload.message || 'Discovery run was rejected.', {

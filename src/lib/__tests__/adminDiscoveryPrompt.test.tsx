@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AddContactPanel from '../../components/admin/AddContactPanel';
 import AgentDashboard from '../../components/admin/AgentDashboard';
+import { notifyInfo } from '../toast';
 
 const { invokeMock, agentRuns, orFilters } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
@@ -114,6 +115,33 @@ describe('Admin Discovery prompt handoff', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Run Discovery' }));
 
     await waitFor(() => expect(onDiscoveryStarted).toHaveBeenCalledTimes(1));
+  });
+
+  it('explains the Discovery cooldown without API jargon', async () => {
+    invokeMock.mockResolvedValue({
+      data: {
+        status: 'rejected',
+        reason: 'quota_exhausted',
+        wait_minutes: 6,
+        message: 'Recently ran. Wait 6 more minutes or pass force=true.',
+      },
+      error: null,
+    });
+    render(
+      <AddContactPanel
+        sectors={[]}
+        onContactAdded={vi.fn()}
+        initialDiscoveryPrompt="Find Flemish founders in Texas"
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Discovery' }));
+
+    await waitFor(() =>
+      expect(notifyInfo).toHaveBeenCalledWith('Discovery already ran recently.', {
+        hint: 'A new Discovery run can start 10 minutes after the previous one. Try again in 6 minutes.',
+      })
+    );
   });
 
   it('forces the quota-free official Fayat discovery path past the manual cooldown', async () => {

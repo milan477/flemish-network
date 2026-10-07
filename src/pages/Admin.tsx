@@ -22,6 +22,7 @@ import AddContactPanel from '../components/admin/AddContactPanel';
 import StaleContactsBar from '../components/admin/StaleContactsBar';
 import DiscoveryPlanningPanel, { type RecommendedAction } from '../components/admin/DiscoveryPlanningPanel';
 import { type DerivedLabelSuggestion, normalizeDerivedLabelSuggestions } from '../lib/derivedLabels';
+import { discoveryCooldownHint } from '../lib/schedulerMessages';
 import { normalizeVerificationSuggestions } from '../lib/verification';
 import { notifyError, notifySuccess, notifyInfo } from '../lib/toast';
 import LoadingGlobe from '../components/LoadingGlobe';
@@ -352,8 +353,7 @@ export default function Admin() {
         const reason = data?.reason;
         if (reason === 'quota_exhausted') {
           notifyInfo('Discovery already ran recently.', {
-            hint: data?.message ||
-              `Wait ${data?.wait_minutes ?? 'a few'} more minute${data?.wait_minutes === 1 ? '' : 's'} or pass force=true.`,
+            hint: discoveryCooldownHint(data?.wait_minutes),
           });
           return false;
         }
