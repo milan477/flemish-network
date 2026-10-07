@@ -27,6 +27,11 @@ export interface DiscoveredVerificationStep {
   record_name: string;
   outcome: DiscoveredVerificationOutcome;
   detail?: string;
+  // Which Gemini model answered and how each model in the chain responded,
+  // e.g. "gemini-3.8-flash 404, gemini-2.5-pro 200". Failures carry the same
+  // list at the end of `detail`.
+  model_used?: string;
+  model_attempts?: string;
   llm_calls_made: number;
   web_searches_made: number;
 }
@@ -494,7 +499,7 @@ export async function verifyDiscoveredRecord(
 
     const userPrompt = `Candidate seed data:\n${seedJson}\n\nSearch queries used:\n${queries.map((query) => `- ${query}`).join("\n")}\n\nWeb search results:\n${formatResultsForLLM(searchResults)}\n\nReturn the verification payload as JSON.`;
 
-    const { data } = await callGeminiStructured<unknown>({
+    const { data, modelUsed, modelAttempts } = await callGeminiStructured<unknown>({
       apiKey: geminiApiKey,
       route: "profile_verification",
       systemPrompt: recordKind === "discovered_contact"
@@ -523,6 +528,8 @@ export async function verifyDiscoveredRecord(
         record_name: recordName,
         outcome: "deleted_contradiction",
         detail: payload.contradiction_reason ?? "contradiction",
+        model_used: modelUsed,
+        model_attempts: modelAttempts,
         llm_calls_made: llmCalls,
         web_searches_made: webSearches,
       };
@@ -598,6 +605,8 @@ export async function verifyDiscoveredRecord(
       detail: payload.network_scope
         ? `scope=${payload.network_scope} confidence=${payload.confidence.toFixed(2)}`
         : `scope=null confidence=${payload.confidence.toFixed(2)}`,
+      model_used: modelUsed,
+      model_attempts: modelAttempts,
       llm_calls_made: llmCalls,
       web_searches_made: webSearches,
     };
@@ -624,4 +633,60 @@ export async function verifyDiscoveredRecord(
       web_searches_made: webSearches,
     };
   }
+}
+
+/**
+ * Counts and run outcome for one discovered-record verification batch.
+ * `notAttempted` is the number of records the batch never reached (deadline or
+ * quota stop); agent-verify returns those to 'requested'. Records skipped for
+ * quota were also returned to 'requested' by verifyDiscoveredRecord, so they
+ * count as returned, not processed.
+ *
+ * A batch stopped only by a rate limit completes: nothing failed, the records
+ * wait in the queue, and results.quota_exhausted tells the scheduler to back
+ * off. Only a batch whose processed records all failed for other reasons is a
+ * failed run.
+ */
+export function summarizeDiscoveredVerificationBatch(
+  steps: DiscoveredVerificationStep[],
+  notAttempted: number,
+): {
+  counts: {
+    records_processed: number;
+    verified: number;
+    deleted_contradiction: number;
+    errors: number;
+    returned_to_queue: number;
+    quota_exhausted: boolean;
+  };
+  run: { status: "completed" | "failed"; error_kind: string | null; error_message: string | null };
+} {
+  const quotaSkipped = steps.filter((step) => step.outcome === "skipped_quota").length;
+  const verified = steps.filter((step) => step.outcome === "verified").length;
+  const deletedContradiction = steps.filter((step) => step.outcome === "deleted_contradiction").length;
+  const errors = steps.filter((step) => step.outcome === "error").length;
+  const runFailed = errors > 0 && verified === 0 && deletedContradiction === 0;
+  const errorMessages = [...new Set(
+    steps
+      .filter((step) => step.outcome === "error" || step.outcome === "skipped_quota")
+      .map((step) => step.detail)
+      .filter((detail): detail is string => Boolean(detail)),
+  )];
+  return {
+    counts: {
+      records_processed: steps.length - quotaSkipped,
+      verified,
+      deleted_contradiction: deletedContradiction,
+      errors,
+      returned_to_queue: notAttempted + quotaSkipped,
+      quota_exhausted: quotaSkipped > 0,
+    },
+    run: runFailed
+      ? {
+        status: "failed",
+        error_kind: errorMessages.some(isGeminiRateLimitError) ? "quota_exhausted" : "agent_failure",
+        error_message: errorMessages.join("; ").slice(0, 1000) || "Verification batch failed",
+      }
+      : { status: "completed", error_kind: null, error_message: null },
+  };
 }

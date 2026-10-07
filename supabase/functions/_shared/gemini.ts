@@ -247,6 +247,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// One entry per model in call order, e.g. "gemini-3.8-flash 404" or
+// "gemini-2.5-pro 429/429". Non-HTTP outcomes read "empty" (no structured
+// output), "invalid_output" (unparseable output), or "error" (the request or
+// response body failed).
+function formatModelAttempts(attempts: Array<{ model: string; outcome: string }>): string {
+  const byModel = new Map<string, string[]>();
+  for (const { model, outcome } of attempts) {
+    byModel.set(model, [...(byModel.get(model) ?? []), outcome]);
+  }
+  return [...byModel.entries()]
+    .map(([model, outcomes]) => `${model} ${outcomes.join("/")}`)
+    .join(", ");
+}
+
 export async function callGeminiStructured<T>({
   apiKey,
   route,
@@ -259,12 +273,20 @@ export async function callGeminiStructured<T>({
   emptyResponseFallback,
   cachedContentName,
   thinkingBudget,
-}: StructuredGeminiCallOptions<T>): Promise<{ data: T; modelUsed: string }> {
+}: StructuredGeminiCallOptions<T>): Promise<{ data: T; modelUsed: string; modelAttempts: string }> {
   const models = getGeminiModelChain(route);
   let lastError = `No Gemini models configured for route "${route}"`;
+  // Every model tried and how it answered: without this only the last model's
+  // error surfaced, hiding whether earlier models even exist for this key.
+  const attempts: Array<{ model: string; outcome: string }> = [];
 
   for (const model of models) {
     for (let attempt = 0; attempt < attemptsPerModel; attempt += 1) {
+      let attemptRecorded = false;
+      const recordAttempt = (outcome: string) => {
+        attempts.push({ model, outcome });
+        attemptRecorded = true;
+      };
       try {
         const response = await fetch(
           buildGeminiGenerateContentUrl(model),
@@ -307,13 +329,17 @@ export async function callGeminiStructured<T>({
         );
 
         if (response.status === 429) {
+          recordAttempt("429");
+          await response.body?.cancel();
           lastError = `Gemini ${model} rate limited`;
           await sleep(model.includes("lite") ? 1500 : 1000);
           continue;
         }
 
         if (!response.ok) {
-          lastError = `Gemini ${model} failed (${response.status}): ${await response.text()}`;
+          recordAttempt(String(response.status));
+          const body = (await response.text()).replace(/\s+/g, " ").trim();
+          lastError = `Gemini ${model} failed (${response.status}): ${body.slice(0, 200)}`;
           break;
         }
 
@@ -321,16 +347,29 @@ export async function callGeminiStructured<T>({
         const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!text) {
+          recordAttempt("empty");
           if (emptyResponseFallback !== undefined) {
-            return { data: emptyResponseFallback, modelUsed: model };
+            return {
+              data: emptyResponseFallback,
+              modelUsed: model,
+              modelAttempts: formatModelAttempts(attempts),
+            };
           }
           lastError = `Gemini ${model} returned empty structured output`;
           break;
         }
 
-        const parsed = parse(JSON.parse(text));
-        return { data: parsed, modelUsed: model };
+        let parsed: T;
+        try {
+          parsed = parse(JSON.parse(text));
+        } catch (error) {
+          recordAttempt("invalid_output");
+          throw error;
+        }
+        recordAttempt(String(response.status));
+        return { data: parsed, modelUsed: model, modelAttempts: formatModelAttempts(attempts) };
       } catch (error) {
+        if (!attemptRecorded) recordAttempt("error");
         lastError = error instanceof Error ? error.message : String(error);
         if (attempt < attemptsPerModel - 1) {
           await sleep(500);
@@ -339,5 +378,9 @@ export async function callGeminiStructured<T>({
     }
   }
 
-  throw new Error(lastError);
+  throw new Error(
+    attempts.length > 0
+      ? `${lastError} (models tried: ${formatModelAttempts(attempts)})`
+      : lastError,
+  );
 }

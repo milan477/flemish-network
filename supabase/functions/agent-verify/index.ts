@@ -26,6 +26,7 @@ import {
   type VerificationStep,
 } from "../_shared/verification.ts";
 import {
+  summarizeDiscoveredVerificationBatch,
   verifyDiscoveredRecord,
   type DiscoveredRecordKind,
   type DiscoveredVerificationStep,
@@ -221,10 +222,6 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
       const startedAt = Date.now();
       const steps: DiscoveredVerificationStep[] = [];
-      let verified = 0;
-      let deletedContradiction = 0;
-      let errors = 0;
-      let quotaExhausted = false;
 
       for (const recordId of idsRaw) {
         if (Date.now() - startedAt > DEADLINE_MS - 5_000) break;
@@ -238,12 +235,9 @@ Deno.serve(wrapHandler(async (req: Request) => {
         steps.push(step);
         llmCallsMade += step.llm_calls_made;
         webSearchesMade += step.web_searches_made;
-        if (step.outcome === "verified") verified += 1;
-        else if (step.outcome === "deleted_contradiction") deletedContradiction += 1;
-        else if (step.outcome === "skipped_quota") {
-          quotaExhausted = true;
-          break;
-        } else if (step.outcome === "error") errors += 1;
+        // A quota hit would hit the next record too; stop and let the
+        // scheduler back off (see planVerificationQueueBackoff).
+        if (step.outcome === "skipped_quota") break;
       }
 
       const processedIds = new Set(steps.map((step) => step.record_id));
@@ -259,14 +253,13 @@ Deno.serve(wrapHandler(async (req: Request) => {
           .in("id", unprocessedIds);
       }
 
+      const summary = summarizeDiscoveredVerificationBatch(
+        steps,
+        unprocessedIds.length,
+      );
       const result = {
         record_type: recordKind,
-        records_processed: steps.length,
-        verified,
-        deleted_contradiction: deletedContradiction,
-        errors,
-        returned_to_queue: unprocessedIds.length,
-        quota_exhausted: quotaExhausted,
+        ...summary.counts,
         llm_calls_made: llmCallsMade,
         web_searches_made: webSearchesMade,
         steps,
@@ -274,29 +267,14 @@ Deno.serve(wrapHandler(async (req: Request) => {
 
       if (runId && supabase) {
         const costEstimate = llmCallsMade * 0.001 + webSearchesMade * 0.0005;
-        const allProcessedRecordsFailed = errors > 0 &&
-          verified === 0 && deletedContradiction === 0;
-        const runFailed = quotaExhausted || allProcessedRecordsFailed;
-        const errorMessages = [...new Set(
-          steps
-            .filter((step) => step.outcome === "error" || step.outcome === "skipped_quota")
-            .map((step) => step.detail)
-            .filter((detail): detail is string => Boolean(detail)),
-        )];
         await supabase
           .from("agent_runs")
           .update({
-            status: runFailed ? "failed" : "completed",
+            status: summary.run.status,
             completed_at: new Date().toISOString(),
             results: result as unknown as Record<string, never>,
-            error_message: runFailed
-              ? errorMessages.join("; ").slice(0, 1000) || "Verification batch failed"
-              : null,
-            error_kind: runFailed
-              ? quotaExhausted || errorMessages.some((message) => message.includes("rate limited"))
-                ? "quota_exhausted"
-                : "agent_failure"
-              : null,
+            error_message: summary.run.error_message,
+            error_kind: summary.run.error_kind,
             llm_calls_made: llmCallsMade,
             web_searches_made: webSearchesMade,
             cost_estimate_usd: Math.round(costEstimate * 10000) / 10000,

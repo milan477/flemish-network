@@ -340,6 +340,32 @@ describe('Admin Discovery prompt handoff', () => {
     expect(screen.queryByText('No new records')).toBeNull();
   });
 
+  it('shows a queue batch stopped by the AI usage limit as paused, not failed', async () => {
+    agentRuns.push({
+      id: 'run-quota-paused',
+      agent_type: 'verification',
+      status: 'completed',
+      params: { record_type: 'discovered_contact', user_requested: true },
+      started_at: '2026-10-07T19:30:00.000Z',
+      completed_at: '2026-10-07T19:30:20.000Z',
+      results: { records_processed: 0, verified: 0, errors: 0, returned_to_queue: 5, quota_exhausted: true },
+      error_message: null,
+      error_kind: null,
+      initiated_by_staff_id: null,
+      initiated_by_name: null,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+      created_at: '2026-10-07T19:30:00.000Z',
+    });
+
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('Paused: AI usage limit reached')).toBeTruthy();
+    expect(screen.getByText('5 people returned to queue')).toBeTruthy();
+  });
+
   it('summarizes discovery run results for people and organizations', async () => {
     const prompt = 'Find Flemish climate founders in California';
     agentRuns.push({

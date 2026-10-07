@@ -150,10 +150,14 @@ function summarizeOutcome(run: AgentRun): RunOutcome {
       activityParts.push(`${formatCount(contradictions, 'contradiction')} removed`);
     }
 
+    const quotaPaused = results.quota_exhausted === true && verified === 0;
+
     return {
       headline: verified > 0
         ? `${formatCount(verified, 'person', 'people')} verified`
-        : findings > 0
+        : quotaPaused
+          ? 'Paused: AI usage limit reached'
+          : findings > 0
           ? `${formatCount(findings, 'profile update')} found`
           : processed > 0
             ? `${formatCount(processed, 'person', 'people')} checked`

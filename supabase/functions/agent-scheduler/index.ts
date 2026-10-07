@@ -12,9 +12,11 @@ import { getGeminiModelSummary } from "../_shared/gemini.ts";
 import { createLogger } from "../_shared/log.ts";
 import {
   planOrphanedVerificationRecovery,
+  planVerificationQueueBackoff,
   SCHEDULER_AGENT_FUNCTIONS,
   schedulerAgentTypeError,
   type SchedulerAgentType,
+  type VerificationBatchRun,
   type VerifyingRecord,
 } from "../_shared/scheduler.ts";
 import { refreshArmStats } from "../_shared/banditAllocator.ts";
@@ -456,6 +458,8 @@ async function runScheduleTick(
   zombies_marked_failed: number;
   verification_recovered: number;
   verification_batches_started: number;
+  verification_batches_skipped_quota: number;
+  verification_backoff_until: string | null;
   housekeeping: Awaited<ReturnType<typeof runHousekeeping>> | null;
 }> {
   const schedules = await loadSchedules(supabase);
@@ -476,9 +480,9 @@ async function runScheduleTick(
     log.warn("verification_recovery_failed", err instanceof Error ? err.message : String(err));
     return 0;
   });
-  const verificationBatchesStarted = await drainRequestedVerification(supabase, supabaseUrl, req).catch((err) => {
+  const verificationDrain = await drainRequestedVerification(supabase, supabaseUrl, req).catch((err) => {
     log.warn("verification_drain_failed", err instanceof Error ? err.message : String(err));
-    return 0;
+    return { started: 0, skippedForQuota: 0, backoffUntil: null };
   });
 
   for (const schedule of schedules) {
@@ -543,7 +547,9 @@ async function runScheduleTick(
     outcomes,
     zombies_marked_failed: zombiesMarkedFailed,
     verification_recovered: verificationRecovered,
-    verification_batches_started: verificationBatchesStarted,
+    verification_batches_started: verificationDrain.started,
+    verification_batches_skipped_quota: verificationDrain.skippedForQuota,
+    verification_backoff_until: verificationDrain.backoffUntil,
     housekeeping,
   };
 }
@@ -957,13 +963,14 @@ async function requestDiscoveredVerification(
   organizations_pre_filtered: number;
   contacts_enqueued: number;
   organizations_enqueued: number;
+  verification_backoff_until: string | null;
 }> {
   const [contactIds, organizationIds] = await Promise.all([
     markVerificationRequested(supabase, "discovered_contacts", selection.contactIds ?? []),
     markVerificationRequested(supabase, "discovered_organizations", selection.organizationIds ?? []),
   ]);
 
-  await drainRequestedVerification(supabase, supabaseUrl, req, {
+  const drain = await drainRequestedVerification(supabase, supabaseUrl, req, {
     preferredIds: {
       discovered_contacts: contactIds,
       discovered_organizations: organizationIds,
@@ -976,6 +983,7 @@ async function requestDiscoveredVerification(
     organizations_pre_filtered: 0,
     contacts_enqueued: contactIds.length,
     organizations_enqueued: organizationIds.length,
+    verification_backoff_until: drain.skippedForQuota > 0 ? drain.backoffUntil : null,
   };
 }
 
@@ -1012,7 +1020,40 @@ async function countActiveVerifyBatches(supabase: SupabaseAdminClient): Promise<
   return count ?? 0;
 }
 
-/** Starts verification batches for 'requested' rows while batch slots are free. */
+/** Finished staff-requested verification batches of the last day, newest first. */
+async function loadRecentVerifyBatches(
+  supabase: SupabaseAdminClient,
+): Promise<VerificationBatchRun[]> {
+  const { data, error } = await supabase
+    .from("agent_runs")
+    .select("status, error_kind, completed_at, quota_exhausted:results->quota_exhausted, verified:results->verified")
+    .eq("agent_type", "verification")
+    .in("status", ["completed", "failed"])
+    .contains("params", { user_requested: true })
+    .gte("created_at", new Date(Date.now() - 24 * 3_600_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(`Failed to load recent verification batches: ${error.message}`);
+  return (data ?? []) as unknown as VerificationBatchRun[];
+}
+
+async function hasRequestedVerification(supabase: SupabaseAdminClient): Promise<boolean> {
+  for (const { table } of DISCOVERED_TARGETS) {
+    const { count } = await supabase
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("verification_status", "requested");
+    if ((count ?? 0) > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Starts verification batches for 'requested' rows while batch slots are free,
+ * unless recent batches hit a Gemini or web-search quota: then the queue waits
+ * (planVerificationQueueBackoff) instead of starting a batch that fails on its
+ * first record every tick. Rows stay 'requested' and drain once the pause ends.
+ */
 async function drainRequestedVerification(
   supabase: SupabaseAdminClient,
   supabaseUrl: string,
@@ -1021,8 +1062,26 @@ async function drainRequestedVerification(
     preferredIds?: Partial<Record<DiscoveredTableName, string[]>>;
     initiatedBy?: { id: string; name: string };
   } = {},
-): Promise<number> {
+): Promise<{ started: number; skippedForQuota: number; backoffUntil: string | null }> {
   let slots = MAX_ACTIVE_VERIFY_BATCHES - await countActiveVerifyBatches(supabase);
+  if (slots <= 0) return { started: 0, skippedForQuota: 0, backoffUntil: null };
+
+  const backoff = planVerificationQueueBackoff(await loadRecentVerifyBatches(supabase), Date.now());
+  if (backoff.skip) {
+    const waiting = await hasRequestedVerification(supabase);
+    if (waiting) {
+      log.info("verification_drain_quota_backoff", {
+        backoff_until: backoff.backoffUntil,
+        consecutive_quota_batches: backoff.consecutiveQuotaBatches,
+      });
+    }
+    return {
+      started: 0,
+      skippedForQuota: waiting ? 1 : 0,
+      backoffUntil: waiting ? backoff.backoffUntil : null,
+    };
+  }
+
   let started = 0;
   for (const target of DISCOVERED_TARGETS) {
     while (slots > 0) {
@@ -1039,7 +1098,7 @@ async function drainRequestedVerification(
       started += 1;
     }
   }
-  return started;
+  return { started, skippedForQuota: 0, backoffUntil: null };
 }
 
 async function startVerificationBatch(

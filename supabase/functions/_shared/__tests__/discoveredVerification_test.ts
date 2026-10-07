@@ -4,7 +4,9 @@ import {
   buildContactQueries,
   isGeminiRateLimitError,
   normalizePayload,
+  summarizeDiscoveredVerificationBatch,
   validatePayloadLocation,
+  type DiscoveredVerificationStep,
 } from "../discoveredVerification.ts";
 import type { SupabaseAdminClient } from "../database.types.ts";
 
@@ -117,4 +119,59 @@ Deno.test("isGeminiRateLimitError: only Gemini rate limits count as transient", 
   assertEquals(isGeminiRateLimitError("Gemini gemini-2.5-pro rate limited"), true);
   assertEquals(isGeminiRateLimitError("Gemini gemini-3.5-flash failed (400): bad schema"), false);
   assertEquals(isGeminiRateLimitError("row missing"), false);
+});
+
+function verificationStep(
+  outcome: DiscoveredVerificationStep["outcome"],
+  detail?: string,
+): DiscoveredVerificationStep {
+  return {
+    record_kind: "discovered_contact",
+    record_id: crypto.randomUUID(),
+    record_name: "Candidate",
+    outcome,
+    detail,
+    llm_calls_made: outcome === "skipped_quota" ? 0 : 1,
+    web_searches_made: 3,
+  };
+}
+
+Deno.test("summarizeDiscoveredVerificationBatch: a batch stopped only by a rate limit completes and reports the returned records", () => {
+  const summary = summarizeDiscoveredVerificationBatch(
+    [verificationStep("skipped_quota", "Gemini gemini-2.5-pro rate limited")],
+    4,
+  );
+  assertEquals(summary.counts, {
+    records_processed: 0,
+    verified: 0,
+    deleted_contradiction: 0,
+    errors: 0,
+    returned_to_queue: 5,
+    quota_exhausted: true,
+  });
+  assertEquals(summary.run, { status: "completed", error_kind: null, error_message: null });
+});
+
+Deno.test("summarizeDiscoveredVerificationBatch: verified records before the rate limit still count", () => {
+  const summary = summarizeDiscoveredVerificationBatch(
+    [verificationStep("verified"), verificationStep("skipped_quota", "Gemini gemini-2.5-pro rate limited")],
+    3,
+  );
+  assertEquals(summary.counts.records_processed, 1);
+  assertEquals(summary.counts.verified, 1);
+  assertEquals(summary.counts.returned_to_queue, 4);
+  assertEquals(summary.run.status, "completed");
+});
+
+Deno.test("summarizeDiscoveredVerificationBatch: real record failures still fail the run", () => {
+  const summary = summarizeDiscoveredVerificationBatch(
+    [verificationStep("error", "Gemini gemini-2.5-pro failed (400): bad schema")],
+    0,
+  );
+  assertEquals(summary.run, {
+    status: "failed",
+    error_kind: "agent_failure",
+    error_message: "Gemini gemini-2.5-pro failed (400): bad schema",
+  });
+  assertEquals(summarizeDiscoveredVerificationBatch([], 0).run.status, "completed");
 });
