@@ -40,6 +40,28 @@ function serviceLabelForRun(agentType: string): string {
   return AGENT_LABELS[agentType]?.label || 'Service run';
 }
 
+// Runs created before the audit-actor migration (20260915152000) never
+// recorded who started them, so a missing name there means "unknown".
+const INITIATOR_AUDIT_START = Date.parse('2026-09-15T15:20:00Z');
+
+function initiatorLabel(run: AgentRun): string {
+  if (run.initiated_by_name) return run.initiated_by_name;
+  if (Date.parse(run.created_at) < INITIATOR_AUDIT_START) return 'Not recorded';
+  // The scheduler drains "Verify" requests in background batches without a staff actor.
+  if (run.params?.user_requested === true) return 'Verification queue';
+  return 'Automatic schedule';
+}
+
+// Scheduled verification checks run every cycle; the ones that found nothing
+// to check are noise in the history. Failed or quota-limited checks stay visible.
+const NOT_IDLE_VERIFICATION_CHECK = [
+  'agent_type.neq.verification',
+  'status.neq.completed',
+  'results->>profiles_checked.is.null',
+  'results->>profiles_checked.neq.0',
+  'results->>quota_exhausted.eq.true',
+].join(',');
+
 function promptForRun(run: AgentRun): string | null {
   const prompt = run.params?.query;
   return typeof prompt === 'string' && prompt.trim() ? prompt.trim() : null;
@@ -213,6 +235,7 @@ export default function AgentDashboard({
           .limit(50)
       : historyScope === 'all'
         ? await query
+            .or(NOT_IDLE_VERIFICATION_CHECK)
             .order('created_at', { ascending: false })
             .limit(50)
         : await query
@@ -309,7 +332,7 @@ export default function AgentDashboard({
               {activeOnly
                 ? 'Discovery and verification work that is currently queued or running.'
                 : historyScope === 'all'
-                  ? 'Discovery and verification runs, including their outcomes and operational details.'
+                  ? 'Discovery and verification runs, including their outcomes and operational details. Scheduled checks that found nothing to verify are not listed.'
                   : 'See what each discovery run added and how much work it performed.'}
             </p>
           </div>
@@ -373,7 +396,7 @@ export default function AgentDashboard({
                       </p>
                       <p className="mt-1 truncate text-xs text-gray-500">
                         <span className="font-medium">Started by: </span>
-                        {run.initiated_by_name || 'Not recorded'}
+                        {initiatorLabel(run)}
                       </p>
                       {prompt && (
                         <p className="mt-1 line-clamp-2 text-xs leading-4 text-gray-700" title={prompt}>

@@ -10,7 +10,7 @@
 | `/expand` | Editor/admin redirect to `/expand/discovery`. |
 | `/expand/import` | Manual people/organization intake and file import. URL state: `mode=manual\|import`. The header `+` button deep-links to `?mode=manual`. |
 | `/expand/discovery` | Discovery propositions and reflection suggestions followed by prompted discovery. Optional `prompt` pre-fills the prompt without starting a run. |
-| `/expand/runs` | Discovery and Verification run history, active-run status, outcomes, operational details, and maintenance run controls. The tab badge shows the current active-run count. Legacy `/expand/running` redirects here. |
+| `/expand/runs` | Discovery and Verification run history, active-run status, outcomes, operational details, and maintenance run controls. Completed scheduled verification checks that found nothing to check (`results.profiles_checked = 0`, no quota stop) are left out of the history. The tab badge shows the current active-run count. Legacy `/expand/running` redirects here. |
 | `/expand/verification` | Review queues for pending discovered people and organizations. |
 | `/expand/maintenance` | Records Freshness, automatic Discovery/Verification schedules, search-index queue, housekeeping, and stuck-run recovery, followed by profile and organization update suggestions. |
 | `/settings` | Redirect to System for editors/admins; unauthorized System access normalizes to My Account. |

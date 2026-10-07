@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AddContactPanel from '../../components/admin/AddContactPanel';
 import AgentDashboard from '../../components/admin/AgentDashboard';
 
-const { invokeMock, agentRuns } = vi.hoisted(() => ({
+const { invokeMock, agentRuns, orFilters } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
   agentRuns: [] as Array<Record<string, unknown>>,
+  orFilters: [] as string[],
 }));
 
 vi.mock('../supabase', async (importOriginal) => {
@@ -28,6 +29,10 @@ vi.mock('../supabase', async (importOriginal) => {
           select: () => ({
             eq: result,
             in: result,
+            or: (filter: string) => {
+              orFilters.push(filter);
+              return result();
+            },
             order: () => ({
               limit: () => Promise.resolve({ data: agentRuns }),
             }),
@@ -51,6 +56,7 @@ afterEach(() => {
   cleanup();
   invokeMock.mockReset();
   agentRuns.length = 0;
+  orFilters.length = 0;
 });
 
 describe('Admin Discovery prompt handoff', () => {
@@ -157,6 +163,65 @@ describe('Admin Discovery prompt handoff', () => {
 
     expect(await screen.findByText('Run History')).toBeTruthy();
     expect(screen.getByText('No runs yet.')).toBeTruthy();
+  });
+
+  it('leaves idle scheduled verification checks out of the combined history', async () => {
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('Run History')).toBeTruthy();
+    expect(orFilters).toEqual([
+      'agent_type.neq.verification,status.neq.completed,results->>profiles_checked.is.null,results->>profiles_checked.neq.0,results->>quota_exhausted.eq.true',
+    ]);
+    expect(screen.getByText(/Scheduled checks that found nothing to verify are not listed/)).toBeTruthy();
+  });
+
+  it('names the schedule or the verification queue when no staff member started a run', async () => {
+    const base = {
+      status: 'completed',
+      completed_at: '2026-10-07T09:02:00.000Z',
+      results: { profiles_checked: 3, profiles_verified: 1 },
+      error_message: null,
+      error_kind: null,
+      initiated_by_staff_id: null,
+      initiated_by_name: null,
+      llm_calls_made: 0,
+      web_searches_made: 0,
+      web_search_provider: null,
+      cost_estimate_usd: 0,
+    };
+    agentRuns.push(
+      {
+        ...base,
+        id: 'run-scheduled',
+        agent_type: 'discovery',
+        params: {},
+        results: { suggestions_created: 0 },
+        started_at: '2026-10-07T09:00:00.000Z',
+        created_at: '2026-10-07T09:00:00.000Z',
+      },
+      {
+        ...base,
+        id: 'run-queue',
+        agent_type: 'verification',
+        params: { record_type: 'discovered_contact', user_requested: true },
+        started_at: '2026-10-07T18:38:00.000Z',
+        created_at: '2026-10-07T18:38:00.000Z',
+      },
+      {
+        ...base,
+        id: 'run-before-audit',
+        agent_type: 'verification',
+        params: { batch_size: 15 },
+        started_at: '2026-09-01T09:00:00.000Z',
+        created_at: '2026-09-01T09:00:00.000Z',
+      }
+    );
+
+    render(<AgentDashboard historyScope="all" />);
+
+    expect(await screen.findByText('Automatic schedule')).toBeTruthy();
+    expect(screen.getByText('Verification queue')).toBeTruthy();
+    expect(screen.getByText('Not recorded')).toBeTruthy();
   });
 
   it('labels running verification correctly and shows who started it', async () => {
