@@ -348,7 +348,7 @@ Examples:
   -> subject: organization
 ```
 
-Default search/filter chips should come only from broad `is_filterable` canonical facts. Specific phrases, raw relevance, and model/import-discovered variants should be preserved as aliases, roles, or evidence without automatically becoming default chips.
+Default search/filter chips should come only from broad `is_filterable` canonical facts. The Flemish Connection picker in manual intake and profile editing follows the same rule: its default list shows only broad `is_filterable` connections, and specific or model-created connections appear only when staff search for them, ranked after the broad ones. Specific phrases, raw relevance, and model/import-discovered variants should be preserved as aliases, roles, or evidence without automatically becoming default chips.
 
 Approved profile editing and Discovery review should attach normalized facts to people and organizations with role, confidence, source URL, and evidence excerpt when available. Manual intake and file import remain pending-only; their raw relevance text is preserved for review and only becomes approved fact relationships after explicit reviewer approval or merge.
 
@@ -439,4 +439,5 @@ The former System Health surface is split across `/expand/maintenance` (automate
 - **Test Supabase** runs a lightweight Supabase query to confirm the URL, anon key, and RLS policies still work. Its `title`/`aria-label` describe that effect verbatim.
 - **Schedule cadence labels** under each agent card use the form `Schedule: <human cadence>`. Discovery uses cadences like `Once daily (09:00 UTC)` / `Twice daily (09:00 + 21:00 UTC)` / `Every 6 hours`; Verification uses cadences like `Up to 5 contacts/day` / `Up to 15 contacts/day` / `Up to 40 contacts/day`. Both kinds share the `Schedule:` prefix and a count-based shape so the unit is consistent across cards.
 - **Stale failure cards** are only rendered when the most recent failure is newer than the most recent success; once a successful run lands, the failure banner clears.
+- **Run history "Started by"** shows the staff member who started a run. Runs without a staff actor read `Automatic schedule`, or `Verification queue` for the background batches that work through staff Verify requests; runs created before actor auditing (2026-09-15) read `Not recorded`. Scheduled verification checks that found nothing to check are not listed in run history.
 - **Apify metrics** in the Today's API Usage row are hidden by default. Set `VITE_SHOW_APIFY=1` to surface them for diagnostics; otherwise they appear only when actual usage is non-zero.

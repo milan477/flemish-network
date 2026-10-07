@@ -534,7 +534,7 @@ function ManualAddForm({
   useEffect(() => {
     supabase
       .from('flemish_connections')
-      .select('id, name, type')
+      .select('id, name, type, is_filterable')
       .order('name')
       .then(({ data }) => {
         setAllFlemishConnections((data || []) as FlemishConnection[]);
@@ -1141,7 +1141,7 @@ function ManualAddForm({
                 name: canonical.name,
                 type: canonical.type,
               })
-              .select('id, name, type')
+              .select('id, name, type, is_filterable')
               .maybeSingle();
 
             if (error || !data) {

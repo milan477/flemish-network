@@ -58,15 +58,20 @@ export default function FlemishConnectionSelector({
     [value]
   );
 
+  // The default list shows the broad, filterable connections only; specific
+  // or model-created entries stay reachable through search, ranked after them.
   const filteredOptions = useMemo(() => {
     const q = normalizeName(query);
+    const isBroad = (option: FlemishConnection) => option.is_filterable !== false;
+    const available = options.filter(
+      (option) => !selectedKeys.has(normalizeName(option.name))
+    );
 
-    return options
-      .filter((option) => !selectedKeys.has(normalizeName(option.name)))
-      .filter((option) => {
-        if (!q) return true;
-        return normalizeName(option.name).includes(q);
-      })
+    if (!q) return available.filter(isBroad);
+
+    return available
+      .filter((option) => normalizeName(option.name).includes(q))
+      .sort((a, b) => Number(isBroad(b)) - Number(isBroad(a)))
       .slice(0, 8);
   }, [options, query, selectedKeys]);
 
