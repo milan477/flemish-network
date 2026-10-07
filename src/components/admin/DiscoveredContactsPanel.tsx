@@ -2472,7 +2472,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                     </span>
                   )}
                   {contact.flemish_connection && (
-                    <span className="text-xs text-yellow-600">
+                    <span
+                      className="line-clamp-2 text-xs text-yellow-600"
+                      title={contact.flemish_connection}
+                    >
                       {contact.flemish_connection}
                     </span>
                   )}
@@ -2927,7 +2930,10 @@ export default function DiscoveredContactsPanel({ refreshKey = 0 }: DiscoveredCo
                           </span>
                         ))}
                         {organization.flemish_belgian_relevance && (
-                          <span className="text-xs text-yellow-600">
+                          <span
+                            className="line-clamp-2 text-xs text-yellow-600"
+                            title={organization.flemish_belgian_relevance}
+                          >
                             {organization.flemish_belgian_relevance}
                           </span>
                         )}
