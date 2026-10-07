@@ -630,7 +630,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       setOrganizations(orgsData);
       setHasMorePeople(morePeople);
       setHasMoreOrgs(moreOrgs);
-      setStats({ people: peopleData.length, organizations: orgsData.length, cities: 0 });
+      // Tier 2b owns the counts once the full fetch has landed; this page-sized
+      // load can finish later and must not reset them (cities would read 0).
+      if (!fullDataReadyRef.current) {
+        setStats({ people: peopleData.length, organizations: orgsData.length, cities: 0 });
+      }
       setLoading(false);
     })();
 
